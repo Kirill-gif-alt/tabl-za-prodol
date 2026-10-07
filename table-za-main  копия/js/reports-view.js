@@ -8,6 +8,7 @@ window.ReportsView = (function () {
     const ROUTE_LABELS = { krai: 'краевые', interregional: 'межрегиональные', unknown: 'не классифицированы' };
 
     let previewSig = '';
+    let checksFutureOnly = true;
 
     function hasPerm(perm) {
         if (typeof ProfileAuth === 'undefined' || typeof ProfileAuth.hasPermission !== 'function') return true;
@@ -403,6 +404,102 @@ window.ReportsView = (function () {
         return hasPerm('export_excel') && (canTab('data') || canTab('pair') || canTab('costs'));
     }
 
+    // ---------- проверка рейсов ----------
+
+    function checksList() {
+        if (typeof FlightChecks === 'undefined' || !hasData()) return [];
+        return FlightChecks.list();
+    }
+
+    function checksHtml() {
+        if (typeof FlightChecks === 'undefined') return '';
+        const title = esc(FlightChecks.RULE_TITLE);
+        if (!hasData()) {
+            return `<section class="rp-card rp-checks" id="rp-checks"><div class="rp-card-head"><h3 class="rp-card-title">Проверка рейсов</h3></div><p class="rp-note">Данных нет — нажмите «Загрузить» или «Последние».</p></section>`;
+        }
+        const all = checksList();
+        const future = all.filter(i => i.state !== 'Улетел');
+        const shown = checksFutureOnly ? future : all;
+        const canOpen = (tab) => canTab(tab);
+        const rows = shown.map(i => `
+            <tr class="${i.state === 'Улетел' ? 'rp-flew' : ''}">
+                <td>${esc(i.date)}</td>
+                <td><strong>${esc(i.code)}</strong></td>
+                <td class="rp-left">${esc(i.direction)}</td>
+                <td>${esc(i.state)}</td>
+                <td>${fmt(i.count)}</td>
+                <td class="rp-left">${esc(i.fares.join(', '))}</td>
+                <td>${fmt(i.paid)}</td>
+                <td>${esc(i.subsidySource)}</td>
+                <td>${canOpen('pair') || canOpen('table') ? `<button type="button" class="filter-btn rp-open" data-open-base="${esc(i.base)}" data-open-date="${esc(i.date)}">Открыть</button>` : ''}</td>
+            </tr>`).join('');
+        const summary = all.length
+            ? `Найдено рейсов с ошибкой: <strong>${fmt(all.length)}</strong>, из них до вылета: <strong>${fmt(future.length)}</strong>.`
+            : 'Ошибок не найдено.';
+        return `
+            <section class="rp-card rp-checks" id="rp-checks">
+                <div class="rp-card-head">
+                    <h3 class="rp-card-title"><span class="fc-flag fc-flag-big" aria-hidden="true"></span> Проверка рейсов</h3>
+                    <button type="button" class="btn-primary rp-btn" id="rp-checks-export"${all.length && hasPerm('export_excel') ? '' : ' disabled'}>В Excel</button>
+                </div>
+                <p class="rp-card-text">${title}: субсидированный рейс (как в «Экономической таблице»), на котором продан детский тариф со скидкой 50% (код тарифа …/CN50). Такой рейс помечен «!» в «Загрузке рейсов», «Экономической таблице» и «Динамике продаж».</p>
+                <p class="rp-note">${summary}</p>
+                ${all.length ? `
+                <label class="rp-check"><input type="checkbox" id="rp-checks-future"${checksFutureOnly ? ' checked' : ''}> только рейсы до вылета</label>
+                <div class="rp-scroll">
+                    <table class="rp-table rp-checks-table">
+                        <thead><tr><th>Дата</th><th>Рейс</th><th>Направление</th><th>Статус</th><th>Детских −50%</th><th>Тарифы</th><th>Оплачено, ₽</th><th>Субсидия по</th><th></th></tr></thead>
+                        <tbody>${rows || '<tr><td colspan="9" class="rp-left">До вылета ошибок нет — снимите галочку, чтобы увидеть улетевшие.</td></tr>'}</tbody>
+                    </table>
+                </div>` : ''}
+            </section>`;
+    }
+
+    function openFlight(base, date) {
+        const tab = canTab('pair') ? 'pair' : (canTab('table') ? 'table' : '');
+        if (!tab || typeof switchMainTab !== 'function') return;
+        if (typeof currentFlight !== 'undefined') currentFlight = base;
+        if (typeof lastSelectedDate !== 'undefined') lastSelectedDate = date;
+        switchMainTab(tab);
+    }
+
+    async function exportChecks() {
+        if (!hasPerm('export_excel')) {
+            toast('Экспорт недоступен для вашего профиля', 'error');
+            return;
+        }
+        const all = checksList();
+        if (!all.length) {
+            toast('Ошибок нет — выгружать нечего', 'error');
+            return;
+        }
+        const folder = typeof excelPrepareFolder === 'function' ? await excelPrepareFolder('econ') : null;
+        const lib = await ensureXlsx();
+        if (!lib) {
+            toast('Библиотека Excel не загружена', 'error');
+            return;
+        }
+        const stamp = typeof excelExportStamp === 'function' ? excelExportStamp() : ru(new Date());
+        const w = sheetWriter(lib);
+        w.title(0, `Проверка рейсов: ${FlightChecks.RULE_TITLE} · выгрузка ${stamp}`, 9, style('FFFFFF', NAVY, true, 'left'));
+        w.table(1, ['Дата', 'Рейс', 'Направление', 'Статус', 'Детских билетов −50%', 'Тарифы', 'Оплачено, ₽', 'Субсидия по', 'Субсидия на рейс, ₽'],
+            all.map(i => ({ leftCols: [2, 5], cells: [i.date, i.code, i.direction, i.state, i.count, i.fares.join(', '), Math.round(i.paid), i.subsidySource, Math.round(i.subsidyAmount || 0)] })));
+        const ws = w.finish([12, 10, 34, 10, 14, 34, 14, 16, 16], 2);
+        const wb = lib.utils.book_new();
+        lib.utils.book_append_sheet(wb, ws, 'Ошибки');
+        const fileDate = typeof getTodayDate === 'function' ? getTodayDate() : stamp;
+        const filename = typeof excelDailyFilename === 'function'
+            ? excelDailyFilename('КРАСАВИА_проверка_рейсов', fileDate)
+            : `КРАСАВИА_проверка_рейсов_${fileDate.replace(/\./g, '-')}.xlsx`;
+        const saved = typeof excelSaveWorkbook === 'function'
+            ? await excelSaveWorkbook(lib, wb, filename, folder)
+            : (lib.writeFile(wb, filename), { where: 'download' });
+        if (typeof ActivityLog !== 'undefined') ActivityLog.log('export', 'Проверка рейсов');
+        const msg = `Файл готов: ошибок ${all.length}`;
+        if (typeof excelAnnounceSaved === 'function') excelAnnounceSaved(saved, msg);
+        else toast(msg);
+    }
+
     // ---------- страница ----------
 
     function previewHtml() {
@@ -446,6 +543,7 @@ window.ReportsView = (function () {
         if (!body) return;
         const weeks = weekBounds();
         body.innerHTML = [
+            checksHtml(),
             card('rp-data', 'Выгрузить загрузку рейсов',
                 'Excel с карточками маршрутов, как на вкладке «Загрузка рейсов» (с её текущими фильтрами).',
                 canData(), 'Нужны вкладка «Загрузка рейсов» и право на экспорт Excel.'),
@@ -465,7 +563,8 @@ window.ReportsView = (function () {
         const today = typeof getTodayDate === 'function' ? getTodayDate() : '';
         const prof = typeof ProfileAuth !== 'undefined' && ProfileAuth.getCurrentProfile ? (ProfileAuth.getCurrentProfile()?.id || '') : '';
         const rows = typeof allData !== 'undefined' && allData ? allData.length : 0;
-        return [epoch, today, prof, rows].join('|');
+        const checks = checksList().map(i => i.code + i.date).join(',');
+        return [epoch, today, prof, rows, checks].join('|');
     }
 
     function create(panel) {
@@ -474,17 +573,29 @@ window.ReportsView = (function () {
                 <div class="table-page-hero">
                     <div class="table-page-hero-main">
                         <h2 class="rms-hero-title">Отчёты</h2>
-                        <span class="table-page-hint">Выгрузки в Excel одной кнопкой</span>
+                        <span class="table-page-hint">Проверка рейсов и выгрузки в Excel одной кнопкой</span>
                     </div>
                 </div>
                 <div class="table-page-body rp-body" id="rp-body"></div>
             </div>
         `;
         const page = panel.querySelector('#rp-page');
+        page.addEventListener('change', (event) => {
+            if (event.target.id !== 'rp-checks-future') return;
+            checksFutureOnly = event.target.checked;
+            renderBody();
+        });
         page.addEventListener('click', (event) => {
             const btn = event.target.closest('button');
             if (!btn || btn.disabled) return;
-            const run = btn.id === 'rp-data' ? exportData : (btn.id === 'rp-sales' ? exportSales : (btn.id === 'rp-econ' ? exportEcon : null));
+            if (btn.dataset.openBase) {
+                openFlight(btn.dataset.openBase, btn.dataset.openDate);
+                return;
+            }
+            const run = btn.id === 'rp-data' ? exportData
+                : (btn.id === 'rp-sales' ? exportSales
+                    : (btn.id === 'rp-econ' ? exportEcon
+                        : (btn.id === 'rp-checks-export' ? exportChecks : null)));
             if (!run) return;
             btn.disabled = true;
             Promise.resolve()
@@ -501,7 +612,7 @@ window.ReportsView = (function () {
         renderBody();
     }
 
-    return { create, refresh, buildEconReport, weekBounds, exportEcon, exportData, exportSales };
+    return { create, refresh, buildEconReport, weekBounds, exportEcon, exportData, exportSales, exportChecks };
 })();
 
 function createReportsView(panel) {

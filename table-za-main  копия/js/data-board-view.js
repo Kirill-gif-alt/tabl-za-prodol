@@ -268,7 +268,8 @@ function renderDataRouteTableRows(pair, todayStart) {
             ? entry.outRow[1]
             : ((!flewIn && entry.inRow) ? entry.inRow[1] : entry.date);
 
-        return `<tr class="${rowCls}" data-outbound="${escAttr(pair.outbound)}" data-date="${escAttr(clickDate)}" tabindex="0">
+        const checkCls = typeof FlightChecks !== 'undefined' ? FlightChecks.rowClass([entry.outRow, entry.inRow]) : '';
+        return `<tr class="${rowCls}${checkCls}" data-outbound="${escAttr(pair.outbound)}" data-date="${escAttr(clickDate)}" tabindex="0">
             <td class="col-date data-block-info font-semibold">${dateCell}</td>
             <td class="font-medium data-block-info">${escHtml(formatPairDayOfWeek(entry.outRow, entry.inRow, entry.date))}</td>
             ${renderDataLegCells(entry.outRow, 'pair-leg-out', { allowYellow: yellowOut, customColor: customOut, flew: flewOut })}

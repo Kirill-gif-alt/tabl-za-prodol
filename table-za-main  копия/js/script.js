@@ -278,6 +278,8 @@ function updateHeaderStatus() {
             if (canRms) al.addEventListener('click', () => switchMainTab('rms'));
             kpiBar.append(al);
         }
+        const checkChip = typeof FlightChecks !== 'undefined' ? FlightChecks.headerChip() : null;
+        if (checkChip) kpiBar.append(checkChip);
         kpiBar.classList.remove('hidden');
     }
 }
