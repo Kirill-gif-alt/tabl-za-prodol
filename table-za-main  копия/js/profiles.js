@@ -16,6 +16,7 @@ window.ProfileAuth = (function () {
         tab_data: { label: 'Загрузка рейсов', group: 'Вкладки' },
         tab_rms: { label: 'RMS', group: 'Вкладки' },
         tab_sales: { label: 'Управление продажами', group: 'Вкладки' },
+        tab_creative: { label: 'Творческая', group: 'Вкладки' },
         load_data: { label: 'Загрузка данных', group: 'Данные' },
         share_data: { label: 'Публикация данных для всех', group: 'Данные' },
         export_excel: { label: 'Экспорт Excel', group: 'Данные' },
@@ -34,7 +35,8 @@ window.ProfileAuth = (function () {
         costs: 'tab_costs',
         data: 'tab_data',
         rms: 'tab_rms',
-        sales: 'tab_sales'
+        sales: 'tab_sales',
+        creative: 'tab_creative'
     };
 
     const DEFAULT_PASSWORDS = {
@@ -455,7 +457,7 @@ window.ProfileAuth = (function () {
     }
 
     function getFirstAllowedTab() {
-        const order = ['home', 'main', 'table', 'pkz', 'pair', 'costs', 'data', 'rms', 'sales'];
+        const order = ['home', 'main', 'table', 'pkz', 'pair', 'costs', 'data', 'rms', 'sales', 'creative'];
         return order.find(t => canAccessTab(t)) || null;
     }
 
@@ -560,7 +562,8 @@ window.ProfileAuth = (function () {
             'tab-costs': 'tab_costs',
             'tab-data': 'tab_data',
             'tab-rms': 'tab_rms',
-            'tab-sales': 'tab_sales'
+            'tab-sales': 'tab_sales',
+            'tab-creative': 'tab_creative'
         };
         Object.entries(tabMap).forEach(([elId, perm]) => {
             const btn = document.getElementById(elId);

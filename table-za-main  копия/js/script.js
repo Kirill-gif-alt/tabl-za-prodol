@@ -151,6 +151,7 @@ const TAB_HOST_CLASSES = {
     rms: 'content-area content-rms',
     data: 'content-area content-data',
     sales: 'content-area content-sales',
+    creative: 'content-area content-creative',
     home: 'content-area content-home',
     stats: 'content-area content-stats'
 };
@@ -482,6 +483,10 @@ function refreshTabPanel(tab) {
         if (typeof refreshSalesManagement === 'function') refreshSalesManagement(false, true);
         return;
     }
+    if (tab === 'creative') {
+        if (typeof CreativeView !== 'undefined') CreativeView.refresh();
+        return;
+    }
     if (tab === 'table') {
         const sig = getTableRenderSig();
         const st = tabPanelState.table;
@@ -540,7 +545,7 @@ function switchMainTab(tab){
     if (!panel) return;
     panel.hidden = false;
 
-    ['tab-home','tab-main','tab-table','tab-pkz','tab-pair','tab-costs','tab-rms','tab-sales','tab-data','tab-stats'].forEach(id=>{
+    ['tab-home','tab-main','tab-table','tab-pkz','tab-pair','tab-costs','tab-rms','tab-sales','tab-creative','tab-data','tab-stats'].forEach(id=>{
         const b = document.getElementById(id);
         if (!b) return;
         b.classList.remove('tab-active');
@@ -561,6 +566,7 @@ function switchMainTab(tab){
         else if (tab === 'rms') createRmsView(panel);
         else if (tab === 'data') createDataView(panel);
         else if (tab === 'sales' && typeof createSalesManagementView === 'function') createSalesManagementView(panel);
+        else if (tab === 'creative' && typeof createCreativeView === 'function') createCreativeView(panel);
         else if (tab === 'home' && typeof NetworkMap !== 'undefined') NetworkMap.createView(panel);
         else if (tab === 'stats') createStatsView(panel);
         else createMainTimelineView(panel);
@@ -654,6 +660,7 @@ function initKeyboardShortcuts() {
             if (e.key === '6' && (!ProfileAuth || ProfileAuth.canAccessTab('data'))) { e.preventDefault(); switchMainTab('data'); }
             if (e.key === '7' && (!ProfileAuth || ProfileAuth.canAccessTab('rms'))) { e.preventDefault(); switchMainTab('rms'); }
             if (e.key === '8' && (!ProfileAuth || ProfileAuth.canAccessTab('sales'))) { e.preventDefault(); switchMainTab('sales'); }
+            if (e.key === '9' && (!ProfileAuth || ProfileAuth.canAccessTab('creative'))) { e.preventDefault(); switchMainTab('creative'); }
         }
     });
 }

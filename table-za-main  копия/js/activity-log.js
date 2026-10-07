@@ -29,6 +29,7 @@ window.ActivityLog = (function () {
         data: 'Загрузка рейсов',
         rms: 'RMS',
         sales: 'Управление продажами',
+        creative: 'Творческая',
         stats: 'Статистика'
     };
 
