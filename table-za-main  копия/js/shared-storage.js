@@ -10,7 +10,7 @@ window.SharedStorage = (function () {
     const ALLOWED_FILES = new Set([
         'profiles.json', 'snapshot.json', 'activity.json', 'flight-comments.json',
         'subsidy-overrides.json', 'pkz-nav.json', 'sales-management.json', 'rms-widget.json',
-        'creative-layouts.json'
+        'creative-layouts.json', 'subsidy-fares.json'
     ]);
 
     let rootHandle = null;

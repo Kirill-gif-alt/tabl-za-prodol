@@ -413,28 +413,30 @@ window.ReportsView = (function () {
 
     function checksHtml() {
         if (typeof FlightChecks === 'undefined' || !FlightChecks.enabled()) return '';
-        const title = esc(FlightChecks.RULE_TITLE);
         if (!hasData()) {
-            return `<section class="rp-card rp-checks" id="rp-checks"><div class="rp-card-head"><h3 class="rp-card-title">Проверка рейсов</h3></div><p class="rp-note">Данных нет — нажмите «Загрузить» или «Последние».</p></section>`;
+            return `<section class="rp-card rp-checks" id="rp-checks"><div class="rp-card-head"><h3 class="rp-card-title">Проверка рейсов</h3></div><p class="rp-note">Данных нет — нажмите «Загрузить» или «Последние».</p></section>${refsHtml()}`;
         }
         const all = checksList();
+        const flightKey = (i) => i.code + '|' + i.date;
+        const flightsAll = new Set(all.map(flightKey));
         const future = all.filter(i => i.state !== 'Улетел');
+        const flightsFuture = new Set(future.map(flightKey));
         const shown = checksFutureOnly ? future : all;
-        const canOpen = (tab) => canTab(tab);
+        const canOpen = canTab('pair') || canTab('table');
         const rows = shown.map(i => `
             <tr class="${i.state === 'Улетел' ? 'rp-flew' : ''}">
                 <td>${esc(i.date)}</td>
                 <td><strong>${esc(i.code)}</strong></td>
                 <td class="rp-left">${esc(i.direction)}</td>
                 <td>${esc(i.state)}</td>
+                <td class="rp-left rp-rule rp-rule-${esc(i.rule)}">${esc(i.title)}</td>
                 <td>${fmt(i.count)}</td>
-                <td class="rp-left">${esc(i.fares.join(', '))}</td>
-                <td>${fmt(i.paid)}</td>
+                <td class="rp-left">${esc(i.detail)}</td>
                 <td>${esc(i.subsidySource)}</td>
-                <td>${canOpen('pair') || canOpen('table') ? `<button type="button" class="filter-btn rp-open" data-open-base="${esc(i.base)}" data-open-date="${esc(i.date)}">Открыть</button>` : ''}</td>
+                <td>${canOpen ? `<button type="button" class="filter-btn rp-open" data-open-base="${esc(i.base)}" data-open-date="${esc(i.date)}">Открыть</button>` : ''}</td>
             </tr>`).join('');
         const summary = all.length
-            ? `Найдено рейсов с ошибкой: <strong>${fmt(all.length)}</strong>, из них до вылета: <strong>${fmt(future.length)}</strong>.`
+            ? `Рейсов с ошибкой: <strong>${fmt(flightsAll.size)}</strong>, из них до вылета: <strong>${fmt(flightsFuture.size)}</strong>. Ошибок всего: ${fmt(all.length)}.`
             : 'Ошибок не найдено.';
         return `
             <section class="rp-card rp-checks" id="rp-checks">
@@ -442,17 +444,177 @@ window.ReportsView = (function () {
                     <h3 class="rp-card-title"><span class="fc-flag fc-flag-big" aria-hidden="true"></span> Проверка рейсов</h3>
                     <button type="button" class="btn-primary rp-btn" id="rp-checks-export"${all.length && hasPerm('export_excel') ? '' : ' disabled'}>В Excel</button>
                 </div>
-                <p class="rp-card-text">${title}: межрегиональный рейс с субсидией в «Экономической таблице» (сумма больше 0), на котором продан детский тариф со скидкой 50% (код тарифа …/CN50). Краевые рейсы не проверяются — они не субсидированные. Такой рейс помечен «!» в «Загрузке рейсов», «Экономической таблице» и «Динамике продаж».</p>
+                <p class="rp-card-text">Проверяются субсидированные рейсы: межрегиональные с суммой субсидии больше 0 в «Экономической таблице» (краевые не субсидированные). Ошибка — если продан детский тариф со скидкой 50% (…/CN50) или билет дороже предельного тарифа из справочника ниже. Рейс с ошибкой помечен «!» в «Загрузке рейсов», «Экономической таблице» и «Динамике продаж».</p>
                 <p class="rp-note">${summary}</p>
                 ${all.length ? `
                 <label class="rp-check"><input type="checkbox" id="rp-checks-future"${checksFutureOnly ? ' checked' : ''}> только рейсы до вылета</label>
                 <div class="rp-scroll">
                     <table class="rp-table rp-checks-table">
-                        <thead><tr><th>Дата</th><th>Рейс</th><th>Направление</th><th>Статус</th><th>Детских −50%</th><th>Тарифы</th><th>Оплачено, ₽</th><th>Субсидия по</th><th></th></tr></thead>
+                        <thead><tr><th>Дата</th><th>Рейс</th><th>Направление</th><th>Статус</th><th>Ошибка</th><th>Билетов</th><th>Подробно</th><th>Субсидия по</th><th></th></tr></thead>
                         <tbody>${rows || '<tr><td colspan="9" class="rp-left">До вылета ошибок нет — снимите галочку, чтобы увидеть улетевшие.</td></tr>'}</tbody>
                     </table>
                 </div>` : ''}
+            </section>
+            ${refsHtml()}`;
+    }
+
+    // ---------- справочник субсидированных тарифов ----------
+
+    let refEditId = '';
+    let refPrefill = '';
+
+    function isoOf(ruDate) {
+        const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(String(ruDate || ''));
+        return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+    }
+
+    function ruOf(isoDate) {
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(isoDate || ''));
+        return m ? `${m[3]}.${m[2]}.${m[1]}` : '';
+    }
+
+    function pairOf(code) {
+        if (typeof getFlightPair !== 'function') return '';
+        const p = getFlightPair(code);
+        const other = code === p.outbound ? p.inbound : p.outbound;
+        return other && other !== code ? other : '';
+    }
+
+    function interregionalCodes() {
+        const set = new Set();
+        Object.keys(window.FLIGHT_DIRECTIONS || {}).forEach(c => set.add(c));
+        Object.keys(typeof groupedData !== 'undefined' && groupedData ? groupedData : {}).forEach(base => {
+            (groupedData[base] || []).forEach(r => { if (r && r[0]) set.add(cleanFlight(r[0])); });
+        });
+        return [...set]
+            .filter(c => /^KV-\d+$/.test(c) && typeof getFlightRouteType === 'function' && getFlightRouteType(c) === 'interregional')
+            .sort((a, b) => (parseInt(a.slice(3), 10) || 0) - (parseInt(b.slice(3), 10) || 0));
+    }
+
+    function directionOf(code) {
+        return typeof getFlightDirection === 'function' ? getFlightDirection(code) : code;
+    }
+
+    function refsHtml() {
+        if (typeof FareRefs === 'undefined') return '';
+        const can = FareRefs.canEdit();
+        const entries = FareRefs.list();
+        const missing = hasData() && typeof FlightChecks !== 'undefined' ? FlightChecks.missingRefs() : [];
+        const rows = entries.map(e => `
+            <tr>
+                <td class="rp-left"><strong>${esc(e.flights.join(', '))}</strong><div class="rp-sub-line">${esc(e.flights.map(directionOf).join(' · '))}</div></td>
+                <td>${esc(e.fareCode || '—')}</td>
+                <td>${fmt(e.adult)} ₽</td>
+                <td>${e.child != null ? fmt(e.child) + ' ₽' : '<span class="rp-muted">как взрослый</span>'}</td>
+                <td>${esc(e.from || e.to ? `${e.from || '…'} – ${e.to || '…'}` : 'всегда')}</td>
+                <td class="rp-left">${esc(e.note || '')}</td>
+                <td class="rp-left rp-muted">${esc(e.by || '')}${e.updatedAt ? '<br>' + esc(new Date(e.updatedAt).toLocaleString('ru-RU')) : ''}</td>
+                ${can ? `<td><button type="button" class="filter-btn rp-open" data-ref-edit="${esc(e.id)}">Изменить</button> <button type="button" class="filter-btn rp-open rp-danger" data-ref-delete="${esc(e.id)}">Удалить</button></td>` : ''}
+            </tr>`).join('');
+        const editing = refEditId ? entries.find(e => e.id === refEditId) : null;
+        const pick = editing ? editing.flights[0] : (refPrefill || missing[0] || '');
+        const codes = interregionalCodes();
+        const subsidizedNow = new Set(missing.concat(entries.flatMap(e => e.flights)));
+        const option = (c) => `<option value="${esc(c)}"${c === pick ? ' selected' : ''}>${esc(c)} · ${esc(directionOf(c))}</option>`;
+        const options = `
+            <optgroup label="Субсидированные и из справочника">${codes.filter(c => subsidizedNow.has(c)).map(option).join('')}</optgroup>
+            <optgroup label="Остальные межрегиональные">${codes.filter(c => !subsidizedNow.has(c)).map(option).join('')}</optgroup>`;
+        const other = pick ? pairOf(pick) : '';
+        const pairOn = editing ? (editing.flights.length > 1) : true;
+        const form = can ? `
+            <div class="rp-ref-form" id="rp-ref-form">
+                <div class="rp-ref-form-title">${editing ? 'Изменить запись' : 'Новая запись'}</div>
+                <div class="rp-ref-grid">
+                    <label>Рейс<select id="rp-ref-flight" class="cr-input">${options}</select></label>
+                    <label class="rp-check rp-ref-pair"><input type="checkbox" id="rp-ref-pair"${pairOn ? ' checked' : ''}${other ? '' : ' disabled'}> и обратный <strong id="rp-ref-pair-code">${esc(other || '—')}</strong></label>
+                    <label>Код тарифа<input id="rp-ref-code" class="cr-input" maxlength="30" placeholder="напр. USCOW" value="${esc(editing ? editing.fareCode : '')}"></label>
+                    <label>Предельный тариф, ₽<input id="rp-ref-adult" class="cr-input" type="number" min="0" step="1" value="${esc(editing ? editing.adult : '')}"></label>
+                    <label>Детский предел, ₽<input id="rp-ref-child" class="cr-input" type="number" min="0" step="1" placeholder="как взрослый" value="${esc(editing && editing.child != null ? editing.child : '')}"></label>
+                    <label>Действует с<input id="rp-ref-from" class="cr-input" type="date" value="${esc(editing ? isoOf(editing.from) : '')}"></label>
+                    <label>по<input id="rp-ref-to" class="cr-input" type="date" value="${esc(editing ? isoOf(editing.to) : '')}"></label>
+                    <label class="rp-ref-note">Комментарий<input id="rp-ref-note" class="cr-input" maxlength="200" value="${esc(editing ? editing.note : '')}"></label>
+                </div>
+                <div class="rp-ref-actions">
+                    <button type="button" class="btn-primary rp-btn" id="rp-ref-save">${editing ? 'Сохранить' : 'Добавить'}</button>
+                    ${editing ? '<button type="button" class="filter-btn" id="rp-ref-cancel">Отмена</button>' : ''}
+                    <span class="rp-ref-error" id="rp-ref-error" role="alert"></span>
+                </div>
+            </div>` : '<p class="rp-note">Менять справочник может администратор или профиль с правом «Правка справочника субсидированных тарифов».</p>';
+        const missingHtml = missing.length
+            ? `<p class="rp-note rp-warn">Субсидированные рейсы до вылета без тарифа в справочнике — для них проверка тарифа не выполняется: ${missing.map(c => can ? `<button type="button" class="rp-chip" data-ref-fill="${esc(c)}">${esc(c)}</button>` : `<span class="rp-chip">${esc(c)}</span>`).join(' ')}</p>`
+            : '';
+        return `
+            <section class="rp-card rp-refs" id="rp-refs">
+                <div class="rp-card-head"><h3 class="rp-card-title">Справочник субсидированных тарифов</h3></div>
+                <p class="rp-card-text">Предельный тариф на субсидированном рейсе: билет дороже предела — ошибка, дешевле — можно, в том числе детские. Детский предел необязателен: если он не задан, детский билет сравнивается со взрослым пределом. Сравнивается оплаченная сумма билета.</p>
+                ${missingHtml}
+                ${entries.length ? `
+                <div class="rp-scroll">
+                    <table class="rp-table rp-refs-table">
+                        <thead><tr><th>Рейсы</th><th>Код тарифа</th><th>Предел</th><th>Детский предел</th><th>Действует</th><th>Комментарий</th><th>Изменил</th>${can ? '<th></th>' : ''}</tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>` : '<p class="rp-note">Справочник пуст.</p>'}
+                ${form}
             </section>`;
+    }
+
+    function syncPairLabel() {
+        const sel = document.getElementById('rp-ref-flight');
+        const box = document.getElementById('rp-ref-pair');
+        const label = document.getElementById('rp-ref-pair-code');
+        if (!sel || !box || !label) return;
+        const other = pairOf(sel.value);
+        label.textContent = other || '—';
+        box.disabled = !other;
+        if (!other) box.checked = false;
+    }
+
+    async function saveRef() {
+        const val = (id) => (document.getElementById(id) || {}).value || '';
+        const err = document.getElementById('rp-ref-error');
+        const code = val('rp-ref-flight');
+        const pairBox = document.getElementById('rp-ref-pair');
+        const flights = [code];
+        const other = pairOf(code);
+        if (pairBox && pairBox.checked && other) flights.push(other);
+        const res = await FareRefs.upsert({
+            id: refEditId || undefined,
+            flights,
+            fareCode: val('rp-ref-code'),
+            adult: val('rp-ref-adult'),
+            child: val('rp-ref-child'),
+            from: ruOf(val('rp-ref-from')),
+            to: ruOf(val('rp-ref-to')),
+            note: val('rp-ref-note')
+        });
+        if (!res.ok) {
+            if (err) err.textContent = res.error;
+            return;
+        }
+        refEditId = '';
+        refPrefill = '';
+        afterRefChange(res.shared, `Тариф для ${flights.join(', ')} сохранён`);
+    }
+
+    async function deleteRef(id) {
+        const entry = FareRefs.list().find(e => e.id === id);
+        if (!entry || !window.confirm(`Удалить тариф для ${entry.flights.join(', ')}?`)) return;
+        const res = await FareRefs.remove(id);
+        if (!res.ok) {
+            toast(res.error, 'error');
+            return;
+        }
+        if (refEditId === id) refEditId = '';
+        afterRefChange(res.shared, 'Запись удалена');
+    }
+
+    function afterRefChange(shared, msg) {
+        if (typeof FlightChecks !== 'undefined') FlightChecks.refreshViews();
+        renderBody();
+        if (shared) toast(msg + ' — видно всем');
+        else toast(msg + ' на этом компьютере. Подключите папку приложения, чтобы справочник увидели остальные.', 'error');
+        if (typeof ActivityLog !== 'undefined') ActivityLog.log('fare_refs', msg);
     }
 
     function openFlight(base, date) {
@@ -481,10 +643,10 @@ window.ReportsView = (function () {
         }
         const stamp = typeof excelExportStamp === 'function' ? excelExportStamp() : ru(new Date());
         const w = sheetWriter(lib);
-        w.title(0, `Проверка рейсов: ${FlightChecks.RULE_TITLE} · выгрузка ${stamp}`, 9, style('FFFFFF', NAVY, true, 'left'));
-        w.table(1, ['Дата', 'Рейс', 'Направление', 'Статус', 'Детских билетов −50%', 'Тарифы', 'Оплачено, ₽', 'Субсидия по', 'Субсидия на рейс, ₽'],
-            all.map(i => ({ leftCols: [2, 5], cells: [i.date, i.code, i.direction, i.state, i.count, i.fares.join(', '), Math.round(i.paid), i.subsidySource, Math.round(i.subsidyAmount || 0)] })));
-        const ws = w.finish([12, 10, 34, 10, 14, 34, 14, 16, 16], 2);
+        w.title(0, `Проверка рейсов · выгрузка ${stamp}`, 11, style('FFFFFF', NAVY, true, 'left'));
+        w.table(1, ['Дата', 'Рейс', 'Направление', 'Статус', 'Ошибка', 'Билетов', 'Тарифы', 'Предел, ₽', 'Макс. оплачено, ₽', 'Субсидия по', 'Субсидия на рейс, ₽'],
+            all.map(i => ({ leftCols: [2, 4, 6], cells: [i.date, i.code, i.direction, i.state, i.title, i.count, i.fares.join(', '), i.limit != null ? i.limit : '', i.maxPaid != null ? Math.round(i.maxPaid) : '', i.subsidySource, Math.round(i.subsidyAmount || 0)] })));
+        const ws = w.finish([12, 10, 32, 10, 30, 10, 30, 12, 16, 16, 16], 2);
         const wb = lib.utils.book_new();
         lib.utils.book_append_sheet(wb, ws, 'Ошибки');
         const fileDate = typeof getTodayDate === 'function' ? getTodayDate() : stamp;
@@ -563,7 +725,8 @@ window.ReportsView = (function () {
         const today = typeof getTodayDate === 'function' ? getTodayDate() : '';
         const prof = typeof ProfileAuth !== 'undefined' && ProfileAuth.getCurrentProfile ? (ProfileAuth.getCurrentProfile()?.id || '') : '';
         const rows = typeof allData !== 'undefined' && allData ? allData.length : 0;
-        const checksOn = typeof FlightChecks !== 'undefined' && FlightChecks.enabled() ? 1 : 0;
+        const checksOn = (typeof FlightChecks !== 'undefined' && FlightChecks.enabled() ? 1 : 0)
+            + ':' + (typeof FareRefs !== 'undefined' ? FareRefs.revision() : 0);
         const checks = checksList().map(i => i.code + i.date).join(',');
         return [epoch, today, prof, rows, checksOn, checks].join('|');
     }
@@ -582,6 +745,7 @@ window.ReportsView = (function () {
         `;
         const page = panel.querySelector('#rp-page');
         page.addEventListener('change', (event) => {
+            if (event.target.id === 'rp-ref-flight') { syncPairLabel(); return; }
             if (event.target.id !== 'rp-checks-future') return;
             checksFutureOnly = event.target.checked;
             renderBody();
@@ -591,6 +755,28 @@ window.ReportsView = (function () {
             if (!btn || btn.disabled) return;
             if (btn.dataset.openBase) {
                 openFlight(btn.dataset.openBase, btn.dataset.openDate);
+                return;
+            }
+            if (btn.dataset.refEdit) {
+                refEditId = btn.dataset.refEdit;
+                renderBody();
+                const form = document.getElementById('rp-ref-form');
+                if (form) form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+            if (btn.dataset.refDelete) { deleteRef(btn.dataset.refDelete); return; }
+            if (btn.dataset.refFill) {
+                refEditId = '';
+                refPrefill = btn.dataset.refFill;
+                renderBody();
+                const adult = document.getElementById('rp-ref-adult');
+                if (adult) { adult.scrollIntoView({ behavior: 'smooth', block: 'center' }); adult.focus(); }
+                return;
+            }
+            if (btn.id === 'rp-ref-cancel') { refEditId = ''; renderBody(); return; }
+            if (btn.id === 'rp-ref-save') {
+                btn.disabled = true;
+                saveRef().catch(e => { console.error(e); toast('Не удалось сохранить', 'error'); }).finally(() => { btn.disabled = false; });
                 return;
             }
             const run = btn.id === 'rp-data' ? exportData
@@ -605,6 +791,14 @@ window.ReportsView = (function () {
                 .finally(() => { btn.disabled = false; });
         });
         renderBody();
+        if (typeof FareRefs !== 'undefined') {
+            const before = FareRefs.revision();
+            FareRefs.load().then(() => {
+                if (FareRefs.revision() === before) return;
+                if (typeof FlightChecks !== 'undefined') FlightChecks.refreshViews();
+                renderBody();
+            }).catch(() => {});
+        }
     }
 
     function refresh() {

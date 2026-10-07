@@ -702,6 +702,9 @@ window.onload=()=>{
         if (typeof SharedOverrides !== 'undefined') {
             await SharedOverrides.load();
         }
+        if (typeof FareRefs !== 'undefined') {
+            await FareRefs.load();
+        }
 
         if (typeof SessionStore !== 'undefined') {
             await SessionStore.initOnStartup();
