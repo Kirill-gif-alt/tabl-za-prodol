@@ -334,10 +334,13 @@ window.CreativeView = (function () {
         }, 200);
     }
 
+    let sharedSeen = false;
+
     async function loadShared() {
         if (typeof SharedStorage === 'undefined' || typeof SharedStorage.readJsonFile !== 'function') return;
         let remote = null;
         try { remote = await SharedStorage.readJsonFile(SHARED_FILE); } catch (e) { remote = null; }
+        if (remote && remote.layouts && Object.keys(remote.layouts).length) sharedSeen = true;
         shared = {};
         const items = remote && remote.layouts && typeof remote.layouts === 'object' ? remote.layouts : {};
         Object.keys(items).forEach(name => {
@@ -352,6 +355,8 @@ window.CreativeView = (function () {
         if (typeof SharedStorage === 'undefined' || typeof SharedStorage.writeJsonFile !== 'function') return false;
         let remote = null;
         try { remote = await SharedStorage.readJsonFile(SHARED_FILE); } catch (e) { remote = null; }
+        // Файл раньше читался, а сейчас нет — не записываем, иначе пропадут чужие общие шаблоны.
+        if (!remote && sharedSeen) return false;
         const layouts = remote && remote.layouts && typeof remote.layouts === 'object' ? { ...remote.layouts } : {};
         mutate(layouts);
         const ok = await SharedStorage.writeJsonFile(SHARED_FILE, { version: 1, updatedAt: new Date().toISOString(), layouts });
@@ -392,8 +397,13 @@ window.CreativeView = (function () {
         const epoch = typeof dataEpoch === 'number' ? dataEpoch : 0;
         const rows = typeof allData !== 'undefined' && allData ? allData.length : 0;
         const today = typeof getTodayDate === 'function' ? getTodayDate() : '';
-        const marks = typeof SalesManagement !== 'undefined' && SalesManagement.revision ? SalesManagement.revision().length : 0;
-        return [epoch, rows, today, marks, JSON.stringify(layout)].join('|');
+        // Версия отметок без первого поля (время записи файла): оно меняется при каждой попытке записи.
+        const fullRev = typeof SalesManagement !== 'undefined' && SalesManagement.revision ? SalesManagement.revision() : '';
+        const marks = fullRev.slice(fullRev.indexOf('\u0001') + 1);
+        const ov = typeof SharedOverrides !== 'undefined' && SharedOverrides.subsidyRevision
+            ? SharedOverrides.subsidyRevision() + ':' + (SharedOverrides.navRevision ? SharedOverrides.navRevision() : 0)
+            : '';
+        return [epoch, rows, today, ov, JSON.stringify(layout), marks].join('|');
     }
 
     function collectContexts() {
@@ -549,7 +559,9 @@ window.CreativeView = (function () {
         if (built.sig === sig && built.result) return built.result;
         const cols = visibleCols();
         let ctxs = collectContexts();
-        const conds = layout.conds.filter(cond => fieldAllowed(cond.field));
+        // Условие без значения (только что добавленное) не применяется, иначе таблица пустеет.
+        const conds = layout.conds.filter(cond => fieldAllowed(cond.field)
+            && (cond.op === 'empty' || cond.op === 'filled' || String(cond.value == null ? '' : cond.value).trim() !== ''));
         if (conds.length) ctxs = ctxs.filter(c => conds.every(cond => condMatches(c, cond)));
 
         let rows;
@@ -568,6 +580,7 @@ window.CreativeView = (function () {
                 cols.forEach(key => {
                     values[key] = key === groupKey ? id : aggregate(key, list);
                 });
+                values[groupKey] = id;
                 values.__count = list.length;
                 const sortProbe = list[0];
                 rows.push({ values, list, groupId: id, groupSort: sortValueOf(sortProbe, groupKey) });
@@ -668,9 +681,13 @@ window.CreativeView = (function () {
         return cls;
     }
 
+    // При группировке столбец группы показывается всегда, даже если его убрали из списка столбцов.
     function headerCols(result) {
         const list = result.cols.slice();
-        if (result.groupKey) list.splice(list.indexOf(result.groupKey) === -1 ? 0 : list.indexOf(result.groupKey) + 1, 0, '__count');
+        if (result.groupKey) {
+            if (list.indexOf(result.groupKey) === -1) list.unshift(result.groupKey);
+            list.splice(list.indexOf(result.groupKey) + 1, 0, '__count');
+        }
         return list;
     }
 

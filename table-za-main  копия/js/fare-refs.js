@@ -8,8 +8,9 @@ window.FareRefs = (function () {
     const LOCAL_KEY = 'krasavia_subsidy_fares_v1';
     const MAX_ENTRIES = 500;
 
-    let cache = { version: 1, updatedAt: null, entries: [] };
+    let cache = { version: 1, updatedAt: null, entries: [], deleted: {} };
     let rev = 0;
+    let sawRemote = false;
 
     function cleanCode(v) {
         const code = typeof cleanFlight === 'function' ? cleanFlight(v) : String(v || '').trim();
@@ -69,7 +70,28 @@ window.FareRefs = (function () {
             const n = normalizeEntry(e);
             if (n) entries.push(n);
         });
-        return { version: 1, updatedAt: src && src.updatedAt ? String(src.updatedAt) : null, entries };
+        const deleted = {};
+        const raw = src && src.deleted && typeof src.deleted === 'object' ? src.deleted : {};
+        Object.keys(raw).slice(0, 2000).forEach(id => {
+            if (/^[a-z0-9]{4,24}$/i.test(id) && raw[id]) deleted[id] = String(raw[id]);
+        });
+        return { version: 1, updatedAt: src && src.updatedAt ? String(src.updatedAt) : null, entries, deleted };
+    }
+
+    // Слияние двух копий: по каждой записи — самая свежая, удалённые (deleted: id → время) не возвращаются.
+    function mergeStores(a, b) {
+        const deleted = { ...(a.deleted || {}) };
+        Object.keys(b.deleted || {}).forEach(id => {
+            if (!deleted[id] || String(b.deleted[id]) > String(deleted[id])) deleted[id] = b.deleted[id];
+        });
+        const byId = new Map();
+        a.entries.concat(b.entries).forEach(e => {
+            const prev = byId.get(e.id);
+            if (!prev || String(e.updatedAt || '') > String(prev.updatedAt || '')) byId.set(e.id, e);
+        });
+        const entries = [...byId.values()].filter(e => !(deleted[e.id] && String(deleted[e.id]) >= String(e.updatedAt || '')));
+        const updatedAt = String(a.updatedAt || '') >= String(b.updatedAt || '') ? a.updatedAt : b.updatedAt;
+        return { version: 1, updatedAt: updatedAt || null, entries: entries.slice(0, MAX_ENTRIES), deleted };
     }
 
     function readLocal() {
@@ -88,10 +110,10 @@ window.FareRefs = (function () {
 
     async function load() {
         const remote = await readRemote();
+        if (remote && (remote.entries.length || Object.keys(remote.deleted).length)) sawRemote = true;
         const local = readLocal();
         const before = JSON.stringify(cache.entries);
-        if (remote && String(remote.updatedAt || '') >= String(local.updatedAt || '')) cache = remote;
-        else cache = local.updatedAt ? local : (remote || local);
+        cache = mergeStores(remote || normalizeStore(null), local);
         // Версия растёт, только если справочник правда поменялся: иначе таблицы зря перерисуются.
         if (JSON.stringify(cache.entries) !== before) rev++;
         return cache;
@@ -100,17 +122,21 @@ window.FareRefs = (function () {
     // Изменение: перечитать общий файл, применить одно действие, записать. Так правки двух людей не затирают друг друга.
     async function apply(mutate) {
         const remote = await readRemote();
-        const base = remote && String(remote.updatedAt || '') >= String(cache.updatedAt || '') ? remote : cache;
+        // Общий файл раньше читался, а сейчас нет — не записываем, иначе можно затереть чужие записи.
+        if (!remote && sawRemote) return { ok: false, error: 'Не удалось прочитать общий справочник — попробуйте ещё раз' };
+        if (remote && (remote.entries.length || Object.keys(remote.deleted).length)) sawRemote = true;
+        const base = mergeStores(remote || normalizeStore(null), cache);
         const entries = base.entries.map(e => ({ ...e, flights: e.flights.slice() }));
-        mutate(entries);
-        cache = { version: 1, updatedAt: new Date().toISOString(), entries: entries.slice(0, MAX_ENTRIES) };
+        const deleted = { ...base.deleted };
+        mutate(entries, deleted);
+        cache = { version: 1, updatedAt: new Date().toISOString(), entries: entries.slice(0, MAX_ENTRIES), deleted };
         rev++;
         try { localStorage.setItem(LOCAL_KEY, JSON.stringify(cache)); } catch (e) { /* ignore */ }
-        let ok = false;
+        let shared = false;
         if (typeof SharedStorage !== 'undefined' && typeof SharedStorage.writeJsonFile === 'function') {
-            ok = await SharedStorage.writeJsonFile(FILE, cache);
+            shared = await SharedStorage.writeJsonFile(FILE, cache);
         }
-        return ok;
+        return { ok: true, shared: !!shared };
     }
 
     function canEdit() {
@@ -129,21 +155,22 @@ window.FareRefs = (function () {
         if (n.from && n.to && typeof compareDateStr === 'function' && compareDateStr(n.from, n.to) > 0) {
             return { ok: false, error: 'Дата «с» позже даты «по»' };
         }
-        const shared = await apply(entries => {
+        const res = await apply((entries, deleted) => {
             const i = entries.findIndex(e => e.id === n.id);
             if (i === -1) entries.push(n);
             else entries[i] = n;
+            delete deleted[n.id];
         });
-        return { ok: true, shared, entry: n };
+        return res.ok ? { ok: true, shared: res.shared, entry: n } : res;
     }
 
     async function remove(id) {
         if (!canEdit()) return { ok: false, error: 'Нет права менять справочник' };
-        const shared = await apply(entries => {
+        return apply((entries, deleted) => {
             const i = entries.findIndex(e => e.id === id);
             if (i !== -1) entries.splice(i, 1);
+            deleted[id] = new Date().toISOString();
         });
-        return { ok: true, shared };
     }
 
     function dateIn(entry, date) {

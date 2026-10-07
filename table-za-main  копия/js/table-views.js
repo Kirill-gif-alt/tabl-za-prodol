@@ -879,6 +879,8 @@ function bindSubsidyInputs(cont) {
             if (typeof ProfileAuth !== 'undefined' && !ProfileAuth.hasPermission('edit_subsidy')) return;
             const raw = inp.value.trim();
             await SharedOverrides.setSubsidy(inp.dataset.flight, inp.dataset.date, raw === '' ? '' : raw);
+            // Субсидия меняет проверку рейсов: обновить «!» на других вкладках и счётчик в шапке.
+            if (typeof FlightChecks !== 'undefined') FlightChecks.refreshViews();
             const host = document.getElementById('pair-table-container');
             const base = currentFlight;
             if (host && base && typeof actuallyRenderPairTable === 'function') {

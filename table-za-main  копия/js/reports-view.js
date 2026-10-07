@@ -86,8 +86,11 @@ window.ReportsView = (function () {
         return ev == null || isNaN(ev) ? null : Math.ceil(ev);
     }
 
+    // Один вылет (рейс + дата) считается один раз: у рейса из нескольких участков берётся первый,
+    // как для продаж (buildFirstSalesRowByKey), иначе кресла и рейсы задвоятся.
     function collectWeek(week, withPlan) {
         const out = [];
+        const seen = new Set();
         const fromT = week.from.getTime();
         const toT = week.to.getTime();
         Object.keys(groupedData || {}).forEach(base => {
@@ -99,6 +102,9 @@ window.ReportsView = (function () {
                 const t = d.getTime();
                 if (t < fromT || t > toT) return;
                 const code = cleanFlight(row[0]);
+                const once = code + '|' + row[1];
+                if (seen.has(once)) return;
+                seen.add(once);
                 const seats = typeof getSeatsOnSale === 'function' ? getSeatsOnSale(row) : 0;
                 const sold = typeof getSoldFromRow === 'function' ? getSoldFromRow(row) : 0;
                 out.push({
