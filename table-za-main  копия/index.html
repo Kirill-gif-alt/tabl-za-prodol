@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#012A4A">
+    <meta name="color-scheme" content="light">
+    <meta name="referrer" content="no-referrer">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://data-cloud.flightradar24.com 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://www.krasavia.ru; connect-src 'self' blob: https://data-cloud.flightradar24.com; font-src 'self' https://fonts.gstatic.com; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <title>КРАСАВИА · Аналитика</title>
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+</head>
+<body class="app-body">
+
+    <a class="skip-link" href="#main-content-inner">К основному содержимому</a>
+
+    <!-- Оверлей загрузки -->
+    <div id="loading-overlay" class="loading-overlay" role="status" aria-live="polite" aria-busy="false" aria-hidden="true">
+        <div class="loading-card">
+            <div class="loading-spinner" aria-hidden="true"></div>
+            <p id="loading-text" class="loading-text">Загрузка данных...</p>
+            <p class="loading-hint">Это может занять несколько минут</p>
+        </div>
+    </div>
+
+    <!-- Toast-уведомления -->
+    <div id="toast-container" class="toast-container" role="region" aria-label="Уведомления" aria-live="polite"></div>
+
+    <!-- Вход по профилю -->
+    <div id="login-overlay" class="login-overlay open" role="dialog" aria-modal="true" aria-labelledby="login-title">
+        <div class="login-card">
+            <div class="login-brand">
+                <div class="login-brand-logo" aria-hidden="true">
+                    <img src="assets/favicon.svg" alt="" class="brand-plane-icon" width="32" height="32">
+                </div>
+                <div>
+                    <h2 id="login-title" class="login-title">КРАСАВИА</h2>
+                    <p class="login-subtitle">Аналитика загрузок · вход</p>
+                </div>
+            </div>
+            <form id="login-form" class="login-form" autocomplete="on">
+                <label class="login-field" for="login-profile-select">
+                    <span>Профиль</span>
+                    <select id="login-profile-select" class="login-select" name="profile" required></select>
+                </label>
+                <label class="login-field" for="login-password">
+                    <span>Пароль</span>
+                    <input id="login-password" type="password" class="login-input" name="password" placeholder="Введите пароль" autocomplete="current-password" required>
+                </label>
+                <p id="login-error" class="login-error" role="alert" aria-live="assertive"></p>
+                <button id="login-submit-btn" type="submit" class="login-submit">Войти</button>
+                <button type="button" id="login-link-folder" class="login-link-folder">Подключить папку приложения</button>
+            </form>
+
+        </div>
+    </div>
+
+    <!-- Настройки профиля (оформление) -->
+    <div id="profile-settings-modal" class="profile-admin-modal">
+        <div class="profile-admin-backdrop"></div>
+        <div class="profile-admin-panel profile-settings-panel">
+            <div class="profile-admin-header">
+                <div>
+                    <h3>Настройки профиля</h3>
+                    <p class="profile-settings-subtitle">Цвета по вкладкам · порядок кнопок в шапке · пароль</p>
+                </div>
+                <button type="button" id="profile-settings-close" class="profile-admin-close">✕</button>
+            </div>
+            <div id="profile-settings-body" class="profile-admin-body"></div>
+            <div class="profile-admin-footer">
+                <button type="button" id="profile-settings-reset" class="btn-secondary">Сбросить цвета</button>
+                <span class="profile-admin-footer-spacer"></span>
+                <button type="button" id="profile-settings-save" class="btn-primary">Сохранить</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Управление профилями (админ) -->
+    <div id="profile-admin-modal" class="profile-admin-modal">
+        <div class="profile-admin-backdrop"></div>
+        <div class="profile-admin-panel">
+            <div class="profile-admin-header">
+                <h3>Управление профилями</h3>
+                <button type="button" id="profile-admin-close" class="profile-admin-close">✕</button>
+            </div>
+            <div id="profile-admin-body" class="profile-admin-body"></div>
+            <div class="profile-admin-footer">
+                <button type="button" id="profile-link-folder-btn" class="btn-secondary">Подключить папку приложения</button>
+                <span id="profile-shared-status" class="profile-shared-status"></span>
+                <button type="button" id="profile-admin-save" class="btn-primary">Сохранить изменения</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-layout app-locked no-sidebar">
+
+        <main class="main-content main-content-full">
+            
+            <header class="top-nav">
+                <div class="top-nav-bar">
+                    <div class="top-nav-brand">
+                        <span class="top-nav-brand-mark" aria-hidden="true">
+                            <img src="assets/favicon.svg" alt="" class="brand-plane-icon" width="28" height="28">
+                        </span>
+                        <span class="top-nav-brand-text">КРАСАВИА</span>
+                    </div>
+
+                    <div class="top-nav-status">
+                        <div id="header-kpi" class="header-kpi hidden"></div>
+                        <div id="last-update-info" class="last-update hidden">
+                            <span class="last-update-label">Продажи</span>
+                            <span id="last-update-text" class="last-update-value">—</span>
+                        </div>
+                        <span id="data-status-bar" class="data-ready-mark" hidden></span>
+                    </div>
+
+                    <div class="top-nav-aside">
+                        <div class="global-zoom-wrap" id="global-zoom-wrap" title="Масштаб таблицы">
+                            <button type="button" class="global-zoom-btn" id="global-zoom-out" title="Уменьшить">−</button>
+                            <span class="global-zoom-val" id="global-zoom-val">100%</span>
+                            <button type="button" class="global-zoom-btn" id="global-zoom-in" title="Увеличить">+</button>
+                        </div>
+                        <div class="top-nav-session">
+                            <button type="button" id="profile-settings-btn" class="profile-settings-btn" style="display:none" title="Настройки оформления интерфейса">⚙</button>
+                            <button type="button" id="profile-admin-btn" class="profile-admin-btn" style="display:none" title="Управление профилями">Профили</button>
+                            <span id="profile-user-chip" class="profile-user-chip" title="Текущий профиль"></span>
+                            <button type="button" id="profile-logout-btn" class="profile-logout-btn" title="Выйти">Выйти</button>
+                        </div>
+                        <div class="top-nav-load-group">
+                            <button id="restore-data-btn" type="button" onclick="restoreLastData()" class="btn-restore top-nav-load-btn" style="display:none">
+                                Последние
+                            </button>
+                            <button id="load-data-btn" type="button" onclick="autoLoadLatestFiles()" class="btn-primary top-nav-load-btn">
+                                Загрузить
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <nav class="tab-nav" aria-label="Разделы">
+                    <button onclick="switchMainTab('home')" id="tab-home" class="tab-btn" style="display:none">Сеть</button>
+                    <button onclick="switchMainTab('main')" id="tab-main" class="tab-btn tab-active">Графический план</button>
+                    <button onclick="switchMainTab('table')" id="tab-table" class="tab-btn">Динамика продаж</button>
+                    <button onclick="switchMainTab('pkz')" id="tab-pkz" class="tab-btn">ПКЗ</button>
+                    <button onclick="switchMainTab('pair')" id="tab-pair" class="tab-btn">Экономическая таблица</button>
+                    <button onclick="switchMainTab('costs')" id="tab-costs" class="tab-btn">Расчёт расходов</button>
+                    <button onclick="switchMainTab('data')" id="tab-data" class="tab-btn">Загрузка рейсов</button>
+                    <button onclick="switchMainTab('rms')" id="tab-rms" class="tab-btn">RMS</button>
+                    <button onclick="switchMainTab('sales')" id="tab-sales" class="tab-btn">Управление продажами</button>
+                    <button onclick="switchMainTab('stats')" id="tab-stats" class="tab-btn" style="display:none">Статистика</button>
+                </nav>
+            </header>
+
+            <div class="content-area" id="main-content-inner"></div>
+        </main>
+    </div>
+
+    <input type="file" id="folder-input" webkitdirectory multiple hidden>
+
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="js/security.js"></script>
+    <script src="js/routes.js"></script>
+    <script src="js/cities.js"></script>
+    <script src="js/perf-cache.js"></script>
+    <script src="js/core-utils.js"></script>
+    <script src="js/flight-model.js"></script>
+    <script src="js/session.js"></script>
+    <script src="js/availability.js"></script>
+    <script src="js/pair-engine.js"></script>
+    <script src="js/metrics.js"></script>
+    <script src="js/rms-filters.js"></script>
+    <script src="js/data-board-filters.js"></script>
+    <script src="js/shared-storage.js"></script>
+    <script src="js/activity-log.js"></script>
+    <script src="js/profiles.js"></script>
+    <script src="js/tab-order.js"></script>
+    <script src="js/theme-settings.js"></script>
+    <script src="js/baggage-weights.js"></script>
+    <script src="js/route-costs.js"></script>
+    <script src="js/flight-comments.js"></script>
+    <script src="js/shared-overrides.js"></script>
+    <script src="js/sales-sync.js"></script>
+    <script src="js/data-ingest.js"></script>
+    <script src="js/table-views.js"></script>
+    <script src="js/data-board-view.js"></script>
+    <script src="js/table-virtual.js"></script>
+    <script src="js/rms-view.js"></script>
+    <script src="js/network-map.js"></script>
+    <script src="js/timeline-view.js"></script>
+    <script src="js/sales-report.js"></script>
+    <script src="js/excel-export.js"></script>
+    <script src="js/sales-management.js"></script>
+    <script src="js/cost-calc-view.js"></script>
+    <script src="js/selection-bar.js"></script>
+    <script src="js/script.js"></script>
+    <script src="js/rms-hud.js"></script>
+</body>
+</html>
