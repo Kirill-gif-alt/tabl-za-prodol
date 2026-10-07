@@ -1,7 +1,7 @@
 // Порядок вкладок в верхней панели — per profile
 window.TabOrder = (function () {
     const STORAGE_PREFIX = 'krasavia_tab_order_';
-    const DEFAULT_ORDER = ['home', 'main', 'table', 'pkz', 'pair', 'costs', 'data', 'rms', 'sales', 'creative', 'stats'];
+    const DEFAULT_ORDER = ['home', 'main', 'table', 'pkz', 'pair', 'costs', 'data', 'rms', 'sales', 'creative', 'reports', 'stats'];
 
     // как на верхней панели (index.html)
     const LABELS = {
@@ -15,6 +15,7 @@ window.TabOrder = (function () {
         rms: 'RMS',
         sales: 'Управление продажами',
         creative: 'Творческая',
+        reports: 'Отчёты',
         stats: 'Статистика'
     };
 
