@@ -94,10 +94,33 @@ function cityMatchKey(name) {
     return String(name || '').toLowerCase().replace(/[—–\s\-]+/g, '');
 }
 
+// Справочник выше читается, но не меняется во время работы, поэтому разбор названий и
+// наборы городов кэшируются. Без кэша вкладка RMS тратила ~0,7 с на повторный разбор.
+let cityCacheCfg = null;
+let cityNameCache = new Map();
+let cityLookupCache = null;
+
+function cityCacheFor(cfg) {
+    if (cfg === cityCacheCfg) return;
+    cityCacheCfg = cfg;
+    cityNameCache = new Map();
+    cityLookupCache = null;
+}
+
 function canonicalCityName(name) {
+    const cfg = window.CITY_CLASSIFICATION || {};
+    cityCacheFor(cfg);
+    const raw = String(name || '');
+    const hit = cityNameCache.get(raw);
+    if (hit !== undefined) return hit;
+    const out = resolveCanonicalCityName(raw, cfg);
+    cityNameCache.set(raw, out);
+    return out;
+}
+
+function resolveCanonicalCityName(name, cfg) {
     const token = normalizeCityToken(name);
     if (!token) return '';
-    const cfg = window.CITY_CLASSIFICATION || {};
     const aliases = cfg.CITY_ALIASES || {};
     if (aliases[token]) return aliases[token];
     const lower = token.toLowerCase();
@@ -122,10 +145,13 @@ function canonicalCityName(name) {
 
 function buildCityLookup() {
     const cfg = window.CITY_CLASSIFICATION || {};
+    cityCacheFor(cfg);
+    if (cityLookupCache) return cityLookupCache;
     const hub = new Set((cfg.HUB_CITIES || []).map(c => canonicalCityName(c).toLowerCase()));
     const krai = new Set((cfg.KRAI_CITIES || []).map(c => canonicalCityName(c).toLowerCase()));
     const inter = new Set((cfg.INTERREGIONAL_CITIES || []).map(c => canonicalCityName(c).toLowerCase()));
-    return { hub, krai, inter };
+    cityLookupCache = { hub, krai, inter };
+    return cityLookupCache;
 }
 
 function parseDirectionCities(direction) {

@@ -1,0 +1,5 @@
+shared/snapshot.json
+shared/profiles.json
+shared/activity.json
+*.log
+*.crswap

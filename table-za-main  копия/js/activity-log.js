@@ -67,8 +67,17 @@ window.ActivityLog = (function () {
             .slice(0, MAX_EVENTS);
     }
 
-    async function loadAll(force) {
-        if (cache && !force) return cache;
+    // Несколько вызовов подряд при старте ждут одну загрузку, а не качают файл каждый раз.
+    let loadingAll = null;
+
+    function loadAll(force) {
+        if (cache && !force) return Promise.resolve(cache);
+        if (loadingAll) return loadingAll;
+        loadingAll = loadAllNow().finally(() => { loadingAll = null; });
+        return loadingAll;
+    }
+
+    async function loadAllNow() {
 
         let local = [];
         try {
@@ -98,7 +107,23 @@ window.ActivityLog = (function () {
         return cache;
     }
 
-    async function pushToShared() {
+    // Запись в общий файл идёт по одной: повтор с тем же последним событием ждёт текущую,
+    // а с новым событием встаёт в очередь за ней.
+    let pushing = null;
+    let pushingHead = '';
+
+    function pushToShared() {
+        const head = cache && cache[0] ? (cache[0].id || '') : '';
+        if (pushing && pushingHead === head) return pushing;
+        const prev = pushing || Promise.resolve();
+        const job = prev.catch(() => false).then(() => pushToSharedNow());
+        pushing = job;
+        pushingHead = head;
+        job.finally(() => { if (pushing === job) pushing = null; }).catch(() => {});
+        return job;
+    }
+
+    async function pushToSharedNow() {
         if (!cache || typeof SharedStorage === 'undefined') return false;
         const headId = cache[0]?.id || '';
         if (headId && headId === lastPushedHeadId) return true;
