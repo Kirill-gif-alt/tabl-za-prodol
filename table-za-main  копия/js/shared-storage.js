@@ -200,6 +200,7 @@ window.SharedStorage = (function () {
                 hashVer: p.hashVer === 1 ? 1 : 2,
                 showHomeMap: p.showHomeMap === true ? true : (p.showHomeMap === false ? false : undefined),
                 showScreenWidgets: p.showScreenWidgets === true ? true : (p.showScreenWidgets === false ? false : undefined),
+                features: p.features && typeof p.features === 'object' && Object.keys(p.features).length ? { ...p.features } : undefined,
                 salesPermMigrated: p.salesPermMigrated === true ? true : undefined
             }))
         };

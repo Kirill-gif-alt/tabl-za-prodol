@@ -28,6 +28,36 @@ window.ProfileAuth = (function () {
         manage_profiles: { label: 'Управление профилями', group: 'Админ' }
     };
 
+    // Функции, которые админ включает и выключает каждому профилю (и себе) в «Управлении профилями».
+    // def — значение, пока админ ничего не менял. Хранятся в profile.features.
+    const FEATURES = {
+        flight_checks: { label: 'Проверка рейсов (детский −50% на субсидированном рейсе): «!», счётчик в шапке, раздел в «Отчётах»', def: true },
+        header_kpi: { label: 'Продажи и выручка за сегодня в шапке', def: true },
+        rms_header_alerts: { label: 'Счётчик сигналов RMS «⚠» в шапке', def: true },
+        live_flights: { label: 'Самолёты онлайн на карте «Сеть» (Flightradar)', def: true }
+    };
+
+    function normalizeFeatures(src) {
+        const out = {};
+        if (!src || typeof src !== 'object') return out;
+        Object.keys(FEATURES).forEach(key => {
+            if (typeof src[key] === 'boolean') out[key] = src[key];
+        });
+        return out;
+    }
+
+    function resolveFeature(profile, key) {
+        const meta = FEATURES[key];
+        if (!meta) return false;
+        const f = profile && profile.features;
+        if (f && typeof f[key] === 'boolean') return f[key];
+        return meta.def;
+    }
+
+    function featureOn(key) {
+        return resolveFeature(currentProfile, key);
+    }
+
     const TAB_PERM = {
         main: 'tab_main',
         table: 'tab_table',
@@ -312,6 +342,7 @@ window.ProfileAuth = (function () {
                     permissions: Array.isArray(p.permissions) ? [...p.permissions] : [],
                     showHomeMap: p.showHomeMap,
                     showScreenWidgets: p.showScreenWidgets,
+                    features: normalizeFeatures(p.features),
                     hashVer: p.hashVer || 2,
                     salesPermMigrated: p.salesPermMigrated === true ? true : undefined
                 }))
@@ -436,14 +467,40 @@ window.ProfileAuth = (function () {
         return !!profile.isAdmin;
     }
 
-    function homeMapFlagHtml(profileId, checked) {
-        const on = checked ? 'checked' : '';
-        return `<label class="profile-field profile-home-flag"><input type="checkbox" class="profile-home-map-cb" data-home-map="${escAttr(profileId)}" ${on}> Показывать главную страницу (карта сети) при входе</label>`;
+    function featuresBlockHtml(profileId, profile) {
+        const rows = Object.entries(FEATURES).map(([key, meta]) => {
+            const on = resolveFeature(profile, key) ? 'checked' : '';
+            return `<label class="profile-perm-item">
+                <input type="checkbox" class="profile-feature-cb" data-profile-feature="${escAttr(profileId)}" data-feature="${key}" ${on}>
+                <span>${meta.label}</span>
+            </label>`;
+        }).join('');
+        // Карта и виджеты — прежние флаги профиля (те же классы, что читает сохранение), в общем списке.
+        const homeOn = resolveShowHomeMap(profile) ? 'checked' : '';
+        const widgetsOn = resolveScreenWidgets(profile) ? 'checked' : '';
+        return `
+            <div class="profile-perm-group profile-features">
+                <div class="profile-perm-group-title">Функции</div>
+                <div class="profile-perm-grid">
+                    <label class="profile-perm-item">
+                        <input type="checkbox" class="profile-home-map-cb" data-home-map="${escAttr(profileId)}" ${homeOn}>
+                        <span>Главная страница (карта сети) при входе</span>
+                    </label>
+                    <label class="profile-perm-item">
+                        <input type="checkbox" class="profile-screen-widgets-cb" data-screen-widgets="${escAttr(profileId)}" ${widgetsOn}>
+                        <span>Виджеты на экране: сводка и тревожная лента</span>
+                    </label>
+                    ${rows}
+                </div>
+            </div>`;
     }
 
-    function screenWidgetsFlagHtml(profileId, checked) {
-        const on = checked ? 'checked' : '';
-        return `<label class="profile-field profile-home-flag"><input type="checkbox" class="profile-screen-widgets-cb" data-screen-widgets="${escAttr(profileId)}" ${on}> Виджеты на экране: сводка и тревожная лента</label>`;
+    function readFeatureBoxes(profileId) {
+        const out = {};
+        document.querySelectorAll(`.profile-feature-cb[data-profile-feature="${profileId}"]`).forEach(cb => {
+            if (FEATURES[cb.dataset.feature]) out[cb.dataset.feature] = !!cb.checked;
+        });
+        return out;
     }
 
     function canAccessTab(tab) {
@@ -506,7 +563,8 @@ window.ProfileAuth = (function () {
             isAdmin: !!profile.isAdmin,
             permissions: [...(profile.permissions || [])],
             showHomeMap: resolveShowHomeMap(profile),
-            showScreenWidgets: resolveScreenWidgets(profile)
+            showScreenWidgets: resolveScreenWidgets(profile),
+            features: normalizeFeatures(profile.features)
         };
         await saveSession(profile);
         if (typeof ActivityLog !== 'undefined') {
@@ -538,7 +596,8 @@ window.ProfileAuth = (function () {
             isAdmin: !!profile.isAdmin,
             permissions: [...(profile.permissions || [])],
             showHomeMap: resolveShowHomeMap(profile),
-            showScreenWidgets: resolveScreenWidgets(profile)
+            showScreenWidgets: resolveScreenWidgets(profile),
+            features: normalizeFeatures(profile.features)
         };
         return true;
     }
@@ -716,8 +775,7 @@ window.ProfileAuth = (function () {
                 </div>
                 <div class="profile-perms-wrap profile-create-perms">
                     ${renderPermCheckboxes('__new__', ['tab_main', 'tab_sales'], 'profile-create-')}
-                    ${homeMapFlagHtml('__new__', false)}
-                    ${screenWidgetsFlagHtml('__new__', false)}
+                    ${featuresBlockHtml('__new__', { showHomeMap: false, showScreenWidgets: false })}
                 </div>
                 <p id="profile-create-error" class="profile-create-error"></p>
                 <button type="button" id="profile-admin-create" class="profile-create-btn">Создать профиль</button>
@@ -750,8 +808,7 @@ window.ProfileAuth = (function () {
                     <div class="profile-perms-wrap">${isAdminProfile
                         ? `<p class="profile-admin-note">Администратор имеет полный доступ, может создавать профили и редактировать права других.</p>`
                         : permHtml}
-                        ${homeMapFlagHtml(p.id, resolveShowHomeMap(p))}
-                        ${screenWidgetsFlagHtml(p.id, resolveScreenWidgets(p))}
+                        ${featuresBlockHtml(p.id, p)}
                     </div>
                 </div>
             `;
@@ -760,7 +817,7 @@ window.ProfileAuth = (function () {
         body.innerHTML = createSection + cardsHtml;
     }
 
-    async function createProfile(name, password, permissions, showHomeMap, showScreenWidgets) {
+    async function createProfile(name, password, permissions, showHomeMap, showScreenWidgets, features) {
         const trimmed = typeof Security !== 'undefined'
             ? Security.sanitizeTextInput(name, 80)
             : String(name || '').trim();
@@ -780,7 +837,8 @@ window.ProfileAuth = (function () {
             hash: cred.hash,
             hashVer: cred.hashVer || 2,
             showHomeMap: !!showHomeMap,
-            showScreenWidgets: !!showScreenWidgets
+            showScreenWidgets: !!showScreenWidgets,
+            features: normalizeFeatures(features)
         };
         profilesCache.push(profile);
         await saveProfiles(false);
@@ -809,7 +867,8 @@ window.ProfileAuth = (function () {
                 password,
                 perms,
                 !!(homeCb && homeCb.checked),
-                !!(widgetsCb && widgetsCb.checked)
+                !!(widgetsCb && widgetsCb.checked),
+                readFeatureBoxes('__new__')
             );
             if (!result.ok) {
                 if (errEl) errEl.textContent = result.error;
@@ -943,6 +1002,9 @@ window.ProfileAuth = (function () {
                 if (homeCb) p.showHomeMap = !!homeCb.checked;
                 const widgetsCb = document.querySelector(`.profile-screen-widgets-cb[data-screen-widgets="${p.id}"]`);
                 if (widgetsCb) p.showScreenWidgets = !!widgetsCb.checked;
+                if (document.querySelector(`.profile-feature-cb[data-profile-feature="${p.id}"]`)) {
+                    p.features = { ...normalizeFeatures(p.features), ...readFeatureBoxes(p.id) };
+                }
             }
 
             await saveProfiles(false);
@@ -962,8 +1024,11 @@ window.ProfileAuth = (function () {
                     currentProfile.isAdmin = !!updated.isAdmin;
                     currentProfile.showHomeMap = resolveShowHomeMap(updated);
                     currentProfile.showScreenWidgets = resolveScreenWidgets(updated);
+                    currentProfile.features = normalizeFeatures(updated.features);
                 }
             }
+            // Значки и шапка зависят от функций профиля — перерисовать открытые таблицы.
+            if (typeof invalidateTabPanelState === 'function') invalidateTabPanelState();
 
             applyPermissions();
             updateSharedStatus();
@@ -1056,6 +1121,8 @@ window.ProfileAuth = (function () {
         changeOwnPassword,
         setShowHomeMap,
         screenWidgetsOn: () => resolveScreenWidgets(currentProfile),
+        featureOn,
+        FEATURES,
         PERMISSIONS
     };
 })();

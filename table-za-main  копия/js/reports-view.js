@@ -407,12 +407,12 @@ window.ReportsView = (function () {
     // ---------- проверка рейсов ----------
 
     function checksList() {
-        if (typeof FlightChecks === 'undefined' || !hasData()) return [];
+        if (typeof FlightChecks === 'undefined' || !FlightChecks.enabled() || !hasData()) return [];
         return FlightChecks.list();
     }
 
     function checksHtml() {
-        if (typeof FlightChecks === 'undefined') return '';
+        if (typeof FlightChecks === 'undefined' || !FlightChecks.enabled()) return '';
         const title = esc(FlightChecks.RULE_TITLE);
         if (!hasData()) {
             return `<section class="rp-card rp-checks" id="rp-checks"><div class="rp-card-head"><h3 class="rp-card-title">Проверка рейсов</h3></div><p class="rp-note">Данных нет — нажмите «Загрузить» или «Последние».</p></section>`;
@@ -442,7 +442,7 @@ window.ReportsView = (function () {
                     <h3 class="rp-card-title"><span class="fc-flag fc-flag-big" aria-hidden="true"></span> Проверка рейсов</h3>
                     <button type="button" class="btn-primary rp-btn" id="rp-checks-export"${all.length && hasPerm('export_excel') ? '' : ' disabled'}>В Excel</button>
                 </div>
-                <p class="rp-card-text">${title}: субсидированный рейс (как в «Экономической таблице»), на котором продан детский тариф со скидкой 50% (код тарифа …/CN50). Такой рейс помечен «!» в «Загрузке рейсов», «Экономической таблице» и «Динамике продаж».</p>
+                <p class="rp-card-text">${title}: межрегиональный рейс с субсидией в «Экономической таблице» (сумма больше 0), на котором продан детский тариф со скидкой 50% (код тарифа …/CN50). Краевые рейсы не проверяются — они не субсидированные. Такой рейс помечен «!» в «Загрузке рейсов», «Экономической таблице» и «Динамике продаж».</p>
                 <p class="rp-note">${summary}</p>
                 ${all.length ? `
                 <label class="rp-check"><input type="checkbox" id="rp-checks-future"${checksFutureOnly ? ' checked' : ''}> только рейсы до вылета</label>
@@ -563,8 +563,9 @@ window.ReportsView = (function () {
         const today = typeof getTodayDate === 'function' ? getTodayDate() : '';
         const prof = typeof ProfileAuth !== 'undefined' && ProfileAuth.getCurrentProfile ? (ProfileAuth.getCurrentProfile()?.id || '') : '';
         const rows = typeof allData !== 'undefined' && allData ? allData.length : 0;
+        const checksOn = typeof FlightChecks !== 'undefined' && FlightChecks.enabled() ? 1 : 0;
         const checks = checksList().map(i => i.code + i.date).join(',');
-        return [epoch, today, prof, rows, checks].join('|');
+        return [epoch, today, prof, rows, checksOn, checks].join('|');
     }
 
     function create(panel) {

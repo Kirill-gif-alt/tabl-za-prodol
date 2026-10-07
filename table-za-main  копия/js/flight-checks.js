@@ -1,13 +1,19 @@
 // Проверки рейсов на ошибки в продажах.
 // Сейчас одна проверка: субсидированный рейс, на котором продан детский тариф со скидкой 50%
-// (код тарифа …/CN50). Субсидированность — как в «Экономической таблице»: ручная правка субсидии,
-// иначе файл расходов и периодов субсидий (RouteCosts.lookup).
+// (код тарифа …/CN50). Субсидированный — только межрегиональный рейс, у которого в «Экономической
+// таблице» есть сумма субсидии: ручная правка, иначе сумма из файла расходов и периодов субсидий.
+// Краевые рейсы не субсидированные.
 // Значок «!» ставится у рейса в «Загрузке рейсов», «Экономической таблице» и «Динамике продаж»,
 // полный список — во вкладке «Отчёты», счётчик — в шапке.
 window.FlightChecks = (function () {
     const RULE_TITLE = 'Детский тариф −50% на субсидированном рейсе';
 
     let cache = { epoch: -1, details: null, grouped: null, all: null, candidates: new Map() };
+
+    // Админ включает и выключает проверку каждому профилю в «Управлении профилями» → «Функции».
+    function enabled() {
+        return typeof ProfileAuth === 'undefined' || typeof ProfileAuth.featureOn !== 'function' || ProfileAuth.featureOn('flight_checks');
+    }
 
     function isChild50(sale) {
         if (!sale || typeof extractDiscountPercent !== 'function') return false;
@@ -45,16 +51,14 @@ window.FlightChecks = (function () {
 
     // Субсидия проверяется на лету: правка субсидии в «Экономической таблице» сразу меняет результат.
     function subsidyInfo(c) {
+        const inter = typeof getFlightRouteType === 'function' && getFlightRouteType(c.code) === 'interregional';
         if (typeof SharedOverrides !== 'undefined' && SharedOverrides.hasSubsidy(c.code, c.date)) {
-            const amount = SharedOverrides.getSubsidy(c.code, c.date) || 0;
-            return { subsidized: amount !== 0, source: 'ручная правка', amount };
+            const amount = Number(SharedOverrides.getSubsidy(c.code, c.date)) || 0;
+            return { subsidized: inter && amount > 0, source: 'ручная правка', amount };
         }
         const econ = typeof RouteCosts !== 'undefined' && RouteCosts.lookup ? RouteCosts.lookup(c.row, c.code, c.date) : null;
-        return {
-            subsidized: !!(econ && econ.subsidized),
-            source: 'файл субсидий',
-            amount: econ ? (econ.subsidyOneWay || 0) : 0
-        };
+        const amount = econ ? (Number(econ.subsidyOneWay) || 0) : 0;
+        return { subsidized: inter && amount > 0, source: 'файл субсидий', amount };
     }
 
     function stateOf(c) {
@@ -114,7 +118,7 @@ window.FlightChecks = (function () {
     }
 
     function flagForRow(row) {
-        if (!row || !row[0] || !row[1]) return '';
+        if (!enabled() || !row || !row[0] || !row[1]) return '';
         const issue = issueFor(row[0], row[1]);
         if (!issue) return '';
         const tip = `${RULE_TITLE}. ${issue.text}`;
@@ -127,7 +131,7 @@ window.FlightChecks = (function () {
     }
 
     function rowClass(rows) {
-        return rowsHaveIssue(rows) ? ' fc-row-problem' : '';
+        return enabled() && rowsHaveIssue(rows) ? ' fc-row-problem' : '';
     }
 
     function canOpenReport() {
@@ -145,6 +149,7 @@ window.FlightChecks = (function () {
 
     // Счётчик в шапке: показывает только ошибки по рейсам, которые ещё не улетели.
     function headerChip() {
+        if (!enabled()) return null;
         const open = list().filter(i => i.state !== 'Улетел');
         if (!open.length) return null;
         const chip = document.createElement('span');
@@ -155,5 +160,5 @@ window.FlightChecks = (function () {
         return chip;
     }
 
-    return { list, issueFor, flagForRow, rowClass, headerChip, openReport, RULE_TITLE };
+    return { enabled, list, issueFor, flagForRow, rowClass, headerChip, openReport, RULE_TITLE };
 })();

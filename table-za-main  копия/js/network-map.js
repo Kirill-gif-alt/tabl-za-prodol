@@ -1443,9 +1443,18 @@ window.NetworkMap = (function () {
         }, { passive: false });
     }
 
+    // Админ выключает эфир профилю в «Управлении профилями» → «Функции»: тогда Flightradar не опрашивается.
+    function liveFeatureOn() {
+        return typeof ProfileAuth === 'undefined' || typeof ProfileAuth.featureOn !== 'function' || ProfileAuth.featureOn('live_flights');
+    }
+
     function updateLiveBadge() {
         const el = document.getElementById('nmap-live');
         if (!el) return;
+        if (!liveFeatureOn()) {
+            el.hidden = true;
+            return;
+        }
         if (!isLiveDay()) {
             el.hidden = false;
             el.className = 'nmap-live is-off';
@@ -1488,7 +1497,8 @@ window.NetworkMap = (function () {
     }
 
     function syncLive() {
-        const on = isLiveDay()
+        const on = liveFeatureOn()
+            && isLiveDay()
             && canvas
             && (typeof currentTab === 'undefined' || currentTab === 'home')
             && !(typeof document !== 'undefined' && document.hidden);

@@ -255,6 +255,7 @@ function updateHeaderStatus() {
     }
     if (window.ingestQuiet) return;
     if (kpiBar && Object.keys(groupedData).length) {
+        const featureOn = (key) => typeof ProfileAuth === 'undefined' || typeof ProfileAuth.featureOn !== 'function' || ProfileAuth.featureOn(key);
         const k = getGlobalKPIs();
         const salesReady = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(dataLoadStatus && dataLoadStatus.sales);
         const sales = Number(k.todaySales) || 0;
@@ -270,8 +271,8 @@ function updateHeaderStatus() {
             wrap.append(b, document.createTextNode(' ' + rest));
             return wrap;
         };
-        kpiBar.append(item(salesReady ? sales : '—', 'продаж'), item(salesReady ? (revK + 'к') : '—', '₽'));
-        if (alerts) {
+        if (featureOn('header_kpi')) kpiBar.append(item(salesReady ? sales : '—', 'продаж'), item(salesReady ? (revK + 'к') : '—', '₽'));
+        if (alerts && featureOn('rms_header_alerts')) {
             const al = document.createElement('span');
             al.className = 'header-kpi-alert';
             al.textContent = '⚠ ' + alerts;
@@ -280,7 +281,7 @@ function updateHeaderStatus() {
         }
         const checkChip = typeof FlightChecks !== 'undefined' ? FlightChecks.headerChip() : null;
         if (checkChip) kpiBar.append(checkChip);
-        kpiBar.classList.remove('hidden');
+        kpiBar.classList.toggle('hidden', !kpiBar.childElementCount);
     }
 }
 
