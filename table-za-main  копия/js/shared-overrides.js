@@ -7,6 +7,8 @@ window.SharedOverrides = (function () {
 
     let subsidy = {};
     let pkzNav = {};
+    // Растёт при каждой загрузке и правке субсидии: по нему проверки рейсов понимают, что пора пересчитать.
+    let subsidyRev = 0;
 
     function cleanCode(flight) {
         return typeof cleanFlight === 'function' ? cleanFlight(flight) : String(flight || '');
@@ -140,6 +142,7 @@ window.SharedOverrides = (function () {
     async function load() {
         subsidy = await loadOne(SUB_FILE, SUB_LOCAL);
         pkzNav = await loadOne(NAV_FILE, NAV_LOCAL);
+        subsidyRev++;
         return true;
     }
 
@@ -169,6 +172,7 @@ window.SharedOverrides = (function () {
             if (!rec) delete subsidy[k];
             else subsidy[k] = rec;
         }
+        subsidyRev++;
         await persist(SUB_FILE, SUB_LOCAL, subsidy);
         return true;
     }
@@ -196,6 +200,7 @@ window.SharedOverrides = (function () {
 
     return {
         load,
+        subsidyRevision: () => subsidyRev,
         hasSubsidy,
         getSubsidy,
         setSubsidy,

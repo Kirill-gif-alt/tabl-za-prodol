@@ -6407,3 +6407,109 @@ tr.fc-row-problem > td:first-child {
     padding: 2px 10px;
     font-size: 0.75rem;
 }
+
+/* ===== Справочник субсидированных тарифов ===== */
+.rp-refs {
+    border-color: #fcd34d;
+}
+
+.rp-refs-table td {
+    text-align: center;
+    vertical-align: top;
+}
+
+.rp-sub-line {
+    font-size: 0.72rem;
+    font-weight: 400;
+    color: var(--text-muted);
+}
+
+.rp-muted {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+.rp-danger {
+    color: #b91c1c;
+    border-color: #fca5a5;
+}
+
+.rp-chip {
+    display: inline-block;
+    margin: 2px 2px;
+    padding: 1px 8px;
+    border: 1px solid #fca5a5;
+    border-radius: 999px;
+    background: #fff;
+    color: #b91c1c;
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+span.rp-chip {
+    cursor: default;
+}
+
+.rp-ref-form {
+    margin-top: 12px;
+    padding: 10px 12px;
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    background: var(--muted-bg);
+}
+
+.rp-ref-form-title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+
+.rp-ref-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 8px 10px;
+    align-items: end;
+}
+
+.rp-ref-grid label {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.rp-ref-grid label.rp-ref-pair {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 6px;
+    color: var(--text);
+}
+
+.rp-ref-grid .rp-ref-note {
+    grid-column: span 2;
+}
+
+.rp-ref-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.rp-ref-error {
+    color: #b91c1c;
+    font-size: 0.8rem;
+}
+
+.rp-rule-fare_above_subsidy {
+    color: #9a3412;
+    font-weight: 600;
+}
+
+.rp-rule-child50_subsidy {
+    color: #b91c1c;
+    font-weight: 600;
+}

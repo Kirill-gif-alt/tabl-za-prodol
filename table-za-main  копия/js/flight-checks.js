@@ -1,12 +1,17 @@
-// Проверки рейсов на ошибки в продажах.
-// Сейчас одна проверка: субсидированный рейс, на котором продан детский тариф со скидкой 50%
-// (код тарифа …/CN50). Субсидированный — только межрегиональный рейс, у которого в «Экономической
-// таблице» есть сумма субсидии: ручная правка, иначе сумма из файла расходов и периодов субсидий.
-// Краевые рейсы не субсидированные.
+// Проверки рейсов на ошибки в продажах. Проверяются только субсидированные рейсы:
+// межрегиональный рейс, у которого в «Экономической таблице» есть сумма субсидии (ручная правка,
+// иначе сумма из файла расходов и периодов субсидий). Краевые рейсы не субсидированные.
+// Правила:
+//   child50_subsidy    — продан детский тариф со скидкой 50% (код тарифа …/CN50);
+//   fare_above_subsidy — продан билет дороже предела из справочника субсидированных тарифов (fare-refs.js).
 // Значок «!» ставится у рейса в «Загрузке рейсов», «Экономической таблице» и «Динамике продаж»,
 // полный список — во вкладке «Отчёты», счётчик — в шапке.
 window.FlightChecks = (function () {
-    const RULE_TITLE = 'Детский тариф −50% на субсидированном рейсе';
+    const RULE_TITLE = 'Проверка рейсов';
+    const RULES = {
+        child50_subsidy: { title: 'Детский тариф −50% на субсидированном рейсе', short: 'Детский −50%' },
+        fare_above_subsidy: { title: 'Тариф выше субсидированного', short: 'Выше субсидированного тарифа' }
+    };
 
     let cache = { epoch: -1, details: null, grouped: null, all: null, candidates: new Map() };
 
@@ -15,13 +20,17 @@ window.FlightChecks = (function () {
         return typeof ProfileAuth === 'undefined' || typeof ProfileAuth.featureOn !== 'function' || ProfileAuth.featureOn('flight_checks');
     }
 
+    function isChild(sale) {
+        return typeof isChildSaleRecord === 'function' ? isChildSaleRecord(sale) : false;
+    }
+
     function isChild50(sale) {
         if (!sale || typeof extractDiscountPercent !== 'function') return false;
         if (extractDiscountPercent(sale.basicFareStr) !== 50) return false;
         return typeof isChildSaleRecord === 'function' ? isChildSaleRecord(sale) : true;
     }
 
-    // Тяжёлая часть — поиск билетов …/CN50 в продажах; пересчитывается только после загрузки данных.
+    // Вылеты с продажами; пересчитывается только после загрузки данных.
     function candidates() {
         const epoch = typeof dataEpoch === 'number' ? dataEpoch : 0;
         const details = typeof salesDetails !== 'undefined' ? salesDetails : null;
@@ -38,18 +47,17 @@ window.FlightChecks = (function () {
             rows.forEach(row => {
                 if (!row || !row[0] || !row[1]) return;
                 if (first && typeof shouldAttachSalesToRowCached === 'function' && !shouldAttachSalesToRowCached(row, first)) return;
-                const list = typeof getSalesDetailsForRow === 'function' ? (getSalesDetailsForRow(row) || []) : [];
-                const hits = list.filter(isChild50);
-                if (!hits.length) return;
+                const sales = typeof getSalesDetailsForRow === 'function' ? (getSalesDetailsForRow(row) || []) : [];
+                if (!sales.length) return;
                 const code = cleanFlight(row[0]);
-                map.set(code + '|' + row[1], { code, date: row[1], base, row, hits });
+                map.set(code + '|' + row[1], { code, date: row[1], base, row, sales, memo: null });
             });
         });
         cache = { epoch, details, grouped, all, candidates: map };
         return map;
     }
 
-    // Субсидия проверяется на лету: правка субсидии в «Экономической таблице» сразу меняет результат.
+    // Субсидия проверяется по текущим правкам: правка в «Экономической таблице» сразу меняет результат.
     function subsidyInfo(c) {
         const inter = typeof getFlightRouteType === 'function' && getFlightRouteType(c.code) === 'interregional';
         if (typeof SharedOverrides !== 'undefined' && SharedOverrides.hasSubsidy(c.code, c.date)) {
@@ -69,65 +77,135 @@ window.FlightChecks = (function () {
         return d && d < today ? 'Улетел' : 'Открыт';
     }
 
-    function issueOf(c) {
-        const sub = subsidyInfo(c);
-        if (!sub.subsidized) return null;
-        const fares = [];
-        let paid = 0;
-        c.hits.forEach(s => {
-            const f = String(s.basicFareStr || '').trim();
-            if (f && fares.indexOf(f) === -1) fares.push(f);
-            paid += Number(s.fare) || 0;
-        });
-        const n = c.hits.length;
-        return {
-            rule: 'child50_subsidy',
-            title: RULE_TITLE,
-            code: c.code,
-            base: c.base,
-            date: c.date,
-            direction: typeof getFlightDirection === 'function' ? getFlightDirection(c.code) : c.code,
-            state: stateOf(c),
-            count: n,
-            fares,
-            paid,
-            subsidySource: sub.source,
-            subsidyAmount: sub.amount,
-            text: `${c.code} ${c.date}: субсидированный рейс, продано детских билетов со скидкой 50% — ${n} (${fares.join(', ')})`
-        };
+    function rub(n) {
+        return typeof formatRub === 'function' ? formatRub(n) : Math.round(n) + ' ₽';
     }
 
-    function issueFor(code, date) {
-        const c = candidates().get(cleanFlight(code) + '|' + date);
-        return c ? issueOf(c) : null;
-    }
-
-    function list() {
+    function faresOf(list) {
         const out = [];
-        candidates().forEach(c => {
-            const issue = issueOf(c);
-            if (issue) out.push(issue);
-        });
-        out.sort((a, b) => {
-            const da = parseLocalDate(a.date);
-            const db = parseLocalDate(b.date);
-            const t = (da ? da.getTime() : 0) - (db ? db.getTime() : 0);
-            return t || String(a.code).localeCompare(String(b.code), 'ru', { numeric: true });
+        list.forEach(s => {
+            const f = String(s.basicFareStr || '').trim();
+            if (f && out.indexOf(f) === -1) out.push(f);
         });
         return out;
     }
 
+    function limitFor(sale, ref) {
+        return isChild(sale) && ref.child != null ? ref.child : ref.adult;
+    }
+
+    function overLimit(sale, ref) {
+        const paid = Number(sale && sale.fare) || 0;
+        if (paid <= 0) return false;
+        return Math.round(paid) > Math.round(limitFor(sale, ref));
+    }
+
+    function revisionToken() {
+        const refs = typeof FareRefs !== 'undefined' ? FareRefs.revision() : 0;
+        const subs = typeof SharedOverrides !== 'undefined' && SharedOverrides.subsidyRevision ? SharedOverrides.subsidyRevision() : 0;
+        const today = typeof getTodayDate === 'function' ? getTodayDate() : '';
+        return refs + '|' + subs + '|' + today;
+    }
+
+    function evaluate(c) {
+        const token = revisionToken();
+        if (c.memo && c.memo.token === token) return c.memo;
+        const sub = subsidyInfo(c);
+        const issues = [];
+        let ref = null;
+        if (sub.subsidized) {
+            const common = {
+                code: c.code,
+                base: c.base,
+                date: c.date,
+                direction: typeof getFlightDirection === 'function' ? getFlightDirection(c.code) : c.code,
+                state: stateOf(c),
+                subsidySource: sub.source,
+                subsidyAmount: sub.amount
+            };
+            const hits = c.sales.filter(isChild50);
+            if (hits.length) {
+                const fares = faresOf(hits);
+                issues.push({
+                    ...common,
+                    rule: 'child50_subsidy',
+                    title: RULES.child50_subsidy.title,
+                    count: hits.length,
+                    fares,
+                    paid: hits.reduce((a, s) => a + (Number(s.fare) || 0), 0),
+                    detail: `детских билетов со скидкой 50% — ${hits.length} (${fares.join(', ')})`
+                });
+            }
+            ref = typeof FareRefs !== 'undefined' ? FareRefs.match(c.code, c.date) : null;
+            if (ref) {
+                const over = c.sales.filter(s => overLimit(s, ref));
+                if (over.length) {
+                    const fares = faresOf(over);
+                    const maxPaid = over.reduce((a, s) => Math.max(a, Number(s.fare) || 0), 0);
+                    const limits = ref.child != null ? `взрослый ${rub(ref.adult)}, детский ${rub(ref.child)}` : rub(ref.adult);
+                    issues.push({
+                        ...common,
+                        rule: 'fare_above_subsidy',
+                        title: RULES.fare_above_subsidy.title,
+                        count: over.length,
+                        fares,
+                        paid: over.reduce((a, s) => a + (Number(s.fare) || 0), 0),
+                        maxPaid,
+                        limit: ref.adult,
+                        childLimit: ref.child,
+                        refCode: ref.fareCode,
+                        detail: `билетов дороже предела ${limits}${ref.fareCode ? ' (' + ref.fareCode + ')' : ''} — ${over.length}, максимум ${rub(maxPaid)} (${fares.join(', ')})`
+                    });
+                }
+            }
+        }
+        issues.forEach(i => { i.text = `${i.code} ${i.date}: ${i.title.toLowerCase()} — ${i.detail}`; });
+        c.memo = { token, issues, subsidized: sub.subsidized, hasRef: !!ref };
+        return c.memo;
+    }
+
+    function issuesFor(code, date) {
+        const c = candidates().get(cleanFlight(code) + '|' + date);
+        return c ? evaluate(c).issues : [];
+    }
+
+    function issueFor(code, date) {
+        return issuesFor(code, date)[0] || null;
+    }
+
+    function list() {
+        const out = [];
+        candidates().forEach(c => { evaluate(c).issues.forEach(i => out.push(i)); });
+        out.sort((a, b) => {
+            const da = parseLocalDate(a.date);
+            const db = parseLocalDate(b.date);
+            const t = (da ? da.getTime() : 0) - (db ? db.getTime() : 0);
+            return t || String(a.code).localeCompare(String(b.code), 'ru', { numeric: true }) || String(a.rule).localeCompare(String(b.rule));
+        });
+        return out;
+    }
+
+    // Субсидированные рейсы с продажами до вылета, для которых в справочнике нет тарифа.
+    function missingRefs() {
+        const codes = new Set();
+        candidates().forEach(c => {
+            const ev = evaluate(c);
+            if (ev.subsidized && !ev.hasRef && stateOf(c) !== 'Улетел') codes.add(c.code);
+        });
+        return [...codes].sort((a, b) => (parseInt(a.slice(3), 10) || 0) - (parseInt(b.slice(3), 10) || 0));
+    }
+
     function flagForRow(row) {
         if (!enabled() || !row || !row[0] || !row[1]) return '';
-        const issue = issueFor(row[0], row[1]);
-        if (!issue) return '';
-        const tip = `${RULE_TITLE}. ${issue.text}`;
+        const issues = issuesFor(row[0], row[1]);
+        if (!issues.length) return '';
+        const tip = issues.map(i => `${i.title}: ${i.text}`).join('\n');
         const esc = typeof escAttr === 'function' ? escAttr : (v) => String(v);
         return `<span class="fc-flag" role="img" aria-label="${esc(tip)}" title="${esc(tip)}"></span>`;
     }
 
     function rowsHaveIssue(rows) {
-        return (rows || []).some(row => row && row[0] && row[1] && !!issueFor(row[0], row[1]));
+        return (rows || []).some(row => row && row[0] && row[1] && issuesFor(row[0], row[1]).length > 0);
     }
 
     function rowClass(rows) {
@@ -147,18 +225,24 @@ window.FlightChecks = (function () {
         });
     }
 
-    // Счётчик в шапке: показывает только ошибки по рейсам, которые ещё не улетели.
+    // Счётчик в шапке: число рейсов с ошибкой, которые ещё не улетели.
     function headerChip() {
         if (!enabled()) return null;
-        const open = list().filter(i => i.state !== 'Улетел');
-        if (!open.length) return null;
+        const flights = new Set(list().filter(i => i.state !== 'Улетел').map(i => i.code + '|' + i.date));
+        if (!flights.size) return null;
         const chip = document.createElement('span');
         chip.className = 'header-kpi-error';
-        chip.textContent = '! ' + open.length;
-        chip.title = `${RULE_TITLE}: ${open.length} рейс(ов) до вылета. Нажмите, чтобы открыть отчёт.`;
+        chip.textContent = '! ' + flights.size;
+        chip.title = `Проверка рейсов: ${flights.size} рейс(ов) с ошибкой до вылета. Нажмите, чтобы открыть отчёт.`;
         if (canOpenReport()) chip.addEventListener('click', openReport);
         return chip;
     }
 
-    return { enabled, list, issueFor, flagForRow, rowClass, headerChip, openReport, RULE_TITLE };
+    // После правки справочника или субсидии: пересчитать значки в открытых таблицах и шапке.
+    function refreshViews() {
+        if (typeof invalidateTabPanelState === 'function') invalidateTabPanelState();
+        if (typeof updateHeaderStatus === 'function') updateHeaderStatus();
+    }
+
+    return { enabled, list, issuesFor, issueFor, missingRefs, flagForRow, rowClass, headerChip, openReport, refreshViews, RULES, RULE_TITLE };
 })();

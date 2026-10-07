@@ -12,6 +12,7 @@ window.ActivityLog = (function () {
         data_restore: 'Восстановление данных',
         data_share: 'Публикация данных',
         export: 'Экспорт',
+        fare_refs: 'Справочник тарифов',
         password_self: 'Смена своего пароля',
         password_admin: 'Смена пароля (админ)',
         profile_create: 'Создание профиля',
