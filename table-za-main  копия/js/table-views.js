@@ -336,7 +336,8 @@ function actuallyRenderTable(base,targetDate=null){
             : `<td class="col-comment"><span class="comment-mark-empty">—</span></td>`;
 
         const status=(closed||flew)?(closed?'<span class="closed-text">ЗАКРЫТ</span>':'<span class="flew-text">УЛЕТЕЛ</span>'):(pct==null?'—':`<span class="${pct>=75?'occupancy-high':'occupancy-med'}">${pct}%</span>`);
-        const dateCell=extra?`${escHtml(date)} <span class="font-semibold">${escHtml(orig)}</span> <span class="extra-badge ml-1">(ДОП)</span>`:escHtml(date);
+        const checkFlag = typeof FlightChecks !== 'undefined' ? FlightChecks.flagForRow(row) : '';
+        const dateCell=(extra?`${escHtml(date)} <span class="font-semibold">${escHtml(orig)}</span> <span class="extra-badge ml-1">(ДОП)</span>`:escHtml(date))+checkFlag;
         const segmentCell=hasSegments&&showRoute?`<span class="segment-cell"><span class="segment-route">${escHtml(formatRouteDisplay(route))}</span></span>`:'';
         const ac=getAircraftType(row[4]);
         let expectedCells = '';
@@ -354,7 +355,7 @@ function actuallyRenderTable(base,targetDate=null){
         const salesReady = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(typeof dataLoadStatus !== 'undefined' && dataLoadStatus.sales);
         const sc = (v) => (showSales && salesReady) ? formatNum(v || 0) : '—';
 
-        rowHtmls.push(`<tr class="${cls}${showRoute ? ' segment-row' : ''}" data-date="${escAttr(date)}" data-flight-base="${escAttr(base)}" data-flight-code="${escAttr(orig)}" data-route="${showRoute ? escAttr(route) : ''}" style="cursor: pointer;">
+        rowHtmls.push(`<tr class="${cls}${showRoute ? ' segment-row' : ''}${checkFlag ? ' fc-row-problem' : ''}" data-date="${escAttr(date)}" data-flight-base="${escAttr(base)}" data-flight-code="${escAttr(orig)}" data-route="${showRoute ? escAttr(route) : ''}" style="cursor: pointer;">
             <td class="col-date">${dateCell}</td><td class="font-medium">${escHtml(getDayOfWeek(date))}</td>${hasSegments ? `<td>${segmentCell}</td>` : ''}<td class="font-semibold">${escHtml(ac)}</td>
             <td class="font-semibold">${formatNum(seatsOnSale)}</td>
             ${showBook ? `<td class="font-semibold col-spec-book">${formatNum(avs)}</td>` : ''}
@@ -634,7 +635,7 @@ function actuallyRenderPairTable(selectedBase, targetDate = null) {
 
         const rowFlightCode = outM.flightBase || inM.flightBase || '';
         const rowFlightBase = rowFlightCode ? getBaseFlight(rowFlightCode) : selectedBase;
-        rowHtmls.push(`<tr class="${rowCls}${showRoute ? ' segment-row' : ''}" data-date="${escAttr(date)}" data-flight-base="${escAttr(rowFlightBase)}" data-flight-code="${escAttr(rowFlightCode)}" style="cursor: pointer;">
+        rowHtmls.push(`<tr class="${rowCls}${showRoute ? ' segment-row' : ''}${typeof FlightChecks !== 'undefined' ? FlightChecks.rowClass([outRow, inRow]) : ''}" data-date="${escAttr(date)}" data-flight-base="${escAttr(rowFlightBase)}" data-flight-code="${escAttr(rowFlightCode)}" style="cursor: pointer;">
             <td class="col-date font-semibold">${dateCell}</td>
             <td class="font-medium">${escHtml(formatPairDayOfWeek(outRow, inRow, date))}</td>
             ${hasSegments ? `<td>${segmentCell}</td>` : ''}

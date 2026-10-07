@@ -118,7 +118,10 @@ function pairFlightNumHtml(row, pairCode, dirCls) {
 function buildPairRowDateCell(date, outRow, inRow, outbound, inbound) {
     const label = formatPairDateLabel(outRow, inRow, date);
     const overnight = !!(outRow?.[1] && inRow?.[1] && outRow[1] !== inRow[1]);
-    const dateHtml = `<span class="pair-date-val${overnight ? ' pair-date-overnight' : ''}">${escHtml(label)}</span>`;
+    const flags = typeof FlightChecks !== 'undefined'
+        ? [outRow, inRow].map(r => FlightChecks.flagForRow(r)).join('')
+        : '';
+    const dateHtml = `<span class="pair-date-val${overnight ? ' pair-date-overnight' : ''}">${escHtml(label)}</span>${flags}`;
     const nums = [
         pairFlightNumHtml(outRow, outbound, 'pair-flight-out'),
         pairFlightNumHtml(inRow, inbound, 'pair-flight-in')
