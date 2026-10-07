@@ -3,6 +3,8 @@
 // страница перечитывает файл каждые 30 минут. Запись проходит, если папка приложения подключена.
 // «С» у строк и столбцов не сдвигается само. «По» у строк растёт до позднего вылета.
 // Столбцы заполнения кончаются сегодня: слева сегодня, вправо более ранние дни. Завтра новый день встаёт слева.
+// Вылет, который ещё не улетел, повторяет загрузку: перенос даты убирает старую строку, тип ВС берётся свежий.
+// Улетевшие вылеты остаются как были.
 window.SalesManagement = (function () {
     const FILE = 'sales-management.json';
     const LOCAL_KEY = 'krasavia_sales_mgmt_v1';
@@ -42,6 +44,7 @@ window.SalesManagement = (function () {
     let loadedAt = 0;
     let builtFlights = null;
     let builtFlightKey = '';
+    let liveSchedule = null;
 
     function statusOk(status) {
         return !!STATUSES[status];
@@ -249,6 +252,52 @@ window.SalesManagement = (function () {
         return base;
     }
 
+    function readLiveSchedule(grouped) {
+        const items = new Map();
+        let from = '';
+        let to = '';
+        Object.keys(grouped || {}).forEach(bucket => {
+            (grouped[bucket] || []).forEach(row => {
+                if (!row || !row[0] || !row[1]) return;
+                const code = operatingCode(row[0]);
+                const date = dateOnly(row[1]);
+                if (!code || !date) return;
+                const raw = typeof getAircraftType === 'function' ? getAircraftType(row[4]) : (row[4] || '—');
+                const aircraft = raw && raw !== '-' ? raw : '—';
+                const id = code + '|' + date;
+                const prev = items.get(id);
+                if (!prev) items.set(id, { code, date, aircraft });
+                else if (prev.aircraft === '—' && aircraft !== '—') prev.aircraft = aircraft;
+                from = earlierDate(from, date);
+                to = laterDate(to, date);
+            });
+        });
+        return items.size ? { items, from, to } : null;
+    }
+
+    // Не улетевшие вылеты в пределах дат загрузки сверяются с ней: лишние уходят, тип ВС переписывается.
+    function syncWithLive(map) {
+        if (!liveSchedule || !map || typeof compareDateStr !== 'function') return false;
+        const today = startOfToday();
+        let changed = false;
+        Object.keys(map).forEach(id => {
+            const item = map[id];
+            if (!item || !item.date || isFlownDate(item.date, today)) return;
+            if (compareDateStr(item.date, liveSchedule.from) < 0 || compareDateStr(item.date, liveSchedule.to) > 0) return;
+            const live = liveSchedule.items.get(id);
+            if (!live) {
+                delete map[id];
+                changed = true;
+                return;
+            }
+            if (live.aircraft !== '—' && item.aircraft !== live.aircraft) {
+                item.aircraft = live.aircraft;
+                changed = true;
+            }
+        });
+        return changed;
+    }
+
     function departureSig(map) {
         return Object.keys(map || {}).sort().map(key => {
             const item = map[key] || {};
@@ -444,6 +493,7 @@ window.SalesManagement = (function () {
             }
         }
         if (remote && remote.departures) mergeDepartureMaps(cache.departures, normalizeDepartures(remote.departures));
+        syncWithLive(cache.departures);
         if (!pinEnds && remote) {
             const raisedRows = laterDate(dateOnly(cache.rowsTo), dateOnly(remote.rowsTo));
             const raisedCols = laterDate(dateOnly(cache.colsTo), dateOnly(remote.colsTo));
@@ -568,6 +618,7 @@ window.SalesManagement = (function () {
             cache.departures = mergeDepartureMaps(keptRanges.departures || {}, rangeState.departures);
             historyDirty = true;
         }
+        if (syncWithLive(cache.departures) && canEdit()) historyDirty = true;
         loaded = true;
         const localMarks = (local && local.marks) || {};
         Object.keys(localMarks).forEach(key => {
@@ -692,18 +743,14 @@ window.SalesManagement = (function () {
             changed = true;
         }
         const grouped = typeof groupedData !== 'undefined' ? groupedData : {};
-        Object.keys(grouped).forEach(bucket => {
-            (grouped[bucket] || []).forEach(row => {
-                if (!row || !row[0] || !row[1]) return;
-                const code = operatingCode(row[0]);
-                if (!code) return;
-                const date = typeof normalizeDate === 'function' ? normalizeDate(row[1]) : String(row[1]);
-                if (!dateOnly(date)) return;
-                const aircraft = typeof getAircraftType === 'function' ? getAircraftType(row[4]) : (row[4] || '—');
-                if (rememberDeparture(code, date, aircraft || '—')) changed = true;
-                if (raiseRangeEnd('rowsTo', date)) changed = true;
+        liveSchedule = readLiveSchedule(grouped);
+        if (liveSchedule) {
+            liveSchedule.items.forEach(item => {
+                if (rememberDeparture(item.code, item.date, item.aircraft)) changed = true;
+                if (raiseRangeEnd('rowsTo', item.date)) changed = true;
             });
-        });
+            if (syncWithLive(cache.departures)) changed = true;
+        }
         const from = rowsFromValue();
         const to = rowsToValue();
         const checks = columnCheckDates(colsFromValue(), columnTodayStr());
