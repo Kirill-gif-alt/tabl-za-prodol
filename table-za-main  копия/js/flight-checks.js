@@ -20,14 +20,26 @@ window.FlightChecks = (function () {
         return typeof ProfileAuth === 'undefined' || typeof ProfileAuth.featureOn !== 'function' || ProfileAuth.featureOn('flight_checks');
     }
 
+    // Ребёнок — только код тарифа …/CNnn (или возраст до 12 лет, если в продажах есть дата рождения).
+    // Младенцы (…/INnn, …/IDnn) детским тарифом не считаются.
+    function childPercent(sale) {
+        const m = /\/CN(\d{1,2})\b/i.exec(String(sale && sale.basicFareStr || ''));
+        return m ? parseInt(m[1], 10) : null;
+    }
+
     function isChild(sale) {
-        return typeof isChildSaleRecord === 'function' ? isChildSaleRecord(sale) : false;
+        if (!sale) return false;
+        if (childPercent(sale) != null) return true;
+        if (/\/(IN|ID)\d/i.test(String(sale.basicFareStr || ''))) return false;
+        if (sale.birthDate && sale.flyDate && typeof calculateAgeAtFly === 'function') {
+            const age = calculateAgeAtFly(sale.birthDate, sale.flyDate);
+            return age !== null && age >= 2 && age < 12;
+        }
+        return false;
     }
 
     function isChild50(sale) {
-        if (!sale || typeof extractDiscountPercent !== 'function') return false;
-        if (extractDiscountPercent(sale.basicFareStr) !== 50) return false;
-        return typeof isChildSaleRecord === 'function' ? isChildSaleRecord(sale) : true;
+        return childPercent(sale) === 50;
     }
 
     // Вылеты с продажами; пересчитывается только после загрузки данных.
@@ -199,7 +211,7 @@ window.FlightChecks = (function () {
         if (!enabled() || !row || !row[0] || !row[1]) return '';
         const issues = issuesFor(row[0], row[1]);
         if (!issues.length) return '';
-        const tip = issues.map(i => `${i.title}: ${i.text}`).join('\n');
+        const tip = issues.map(i => i.text).join('\n');
         const esc = typeof escAttr === 'function' ? escAttr : (v) => String(v);
         return `<span class="fc-flag" role="img" aria-label="${esc(tip)}" title="${esc(tip)}"></span>`;
     }

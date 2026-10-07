@@ -150,7 +150,8 @@ function buildCityLookup() {
     const hub = new Set((cfg.HUB_CITIES || []).map(c => canonicalCityName(c).toLowerCase()));
     const krai = new Set((cfg.KRAI_CITIES || []).map(c => canonicalCityName(c).toLowerCase()));
     const inter = new Set((cfg.INTERREGIONAL_CITIES || []).map(c => canonicalCityName(c).toLowerCase()));
-    cityLookupCache = { hub, krai, inter };
+    const intl = new Set((cfg.INTERNATIONAL_CITIES || []).map(c => canonicalCityName(c).toLowerCase()));
+    cityLookupCache = { hub, krai, inter, intl };
     return cityLookupCache;
 }
 
@@ -226,9 +227,8 @@ function getFlightRouteType(flightCode) {
 }
 
 function isInternationalCity(city) {
-    const cfg = window.CITY_CLASSIFICATION || {};
-    const name = canonicalCityName(city).toLowerCase();
-    return (cfg.INTERNATIONAL_CITIES || []).some(c => canonicalCityName(c).toLowerCase() === name);
+    const { intl } = buildCityLookup();
+    return intl.has(canonicalCityName(city).toLowerCase());
 }
 
 // ВВЛ — внутренние воздушные линии, МВЛ — международные (есть город из INTERNATIONAL_CITIES).
