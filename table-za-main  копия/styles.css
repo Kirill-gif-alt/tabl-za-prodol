@@ -6187,3 +6187,129 @@ tr.rms-hud-flash > td {
         grid-template-rows: minmax(0, 1fr);
     }
 }
+
+/* ===== Отчёты ===== */
+.content-reports {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+    overflow: auto;
+}
+
+.rp-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 1100px;
+}
+
+.rp-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    padding: 14px 16px;
+}
+
+.rp-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.rp-card-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.rp-card .rp-btn {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 130px;
+    padding: 8px 18px;
+}
+
+.rp-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.rp-card-text {
+    margin: 6px 0 0;
+    font-size: 0.84rem;
+    color: var(--text-muted);
+}
+
+.rp-note {
+    margin: 6px 0 0;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+.rp-warn {
+    color: #9a3412;
+}
+
+.rp-preview {
+    margin-top: 12px;
+}
+
+.rp-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr));
+    gap: 14px;
+}
+
+.rp-preview-grid > div {
+    min-width: 0;
+    overflow-x: auto;
+}
+
+.rp-preview-title {
+    margin: 0 0 6px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.rp-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+}
+
+.rp-table th,
+.rp-table td {
+    border: 1px solid #e2e8f0;
+    padding: 4px 8px;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.rp-table th {
+    background: var(--table-head-bg, #012A4A);
+    color: #fff;
+    font-weight: 600;
+    text-align: center;
+    white-space: normal;
+    line-height: 1.2;
+}
+
+.rp-table td:first-child {
+    text-align: left;
+    font-weight: 600;
+}
+
+.rp-table tr.rp-sub td:first-child {
+    padding-left: 22px;
+    font-weight: 400;
+    color: var(--text-muted);
+}
+
+.rp-table tr.rp-total td {
+    background: #e2e8f0;
+    font-weight: 700;
+}

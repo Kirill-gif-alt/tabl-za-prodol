@@ -50,6 +50,12 @@ window.CITY_CLASSIFICATION = {
         'Чара'
     ],
 
+    // Международные (МВЛ) — города за пределами России. Остальные рейсы считаются ВВЛ.
+    // Город должен быть и в списке выше: здесь только отметка для отчётов ВВЛ/МВЛ.
+    INTERNATIONAL_CITIES: [
+        'Улан-Батор'
+    ],
+
     // Синонимы из маршрутов (routes.js) → каноническое имя из списков выше
     CITY_ALIASES: {
         'П.Тунгуска': 'Подкаменная Тунгуска',
@@ -191,6 +197,17 @@ function getFlightRouteType(flightCode) {
     if (nonHub.some(isKraiCity)) return 'krai';
 
     return 'unknown';
+}
+
+function isInternationalCity(city) {
+    const cfg = window.CITY_CLASSIFICATION || {};
+    const name = canonicalCityName(city).toLowerCase();
+    return (cfg.INTERNATIONAL_CITIES || []).some(c => canonicalCityName(c).toLowerCase() === name);
+}
+
+// ВВЛ — внутренние воздушные линии, МВЛ — международные (есть город из INTERNATIONAL_CITIES).
+function getFlightLineType(flightCode) {
+    return getCitiesFromFlight(flightCode).some(isInternationalCity) ? 'mvl' : 'vvl';
 }
 
 function getFlightRouteTypeLabel(flightCode) {

@@ -286,7 +286,9 @@ function excelFolderKinds() {
         { id: 'rms', label: 'RMS' },
         { id: 'table', label: 'Динамика продаж' },
         { id: 'pkz', label: 'ПКЗ' },
-        { id: 'pair', label: 'Экономическая таблица' }
+        { id: 'pair', label: 'Экономическая таблица' },
+        { id: 'creative', label: 'Творческая' },
+        { id: 'econ', label: 'Отчёт для экономистов' }
     ];
 }
 

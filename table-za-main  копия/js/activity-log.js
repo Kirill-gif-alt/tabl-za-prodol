@@ -30,6 +30,7 @@ window.ActivityLog = (function () {
         rms: 'RMS',
         sales: 'Управление продажами',
         creative: 'Творческая',
+        reports: 'Отчёты',
         stats: 'Статистика'
     };
 
