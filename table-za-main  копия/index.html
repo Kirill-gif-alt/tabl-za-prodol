@@ -7,11 +7,10 @@
     <meta name="color-scheme" content="light">
     <meta name="referrer" content="no-referrer">
     <meta http-equiv="X-Content-Type-Options" content="nosniff">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://data-cloud.flightradar24.com 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://www.krasavia.ru; connect-src 'self' blob: https://data-cloud.flightradar24.com; font-src 'self' https://fonts.gstatic.com; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://data-cloud.flightradar24.com 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://www.krasavia.ru; connect-src 'self' blob: https://data-cloud.flightradar24.com; font-src 'self' https://fonts.gstatic.com; object-src 'none'; base-uri 'self'; form-action 'self'">
     <title>КРАСАВИА · Аналитика</title>
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="styles.css">
-    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 </head>
 <body class="app-body">
 
@@ -161,8 +160,9 @@
 
     <input type="file" id="folder-input" webkitdirectory multiple hidden>
 
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <!-- Библиотеки лежат рядом (те же версии, что раньше брались с CDN): работают без интернета. xlsx 0.18.5, chart.js 4.4.1 из npm. -->
+    <script src="js/vendor/xlsx.full.min.js"></script>
+    <script src="js/vendor/chart.umd.js"></script>
     <script src="js/security.js"></script>
     <script src="js/routes.js"></script>
     <script src="js/cities.js"></script>

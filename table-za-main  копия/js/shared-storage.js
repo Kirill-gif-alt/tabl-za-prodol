@@ -148,8 +148,8 @@ window.SharedStorage = (function () {
     }
 
     async function readSharedJson(filename, timeField) {
-        const fromFetch = await readViaFetch(filename);
-        const fromHandle = await readViaHandle(filename);
+        // Сеть и подключённая папка читаются одновременно, а не по очереди.
+        const [fromFetch, fromHandle] = await Promise.all([readViaFetch(filename), readViaHandle(filename)]);
         let result = pickNewer(fromFetch, fromHandle, timeField);
 
         if (fromFetch && !fromHandle) linkStatus = 'fetch';
@@ -287,6 +287,8 @@ window.SharedStorage = (function () {
     }
 
     async function saveActivity(events) {
+        // Без подключённой папки записать нельзя — не качаем файл журнала зря.
+        if (!(rootHandle || await restoreRootHandle())) return false;
         const remote = await loadActivity();
         const merged = mergeActivityEvents(remote, events, 2000);
         const payload = {
