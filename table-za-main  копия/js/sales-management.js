@@ -1749,13 +1749,33 @@ function buildSalesIndexSheet(lib, entries, stamp, colored) {
     return ws;
 }
 
+function salesSlotEntries(mark) {
+    const people = salesDisplayEntries(mark);
+    const slots = [null, null, null];
+    if (people.length === 1) slots[0] = people[0];
+    else if (people.length === 2) {
+        slots[0] = people[0];
+        slots[2] = people[1];
+    } else if (people.length >= 3) {
+        slots[0] = people[0];
+        slots[1] = people[1];
+        slots[2] = people[2];
+    }
+    return slots;
+}
+
+function salesCheckHead(date) {
+    const parsed = typeof parseLocalDate === 'function' ? parseLocalDate(date) : null;
+    const dow = (parsed && typeof DAYS_RU !== 'undefined') ? DAYS_RU[parsed.getDay()] : '';
+    return dow ? (date + ' ' + dow) : date;
+}
+
 function salesFlightWorksheet(lib, flight, stamp, colored) {
+    const slots = ['Итог', 'Промеж', 'Исход'];
+    const checks = flight.checks || [];
     const header = ['Дата', 'Номер рейса', 'День недели', 'Тип ВС', 'Наименование маршрута']
-        .concat(flight.checks);
-    const dowRow = ['', '', '', '', ''].concat(flight.checks.map(date => {
-        const d = parseLocalDate(date);
-        return (d && typeof DAYS_RU !== 'undefined') ? DAYS_RU[d.getDay()] : '';
-    }));
+        .concat(checks.flatMap(date => [salesCheckHead(date), '', '']));
+    const slotRow = ['', '', '', '', ''].concat(checks.flatMap(() => slots));
     const legend = salesLegendModel();
     const aoa = legend.rows.map(row => row.cells.slice());
     const kinds = legend.rows.map(row => row.kinds.slice());
@@ -1763,24 +1783,26 @@ function salesFlightWorksheet(lib, flight, stamp, colored) {
     kinds.push(['title', 'title', 'title', 'title', 'title']);
     aoa.push(header);
     kinds.push(header.map(() => 'head'));
-    aoa.push(dowRow);
-    kinds.push(header.map(() => 'head'));
+    aoa.push(slotRow);
+    kinds.push(slotRow.map((value, index) => index < 5 ? 'head' : 'sub'));
     flight.departures.forEach(dep => {
         const row = [dep.date, dep.code, dep.weekday, dep.aircraft, dep.route];
         const near = !dep.flown && salesNearDeparture(dep.date);
         const baseKind = dep.flown ? 'gray' : (near ? 'near' : 'id');
         const kind = [baseKind, baseKind, baseKind, baseKind, baseKind];
-        flight.checks.forEach(check => {
+        checks.forEach(check => {
             const mark = SalesManagement.getMark(dep.code, dep.date, check);
-            if (!mark) {
-                row.push('');
-                kind.push(dep.flown ? 'gray' : (near ? 'near' : 'empty'));
-                return;
-            }
-            const text = salesMarkExportText(mark, colored);
-            row.push(text);
-            const people = salesDisplayEntries(mark);
-            kind.push(people.length > 1 ? ('split:' + people.map(item => item.status).join(',')) : mark.status);
+            const emptyKind = dep.flown ? 'gray' : (near ? 'near' : 'empty');
+            const people = salesSlotEntries(mark);
+            people.forEach(entry => {
+                if (!entry) {
+                    row.push('');
+                    kind.push(emptyKind);
+                    return;
+                }
+                row.push(salesEntryText(entry));
+                kind.push(entry.status);
+            });
         });
         aoa.push(row);
         kinds.push(kind);
@@ -1789,17 +1811,19 @@ function salesFlightWorksheet(lib, flight, stamp, colored) {
     const ws = lib.utils.aoa_to_sheet(safeRows);
     const tableCols = header.length;
     const stampRow = legend.count;
+    const headerRow = stampRow + 1;
     const freeze = salesSheetFreeze(legend.count);
     const cols = [
         { wch: 14 }, { wch: 22 }, { wch: 14 }, { wch: 12 }, { wch: 38 }
-    ].concat(flight.checks.map(() => ({ wch: 28 })));
+    ].concat(checks.flatMap(() => [{ wch: 18 }, { wch: 18 }, { wch: 18 }]));
     ws['!cols'] = cols;
-    const dataHeights = flight.departures.map((dep, index) => {
-        const kindRow = kinds[legend.count + 3 + index] || [];
-        return { hpt: kindRow.some(kind => String(kind).indexOf('split:') === 0) ? 36 : 18 };
+    ws['!rows'] = legend.rows.map(() => ({ hpt: 18 })).concat([{ hpt: 20 }, { hpt: 22 }, { hpt: 18 }], flight.departures.map(() => ({ hpt: 22 })));
+    const merges = [{ s: { r: stampRow, c: 0 }, e: { r: stampRow, c: 4 } }];
+    checks.forEach((date, index) => {
+        const start = 5 + index * 3;
+        merges.push({ s: { r: headerRow, c: start }, e: { r: headerRow, c: start + 2 } });
     });
-    ws['!rows'] = legend.rows.map(() => ({ hpt: 18 })).concat([{ hpt: 20 }, { hpt: 22 }, { hpt: 18 }], dataHeights);
-    ws['!merges'] = [{ s: { r: stampRow, c: 0 }, e: { r: stampRow, c: 4 } }];
+    ws['!merges'] = merges;
     ws['!views'] = [{
         state: 'frozen',
         xSplit: freeze.xSplit,
