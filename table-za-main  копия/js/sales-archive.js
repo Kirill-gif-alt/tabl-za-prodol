@@ -113,13 +113,7 @@ window.SalesArchive = (function () {
     }
 
     function refreshOpenReport() {
-        if (typeof currentTab === 'undefined' || (currentTab !== 'table' && currentTab !== 'pair')) return;
-        const panel = document.getElementById(currentTab === 'pair' ? 'pair-sales-panel' : 'table-sales-panel');
-        if (!panel || panel.classList.contains('is-hidden')) return;
-        if (typeof currentFlight !== 'undefined' && currentFlight && typeof lastSelectedDate !== 'undefined' && lastSelectedDate
-            && typeof buildFlightSalesReportFor === 'function') {
-            buildFlightSalesReportFor(getBaseFlight(currentFlight), lastSelectedDate, null, currentFlight);
-        }
+        if (typeof refreshOpenSalesReport === 'function') refreshOpenSalesReport();
     }
 
     // ---------- доступ для расчётов ----------

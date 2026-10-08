@@ -89,7 +89,8 @@ function getRmsRenderSig() {
     const cond = (typeof rmsActiveConditions !== 'undefined' && Array.isArray(rmsActiveConditions))
         ? rmsActiveConditions.map(c => `${c.field}${c.op}${c.value}`).join(';')
         : '';
-    return `${typeof getMetricsCacheSignature === 'function' ? getMetricsCacheSignature() : ''}|${days}|${route}|${alert}|${cond}`;
+    const marks = typeof SalesManagement !== 'undefined' && SalesManagement.markRevision ? SalesManagement.markRevision() : 0;
+    return `${typeof getMetricsCacheSignature === 'function' ? getMetricsCacheSignature() : ''}|${days}|${route}|${alert}|${cond}|${typeof getTodayDate === 'function' ? getTodayDate() : ''}|pm${marks}`;
 }
 
 function renderRmsWatchlist() {
@@ -118,9 +119,12 @@ function renderRmsWatchlist() {
     const salesReady = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(dataLoadStatus && dataLoadStatus.sales);
     const expectedReady = typeof hasExpectedFileLoaded === 'function' ? hasExpectedFileLoaded() : Object.keys(expectedLoadData || {}).length > 0;
 
+    const markOn = typeof PriceMarks !== 'undefined' && typeof SalesManagement !== 'undefined';
+    const checkedToday = markOn ? flights.filter(f => PriceMarks.todayMark(f.orig || f.base, f.date)).length : 0;
     if (stats) {
         stats.innerHTML = `
             <span class="rms-hero-badge">Открытых: <strong>${flights.length}</strong></span>
+            ${markOn ? `<span class="rms-hero-badge" title="Рейсов в списке с отметкой «Управления продажами» за сегодня">Проверено сегодня: <strong>${checkedToday}/${flights.length}</strong></span>` : ''}
             <span class="rms-hero-badge rms-hero-badge-warn">Предупр.: <strong>${alertCnt}</strong></span>
             <span class="rms-hero-badge">Продажи 14д: <strong>${salesReady ? kpi.todaySales : '—'}</strong></span>
             <span class="rms-hero-badge">Ср. ЗПК: <strong>${avgLoad}%</strong></span>
@@ -159,7 +163,7 @@ function renderRmsWatchlist() {
         const todayTxt = salesReady ? (f.s.today || 0) : '—';
         const remainTxt = f.remainder != null ? f.remainder : '—';
         return `
-            <tr class="rms-row ${zebra} ${alertCls}" data-rms-base="${escAttr(f.base)}" data-rms-date="${escAttr(f.date)}" data-rms-orig="${escAttr(flightCode)}" tabindex="0">
+            <tr class="rms-row ${zebra} ${alertCls}" data-rms-base="${escAttr(f.base)}" data-rms-date="${escAttr(f.date)}" data-rms-orig="${escAttr(flightCode)}" data-pm-row="1" tabindex="0">
                 <td class="rms-col-alert">${f.alertLevel >= 2 ? `<span class="rms-alert-badge rms-alert-badge-${f.alertLevel}">${f.alertLevel >= 3 ? 'КРИТ' : '!'}</span>` : ''}</td>
                 <td class="rms-col-flight">
                     <div class="rms-flight-code">${escHtml(flightCode)}${routeTypeLabel ? `<span class="rms-route-badge ${routeTypeCls}">${escHtml(routeTypeLabel)}</span>` : ''}</div>
@@ -175,6 +179,7 @@ function renderRmsWatchlist() {
                 <td class="rms-col-today font-bold ${salesReady && f.s.today ? 'rms-today-hot' : ''}">${todayTxt}</td>
                 <td class="rms-col-fare font-semibold">${salesReady && f.avg ? formatRub(f.avg) : '—'}</td>
                 <td class="rms-col-reason">${escHtml(f.alertReason) || '—'}</td>
+                ${markOn ? `<td class="rms-col-mark">${PriceMarks.chipHtml(flightCode, f.date)}</td>` : ''}
             </tr>
         `;
     });
@@ -194,6 +199,7 @@ function renderRmsWatchlist() {
                     <th class="rms-col-today" title="Билеты с DEALDATE=сегодня из файла 14д">Сегодня (файл 14д)</th>
                     <th class="rms-col-fare" title="Среднее по билетам файла 14д">Ср. тариф 14д</th>
                     <th class="rms-col-reason">Причина</th>
+                    ${markOn ? '<th class="rms-col-mark" title="Отметка «Управления продажами» за сегодня: клик по чипу или клавиши 1–4 на строке (1 без изменений, 2 внимание, 3 снижение, 4 повышение)">Сегодня</th>' : ''}
                 </tr>
             </thead>
             <tbody id="rms-tbody"></tbody>
@@ -241,3 +247,19 @@ function bindRmsWatchlistClicks(container) {
         open(tr);
     });
 }
+
+// Отметка поставлена (чип, клавиши 1–4, карточка) — обновить чипы и счётчик, вернуть фокус на строку.
+document.addEventListener('krasavia:mark', (e) => {
+    if (typeof currentTab === 'undefined' || currentTab !== 'rms') return;
+    const container = document.getElementById('rms-watchlist');
+    if (!container) return;
+    const d = e.detail || {};
+    const scroll = container.scrollTop;
+    delete container.dataset.renderSig;
+    renderRmsWatchlist();
+    container.scrollTop = scroll;
+    requestAnimationFrame(() => {
+        const tr = container.querySelector(`tr[data-rms-orig="${CSS.escape(d.code || '')}"][data-rms-date="${CSS.escape(d.date || '')}"]`);
+        if (tr) tr.focus({ preventScroll: true });
+    });
+});

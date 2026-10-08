@@ -485,6 +485,7 @@ window.SalesManagement = (function () {
             else marks[key] = mark;
         });
         cache.marks = marks;
+        markRev++;
         if (!saveRoutes) {
             const remoteAt = (remote && remote.routesUpdatedAt) || '';
             if (String(remoteAt) > String(cache.routesUpdatedAt || '')) {
@@ -591,6 +592,7 @@ window.SalesManagement = (function () {
         absorbMarks(local && local.marks, marks, renamed);
         const routeState = takeRoutes(remote, local);
         const rangeState = resolveRanges(remote, local);
+        markRev++;
         cache = {
             version: 1,
             updatedAt: (remote && remote.updatedAt) || (local && local.updatedAt) || null,
@@ -675,6 +677,26 @@ window.SalesManagement = (function () {
         return key ? (cache.marks[key] || null) : null;
     }
 
+    // Все отметки вылета (по датам проверки): [{ check, status, author, updatedAt }], от ранних к поздним.
+    function marksFor(flight, dep) {
+        const fl = typeof cleanFlight === 'function' ? cleanFlight(flight) : String(flight || '');
+        const d1 = typeof normalizeDate === 'function' ? normalizeDate(dep) : String(dep || '');
+        const prefix = `${fl}|${d1}|`;
+        const out = [];
+        Object.keys(cache.marks || {}).forEach(key => {
+            if (key.indexOf(prefix) !== 0) return;
+            const m = cache.marks[key];
+            if (m && STATUSES[m.status]) out.push({ check: key.slice(prefix.length), status: m.status, author: m.author || '', updatedAt: m.updatedAt || '' });
+        });
+        return out.sort((a, b) => (parseLocalDate(a.check) || 0) - (parseLocalDate(b.check) || 0));
+    }
+
+    // Дешёвый счётчик изменений отметок (для подписи кэша таблиц).
+    let markRev = 0;
+    function markRevision() {
+        return markRev + ':' + Object.keys(cache.marks || {}).length;
+    }
+
     function putMark(flight, dep, check, status, author) {
         if (!canEdit()) return false;
         if (typeof salesCheckIsToday !== 'function' || !salesCheckIsToday(check)) return false;
@@ -686,6 +708,7 @@ window.SalesManagement = (function () {
             updatedAt: new Date().toISOString()
         };
         cache.marks[key] = mark;
+        markRev++;
         dirty.set(key, mark);
         schedulePersist();
         return true;
@@ -697,6 +720,7 @@ window.SalesManagement = (function () {
         const key = markKey(flight, dep, check);
         if (!key) return false;
         delete cache.marks[key];
+        markRev++;
         dirty.set(key, null);
         schedulePersist();
         return true;
@@ -895,6 +919,8 @@ window.SalesManagement = (function () {
         checkDatesBetween,
         columnCheckDates,
         getMark,
+        marksFor,
+        markRevision,
         putMark,
         clearMark,
         listFlights,

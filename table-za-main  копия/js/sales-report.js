@@ -492,12 +492,26 @@ function bindFlightCommentBox(root) {
     });
 }
 
+let lastSalesReportArgs = null;
+
+// Перерисовать открытую детализацию продаж (после отметки или догрузки архива).
+function refreshOpenSalesReport() {
+    const a = lastSalesReportArgs;
+    if (!a) return;
+    const host = document.getElementById(a.hostId);
+    if (!host || !host.isConnected || !host.innerHTML.trim()) return;
+    const panel = host.closest('.is-hidden');
+    if (panel) return;
+    buildFlightSalesReportFor(a.baseFlight, a.flyDateStr, a.resultId, a.flightCode);
+}
+
 function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode) {
     const hostId = resultId || (currentTab === 'pair' ? 'pair-sales-chart-result' : 'sales-chart-result');
     const resultDiv = document.getElementById(hostId);
     if (!resultDiv || !baseFlight || !flyDateStr) return;
 
     const salesFlight = cleanFlight(flightCode || baseFlight) || baseFlight;
+    lastSalesReportArgs = { baseFlight, flyDateStr, resultId, flightCode, hostId };
     destroyChartsByPrefix('report-');
 
     const salesByDealDate = typeof collectSalesByDealDateForFlightDate === 'function'
@@ -585,6 +599,7 @@ function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode)
             ${finalExpectedLoad !== null ? ` · Ожидаемая: <strong>${Math.ceil(finalExpectedLoad)}</strong>` : ''}
         </div>
         <div class="booking-curve-verdict ${dtdCurve.verdictCls}">${escHtml(dtdCurve.verdict)}</div>
+        ${typeof PriceMarks !== 'undefined' ? PriceMarks.buttonsHtml(salesFlight, flyDateStr) : ''}
 
         <div class="sales-kpi-row">
             <div class="kpi-card kpi-emerald">
@@ -637,6 +652,7 @@ function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode)
                 ${buildWeekdayNormTableHtml(dtdCurve)}
             </div>
         </div>
+        ${typeof PriceMarks !== 'undefined' ? PriceMarks.decisionsHtml(baseFlight, salesFlight, flyDateStr) : ''}
 
         <div class="report-table-scroll">
             <table class="report-data-table sales-detail-table">
@@ -724,6 +740,11 @@ function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode)
                 maintainAspectRatio: false,
                 plugins: {
                     legend: { display: false },
+                    priceMarks: {
+                        items: typeof PriceMarks !== 'undefined'
+                            ? PriceMarks.chartItems(salesFlight, flyDateStr, m => cumulativeData.findIndex(pt => pt.date === m.check))
+                            : []
+                    },
                     tooltip: {
                         callbacks: {
                             title: (items) => {
@@ -825,6 +846,15 @@ function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode)
                 maintainAspectRatio: false,
                 interaction: { mode: 'index', intersect: false },
                 plugins: {
+                    priceMarks: {
+                        items: typeof PriceMarks !== 'undefined'
+                            ? PriceMarks.chartItems(salesFlight, flyDateStr, m => {
+                                const f = parseLocalDate(flyDateStr);
+                                const c = parseLocalDate(m.check);
+                                return f && c ? dtdCurve.dtds.indexOf(Math.round((f - c) / 86400000)) : -1;
+                            })
+                            : []
+                    },
                     legend: {
                         display: true,
                         labels: {
@@ -877,3 +907,6 @@ function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode)
         createManagedChart('report-booking-curve', bookingCurveConfig);
     }, 80);
 }
+
+// После отметки за сегодня — перерисовать открытую детализацию (кнопки и маркеры).
+document.addEventListener('krasavia:mark', () => refreshOpenSalesReport());

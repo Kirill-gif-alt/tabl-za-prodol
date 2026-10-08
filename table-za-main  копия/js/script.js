@@ -612,6 +612,7 @@ function openFlightFromRms(base, date, orig) {
     currentFlight = base;
     lastSelectedDate = date || null;
     if (typeof SessionStore !== 'undefined') SessionStore.saveUiSession();
+    if (typeof FlightCard !== 'undefined' && date) FlightCard.maybeOpen(orig || base, date);
 }
 
 

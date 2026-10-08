@@ -13,6 +13,7 @@ window.ActivityLog = (function () {
         data_share: 'Публикация данных',
         data_share_blocked: 'Публикация остановлена (подозрительные данные)',
         history_restore: 'Восстановление из резервной копии',
+        sales_mark: 'Отметка «Управления продажами»',
         export: 'Экспорт',
         fare_refs: 'Справочник тарифов',
         password_self: 'Смена своего пароля',

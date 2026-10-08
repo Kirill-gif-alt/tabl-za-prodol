@@ -655,6 +655,7 @@ window.ProfileAuth = (function () {
             homeTab.style.display = canAccessTab('home') ? '' : 'none';
         }
 
+        if (typeof FlightCard !== 'undefined') FlightCard.syncToggle();
         const settingsBtn = document.getElementById('profile-settings-btn');
         if (settingsBtn) {
             settingsBtn.style.display = currentProfile ? '' : 'none';
