@@ -1,7 +1,9 @@
 // Проверки рейсов на ошибки в продажах. Проверяются только субсидированные рейсы:
 // межрегиональный рейс, у которого в «Экономической таблице» есть сумма субсидии (ручная правка,
 // иначе сумма из файла расходов и периодов субсидий). Краевые рейсы не субсидированные.
-// Рейсы-исключения из справочника (fare-refs.js, по умолчанию KV-247/248) не проверяются.
+// KV-247/248 Томск — Стрежевой считаются рейсами без субсидии, хотя есть в файле субсидий:
+// не проверяются и нигде в проверках не показываются (NEVER_SUBSIDIZED).
+// Рейсы-исключения из справочника (fare-refs.js) тоже не проверяются.
 // Правила:
 //   child50_subsidy    — продан детский тариф со скидкой 50% (код тарифа …/CN50);
 //   fare_above_subsidy — продан билет дороже предела из справочника субсидированных тарифов (fare-refs.js).
@@ -14,7 +16,16 @@ window.FlightChecks = (function () {
         fare_above_subsidy: { title: 'Тариф выше субсидированного', short: 'Выше субсидированного тарифа' }
     };
 
+    const NEVER_SUBSIDIZED = new Set(['KV-247', 'KV-248']);
+
     let cache = { epoch: -1, details: null, grouped: null, all: null, candidates: new Map() };
+
+    function isNeverSubsidized(code) {
+        const c = typeof cleanFlight === 'function' ? cleanFlight(code) : String(code || '');
+        if (NEVER_SUBSIDIZED.has(c)) return true;
+        const base = typeof getBaseFlight === 'function' ? getBaseFlight(c) : c;
+        return NEVER_SUBSIDIZED.has(base);
+    }
 
     // Админ включает и выключает проверку каждому профилю в «Управлении профилями» → «Функции».
     function enabled() {
@@ -72,7 +83,10 @@ window.FlightChecks = (function () {
 
     // Субсидия проверяется по текущим правкам: правка в «Экономической таблице» сразу меняет результат.
     function subsidyInfo(c) {
-        // Рейс, исключённый в справочнике (по умолчанию KV-247/248), не считается субсидированным.
+        if (isNeverSubsidized(c.code)) {
+            return { subsidized: false, excluded: true, source: 'без субсидии', amount: 0 };
+        }
+        // Рейс, исключённый в справочнике, не считается субсидированным.
         if (typeof FareRefs !== 'undefined' && FareRefs.isExcluded && FareRefs.isExcluded(c.code, c.date)) {
             return { subsidized: false, excluded: true, source: 'исключён в справочнике', amount: 0 };
         }
@@ -261,5 +275,5 @@ window.FlightChecks = (function () {
         if (typeof updateHeaderStatus === 'function') updateHeaderStatus();
     }
 
-    return { enabled, list, issuesFor, issueFor, missingRefs, flagForRow, rowClass, headerChip, openReport, refreshViews, RULES, RULE_TITLE };
+    return { enabled, isNeverSubsidized, list, issuesFor, issueFor, missingRefs, flagForRow, rowClass, headerChip, openReport, refreshViews, RULES, RULE_TITLE };
 })();
