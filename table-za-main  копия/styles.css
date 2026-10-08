@@ -6513,3 +6513,16 @@ span.rp-chip {
     color: #b91c1c;
     font-weight: 600;
 }
+
+.rp-ref-mode-excl {
+    color: #475569;
+    font-weight: 700;
+}
+
+.rp-refs-table tr.rp-ref-excluded td {
+    background: #f8fafc;
+}
+
+.rp-ref-grid label[hidden] {
+    display: none;
+}
