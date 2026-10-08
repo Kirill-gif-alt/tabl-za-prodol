@@ -1,14 +1,27 @@
 // Справочник субсидированных тарифов: предельный тариф на субсидированных рейсах.
 // Билет дороже предела — ошибка (проверка в flight-checks.js). Дешевле — можно, в том числе детские.
 // Детский предел необязателен: если не задан, детский билет сравнивается со взрослым пределом.
+// Вторая разновидность записи — исключение (mode: 'exclude'): рейс не считается субсидированным
+// и не проверяется. По умолчанию так исключены KV-247/248 Томск — Стрежевой (DEFAULT_ENTRIES);
+// админ может изменить или удалить эту запись, удаление запоминается.
 // Хранится в shared/subsidy-fares.json (видят все ПК) и копией в браузере. Правит тот, у кого право
 // edit_fare_refs (у админа есть всегда, другим он выдаёт в «Управлении профилями»).
 window.FareRefs = (function () {
     const FILE = 'subsidy-fares.json';
     const LOCAL_KEY = 'krasavia_subsidy_fares_v1';
     const MAX_ENTRIES = 500;
+    const DEFAULT_ENTRIES = [
+        {
+            id: 'xkv247248',
+            mode: 'exclude',
+            flights: ['KV-247', 'KV-248'],
+            note: 'Томск — Стрежевой: не считается субсидированным',
+            updatedAt: '2026-10-08T00:00:00.000Z',
+            by: 'по умолчанию'
+        }
+    ];
 
-    let cache = { version: 1, updatedAt: null, entries: [], deleted: {} };
+    let cache = null;
     let rev = 0;
     let sawRemote = false;
 
@@ -48,14 +61,17 @@ window.FareRefs = (function () {
             const code = cleanCode(f);
             if (code && flights.indexOf(code) === -1) flights.push(code);
         });
-        const adult = cleanMoney(e.adult);
-        if (!flights.length || adult == null || adult <= 0) return null;
+        const mode = e.mode === 'exclude' ? 'exclude' : 'limit';
+        const adult = mode === 'limit' ? cleanMoney(e.adult) : null;
+        if (!flights.length) return null;
+        if (mode === 'limit' && (adult == null || adult <= 0)) return null;
         return {
             id: /^[a-z0-9]{4,24}$/i.test(String(e.id || '')) ? String(e.id) : newId(),
+            mode,
             flights,
-            fareCode: cleanText(e.fareCode, 30).toUpperCase(),
+            fareCode: mode === 'limit' ? cleanText(e.fareCode, 30).toUpperCase() : '',
             adult,
-            child: cleanMoney(e.child),
+            child: mode === 'limit' ? cleanMoney(e.child) : null,
             from: cleanDate(e.from),
             to: cleanDate(e.to),
             note: cleanText(e.note, 200),
@@ -94,6 +110,16 @@ window.FareRefs = (function () {
         return { version: 1, updatedAt: updatedAt || null, entries: entries.slice(0, MAX_ENTRIES), deleted };
     }
 
+    function defaultsStore() {
+        return normalizeStore({ entries: DEFAULT_ENTRIES });
+    }
+
+    // Текущий справочник; до первой загрузки — только записи по умолчанию.
+    function store() {
+        if (!cache) cache = mergeStores(normalizeStore(null), defaultsStore());
+        return cache;
+    }
+
     function readLocal() {
         try { return normalizeStore(JSON.parse(localStorage.getItem(LOCAL_KEY) || 'null')); } catch (e) { return normalizeStore(null); }
     }
@@ -112,8 +138,8 @@ window.FareRefs = (function () {
         const remote = await readRemote();
         if (remote && (remote.entries.length || Object.keys(remote.deleted).length)) sawRemote = true;
         const local = readLocal();
-        const before = JSON.stringify(cache.entries);
-        cache = mergeStores(remote || normalizeStore(null), local);
+        const before = JSON.stringify(store().entries);
+        cache = mergeStores(mergeStores(remote || normalizeStore(null), local), defaultsStore());
         // Версия растёт, только если справочник правда поменялся: иначе таблицы зря перерисуются.
         if (JSON.stringify(cache.entries) !== before) rev++;
         return cache;
@@ -125,7 +151,7 @@ window.FareRefs = (function () {
         // Общий файл раньше читался, а сейчас нет — не записываем, иначе можно затереть чужие записи.
         if (!remote && sawRemote) return { ok: false, error: 'Не удалось прочитать общий справочник — попробуйте ещё раз' };
         if (remote && (remote.entries.length || Object.keys(remote.deleted).length)) sawRemote = true;
-        const base = mergeStores(remote || normalizeStore(null), cache);
+        const base = mergeStores(mergeStores(remote || normalizeStore(null), store()), defaultsStore());
         const entries = base.entries.map(e => ({ ...e, flights: e.flights.slice() }));
         const deleted = { ...base.deleted };
         mutate(entries, deleted);
@@ -151,7 +177,9 @@ window.FareRefs = (function () {
     async function upsert(entry) {
         if (!canEdit()) return { ok: false, error: 'Нет права менять справочник' };
         const n = normalizeEntry({ ...entry, updatedAt: new Date().toISOString(), by: authorName() });
-        if (!n) return { ok: false, error: 'Укажите рейс и предельный тариф больше 0' };
+        if (!n) {
+            return { ok: false, error: entry && entry.mode === 'exclude' ? 'Укажите рейс' : 'Укажите рейс и предельный тариф больше 0' };
+        }
         if (n.from && n.to && typeof compareDateStr === 'function' && compareDateStr(n.from, n.to) > 0) {
             return { ok: false, error: 'Дата «с» позже даты «по»' };
         }
@@ -181,12 +209,12 @@ window.FareRefs = (function () {
     }
 
     // Запись для рейса на дату. Если подходят несколько — берётся с самым поздним началом действия.
-    function match(code, date) {
+    function find(code, date, mode) {
         const fl = cleanCode(code);
         if (!fl || !date) return null;
         let best = null;
-        cache.entries.forEach(e => {
-            if (e.flights.indexOf(fl) === -1 || !dateIn(e, date)) return;
+        store().entries.forEach(e => {
+            if (e.mode !== mode || e.flights.indexOf(fl) === -1 || !dateIn(e, date)) return;
             if (!best) { best = e; return; }
             const a = e.from || '';
             const b = best.from || '';
@@ -195,8 +223,18 @@ window.FareRefs = (function () {
         return best;
     }
 
+    // Предельный тариф для рейса на дату.
+    function match(code, date) {
+        return find(code, date, 'limit');
+    }
+
+    // Исключение: рейс на эту дату не считается субсидированным.
+    function isExcluded(code, date) {
+        return find(code, date, 'exclude');
+    }
+
     function list() {
-        return cache.entries.slice().sort((a, b) => {
+        return store().entries.slice().sort((a, b) => {
             const na = parseInt(String(a.flights[0]).slice(3), 10) || 0;
             const nb = parseInt(String(b.flights[0]).slice(3), 10) || 0;
             if (na !== nb) return na - nb;
@@ -208,10 +246,11 @@ window.FareRefs = (function () {
         load,
         list,
         match,
+        isExcluded,
         upsert,
         remove,
         canEdit,
         revision: () => rev,
-        updatedAt: () => cache.updatedAt
+        updatedAt: () => store().updatedAt
     };
 })();

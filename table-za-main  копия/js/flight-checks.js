@@ -1,6 +1,7 @@
 // Проверки рейсов на ошибки в продажах. Проверяются только субсидированные рейсы:
 // межрегиональный рейс, у которого в «Экономической таблице» есть сумма субсидии (ручная правка,
 // иначе сумма из файла расходов и периодов субсидий). Краевые рейсы не субсидированные.
+// Рейсы-исключения из справочника (fare-refs.js, по умолчанию KV-247/248) не проверяются.
 // Правила:
 //   child50_subsidy    — продан детский тариф со скидкой 50% (код тарифа …/CN50);
 //   fare_above_subsidy — продан билет дороже предела из справочника субсидированных тарифов (fare-refs.js).
@@ -71,6 +72,10 @@ window.FlightChecks = (function () {
 
     // Субсидия проверяется по текущим правкам: правка в «Экономической таблице» сразу меняет результат.
     function subsidyInfo(c) {
+        // Рейс, исключённый в справочнике (по умолчанию KV-247/248), не считается субсидированным.
+        if (typeof FareRefs !== 'undefined' && FareRefs.isExcluded && FareRefs.isExcluded(c.code, c.date)) {
+            return { subsidized: false, excluded: true, source: 'исключён в справочнике', amount: 0 };
+        }
         const inter = typeof getFlightRouteType === 'function' && getFlightRouteType(c.code) === 'interregional';
         if (typeof SharedOverrides !== 'undefined' && SharedOverrides.hasSubsidy(c.code, c.date)) {
             const amount = Number(SharedOverrides.getSubsidy(c.code, c.date)) || 0;
