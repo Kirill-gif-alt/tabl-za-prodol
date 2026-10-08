@@ -5,6 +5,25 @@
 
 $ErrorActionPreference = 'Stop'
 
+# Окно PowerShell скрыто: без этого любая ошибка при запуске закрывает виджет молча.
+# Показываем причину и пишем её в %LOCALAPPDATA%\Krasavia\rms-widget.log.
+# Ошибка в уже открытом окне (например, папка на секунду недоступна) только пишется в журнал — окно не закрывается.
+$script:widgetStarted = $false
+trap {
+    $message = 'Виджет не запустился: ' + $_.Exception.Message
+    try {
+        $logDir = Join-Path $env:LOCALAPPDATA 'Krasavia'
+        New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+        Add-Content -LiteralPath (Join-Path $logDir 'rms-widget.log') -Value ((Get-Date).ToString('s') + ' ' + $_.Exception.ToString()) -Encoding UTF8
+    } catch { }
+    if ($script:widgetStarted) { continue }
+    try {
+        Add-Type -AssemblyName System.Windows.Forms
+        [void][System.Windows.Forms.MessageBox]::Show($message, 'КРАСАВИА · Виджет', 'OK', 'Error')
+    } catch { }
+    exit 1
+}
+
 function ConvertTo-WidgetDate([string]$DateStr) {
     if ([string]::IsNullOrWhiteSpace($DateStr)) { return $null }
     $parts = $DateStr.Split('.')
@@ -428,7 +447,19 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 $mutex = New-Object System.Threading.Mutex($false, 'Local\KrasaviaRmsWidget')
-if (-not $mutex.WaitOne(0, $false)) { exit 0 }
+$showEvent = New-Object System.Threading.EventWaitHandle($false, [System.Threading.EventResetMode]::AutoReset, 'Local\KrasaviaRmsWidgetShow')
+$ownsMutex = $false
+try {
+    $ownsMutex = $mutex.WaitOne(0, $false)
+} catch [System.Threading.AbandonedMutexException] {
+    # Прошлый виджет закрылся аварийно и не отпустил блокировку — она теперь наша.
+    $ownsMutex = $true
+}
+if (-not $ownsMutex) {
+    # Виджет уже запущен (мог быть свёрнут или за другими окнами) — просим его показаться.
+    [void]$showEvent.Set()
+    exit 0
+}
 
 $root = Split-Path -Parent $PSScriptRoot
 $dataPath = Join-Path $root 'shared\rms-widget.json'
@@ -744,6 +775,8 @@ $chkPickup.Add_CheckedChanged($onChange)
 $chkTop.Add_CheckedChanged($onChange)
 $form.Add_FormClosing({ Save-WidgetUi })
 $form.Add_FormClosed({
+    try { if ($script:showTimer) { $script:showTimer.Stop() } } catch { }
+    try { $showEvent.Dispose() } catch { }
     try { if ($script:widgetTimer) { $script:widgetTimer.Stop() } } catch { }
     Stop-WidgetLoadLookup
     try { $mutex.ReleaseMutex() | Out-Null } catch { }
@@ -762,9 +795,27 @@ $timer.Add_Tick({
 })
 $timer.Start()
 
+# Повторный запуск Start-Widget.cmd: развернуть окно, вернуть на экран и вывести вперёд.
+$showTimer = New-Object System.Windows.Forms.Timer
+$script:showTimer = $showTimer
+$showTimer.Interval = 500
+$showTimer.Add_Tick({
+    if (-not $showEvent.WaitOne(0)) { return }
+    if ($form.WindowState -eq [System.Windows.Forms.FormWindowState]::Minimized) {
+        $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
+    }
+    if (-not (Test-WidgetOriginUsable $form.Left $form.Top $form.Width $form.Height)) {
+        $form.Location = Get-WidgetDefaultOrigin $form.Width $form.Height
+    }
+    $form.Activate()
+    $form.BringToFront()
+})
+$showTimer.Start()
+
 Read-WidgetData
 Start-WidgetLoadLookup
 Update-AlertList
+$script:widgetStarted = $true
 [void]$form.ShowDialog()
 $timer.Stop()
 Stop-WidgetLoadLookup

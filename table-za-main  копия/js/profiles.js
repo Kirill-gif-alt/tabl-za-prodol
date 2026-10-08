@@ -34,7 +34,7 @@ window.ProfileAuth = (function () {
     const FEATURES = {
         flight_checks: { label: 'Проверка рейсов (детский −50% и тариф выше субсидированного на субсидированных рейсах): «!», счётчик в шапке, раздел в «Отчётах»', def: true },
         subsidy_mode: { label: 'Метки «С» (субсидия) / «К» (коммерция) у дат вылета на Графплане, в «Динамике продаж» и RMS', def: true },
-        flight_card: { label: 'Карточка рейса: клик по рейсу на Графплане, в RMS и «Загрузке рейсов» открывает панель с графиком и отметкой', def: false },
+        flight_card: { label: 'Карточка рейса: клик по рейсу на Графплане, в RMS и «Загрузке рейсов» открывает панель с графиком и отметкой', def: 'admin' },
         header_kpi: { label: 'Продажи и выручка за сегодня в шапке', def: true },
         rms_header_alerts: { label: 'Счётчик сигналов RMS «⚠» в шапке', def: true },
         live_flights: { label: 'Самолёты онлайн на карте «Сеть» (Flightradar)', def: true }
@@ -54,6 +54,8 @@ window.ProfileAuth = (function () {
         if (!meta) return false;
         const f = profile && profile.features;
         if (f && typeof f[key] === 'boolean') return f[key];
+        // def: 'admin' — по умолчанию включено только администратору, остальным админ включает сам.
+        if (meta.def === 'admin') return !!(profile && profile.isAdmin);
         return meta.def;
     }
 
@@ -480,7 +482,6 @@ window.ProfileAuth = (function () {
         }).join('');
         // Карта и виджеты — прежние флаги профиля (те же классы, что читает сохранение), в общем списке.
         const homeOn = resolveShowHomeMap(profile) ? 'checked' : '';
-        const widgetsOn = resolveScreenWidgets(profile) ? 'checked' : '';
         return `
             <div class="profile-perm-group profile-features">
                 <div class="profile-perm-group-title">Функции</div>
@@ -488,10 +489,6 @@ window.ProfileAuth = (function () {
                     <label class="profile-perm-item">
                         <input type="checkbox" class="profile-home-map-cb" data-home-map="${escAttr(profileId)}" ${homeOn}>
                         <span>Главная страница (карта сети) при входе</span>
-                    </label>
-                    <label class="profile-perm-item">
-                        <input type="checkbox" class="profile-screen-widgets-cb" data-screen-widgets="${escAttr(profileId)}" ${widgetsOn}>
-                        <span>Виджеты на экране: сводка и тревожная лента</span>
                     </label>
                     ${rows}
                 </div>
@@ -680,7 +677,6 @@ window.ProfileAuth = (function () {
 
         if (typeof updateFlightOpenModeUI === 'function') updateFlightOpenModeUI();
         if (typeof TabOrder !== 'undefined') TabOrder.apply();
-        if (typeof RmsHud !== 'undefined') RmsHud.sync();
     }
 
     function guardPermission(perm, message) {
