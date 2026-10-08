@@ -163,6 +163,7 @@ function resolveSwlyDate(baseFlight, flyDateStr, flightCode) {
     const hasData = (dt) => {
         if (!dt) return false;
         if (getFlightSalesList(dt, code).length) return true;
+        if (typeof SalesArchive !== 'undefined' && SalesArchive.curveFor(dt, code)) return true;
         return typeof getFlightRowForDate === 'function' && !!getFlightRowForDate(baseFlight, dt, code);
     };
     if (hasData(canonical)) return canonical;
@@ -240,12 +241,38 @@ function collectSameWeekdayCohort(baseFlight, flyDateStr, flightCode) {
             dayGap: Math.round(Math.abs(dt.getTime() - flyDt.getTime()) / 86400000)
         });
     });
+    // Улетевшие вылеты, которых уже нет в файлах, — из архива (sales-archive.js).
+    if (typeof SalesArchive !== 'undefined') {
+        SalesArchive.departuresFor(code).forEach(a => {
+            if (a.date === flyDateStr || seen.has(a.date) || !(a.seats > 0)) return;
+            const dt = parseLocalDate(a.date);
+            if (!dt || dt.getDay() !== dow) return;
+            seen.add(a.date);
+            dates.push({
+                date: a.date,
+                code,
+                seats: a.seats,
+                aircraft: a.aircraft,
+                load: a.sold,
+                observedFrom: 0,
+                archived: true,
+                dayGap: Math.round(Math.abs(dt.getTime() - flyDt.getTime()) / 86400000)
+            });
+        });
+    }
     return dates;
+}
+
+// Кривая продаж вылета: из текущего файла продаж, а если вылет уже выпал из него — из архива.
+function departureCurve(dateStr, code) {
+    if (getFlightSalesList(dateStr, code).length) return buildOnHandByDtd(dateStr, code);
+    const archived = typeof SalesArchive !== 'undefined' ? SalesArchive.curveFor(dateStr, code) : null;
+    return archived || buildOnHandByDtd(dateStr, code);
 }
 
 // Норма по когорте на каждом дне до вылета: среднее, разброс и число вылетов.
 function weekdayNormSeries(cohort, dtds, targetSeats) {
-    const curves = cohort.filter(c => c.seats > 0).map(c => ({ ...c, curve: buildOnHandByDtd(c.date, c.code) }));
+    const curves = cohort.filter(c => c.seats > 0).map(c => ({ ...c, curve: departureCurve(c.date, c.code) }));
     const avgSeats = curves.length ? curves.reduce((a, c) => a + c.seats, 0) / curves.length : 0;
     const scale = targetSeats > 0 ? targetSeats : avgSeats;
     const points = dtds.map(t => {
@@ -301,8 +328,10 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
         return thisCurve.total;
     });
 
+    if (typeof SalesArchive !== 'undefined') SalesArchive.ensureMonth(sameWeekdayLastYearDate(flyDateStr));
     const swlyDate = resolveSwlyDate(baseFlight, flyDateStr, code);
-    const swlyHasSales = !!(swlyDate && getFlightSalesList(swlyDate, code).length);
+    const swlyHasSales = !!(swlyDate && (getFlightSalesList(swlyDate, code).length
+        || (typeof SalesArchive !== 'undefined' && SalesArchive.curveFor(swlyDate, code))));
     let refData = null;
     let refBand = null;
     let normInfo = null;
@@ -311,7 +340,7 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
     const dowName = typeof getDayOfWeek === 'function' ? getDayOfWeek(flyDateStr) : '';
 
     if (swlyHasSales) {
-        const swlyCurve = buildOnHandByDtd(swlyDate, code);
+        const swlyCurve = departureCurve(swlyDate, code);
         refData = dtds.map(t => {
             if (swlyCurve.onHand[t] != null) return swlyCurve.onHand[t];
             if (t > swlyCurve.maxDtd) return null;
@@ -390,7 +419,7 @@ function buildWeekdayNormTableHtml(dtdCurve) {
     const rows = info.curves.slice().sort((a, b) => (parseLocalDate(a.date) || 0) - (parseLocalDate(b.date) || 0)).map(c => {
         const v = weekdayNormValueAt(c, t);
         const flown = c.observedFrom === 0;
-        const state = flown ? 'улетел' : `продаётся (до ${c.observedFrom} дн.)`;
+        const state = c.archived ? 'улетел (архив)' : flown ? 'улетел' : `продаётся (до ${c.observedFrom} дн.)`;
         const atT = v == null ? '<span class="norm-muted">ещё не наступило</span>' : `${v} (${Math.round(v / c.seats * 100)}%)`;
         return `<tr class="${v == null ? 'norm-row-out' : ''}">
             <td>${escHtml(c.date)}</td>

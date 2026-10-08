@@ -55,7 +55,9 @@ function getTimelineCacheSignature() {
     const expanded = [...timelineExpandedDates].sort().join(',');
     const nf = window.networkMapFilter;
     const filt = nf ? `${nf.city || ''}|${(nf.flights || []).join(',')}` : '';
-    return `${getMetricsCacheSignature()}|${(cfg.globalOrder || []).join('\x1f')}|grid2|e:${expanded}|w:${cfg.slotPx || 80}|f:${filt}`;
+    const modeSig = typeof FareRefs !== 'undefined' ? FareRefs.revision() : 0;
+    const subSig = typeof SharedOverrides !== 'undefined' && SharedOverrides.subsidyRevision ? SharedOverrides.subsidyRevision() : 0;
+    return `${getMetricsCacheSignature()}|${(cfg.globalOrder || []).join('\x1f')}|grid2|e:${expanded}|w:${cfg.slotPx || 80}|f:${filt}|m:${modeSig}.${subSig}`;
 }
 
 function timelineRowHeight(chipCount) {
@@ -536,6 +538,7 @@ function renderTimelineChipHtml(flight, date, meta, opts = {}) {
             <span class="timeline-chip-flight">${escHtml(flight)}</span>
             ${pctLabel ? `<span class="timeline-chip-pct">${pctLabel}</span>` : ''}
             ${opts.plus1 ? '<span class="timeline-plus1">+1</span>' : ''}
+            ${!opts.gantt && typeof FlightChecks !== 'undefined' && FlightChecks.modeBadge ? FlightChecks.modeBadge(flight, date, meta.row) : ''}
         </div>
         ${line2 ? `<span class="timeline-chip-dir">${escHtml(line2)}</span>` : ''}
         ${!opts.gantt && meta.pct !== null && !meta.closed && !meta.flew ? `<span class="timeline-chip-bar"><span class="timeline-chip-bar-fill" style="width:${Math.min(100, Math.max(0, meta.pct))}%"></span></span>` : ''}
@@ -570,6 +573,7 @@ function buildTimelineHtml() {
                 const depMin = typeof timeToMinutes === 'function' ? timeToMinutes(depStr || row[11]) : 9999;
                 const arrMin = arrStr && typeof timeToMinutes === 'function' ? timeToMinutes(arrStr) : 9999;
                 metaByDateFlight[dk] = {
+                    row,
                     pct: m ? m.pct : null,
                     sold: m ? m.free : null,
                     evR: m ? m.evR : null,

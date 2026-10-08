@@ -7,6 +7,9 @@
 // Правила:
 //   child50_subsidy    — продан детский тариф со скидкой 50% (код тарифа …/CN50);
 //   fare_above_subsidy — продан билет дороже предела из справочника субсидированных тарифов (fare-refs.js).
+//   На коммерческих датах проверки нет: там своя лестница тарифов, в том числе дешевле субсидированного,
+//   и те же коды классов (MSTOW, GSTOW…) — совпадение кода ошибкой не является.
+// modeFor/modeBadge — режим даты вылета «субсидия / коммерция» для меток в таблицах и на Графплане.
 // Значок «!» ставится у рейса в «Загрузке рейсов», «Экономической таблице» и «Динамике продаж»,
 // полный список — во вкладке «Отчёты», счётчик — в шапке.
 window.FlightChecks = (function () {
@@ -93,11 +96,13 @@ window.FlightChecks = (function () {
         const inter = typeof getFlightRouteType === 'function' && getFlightRouteType(c.code) === 'interregional';
         if (typeof SharedOverrides !== 'undefined' && SharedOverrides.hasSubsidy(c.code, c.date)) {
             const amount = Number(SharedOverrides.getSubsidy(c.code, c.date)) || 0;
-            return { subsidized: inter && amount > 0, source: 'ручная правка', amount };
+            return { subsidized: inter && amount > 0, commercial: inter && amount <= 0, source: 'ручная правка', amount };
         }
         const econ = typeof RouteCosts !== 'undefined' && RouteCosts.lookup ? RouteCosts.lookup(c.row, c.code, c.date) : null;
         const amount = econ ? (Number(econ.subsidyOneWay) || 0) : 0;
-        return { subsidized: inter && amount > 0, source: 'файл субсидий', amount };
+        // Коммерческая дата — у маршрута есть субсидия в файле, но на эту дату по периодам её нет.
+        const commercial = !!(inter && econ && econ.commercial && !econ.krai && Number(econ.subsidyAmt) > 0);
+        return { subsidized: inter && amount > 0, commercial, source: 'файл субсидий', amount };
     }
 
     function stateOf(c) {
@@ -226,6 +231,148 @@ window.FlightChecks = (function () {
         return [...codes].sort((a, b) => (parseInt(a.slice(3), 10) || 0) - (parseInt(b.slice(3), 10) || 0));
     }
 
+    function pairCode(code) {
+        if (typeof getFlightPair !== 'function') return '';
+        const p = getFlightPair(code);
+        const other = code === p.outbound ? p.inbound : p.outbound;
+        return other && other !== code ? other : '';
+    }
+
+    function isInfant(sale) {
+        return /\/(IN|ID)\d/i.test(String(sale && sale.basicFareStr || ''));
+    }
+
+    // Подсказки для пустого справочника: предел — самый дорогой из ходовых оплаченных взрослых тарифов
+    // (не меньше 10% билетов) на субсидированных датах рейса; коммерческие даты не учитываются.
+    // Дешевле предела бывают другие тарифы — это не ошибка, поэтому берётся не самый частый, а «потолок».
+    // Админ подтверждает подсказку одним кликом; сам справочник ничего не заполняет.
+    const SUGGEST_MIN_TICKETS = 20;
+    function suggestRefs() {
+        const missing = new Set(missingRefs());
+        if (!missing.size) return [];
+        const stats = new Map();
+        candidates().forEach(c => {
+            if (!missing.has(c.code)) return;
+            const ev = evaluate(c);
+            if (!ev.subsidized || ev.hasRef) return;
+            let st = stats.get(c.code);
+            if (!st) stats.set(c.code, st = { amounts: new Map(), total: 0, dates: new Set() });
+            st.dates.add(c.date);
+            c.sales.forEach(sale => {
+                if (isChild(sale) || isInfant(sale)) return;
+                const v = Math.round(Number(sale.fare) || 0);
+                if (v <= 0) return;
+                st.total++;
+                let a = st.amounts.get(v);
+                if (!a) st.amounts.set(v, a = { n: 0, fares: new Map() });
+                a.n++;
+                const root = String(sale.basicFareStr || '').trim().split('/')[0].toUpperCase();
+                if (root) a.fares.set(root, (a.fares.get(root) || 0) + 1);
+            });
+        });
+        const dominant = (st) => {
+            let best = null;
+            st.amounts.forEach((a, v) => { if (!best || a.n > best.n || (a.n === best.n && v > best.value)) best = { value: v, n: a.n, fares: a.fares }; });
+            return best;
+        };
+        const summarize = (flights) => {
+            const merged = { amounts: new Map(), total: 0, dates: new Set() };
+            flights.forEach(code => {
+                const st = stats.get(code);
+                if (!st) return;
+                merged.total += st.total;
+                st.dates.forEach(d => merged.dates.add(d));
+                st.amounts.forEach((a, v) => {
+                    let m = merged.amounts.get(v);
+                    if (!m) merged.amounts.set(v, m = { n: 0, fares: new Map() });
+                    m.n += a.n;
+                    a.fares.forEach((n, f) => m.fares.set(f, (m.fares.get(f) || 0) + n));
+                });
+            });
+            let top = null;
+            merged.amounts.forEach((a, v) => {
+                if (a.n >= 5 && a.n >= merged.total * 0.1 && (!top || v > top.value)) top = { value: v, n: a.n, fares: a.fares };
+            });
+            if (!top) top = dominant(merged);
+            if (!top) return null;
+            let below = 0;
+            let above = 0;
+            let maxPaid = 0;
+            merged.amounts.forEach((a, v) => {
+                if (v > top.value) above += a.n;
+                if (v < top.value) below += a.n;
+                if (v > maxPaid) maxPaid = v;
+            });
+            let fareCode = '';
+            let fareN = 0;
+            top.fares.forEach((n, f) => { if (n > fareN) { fareN = n; fareCode = f; } });
+            return {
+                flights,
+                adult: top.value,
+                fareCode,
+                tickets: top.n,
+                total: merged.total,
+                share: merged.total ? Math.round(top.n / merged.total * 100) : 0,
+                belowShare: merged.total ? Math.round(below / merged.total * 100) : 0,
+                above,
+                maxPaid,
+                departures: merged.dates.size,
+                // Надёжно: билетов хватает и дороже предела — единичные выбросы (меньше 5%).
+                enough: merged.total >= SUGGEST_MIN_TICKETS && above <= merged.total * 0.05
+            };
+        };
+        const out = [];
+        const done = new Set();
+        [...missing].forEach(code => {
+            if (done.has(code) || !stats.has(code)) return;
+            done.add(code);
+            const other = pairCode(code);
+            // Пара туда-обратно одной записью, если предел у них получается одинаковый.
+            if (other && missing.has(other) && stats.has(other) && !done.has(other)) {
+                const a = summarize([code]);
+                const b = summarize([other]);
+                if (a && b && a.adult === b.adult) {
+                    done.add(other);
+                    const sum = summarize([code, other]);
+                    if (sum) out.push(sum);
+                    return;
+                }
+            }
+            const sum = summarize([code]);
+            if (sum) out.push(sum);
+        });
+        return out.sort((a, b) => (parseInt(a.flights[0].slice(3), 10) || 0) - (parseInt(b.flights[0].slice(3), 10) || 0));
+    }
+
+    // Режим даты вылета: 'subsidy' — субсидия, 'commercial' — у маршрута есть субсидия, но не на эту дату,
+    // null — рейс без субсидии (краевой, KV-247/248, исключение) или нет файла расходов.
+    let modeCache = { token: '', map: new Map() };
+    function modeFor(code, date, row) {
+        const fl = cleanFlight(code);
+        if (!fl || !date) return null;
+        const token = revisionToken() + '|' + (typeof dataEpoch === 'number' ? dataEpoch : 0)
+            + '|' + (typeof RouteCosts !== 'undefined' && RouteCosts.loaded ? 1 : 0);
+        if (modeCache.token !== token) modeCache = { token, map: new Map() };
+        const key = fl + '|' + date;
+        if (modeCache.map.has(key)) return modeCache.map.get(key);
+        let mode = null;
+        if (!(typeof getFlightRouteType === 'function' && getFlightRouteType(fl) !== 'interregional')) {
+            const r = row || (typeof getFlightRowForDate === 'function' ? getFlightRowForDate(getBaseFlight(fl), date, fl) : null);
+            const sub = subsidyInfo({ code: fl, date, row: r });
+            mode = sub.excluded ? null : (sub.subsidized ? 'subsidy' : (sub.commercial ? 'commercial' : null));
+        }
+        modeCache.map.set(key, mode);
+        return mode;
+    }
+
+    function modeBadge(code, date, row) {
+        if (typeof ProfileAuth !== 'undefined' && typeof ProfileAuth.featureOn === 'function' && !ProfileAuth.featureOn('subsidy_mode')) return '';
+        const mode = modeFor(code, date, row);
+        if (mode === 'subsidy') return '<span class="mode-badge mode-sub" title="Субсидия на эту дату (по периодам субсидий)">С</span>';
+        if (mode === 'commercial') return '<span class="mode-badge mode-com" title="Коммерция: на эту дату субсидии нет, хотя маршрут субсидированный">К</span>';
+        return '';
+    }
+
     function flagForRow(row) {
         if (!enabled() || !row || !row[0] || !row[1]) return '';
         const issues = issuesFor(row[0], row[1]);
@@ -275,5 +422,5 @@ window.FlightChecks = (function () {
         if (typeof updateHeaderStatus === 'function') updateHeaderStatus();
     }
 
-    return { enabled, isNeverSubsidized, list, issuesFor, issueFor, missingRefs, flagForRow, rowClass, headerChip, openReport, refreshViews, RULES, RULE_TITLE };
+    return { enabled, isNeverSubsidized, list, issuesFor, issueFor, missingRefs, suggestRefs, modeFor, modeBadge, flagForRow, rowClass, headerChip, openReport, refreshViews, RULES, RULE_TITLE };
 })();
