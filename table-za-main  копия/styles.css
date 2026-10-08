@@ -5637,23 +5637,35 @@ html[data-theme="dark"] textarea {
     height: 100%;
 }
 .sm-part {
+    position: relative;
     flex: 1 1 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 3px 4px;
+    padding: 3px 8px;
     text-align: center;
     line-height: 1.15;
     word-break: break-word;
 }
+.sm-part + .sm-part {
+    box-shadow: inset 1px 0 0 rgb(28 40 51 / 0.35);
+}
 .sm-slash {
-    flex: 0 0 auto;
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 1;
     display: flex;
     align-items: center;
-    padding: 0 2px;
+    justify-content: center;
+    width: 12px;
+    transform: translateX(50%);
     font-weight: 800;
-    color: #1c2833;
-    background: #fff;
+    color: #fff;
+    background: none;
+    text-shadow: 0 0 2px #1c2833, 0 1px 1px #1c2833;
+    pointer-events: none;
 }
 
 
