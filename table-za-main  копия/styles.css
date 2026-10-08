@@ -6669,3 +6669,19 @@ body.flight-card-pinned { padding-right: 470px; }
 body.fc-window-body { margin: 0; background: var(--surface, #fff); }
 body.fc-window-body .flight-card { position: static; width: auto; max-width: none; min-height: 100vh; box-shadow: none; border: none; animation: none; }
 @media (max-width: 1100px) { body.flight-card-pinned { padding-right: 0; } }
+
+/* «Управление продажами»: несколько отметок в ячейке — части своих цветов, новая слева */
+.sm-cell.sm-multi { padding: 0 !important; }
+.sm-split { display: flex; align-items: stretch; width: 100%; min-height: 26px; }
+.sm-part {
+    flex: 1 1 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.92em;
+}
+.sm-part + .sm-part { border-left: 2px solid #fff; }
