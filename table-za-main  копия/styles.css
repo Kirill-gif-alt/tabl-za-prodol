@@ -5662,11 +5662,14 @@ html[data-theme="dark"] textarea {
     width: 12px;
     transform: translateX(50%);
     font-weight: 800;
-    color: #fff;
     background: none;
-    text-shadow: 0 0 2px #1c2833, 0 1px 1px #1c2833;
+    text-shadow: none;
     pointer-events: none;
 }
+.sm-part.sm-st-keep .sm-slash { color: var(--sm-keep, #f7dc6f); }
+.sm-part.sm-st-attn .sm-slash { color: var(--sm-attn, #f5b7b1); }
+.sm-part.sm-st-down .sm-slash { color: var(--sm-down, #8e1b2f); }
+.sm-part.sm-st-up .sm-slash { color: var(--sm-up, #7dcea0); }
 
 
 .sm-row-flew .sm-freeze {
