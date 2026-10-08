@@ -136,11 +136,16 @@ window.FlightChecks = (function () {
         return Math.round(paid) > Math.round(limitFor(sale, ref));
     }
 
+    // Суммы пределов видит только тот, кому админ дал право на справочник.
+    function canSeeRefs() {
+        return typeof FareRefs !== 'undefined' && FareRefs.canEdit();
+    }
+
     function revisionToken() {
         const refs = typeof FareRefs !== 'undefined' ? FareRefs.revision() : 0;
         const subs = typeof SharedOverrides !== 'undefined' && SharedOverrides.subsidyRevision ? SharedOverrides.subsidyRevision() : 0;
         const today = typeof getTodayDate === 'function' ? getTodayDate() : '';
-        return refs + '|' + subs + '|' + today;
+        return refs + '|' + subs + '|' + today + '|' + (canSeeRefs() ? 1 : 0);
     }
 
     function evaluate(c) {
@@ -178,7 +183,8 @@ window.FlightChecks = (function () {
                 if (over.length) {
                     const fares = faresOf(over);
                     const maxPaid = over.reduce((a, s) => Math.max(a, Number(s.fare) || 0), 0);
-                    const limits = ref.child != null ? `взрослый ${rub(ref.adult)}, детский ${rub(ref.child)}` : rub(ref.adult);
+                    const open = canSeeRefs();
+                    const limits = !open ? 'из справочника' : (ref.child != null ? `взрослый ${rub(ref.adult)}, детский ${rub(ref.child)}` : rub(ref.adult));
                     issues.push({
                         ...common,
                         rule: 'fare_above_subsidy',
@@ -187,10 +193,10 @@ window.FlightChecks = (function () {
                         fares,
                         paid: over.reduce((a, s) => a + (Number(s.fare) || 0), 0),
                         maxPaid,
-                        limit: ref.adult,
-                        childLimit: ref.child,
-                        refCode: ref.fareCode,
-                        detail: `билетов дороже предела ${limits}${ref.fareCode ? ' (' + ref.fareCode + ')' : ''} — ${over.length}, максимум ${rub(maxPaid)} (${fares.join(', ')})`
+                        limit: open ? ref.adult : null,
+                        childLimit: open ? ref.child : null,
+                        refCode: open ? ref.fareCode : '',
+                        detail: `билетов дороже предела ${limits}${open && ref.fareCode ? ' (' + ref.fareCode + ')' : ''} — ${over.length}, максимум ${rub(maxPaid)} (${fares.join(', ')})`
                     });
                 }
             }
@@ -396,6 +402,7 @@ window.FlightChecks = (function () {
 
     function openReport() {
         if (typeof switchMainTab !== 'function' || !canOpenReport()) return;
+        if (typeof ReportsView !== 'undefined' && ReportsView.showSubtab) ReportsView.showSubtab('checks');
         switchMainTab('reports');
         requestAnimationFrame(() => {
             const el = document.getElementById('rp-checks');

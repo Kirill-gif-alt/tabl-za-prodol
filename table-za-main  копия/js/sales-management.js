@@ -558,12 +558,15 @@ window.SalesManagement = (function () {
         updateSaveStatus();
         clearTimeout(persistTimer);
         persistTimer = setTimeout(() => {
+            // Обнуляем: иначе hasPending() навсегда true и фоновая подгрузка чужих отметок не идёт.
+            persistTimer = null;
             persistChain = persistChain.then(() => persistNow()).catch(() => {});
         }, 400);
     }
 
     async function flush() {
         clearTimeout(persistTimer);
+        persistTimer = null;
         persistChain = persistChain.then(() => persistNow()).catch(() => {});
         await persistChain;
     }

@@ -6777,3 +6777,39 @@ span.rp-chip {
     .flight-card { width: 100vw; padding: 12px; }
     .fc-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* Отчёты: внутренние вкладки */
+.rp-subtabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 12px;
+    background: var(--muted-bg, #f1f5f9);
+    align-self: flex-start;
+}
+.rp-subtab {
+    border: none;
+    background: transparent;
+    padding: 8px 14px;
+    border-radius: 9px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-muted, #475569);
+    cursor: pointer;
+}
+.rp-subtab:hover { color: var(--text, #0f172a); }
+.rp-subtab-on { background: var(--surface, #fff); color: var(--primary, #012a4a); box-shadow: 0 1px 4px rgb(15 23 42 / 0.12); }
+.rp-subtab-badge {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    background: #fee2e2;
+    color: #b91c1c;
+}
+.rp-subtab-badge-warn { background: #fef3c7; color: #92400e; }
+.rp-subtab-body { display: flex; flex-direction: column; gap: 10px; }
+.rp-export-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; }

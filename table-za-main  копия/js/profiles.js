@@ -25,7 +25,7 @@ window.ProfileAuth = (function () {
         edit_subsidy: { label: 'Правка субсидии', group: 'Данные' },
         edit_pkz_nav: { label: 'Правка ПКЗ из NAV', group: 'Данные' },
         edit_sales_mgmt: { label: 'Изменение таблицы управления продажами', group: 'Данные' },
-        edit_fare_refs: { label: 'Правка справочника субсидированных тарифов', group: 'Данные' },
+        edit_fare_refs: { label: 'Справочник субсидированных тарифов: видеть и править (без галочки раздел и суммы пределов скрыты)', group: 'Данные' },
         manage_profiles: { label: 'Управление профилями', group: 'Админ' }
     };
 
