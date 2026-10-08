@@ -3,3 +3,5 @@ shared/profiles.json
 shared/activity.json
 *.log
 *.crswap
+shared/*.json
+shared/*.crswap
