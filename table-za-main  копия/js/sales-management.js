@@ -1749,19 +1749,10 @@ function buildSalesIndexSheet(lib, entries, stamp, colored) {
     return ws;
 }
 
-function salesSlotEntries(mark) {
-    const people = salesDisplayEntries(mark);
-    const slots = [null, null, null];
-    if (people.length === 1) slots[0] = people[0];
-    else if (people.length === 2) {
-        slots[0] = people[0];
-        slots[2] = people[1];
-    } else if (people.length >= 3) {
-        slots[0] = people[0];
-        slots[1] = people[1];
-        slots[2] = people[2];
-    }
-    return slots;
+function salesSlotLabels(count) {
+    if (count === 2) return ['Итог', 'Исход'];
+    if (count >= 3) return ['Итог', 'Промеж', 'Исход'];
+    return [''];
 }
 
 function salesCheckHead(date) {
@@ -1770,12 +1761,33 @@ function salesCheckHead(date) {
     return dow ? (date + ' ' + dow) : date;
 }
 
+function salesDateWidths(flight) {
+    return (flight.checks || []).map(check => {
+        let width = 1;
+        (flight.departures || []).forEach(dep => {
+            const count = salesDisplayEntries(SalesManagement.getMark(dep.code, dep.date, check)).length;
+            if (count > width) width = count;
+        });
+        return Math.min(width, 3);
+    });
+}
+
 function salesFlightWorksheet(lib, flight, stamp, colored) {
-    const slots = ['Итог', 'Промеж', 'Исход'];
     const checks = flight.checks || [];
-    const header = ['Дата', 'Номер рейса', 'День недели', 'Тип ВС', 'Наименование маршрута']
-        .concat(checks.flatMap(date => [salesCheckHead(date), '', '']));
-    const slotRow = ['', '', '', '', ''].concat(checks.flatMap(() => slots));
+    const widths = salesDateWidths(flight);
+    const splitSheet = widths.some(width => width > 1);
+    const header = ['Дата', 'Номер рейса', 'День недели', 'Тип ВС', 'Наименование маршрута'];
+    const slotRow = ['', '', '', '', ''];
+    checks.forEach((date, index) => {
+        const width = widths[index];
+        const labels = salesSlotLabels(width);
+        header.push(salesCheckHead(date));
+        slotRow.push(labels[0] || '');
+        for (let i = 1; i < width; i++) {
+            header.push('');
+            slotRow.push(labels[i] || '');
+        }
+    });
     const legend = salesLegendModel();
     const aoa = legend.rows.map(row => row.cells.slice());
     const kinds = legend.rows.map(row => row.kinds.slice());
@@ -1783,26 +1795,34 @@ function salesFlightWorksheet(lib, flight, stamp, colored) {
     kinds.push(['title', 'title', 'title', 'title', 'title']);
     aoa.push(header);
     kinds.push(header.map(() => 'head'));
-    aoa.push(slotRow);
-    kinds.push(slotRow.map((value, index) => index < 5 ? 'head' : 'sub'));
+    if (splitSheet) {
+        aoa.push(slotRow);
+        kinds.push(slotRow.map((value, index) => index < 5 ? 'head' : 'sub'));
+    }
+    const rowMerges = [];
     flight.departures.forEach(dep => {
         const row = [dep.date, dep.code, dep.weekday, dep.aircraft, dep.route];
         const near = !dep.flown && salesNearDeparture(dep.date);
         const baseKind = dep.flown ? 'gray' : (near ? 'near' : 'id');
         const kind = [baseKind, baseKind, baseKind, baseKind, baseKind];
-        checks.forEach(check => {
-            const mark = SalesManagement.getMark(dep.code, dep.date, check);
+        let col = 5;
+        checks.forEach((check, index) => {
+            const width = widths[index];
+            const people = salesDisplayEntries(SalesManagement.getMark(dep.code, dep.date, check)).slice(0, width);
             const emptyKind = dep.flown ? 'gray' : (near ? 'near' : 'empty');
-            const people = salesSlotEntries(mark);
-            people.forEach(entry => {
-                if (!entry) {
+            const shown = people.length || 1;
+            for (let i = 0; i < shown; i++) {
+                const entry = people[i];
+                const span = i === shown - 1 ? width - i : 1;
+                row.push(entry ? salesEntryText(entry) : '');
+                kind.push(entry ? entry.status : emptyKind);
+                for (let extra = 1; extra < span; extra++) {
                     row.push('');
-                    kind.push(emptyKind);
-                    return;
+                    kind.push(entry ? entry.status : emptyKind);
                 }
-                row.push(salesEntryText(entry));
-                kind.push(entry.status);
-            });
+                if (span > 1) rowMerges.push({ col, span, depIndex: flight.departures.indexOf(dep) });
+                col += span;
+            }
         });
         aoa.push(row);
         kinds.push(kind);
@@ -1812,23 +1832,35 @@ function salesFlightWorksheet(lib, flight, stamp, colored) {
     const tableCols = header.length;
     const stampRow = legend.count;
     const headerRow = stampRow + 1;
+    const slotHeaderRow = splitSheet ? headerRow + 1 : headerRow;
+    const dataStart = slotHeaderRow + 1;
     const freeze = salesSheetFreeze(legend.count);
-    const cols = [
-        { wch: 14 }, { wch: 22 }, { wch: 14 }, { wch: 12 }, { wch: 38 }
-    ].concat(checks.flatMap(() => [{ wch: 18 }, { wch: 18 }, { wch: 18 }]));
+    const cols = [{ wch: 14 }, { wch: 22 }, { wch: 14 }, { wch: 12 }, { wch: 38 }];
+    widths.forEach(width => {
+        for (let i = 0; i < width; i++) cols.push({ wch: width === 1 ? 22 : 18 });
+    });
     ws['!cols'] = cols;
-    ws['!rows'] = legend.rows.map(() => ({ hpt: 18 })).concat([{ hpt: 20 }, { hpt: 22 }, { hpt: 18 }], flight.departures.map(() => ({ hpt: 22 })));
+    const headRows = splitSheet
+        ? [{ hpt: 20 }, { hpt: 22 }, { hpt: 18 }]
+        : [{ hpt: 20 }, { hpt: 22 }];
+    ws['!rows'] = legend.rows.map(() => ({ hpt: 18 })).concat(headRows, flight.departures.map(() => ({ hpt: 22 })));
     const merges = [{ s: { r: stampRow, c: 0 }, e: { r: stampRow, c: 4 } }];
-    checks.forEach((date, index) => {
-        const start = 5 + index * 3;
-        merges.push({ s: { r: headerRow, c: start }, e: { r: headerRow, c: start + 2 } });
+    let start = 5;
+    widths.forEach(width => {
+        if (width > 1) merges.push({ s: { r: headerRow, c: start }, e: { r: headerRow, c: start + width - 1 } });
+        else if (splitSheet) merges.push({ s: { r: headerRow, c: start }, e: { r: slotHeaderRow, c: start } });
+        start += width;
+    });
+    rowMerges.forEach(item => {
+        const r = dataStart + item.depIndex;
+        merges.push({ s: { r, c: item.col }, e: { r, c: item.col + item.span - 1 } });
     });
     ws['!merges'] = merges;
     ws['!views'] = [{
         state: 'frozen',
         xSplit: freeze.xSplit,
-        ySplit: freeze.ySplit,
-        topLeftCell: freeze.topLeft,
+        ySplit: splitSheet ? freeze.ySplit : freeze.ySplit - 1,
+        topLeftCell: 'F' + ((splitSheet ? freeze.ySplit : freeze.ySplit - 1) + 1),
         activePane: 'bottomRight'
     }];
     if (colored && ws['!ref']) {
