@@ -14,7 +14,37 @@ window.SharedStorage = (function () {
     ]);
 
     let rootHandle = null;
-    let linkStatus = 'unknown'; // unknown | linked | fetch | none
+    let linkStatus = 'unknown'; // unknown | linked | server | fetch | none
+    // Запись через локальный сервер (Start-Krasavia.cmd): не зависит от разрешения браузера на папку,
+    // которое Chrome сбрасывает после перезапуска. null — ещё не проверяли.
+    let serverWrite = null;
+
+    async function detectServerWrite() {
+        if (serverWrite !== null) return serverWrite;
+        serverWrite = false;
+        if (typeof location === 'undefined' || location.protocol !== 'http:') return serverWrite;
+        try {
+            const res = await fetch('./__krasavia/caps', { cache: 'no-store' });
+            if (res.ok) serverWrite = !!(await res.json()).sharedWrite;
+        } catch { serverWrite = false; }
+        if (serverWrite && !rootHandle) linkStatus = 'server';
+        return serverWrite;
+    }
+
+    async function writeViaServer(filename, data) {
+        if (!(await detectServerWrite())) return false;
+        try {
+            const res = await fetch(`./${SHARED_DIR}/${filename}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            return res.ok;
+        } catch (e) {
+            console.warn('writeViaServer', filename, e);
+            return false;
+        }
+    }
 
     function supportsFsAccess() {
         return typeof window.showDirectoryPicker === 'function' && window.isSecureContext;
@@ -61,7 +91,9 @@ window.SharedStorage = (function () {
                 linkStatus = 'linked';
                 return handle;
             }
-            if (perm === 'prompt') {
+            // Без клика пользователя Chrome не даёт вернуть доступ — не пытаемся, чтобы не было ошибки.
+            const activated = !navigator.userActivation || navigator.userActivation.isActive;
+            if (perm === 'prompt' && activated) {
                 const reqPerm = await handle.requestPermission({ mode: 'readwrite' });
                 if (reqPerm === 'granted') {
                     rootHandle = handle;
@@ -160,6 +192,8 @@ window.SharedStorage = (function () {
 
     async function writeViaHandle(filename, data) {
         if (!isAllowedSharedFile(filename)) return false;
+        // Сначала сервер — он всегда может записать; папка браузера — запасной путь.
+        if (await writeViaServer(filename, data)) return true;
         const handle = rootHandle || await restoreRootHandle();
         if (!handle) return false;
         try {
@@ -176,8 +210,9 @@ window.SharedStorage = (function () {
     }
 
     async function init() {
+        await detectServerWrite();
         await restoreRootHandle();
-        return { linked: !!rootHandle, fetchMode: linkStatus === 'fetch' };
+        return { linked: !!rootHandle || !!serverWrite, fetchMode: linkStatus === 'fetch' };
     }
 
     async function loadProfiles() {
@@ -263,11 +298,11 @@ window.SharedStorage = (function () {
     }
 
     function isLinked() {
-        return !!rootHandle || linkStatus === 'fetch';
+        return !!rootHandle || !!serverWrite || linkStatus === 'fetch';
     }
 
     function needsLinkPrompt() {
-        return supportsFsAccess() && !rootHandle && linkStatus !== 'fetch';
+        return supportsFsAccess() && !rootHandle && !serverWrite && linkStatus !== 'fetch';
     }
 
     function mergeActivityEvents(a, b, max) {
@@ -289,7 +324,7 @@ window.SharedStorage = (function () {
 
     async function saveActivity(events) {
         // Без подключённой папки записать нельзя — не качаем файл журнала зря.
-        if (!(rootHandle || await restoreRootHandle())) return false;
+        if (!(rootHandle || await detectServerWrite() || await restoreRootHandle())) return false;
         const remote = await loadActivity();
         const merged = mergeActivityEvents(remote, events, 2000);
         const payload = {
@@ -354,6 +389,7 @@ window.SharedStorage = (function () {
     }
 
     async function ensureWritableLink() {
+        if (await detectServerWrite()) return true;
         await restoreRootHandle();
         if (rootHandle) return true;
         if (!supportsFsAccess()) return false;
