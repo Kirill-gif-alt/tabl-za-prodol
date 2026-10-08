@@ -200,15 +200,23 @@ function parseDealDateTime(str) {
     return { date: normalizeDate(s), hour: null };
 }
 
-const VIEW_ZOOM = { main: 1, table: 1, pkz: 1, pair: 1, costs: 1, data: 1, rms: 1, home: 1 };
-let dataBoardZoom = 1;
+const VIEW_ZOOM = { main: 1, table: 1, pkz: 1, pair: 1, costs: 1, data: 1, rms: 1, home: 1, sales: 1, creative: 1, reports: 1 };
+// Масштаб общий для всех вкладок и запоминается в браузере.
+const VIEW_ZOOM_KEY = 'krasavia_view_zoom';
+(function restoreViewZoom() {
+    let z = 1;
+    try { z = parseFloat(localStorage.getItem(VIEW_ZOOM_KEY)) || 1; } catch (e) { /* ignore */ }
+    z = Math.min(1.6, Math.max(0.55, z));
+    Object.keys(VIEW_ZOOM).forEach(k => { VIEW_ZOOM[k] = z; });
+})();
+let dataBoardZoom = VIEW_ZOOM.data;
 /** Спец. брони (AV SSP Seg) — галочка на данных / динамике / экономике / ПКЗ */
 let dataShowSpecBookings = false;
 let showSpecBookings = false;
 /** Время местное (вылет/прилёт) на «Загрузка рейсов» */
 let dataShowLocalTimes = false;
 
-/** Масштаб в шапке (слева от KPI) — действует на текущую вкладку */
+/** Масштаб в шапке — один на все вкладки */
 function syncGlobalZoomUi(tabKey) {
     const tab = tabKey || (typeof currentTab !== 'undefined' ? currentTab : 'main');
     const label = document.getElementById('global-zoom-val');
@@ -218,9 +226,12 @@ function syncGlobalZoomUi(tabKey) {
 function setViewZoom(tabKey, delta) {
     const tab = tabKey || (typeof currentTab !== 'undefined' ? currentTab : 'main');
     const cur = VIEW_ZOOM[tab] ?? 1;
-    VIEW_ZOOM[tab] = Math.min(1.6, Math.max(0.55, Math.round((cur + delta) * 100) / 100));
-    if (tab === 'data') dataBoardZoom = VIEW_ZOOM.data;
-    applyViewZoom(tab);
+    const next = Math.min(1.6, Math.max(0.55, Math.round((cur + delta) * 100) / 100));
+    // Один масштаб на все вкладки: меняем сразу везде, в том числе на уже открытых.
+    Object.keys(VIEW_ZOOM).forEach(k => { VIEW_ZOOM[k] = next; });
+    dataBoardZoom = next;
+    try { localStorage.setItem(VIEW_ZOOM_KEY, String(next)); } catch (e) { /* ignore */ }
+    Object.keys(VIEW_ZOOM).forEach(k => applyViewZoom(k));
     syncGlobalZoomUi(tab);
 }
 
@@ -245,7 +256,11 @@ function applyViewZoom(tabKey) {
         return;
     }
 
-    applyZoomToElement(document.querySelector(`[data-zoom-target="${tab}"]`), scale);
+    // Вкладки без своей таблицы (Отчёты, Расчёт расходов) — масштаб на содержимое вкладки.
+    const target = document.querySelector(`[data-zoom-target="${tab}"]`)
+        || document.querySelector(`#tab-panel-${tab} .table-page-body`)
+        || document.querySelector(`#tab-panel-${tab} .rp-body`);
+    applyZoomToElement(target, scale);
 }
 
 function bindGlobalZoomControls() {

@@ -13,7 +13,10 @@ function closeTableSalesPanel() {
     if (!anyOpen) return;
     ids.forEach(id => {
         const panel = document.getElementById(id);
-        if (panel) panel.classList.add('is-hidden');
+        if (panel) {
+            panel.classList.add('is-hidden');
+            panel.parentElement?.classList.remove('sd-open');
+        }
     });
     document.body.classList.remove('pkz-detail-open');
     destroyChartsByPrefix('report-');
@@ -64,6 +67,7 @@ function openSalesReportForFlight(flightBase, flyDate, flightCode) {
     hideSelectionStatusBar();
     document.body.classList.add('pkz-detail-open');
     panel.classList.remove('is-hidden');
+    openSideDetail(panel);
     if (sub) {
         sub.textContent = `${getFlightDirection(salesFlight)} (${salesFlight}) · вылет ${flyDate}`;
     }
@@ -74,6 +78,42 @@ function openSalesReportForFlight(flightBase, flyDate, flightCode) {
     requestAnimationFrame(() => {
         panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
+}
+
+// Детализация справа от таблицы: таблица остаётся на всю высоту, граница перетаскивается.
+const SIDE_DETAIL_KEY = 'krasavia_side_detail_px';
+
+function openSideDetail(panel) {
+    const body = panel && panel.parentElement;
+    if (!body) return;
+    body.classList.add('sd-open');
+    let saved = 0;
+    try { saved = parseInt(localStorage.getItem(SIDE_DETAIL_KEY), 10) || 0; } catch (e) { /* ignore */ }
+    if (saved) body.style.setProperty('--sd-panel', saved + 'px');
+    if (!body.querySelector(':scope > .sd-splitter')) {
+        const split = document.createElement('div');
+        split.className = 'sd-splitter';
+        split.title = 'Потяните, чтобы изменить ширину';
+        body.insertBefore(split, panel);
+        split.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            split.setPointerCapture(e.pointerId);
+            const rect = body.getBoundingClientRect();
+            const move = (ev) => {
+                const px = Math.round(Math.min(Math.max(rect.right - ev.clientX, 420), rect.width - 360));
+                body.style.setProperty('--sd-panel', px + 'px');
+            };
+            const up = () => {
+                split.removeEventListener('pointermove', move);
+                split.removeEventListener('pointerup', up);
+                const px = parseInt(getComputedStyle(body).getPropertyValue('--sd-panel'), 10);
+                try { if (px) localStorage.setItem(SIDE_DETAIL_KEY, String(px)); } catch (err) { /* ignore */ }
+                if (typeof Chart !== 'undefined') Object.values(Chart.instances || {}).forEach(ch => { try { ch.resize(); } catch (er) { /* ignore */ } });
+            };
+            split.addEventListener('pointermove', move);
+            split.addEventListener('pointerup', up);
+        });
+    }
 }
 
 function openPkzReportForFlight(flightBase, flyDate, flightCode) {
@@ -380,22 +420,6 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
     }
 
     const nowVal = thisData.length ? thisData[thisData.length - 1] : thisCurve.total;
-    const refVal = refData && refData.length ? refData[refData.length - 1] : null;
-    let verdict = `На ${axisMin} дн. до вылета продано ${nowVal}`;
-    let verdictCls = 'booking-curve-verdict-neutral';
-    if (refVal != null && !isNaN(refVal)) {
-        const delta = nowVal - refVal;
-        const nNote = refBand ? ` по ${refBand.n[refBand.n.length - 1]} вылетам` : '';
-        if (delta > 0) {
-            verdict += ` · норма${nNote} ${refVal} (+${delta}, опережаем)`;
-            verdictCls = 'booking-curve-verdict-up';
-        } else if (delta < 0) {
-            verdict += ` · норма${nNote} ${refVal} (${delta}, отстаём)`;
-            verdictCls = 'booking-curve-verdict-down';
-        } else {
-            verdict += ` · норма${nNote} ${refVal} (как в норме)`;
-        }
-    }
 
     let expectedData = null;
     if (typeof getExpectedLoad === 'function' && typeof getCapacityFromAircraft === 'function') {
@@ -407,6 +431,28 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
         });
         if (pts.some(v => v !== null)) expectedData = pts;
     }
+
+    // Вывод: сколько продано и как это к норме и к файлу ожидаемой загрузки (если они есть).
+    const refVal = refData && refData.length ? refData[refData.length - 1] : null;
+    const expVal = expectedData && expectedData.length ? expectedData[expectedData.length - 1] : null;
+    const signed = (d) => (d > 0 ? '+' + d : (d < 0 ? '−' + Math.abs(d) : '0'));
+    const parts = [`На ${axisMin} дн. до вылета продано ${nowVal}`];
+    let mainDelta = null;
+    if (refVal != null && !isNaN(refVal)) {
+        const d = nowVal - refVal;
+        const nNote = refBand ? ` по ${refBand.n[refBand.n.length - 1]} вылетам` : '';
+        parts.push(`норма${nNote} ${refVal}: ${signed(d)}`);
+        mainDelta = d;
+    }
+    if (expVal != null && !isNaN(expVal)) {
+        const d = nowVal - expVal;
+        parts.push(`ожидаемая ${expVal}: ${signed(d)}`);
+        if (mainDelta == null) mainDelta = d;
+    }
+    if (mainDelta != null) parts.push(mainDelta > 0 ? 'опережаем' : (mainDelta < 0 ? 'отстаём' : 'как в норме'));
+    const verdict = parts.join(' · ');
+    const verdictCls = mainDelta == null || mainDelta === 0 ? 'booking-curve-verdict-neutral'
+        : (mainDelta > 0 ? 'booking-curve-verdict-up' : 'booking-curve-verdict-down');
 
     return { dtds, thisData, refData, refBand, normInfo, refLabel, caption, verdict, verdictCls, expectedData };
 }
@@ -589,98 +635,113 @@ function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode)
         };
     });
 
-    const commentBlock = buildFlightCommentBlockHtml(salesFlight, flyDateStr);
     const dtdCurve = buildFlightDtdBookingSeries(baseFlight, flyDateStr, salesFlight, period, aircraftCode);
+    const comment = typeof FlightComments !== 'undefined' ? FlightComments.get(salesFlight, flyDateStr) : '';
+    const metricsRow = flightRow && typeof getRowMetrics === 'function' ? getRowMetrics(flightRow, baseFlight) : null;
+    const expR = finalExpectedLoad !== null ? Math.ceil(finalExpectedLoad) : null;
+    const deltaNow = metricsRow && metricsRow.delta != null ? metricsRow.delta : null;
+    const pct = seats > 0 ? Math.round(loadPax / seats * 100) : null;
+    const chip = (label, value, extra) => `<span class="sd-kpi"><span class="sd-kpi-label">${label}</span><strong>${value}</strong>${extra || ''}</span>`;
+    const periodBtn = (n) => `<button type="button" class="sd-period-btn sales-period-btn${period === n ? ' sd-on' : ''}" data-period="${n}">${n}</button>`;
+
+    // Продажи по тарифам: лестница цен — что продаётся, по какой цене и когда в последний раз.
+    const fareRows = (() => {
+        const list = typeof getFlightSalesList === 'function' ? getFlightSalesList(flyDateStr, salesFlight) : [];
+        const cut = typeof salesDataCutoffTime === 'function' ? salesDataCutoffTime() : Date.now();
+        const weekAgo = cut - 6 * 86400000;
+        const map = new Map();
+        list.forEach(s => {
+            const root = String(s.basicFareStr || '').trim().split('/')[0].toUpperCase() || '—';
+            const child = /\/(CN|IN|ID)\d/i.test(String(s.basicFareStr || ''));
+            const price = Math.round(Number(s.fare) || 0);
+            const key = root + '|' + price;
+            let f = map.get(key);
+            if (!f) map.set(key, f = { root, price, n: 0, child: 0, last: '', lastT: 0, week: 0 });
+            f.n++;
+            if (child) f.child++;
+            const t = parseLocalDate(s.dealDate)?.getTime() || 0;
+            if (t >= f.lastT) { f.lastT = t; f.last = s.dealDate; }
+            if (t >= weekAgo) f.week++;
+        });
+        return [...map.values()].sort((a, b) => b.price - a.price || b.n - a.n);
+    })();
+    const fareTotal = fareRows.reduce((a, f) => a + f.n, 0);
+    const fareHtml = fareRows.length ? `
+        <div class="sd-block">
+            <div class="sd-block-head"><h5>Продажи по тарифам</h5><span class="sd-muted">от дорогих к дешёвым · ${fareTotal} бил.</span></div>
+            <div class="report-table-scroll">
+                <table class="report-data-table sd-fare-table">
+                    <thead><tr><th class="sd-left">Тариф</th><th>Цена</th><th>Билетов</th><th class="sd-left">Доля</th><th>За 7 дней</th><th>Последняя продажа</th></tr></thead>
+                    <tbody>${fareRows.map(f => {
+                        const share = fareTotal ? Math.round(f.n / fareTotal * 100) : 0;
+                        return `<tr class="${f.week ? '' : 'sd-fare-stale'}">
+                            <td class="sd-left"><strong>${escHtml(f.root)}</strong>${f.child ? ` <span class="sd-muted">дет. ${f.child}</span>` : ''}</td>
+                            <td>${f.price ? formatRub(f.price) : '0 ₽'}</td>
+                            <td><strong>${f.n}</strong></td>
+                            <td class="sd-left"><span class="sd-bar"><i style="width:${share}%"></i></span> ${share}%</td>
+                            <td>${f.week || '—'}</td>
+                            <td>${escHtml(f.last || '—')}</td>
+                        </tr>`;
+                    }).join('')}</tbody>
+                </table>
+            </div>
+        </div>` : '';
 
     resultDiv.innerHTML = `
-        ${commentBlock}
-        <div class="sales-meta-line">
-            Загрузка: <strong>${formatNum(loadPax)}</strong> / ${formatNum(seats)} кресел
-            ${finalExpectedLoad !== null ? ` · Ожидаемая: <strong>${Math.ceil(finalExpectedLoad)}</strong>` : ''}
-        </div>
-        <div class="booking-curve-verdict ${dtdCurve.verdictCls}">${escHtml(dtdCurve.verdict)}</div>
-        ${typeof PriceMarks !== 'undefined' ? PriceMarks.buttonsHtml(salesFlight, flyDateStr) : ''}
-
-        <div class="sales-kpi-row">
-            <div class="kpi-card kpi-emerald">
-                <div class="kpi-label">Всего продано</div>
-                <div class="kpi-value">${totalTickets}</div>
+        <div class="sd-top">
+            <div class="sd-kpis">
+                ${chip('Продано', totalTickets)}
+                ${chip('Выручка', formatRub(Math.round(totalRevenue)))}
+                ${chip('Ср. тариф', overallAvg ? formatRub(overallAvg) : '—')}
+                ${chip('Загрузка', `${formatNum(loadPax)}/${formatNum(seats)}`, pct != null ? ` <span class="sd-muted">${pct}%</span>` : '')}
+                ${chip('Ожидаемая', expR != null ? expR : '—', deltaNow != null ? ` <span class="${deltaNow < 0 ? 'sd-neg' : 'sd-pos'}">${deltaNow > 0 ? '+' : ''}${deltaNow}</span>` : '')}
             </div>
-            <div class="kpi-card kpi-blue">
-                <div class="kpi-label">Выручка</div>
-                <div class="kpi-value">${Math.round(totalRevenue).toLocaleString('ru-RU')} ₽</div>
-            </div>
-            <div class="kpi-card kpi-purple">
-                <div class="kpi-label">Средний тариф</div>
-                <div class="kpi-value">${overallAvg} ₽</div>
+            <div class="sd-tools">
+                <span class="sd-period">${[7, 14, 30, 90].map(periodBtn).join('')}<input type="number" id="sales-period-custom" class="sd-period-input" min="1" max="400" value="${period}" title="Свой период, дней"><button type="button" class="sd-period-btn" id="sales-period-apply">OK</button></span>
+                <button type="button" class="sd-comment-btn${comment ? ' sd-has' : ''}" data-sd="comment" title="${comment ? escAttr(comment) : 'Добавить комментарий'}">💬${comment ? ' 1' : ''}</button>
             </div>
         </div>
-
-        <div class="sales-period-bar">
-            <span class="sales-period-label">Период:</span>
-            <button type="button" class="filter-btn sales-period-btn ${period === 7 ? 'filter-btn-active' : ''}" data-period="7">7</button>
-            <button type="button" class="filter-btn sales-period-btn ${period === 14 ? 'filter-btn-active' : ''}" data-period="14">14</button>
-            <button type="button" class="filter-btn sales-period-btn ${period === 30 ? 'filter-btn-active' : ''}" data-period="30">30</button>
-            <button type="button" class="filter-btn sales-period-btn ${period === 90 ? 'filter-btn-active' : ''}" data-period="90">90</button>
-            <label class="sales-period-custom-wrap">
-                <span>дней</span>
-                <input type="number" id="sales-period-custom" class="sales-period-custom" min="1" max="400" value="${period}" />
-                <button type="button" class="filter-btn sales-period-apply" id="sales-period-apply">OK</button>
-            </label>
-
+        <div class="sd-comment" hidden>${buildFlightCommentBlockHtml(salesFlight, flyDateStr)}</div>
+        ${comment ? `<div class="sd-comment-text">💬 ${escHtml(comment)}</div>` : ''}
+        <div class="sd-verdict-row">
+            <div class="booking-curve-verdict ${dtdCurve.verdictCls}">${escHtml(dtdCurve.verdict)}</div>
+            ${typeof PriceMarks !== 'undefined' ? PriceMarks.buttonsHtml(salesFlight, flyDateStr) : ''}
         </div>
-
-        <div class="sales-charts-grid">
-            <div class="sales-chart-card">
-                <div class="sales-chart-head">
-                    <h5>Продажи по дням</h5>
-                    <button type="button" onclick="expandReportChart('report-daily-sales', 'Продажи по дням')"
-                            class="chart-expand-btn">⛶</button>
-                </div>
-                <div class="chart-scroll-x"><div class="chart-container sales-chart-canvas" style="min-width:${Math.max(280, allDates.length * 14)}px"><canvas id="report-daily-sales"></canvas></div></div>
+        <div class="sd-block">
+            <div class="sd-block-head">
+                <h5>Продажи по дням и накоплено</h5>
+                <span class="sd-muted">столбики — билеты за день · синяя — накоплено · серая — ${escHtml(dtdCurve.refLabel || 'норма')} · оранжевая — ожидаемая</span>
+                <button type="button" onclick="expandReportChart('report-combined', 'Продажи по дням и накоплено')" class="chart-expand-btn" title="Развернуть">⛶</button>
             </div>
-            <div class="sales-chart-card">
-                <div class="sales-chart-head">
-                    <div>
-                        <h5>Кривая бронирования (дни до вылета)</h5>
-                        <p class="sales-chart-sub">${escHtml(dtdCurve.caption)}</p>
-                    </div>
-                    <button type="button" onclick="expandReportChart('report-booking-curve', 'Кривая бронирования по дням до вылета')"
-                            class="chart-expand-btn">⛶</button>
-                </div>
-                <div class="chart-scroll-x"><div class="chart-container sales-chart-canvas" style="min-width:${Math.max(280, dtdCurve.dtds.length * 14)}px"><canvas id="report-booking-curve"></canvas></div></div>
-                ${buildWeekdayNormTableHtml(dtdCurve)}
-            </div>
+            <div class="chart-scroll-x"><div class="chart-container sd-chart" style="min-width:${Math.max(280, allDates.length * 16)}px"><canvas id="report-combined"></canvas></div></div>
+            <details class="sd-howto"><summary>ⓘ Как читать и из чего норма</summary><p class="sales-chart-sub">${escHtml(dtdCurve.caption)}</p>${buildWeekdayNormTableHtml(dtdCurve)}</details>
         </div>
         ${typeof PriceMarks !== 'undefined' ? PriceMarks.decisionsHtml(baseFlight, salesFlight, flyDateStr) : ''}
-
-        <div class="report-table-scroll">
-            <table class="report-data-table sales-detail-table">
-                <thead>
-                    <tr>
-                        <th class="col-date">Дата покупки</th>
-                        <th>День</th>
-                        <th>Билетов</th>
-                        <th>Средний тариф</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${sortedDealDates.length ? sortedDealDates.map(dealDate => {
-                        const data = salesByDealDate[dealDate];
-                        const avg = data.count > 0 ? Math.round(data.totalFare / data.count) : 0;
-                        return `<tr>
-                            <td class="col-date">${escHtml(dealDate)}</td>
-                            <td>${escHtml(getDayOfWeek(dealDate))}</td>
-                            <td><strong>${data.count}</strong></td>
-                            <td>${avg} ₽</td>
-                        </tr>`;
-                    }).join('') : '<tr><td colspan="4">Нет продаж</td></tr>'}
-                </tbody>
-            </table>
-        </div>
+        ${fareHtml}
+        <details class="sd-block sd-collapsed">
+            <summary>Продажи по датам покупки</summary>
+            <div class="report-table-scroll">
+                <table class="report-data-table sales-detail-table">
+                    <thead><tr><th class="col-date">Дата покупки</th><th>День</th><th>Билетов</th><th>Средний тариф</th></tr></thead>
+                    <tbody>
+                        ${sortedDealDates.length ? sortedDealDates.slice().reverse().map(dealDate => {
+                            const data = salesByDealDate[dealDate];
+                            const avg = data.count > 0 ? Math.round(data.totalFare / data.count) : 0;
+                            return `<tr><td class="col-date">${escHtml(dealDate)}</td><td>${escHtml(getDayOfWeek(dealDate))}</td><td><strong>${data.count}</strong></td><td>${formatRub(avg)}</td></tr>`;
+                        }).join('') : '<tr><td colspan="4">Нет продаж</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+        </details>
     `;
 
     bindFlightCommentBox(resultDiv);
+    resultDiv.querySelector('[data-sd="comment"]')?.addEventListener('click', () => {
+        const box = resultDiv.querySelector('.sd-comment');
+        if (!box) return;
+        box.hidden = !box.hidden;
+        if (!box.hidden) box.querySelector('textarea')?.focus();
+    });
     resultDiv.querySelectorAll('.sales-period-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             salesChartPeriodDays = parseInt(btn.dataset.period, 10) || 30;
@@ -702,209 +763,80 @@ function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode)
 
     setTimeout(() => {
         if (typeof Chart === 'undefined') return;
-
+        // Один график на оси дат: столбики — билеты за день, линии — накоплено, норма и ожидаемая
+        // (норма и ожидаемая считаются по «дням до вылета» и переносятся на дату).
         const n = cumulativeData.length;
-        // Адаптивные подписи: при длинном периоде — каждый N-й день, чтобы не каша
         const tickStep = n <= 12 ? 1 : n <= 24 ? 2 : n <= 45 ? 3 : n <= 90 ? 5 : 7;
-        const xTickOpts = {
-            maxRotation: n > 20 ? 90 : 45,
-            minRotation: n > 20 ? 90 : 0,
-            autoSkip: false,
-            font: { size: n > 40 ? 8 : 9 },
-            callback: function (val, idx) {
-                if (idx === 0 || idx === n - 1 || idx % tickStep === 0) {
-                    return cumulativeData[idx]?.label || '';
-                }
-                return '';
-            }
-        };
         const labels = cumulativeData.map(d => d.label);
-
-        const dailySalesConfig = {
+        const fly = parseLocalDate(flyDateStr);
+        const byDate = (arr) => cumulativeData.map(pt => {
+            if (!arr || !fly) return null;
+            const d = parseLocalDate(pt.date);
+            const i = d ? dtdCurve.dtds.indexOf(Math.round((fly - d) / 86400000)) : -1;
+            return i < 0 ? null : arr[i];
+        });
+        const datasets = [{
+            type: 'line', label: 'Накоплено', data: cumulativeData.map(d => d.cumulative), yAxisID: 'y1',
+            borderColor: '#1d4ed8', backgroundColor: 'rgba(29, 78, 216, 0.07)', fill: true, tension: 0.15,
+            pointRadius: n > 60 ? 0 : 2, borderWidth: 2.5, order: 1
+        }];
+        if (dtdCurve.refData && dtdCurve.refBand) {
+            datasets.push({ type: 'line', label: 'Разброс нормы', data: byDate(dtdCurve.refBand.hi), yAxisID: 'y1', borderWidth: 0, pointRadius: 0, backgroundColor: 'rgba(100, 116, 139, 0.13)', fill: '+1', spanGaps: true, tension: 0.15, _band: true, order: 3 },
+                { type: 'line', label: 'Разброс нормы (низ)', data: byDate(dtdCurve.refBand.lo), yAxisID: 'y1', borderWidth: 0, pointRadius: 0, backgroundColor: 'transparent', fill: false, spanGaps: true, tension: 0.15, _band: true, _hideLegend: true, order: 3 });
+        }
+        if (dtdCurve.refData) {
+            datasets.push({ type: 'line', label: dtdCurve.refLabel || 'Норма', data: byDate(dtdCurve.refData), yAxisID: 'y1', borderColor: '#64748b', borderDash: [5, 4], fill: false, tension: 0.15, pointRadius: 0, borderWidth: 2, spanGaps: true, order: 2 });
+        }
+        if (dtdCurve.expectedData) {
+            datasets.push({ type: 'line', label: 'Ожидаемая', data: byDate(dtdCurve.expectedData), yAxisID: 'y1', borderColor: '#d97706', borderDash: [6, 4], fill: false, tension: 0.15, pointRadius: 0, borderWidth: 2, spanGaps: true, order: 2 });
+        }
+        const maxDaily = Math.max(1, ...cumulativeData.map(d => d.daily));
+        datasets.push({
+            type: 'bar', label: 'Билетов за день', data: cumulativeData.map(d => d.daily), yAxisID: 'y',
+            backgroundColor: 'rgba(16, 185, 129, 0.55)', borderColor: '#059669', borderWidth: 1, borderRadius: 2,
+            maxBarThickness: n > 60 ? 8 : 18, order: 4
+        });
+        const config = {
             type: 'bar',
-            data: {
-                labels,
-                datasets: [{
-                    label: 'Билетов / день',
-                    data: cumulativeData.map(d => d.daily),
-                    backgroundColor: cumulativeData.map(d => d.daily > 0 ? 'rgba(16, 185, 129, 0.8)' : 'rgba(203, 213, 225, 0.45)'),
-                    borderColor: cumulativeData.map(d => d.daily > 0 ? '#047857' : '#94a3b8'),
-                    borderWidth: 1.5,
-                    borderRadius: 2,
-                    borderSkipped: false,
-                    maxBarThickness: n > 60 ? 8 : 18
-                }]
-            },
+            data: { labels, datasets },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
                 plugins: {
-                    legend: { display: false },
+                    legend: { labels: { boxWidth: 12, font: { size: 11 }, color: '#0f172a', filter: (item, data) => !data.datasets[item.datasetIndex]._hideLegend } },
                     priceMarks: {
                         items: typeof PriceMarks !== 'undefined'
                             ? PriceMarks.chartItems(salesFlight, flyDateStr, m => cumulativeData.findIndex(pt => pt.date === m.check))
                             : []
                     },
                     tooltip: {
-                        callbacks: {
-                            title: (items) => {
-                                const idx = items[0]?.dataIndex;
-                                if (idx === undefined) return '';
-                                const pt = cumulativeData[idx];
-                                return `${pt.date} (${getDayOfWeek(pt.date)})`;
-                            },
-                            label: (item) => `Продаж: ${item.raw}`
-                        }
-                    }
-                },
-                scales: {
-                    y: { beginAtZero: true, ticks: { stepSize: 1, color: '#334155' }, grid: { color: 'rgba(148,163,184,0.25)' } },
-                    x: { ticks: { ...xTickOpts, color: '#334155' }, grid: { display: false } }
-                }
-            }
-        };
-        reportChartExpandConfigs['report-daily-sales'] = dailySalesConfig;
-        createManagedChart('report-daily-sales', dailySalesConfig);
-
-        const dtdN = dtdCurve.dtds.length;
-        const dtdTickStep = dtdN <= 12 ? 1 : dtdN <= 24 ? 2 : dtdN <= 45 ? 3 : dtdN <= 90 ? 5 : 7;
-        const dtdLabels = dtdCurve.dtds.map(t => t + 'д');
-        const dtdDatasets = [{
-            label: 'Загрузка рейса',
-            data: dtdCurve.thisData,
-            borderColor: '#1d4ed8',
-            backgroundColor: 'rgba(29, 78, 216, 0.08)',
-            fill: true,
-            tension: 0.15,
-            pointRadius: dtdN > 60 ? 0 : (dtdN > 30 ? 1.5 : 3),
-            pointHoverRadius: 4,
-            spanGaps: true,
-            borderWidth: 2
-        }];
-        if (dtdCurve.refData && dtdCurve.refBand) {
-            dtdDatasets.push({
-                label: 'Разброс нормы',
-                data: dtdCurve.refBand.hi,
-                borderWidth: 0,
-                pointRadius: 0,
-                pointHoverRadius: 0,
-                backgroundColor: 'rgba(100, 116, 139, 0.14)',
-                fill: '+1',
-                spanGaps: true,
-                tension: 0.15,
-                _band: true
-            }, {
-                label: 'Разброс нормы (низ)',
-                data: dtdCurve.refBand.lo,
-                borderWidth: 0,
-                pointRadius: 0,
-                pointHoverRadius: 0,
-                backgroundColor: 'transparent',
-                fill: false,
-                spanGaps: true,
-                tension: 0.15,
-                _band: true,
-                _hideLegend: true
-            });
-        }
-        if (dtdCurve.refData) {
-            dtdDatasets.push({
-                label: dtdCurve.refLabel,
-                data: dtdCurve.refData,
-                borderColor: '#64748b',
-                borderDash: [5, 4],
-                backgroundColor: 'transparent',
-                fill: false,
-                tension: 0.15,
-                pointRadius: 0,
-                pointHoverRadius: 3,
-                spanGaps: true,
-                borderWidth: 2
-            });
-        }
-        if (dtdCurve.expectedData) {
-            dtdDatasets.push({
-                label: 'Ожидаемая загрузка',
-                data: dtdCurve.expectedData,
-                borderColor: '#d97706',
-                borderDash: [6, 4],
-                backgroundColor: 'transparent',
-                fill: false,
-                tension: 0.15,
-                pointRadius: 0,
-                pointHoverRadius: 3,
-                spanGaps: true,
-                borderWidth: 2
-            });
-        }
-
-        const bookingCurveConfig = {
-            type: 'line',
-            data: { labels: dtdLabels, datasets: dtdDatasets },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: { mode: 'index', intersect: false },
-                plugins: {
-                    priceMarks: {
-                        items: typeof PriceMarks !== 'undefined'
-                            ? PriceMarks.chartItems(salesFlight, flyDateStr, m => {
-                                const f = parseLocalDate(flyDateStr);
-                                const c = parseLocalDate(m.check);
-                                return f && c ? dtdCurve.dtds.indexOf(Math.round((f - c) / 86400000)) : -1;
-                            })
-                            : []
-                    },
-                    legend: {
-                        display: true,
-                        labels: {
-                            color: '#0f172a',
-                            boxWidth: 12,
-                            font: { size: 11 },
-                            filter: (item, data) => !data.datasets[item.datasetIndex]._hideLegend
-                        }
-                    },
-                    tooltip: {
                         filter: (item) => !item.dataset._band,
                         callbacks: {
                             title: (items) => {
-                                const idx = items[0]?.dataIndex;
-                                if (idx === undefined) return '';
-                                const t = dtdCurve.dtds[idx];
-                                return `${t} дн. до вылета`;
-                            },
-                            afterBody: (items) => {
-                                const idx = items[0]?.dataIndex;
-                                const band = dtdCurve.refBand;
-                                if (idx === undefined || !band || band.n[idx] == null || dtdCurve.refData[idx] == null) return '';
-                                return `Норма по ${band.n[idx]} вылетам, загрузка ${band.lf[idx]}%, разброс ${band.lo[idx]}–${band.hi[idx]}`;
+                                const pt = cumulativeData[items[0]?.dataIndex];
+                                return pt ? `${pt.date} (${getDayOfWeek(pt.date)}) · ${pt.dtd} дн. до вылета` : '';
                             }
                         }
                     }
                 },
                 scales: {
-                    y: { beginAtZero: true, ticks: { color: '#334155' }, grid: { color: 'rgba(148,163,184,0.25)' } },
+                    y1: { position: 'left', beginAtZero: true, title: { display: true, text: 'накоплено' }, ticks: { color: '#334155' }, grid: { color: 'rgba(148,163,184,0.25)' } },
+                    // Ось «за день» выше максимума в 3 раза: столбики внизу и не закрывают линии.
+                    y: { position: 'right', beginAtZero: true, suggestedMax: maxDaily * 3, title: { display: true, text: 'за день' }, ticks: { stepSize: 1, color: '#64748b' }, grid: { display: false } },
                     x: {
                         ticks: {
-                            maxRotation: dtdN > 20 ? 90 : 0,
-                            minRotation: 0,
-                            autoSkip: false,
-                            font: { size: dtdN > 40 ? 8 : 9 },
-                            color: '#334155',
-                            callback: function (val, idx) {
-                                if (idx === 0 || idx === dtdN - 1 || idx % dtdTickStep === 0) {
-                                    return dtdLabels[idx] || '';
-                                }
-                                return '';
-                            }
+                            maxRotation: n > 20 ? 90 : 45, minRotation: n > 20 ? 90 : 0, autoSkip: false,
+                            font: { size: n > 40 ? 8 : 9 }, color: '#334155',
+                            callback: (val, idx) => (idx === 0 || idx === n - 1 || idx % tickStep === 0) ? (labels[idx] || '') : ''
                         },
                         grid: { display: false }
                     }
                 }
             }
         };
-        reportChartExpandConfigs['report-booking-curve'] = bookingCurveConfig;
-        createManagedChart('report-booking-curve', bookingCurveConfig);
+        reportChartExpandConfigs['report-combined'] = config;
+        createManagedChart('report-combined', config);
     }, 80);
 }
 
