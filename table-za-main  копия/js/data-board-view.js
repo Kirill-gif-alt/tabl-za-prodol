@@ -269,7 +269,10 @@ function renderDataRouteTableRows(pair, todayStart) {
             : ((!flewIn && entry.inRow) ? entry.inRow[1] : entry.date);
 
         const checkCls = typeof FlightChecks !== 'undefined' ? FlightChecks.rowClass([entry.outRow, entry.inRow]) : '';
-        return `<tr class="${rowCls}${checkCls}" data-outbound="${escAttr(pair.outbound)}" data-date="${escAttr(clickDate)}" tabindex="0">
+        // Для клика по своей половине строки: «туда» открывает свой рейс, «обратно» — обратный.
+        const legAttrs = (entry.outRow ? ` data-out-code="${escAttr(cleanFlight(entry.outRow[0]))}" data-out-date="${escAttr(entry.outRow[1])}"` : '')
+            + (entry.inRow ? ` data-in-code="${escAttr(cleanFlight(entry.inRow[0]))}" data-in-date="${escAttr(entry.inRow[1])}"` : '');
+        return `<tr class="${rowCls}${checkCls}" data-outbound="${escAttr(pair.outbound)}" data-date="${escAttr(clickDate)}"${legAttrs} tabindex="0">
             <td class="col-date data-block-info font-semibold">${dateCell}</td>
             <td class="font-medium data-block-info">${escHtml(formatPairDayOfWeek(entry.outRow, entry.inRow, entry.date))}</td>
             ${renderDataLegCells(entry.outRow, 'pair-leg-out', { allowYellow: yellowOut, customColor: customOut, flew: flewOut })}
@@ -399,7 +402,7 @@ function openDataBoardFlight(base, date) {
         return;
     }
     // Остаёмся на «Данных» — только запоминаем выбранный рейс
-    currentFlight = flight;
+    currentFlight = typeof getBaseFlight === 'function' ? (getBaseFlight(flight) || flight) : flight;
     lastSelectedDate = flyDate;
     if (typeof SessionStore !== 'undefined') SessionStore.saveUiSession();
     if (typeof FlightCard !== 'undefined') FlightCard.maybeOpen(flight, flyDate);
@@ -417,6 +420,15 @@ function bindDataBoardInteractions(track) {
         }
         const row = e.target.closest('tr[data-outbound][data-date]');
         if (!row || row.classList.contains('flew-flight')) return;
+        const td = e.target.closest('td');
+        if (td && td.classList.contains('pair-leg-in') && row.dataset.inCode) {
+            openDataBoardFlight(row.dataset.inCode, row.dataset.inDate);
+            return;
+        }
+        if (td && td.classList.contains('pair-leg-out') && row.dataset.outCode) {
+            openDataBoardFlight(row.dataset.outCode, row.dataset.outDate);
+            return;
+        }
         openDataBoardFlight(row.dataset.outbound, row.dataset.date);
     });
 

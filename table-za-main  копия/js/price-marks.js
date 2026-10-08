@@ -99,15 +99,38 @@ window.PriceMarks = (function () {
         return typeof SalesManagement !== 'undefined' && SalesManagement.STATUSES[status] ? SalesManagement.STATUSES[status].label : status;
     }
 
-    function effectText(e) {
-        if (!e) return '';
-        const parts = [`за ${WINDOW} дн. до: ${e.before.n} бил.` + (e.normBefore ? ` (норма ${e.normBefore.value})` : ''),
-            `после: ${e.after.n} бил.` + (e.normAfter ? ` (норма ${e.normAfter.value})` : '') + (e.complete ? '' : ' — окно ещё идёт')];
-        if (e.before.avg != null || e.after.avg != null) parts.push(`ср. тариф ${rub(e.before.avg)} → ${rub(e.after.avg)}`);
+    function plural(n, one, few, many) {
+        const m10 = n % 10, m100 = n % 100;
+        if (m10 === 1 && m100 !== 11) return one;
+        if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+        return many;
+    }
+
+    function tickets(n) {
+        return `${n} ${plural(n, 'билет', 'билета', 'билетов')}`;
+    }
+
+    // Понятное описание: сколько продали до и после решения, сколько обычно, и вывод.
+    function effectLines(e) {
+        if (!e) return [];
+        const usual = (x) => (x ? ` (обычно ${x.value})` : '');
+        const lines = [`До решения: ${tickets(e.before.n)} за ${WINDOW} дня${usual(e.normBefore)} → после: ${tickets(e.after.n)}${usual(e.normAfter)}${e.complete ? '' : ' — дни ещё идут'}`];
+        if (e.before.avg != null && e.after.avg != null && e.before.avg !== e.after.avg) {
+            const d = e.after.avg - e.before.avg;
+            lines.push(`Средний тариф: ${rub(e.before.avg)} → ${rub(e.after.avg)} (${d > 0 ? '+' : '−'}${rub(Math.abs(d))})`);
+        }
         let verdict;
-        if (e.effect != null) verdict = `эффект к норме: ${e.effect > 0 ? '+' : ''}${e.effect} бил.`;
-        else verdict = e.complete ? 'норма не построена — мало истории' : 'итог будет после окна';
-        return parts.join(' · ') + ' · ' + verdict;
+        if (!e.complete) verdict = 'Итог будет, когда пройдут 3 дня после решения';
+        else if (e.effect == null) verdict = 'Сравнить не с чем: мало прошлых вылетов в этот день недели';
+        else if (e.effect > 0) verdict = `Итог: после решения продаётся лучше обычного — на ${tickets(e.effect)}`;
+        else if (e.effect < 0) verdict = `Итог: после решения продаётся хуже обычного — на ${tickets(-e.effect)}`;
+        else verdict = 'Итог: продаётся как обычно';
+        lines.push(verdict);
+        return lines;
+    }
+
+    function effectText(e) {
+        return effectLines(e).join(' · ');
     }
 
     // Блок «Ценовые решения» под графиками.
@@ -117,17 +140,17 @@ window.PriceMarks = (function () {
         const esc = typeof escHtml === 'function' ? escHtml : String;
         const rows = list.map(m => {
             const e = m.status === 'attn' ? null : effectFor(base, code, flyDate, m);
-            const cls = e && e.effect != null ? (e.effect > 0 ? 'pm-eff-up' : (e.effect < 0 ? 'pm-eff-down' : '')) : '';
+            const cls = e && e.complete && e.effect != null ? (e.effect > 0 ? 'pm-eff-up' : (e.effect < 0 ? 'pm-eff-down' : '')) : '';
+            const lines = effectLines(e);
             return `<li class="pm-item">
-                <span class="pm-glyph pm-${m.status}">${GLYPH[m.status]}</span>
-                <span class="pm-what"><strong>${esc(statusLabel(m.status))}</strong> ${esc(m.check.slice(0, 5))}${m.author ? ' · ' + esc(m.author) : ''}</span>
-                ${e ? `<span class="pm-eff ${cls}">${esc(effectText(e))}</span>` : ''}
+                <div class="pm-item-head"><span class="pm-glyph pm-${m.status}">${GLYPH[m.status]}</span>
+                <strong>${esc(statusLabel(m.status))}</strong> ${esc(m.check.slice(0, 5))}${m.author ? ' · ' + esc(m.author) : ''}</div>
+                ${lines.length ? `<div class="pm-eff">${lines.slice(0, -1).map(l => `<div>${esc(l)}</div>`).join('')}<div class="pm-eff-verdict ${cls}">${esc(lines[lines.length - 1])}</div></div>` : ''}
             </li>`;
         }).join('');
         return `<div class="pm-block">
             <div class="pm-title">Ценовые решения по вылету</div>
             <ul class="pm-list">${rows}</ul>
-            <div class="pm-hint">Эффект = (продажи после − норма) − (продажи до − норма), окна по ${WINDOW} дня, день отметки — в «после». Норма — по тому же дню недели.</div>
         </div>`;
     }
 
@@ -218,12 +241,15 @@ window.PriceMarks = (function () {
     }
 
     // Кнопки отметки (карточка рейса, детализация).
+    const SHORT = { keep: 'Без изм.', attn: '! Вним.', down: '▼ Сниж.', up: '▲ Повыш.' };
+
+    // Кнопки отметки за сегодня — компактно, в одну строку (карточка рейса, детализация, окно выбора).
     function buttonsHtml(code, flyDate) {
         if (!canMark() || flown(flyDate)) return '';
-        const m = todayMark(code, flyDate);
+        const own = available() && SalesManagement.getOwnMark ? SalesManagement.getOwnMark(code, flyDate, getTodayDate()) : todayMark(code, flyDate);
         const esc = typeof escAttr === 'function' ? escAttr : String;
-        const btn = (st, i) => `<button type="button" class="pm-btn sm-st-${st}${m && m.status === st ? ' pm-btn-on' : ''}" data-pm-set="${st}" data-pm-code="${esc(code)}" data-pm-date="${esc(flyDate)}" title="Клавиша ${i}">${GLYPH[st] ? GLYPH[st] + ' ' : ''}${SalesManagement.STATUSES[st].short}</button>`;
-        return `<div class="pm-buttons"><span class="pm-buttons-label">Отметка за сегодня:</span>${['keep', 'attn', 'down', 'up'].map((st, i) => btn(st, i + 1)).join('')}${m ? `<button type="button" class="pm-btn pm-btn-clear" data-pm-set="" data-pm-code="${esc(code)}" data-pm-date="${esc(flyDate)}">Снять</button>` : ''}</div>`;
+        const btn = (st, i) => `<button type="button" class="pm-btn sm-st-${st}${own && own.status === st ? ' pm-btn-on' : ''}" data-pm-set="${st}" data-pm-code="${esc(code)}" data-pm-date="${esc(flyDate)}" title="${esc(SalesManagement.STATUSES[st].label)} (клавиша ${i})">${SHORT[st]}</button>`;
+        return `<div class="pm-buttons"><span class="pm-buttons-label">Сегодня:</span>${['keep', 'attn', 'down', 'up'].map((st, i) => btn(st, i + 1)).join('')}${own ? `<button type="button" class="pm-btn pm-btn-clear" data-pm-set="" data-pm-code="${esc(code)}" data-pm-date="${esc(flyDate)}" title="Снять свою отметку">✕</button>` : ''}</div>`;
     }
 
     const KEY_STATUS = { '1': 'keep', '2': 'attn', '3': 'down', '4': 'up' };
