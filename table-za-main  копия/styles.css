@@ -6659,3 +6659,13 @@ span.rp-chip {
 .rp-subtab-badge-warn { background: #fef3c7; color: #92400e; }
 .rp-subtab-body { display: flex; flex-direction: column; gap: 10px; }
 .rp-export-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; }
+
+/* Карточка рейса: закреплённая справа и в отдельном окне */
+body.flight-card-pinned { padding-right: 470px; }
+.flight-card.flight-card-is-pinned { animation: none; box-shadow: -4px 0 16px rgb(15 23 42 / 0.08); }
+.fc-nav-btn.fc-on { background: var(--primary, #012a4a); color: #fff; border-color: var(--primary, #012a4a); }
+.fc-alt { font-size: 0.7rem; font-weight: 600; color: #92400e; background: #fef3c7; border-radius: 6px; padding: 1px 6px; vertical-align: middle; }
+.fc-nav { flex-wrap: wrap; justify-content: flex-end; }
+body.fc-window-body { margin: 0; background: var(--surface, #fff); }
+body.fc-window-body .flight-card { position: static; width: auto; max-width: none; min-height: 100vh; box-shadow: none; border: none; animation: none; }
+@media (max-width: 1100px) { body.flight-card-pinned { padding-right: 0; } }

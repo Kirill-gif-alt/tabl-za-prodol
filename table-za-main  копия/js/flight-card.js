@@ -1,12 +1,32 @@
 // Карточка рейса — выдвижная панель справа: всё по вылету за один клик, не уходя с вкладки.
 // Открывается кликом по рейсу на Графплане, в RMS и в «Загрузке рейсов».
-// Включает админ в «Управлении профилями» → «Функции» (flight_card, по умолчанию выключена);
-// сам сотрудник может спрятать её галочкой «Карточка» рядом со своим именем в шапке.
+// Включает админ в «Управлении профилями» → «Функции» (flight_card; у администратора включена сразу);
+// сам сотрудник может спрятать её значком ▤ рядом со своим именем в шапке.
 // Esc — закрыть, ←/→ — соседние даты этого рейса, ⇄ — обратный рейс.
+// Три режима: выдвижная панель (по умолчанию), «закреплена» — всегда справа и не закрывается
+// при смене вкладки, «в отдельном окне» — своё окно браузера, например на втором мониторе.
+// Окно рисуется отсюда же (данные не грузятся второй раз) и обновляется по кликам в основном окне.
 window.FlightCard = (function () {
     const HIDE_KEY = 'krasavia_card_off_';
-    let state = null; // { code, date }
+    const MODE_KEY = 'krasavia_card_mode';
+    let state = null; // { code, date } — код рейса, как он летит в эту дату (например, KV-301)
     let chart = null;
+    let mode = readMode(); // 'drawer' | 'pinned' | 'window'
+    let popup = null;
+
+    function readMode() {
+        try {
+            const m = localStorage.getItem(MODE_KEY);
+            return m === 'pinned' || m === 'window' ? m : 'drawer';
+        } catch (e) {
+            return 'drawer';
+        }
+    }
+
+    function saveMode(m) {
+        mode = m;
+        try { localStorage.setItem(MODE_KEY, m); } catch (e) { /* ignore */ }
+    }
 
     function profileId() {
         const p = typeof ProfileAuth !== 'undefined' && ProfileAuth.getCurrentProfile ? ProfileAuth.getCurrentProfile() : null;
@@ -50,57 +70,174 @@ window.FlightCard = (function () {
             label.hidden = false;
             label.querySelector('input').checked = !hiddenByUser();
         }
+        restoreMode();
     }
 
     function esc(v) { return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v); }
     function attr(v) { return typeof escAttr === 'function' ? escAttr(v) : String(v == null ? '' : v); }
 
-    function rowFor(code, date) {
-        const base = getBaseFlight(code);
-        return typeof getFlightRowForDate === 'function' ? getFlightRowForDate(base, date, code) : null;
+    // В какой строке данных этот вылет. Рейс может лететь под другим номером (KV-301 вместо KV-101)
+    // или обратный рейс — на следующий день (дата «07.10/08.10» в «Загрузке рейсов»).
+    function resolve(code, date) {
+        const fl = cleanFlight(code);
+        const base = getBaseFlight(fl);
+        const rows = groupedData[base] || [];
+        let row = rows.find(r => r[1] === date && cleanFlight(r[0]) === fl)
+            || rows.find(r => r[1] === date);
+        if (!row) {
+            const other = pairOf(base);
+            const pairRows = other ? (groupedData[getBaseFlight(other)] || []) : [];
+            row = pairRows.find(r => r[1] === date) || null;
+        }
+        if (!row) {
+            const d = parseLocalDate(date);
+            row = d ? rows.find(r => {
+                const rd = parseLocalDate(r[1]);
+                return rd && Math.abs(rd - d) <= 86400000;
+            }) || null : null;
+        }
+        return row ? { code: cleanFlight(row[0]), date: row[1], row } : null;
     }
 
-    // Даты вылета рейса по порядку (для ←/→).
+    // Даты вылета этого направления по порядку (для ←/→), под любым номером рейса.
     function datesOf(code) {
         const base = getBaseFlight(code);
         const set = new Set();
-        (groupedData[base] || []).forEach(r => { if (cleanFlight(r[0]) === code && r[1]) set.add(r[1]); });
+        (groupedData[base] || []).forEach(r => { if (r[1]) set.add(r[1]); });
         return [...set].sort((a, b) => (parseLocalDate(a) || 0) - (parseLocalDate(b) || 0));
     }
 
     function pairOf(code) {
         if (typeof getFlightPair !== 'function') return '';
-        const p = getFlightPair(code);
-        const other = code === p.outbound ? p.inbound : p.outbound;
-        return other && other !== code ? other : '';
+        const base = getBaseFlight(code);
+        const p = getFlightPair(base);
+        const other = base === p.outbound ? p.inbound : p.outbound;
+        return other && other !== base ? other : '';
+    }
+
+    // ---------- где рисуем: панель на странице или отдельное окно ----------
+
+    function popupAlive() {
+        return !!(popup && !popup.closed && popup.document && popup.document.body);
+    }
+
+    function hostDoc() {
+        return mode === 'window' && popupAlive() ? popup.document : document;
+    }
+
+    function panelIn(doc, create) {
+        let panel = doc.getElementById('flight-card');
+        if (panel || !create) return panel;
+        panel = doc.createElement('aside');
+        panel.id = 'flight-card';
+        panel.className = 'flight-card';
+        panel.setAttribute('aria-label', 'Карточка рейса');
+        panel.hidden = true;
+        doc.body.appendChild(panel);
+        panel.addEventListener('click', onClick);
+        return panel;
     }
 
     function ensurePanel() {
-        let panel = document.getElementById('flight-card');
-        if (panel) return panel;
-        panel = document.createElement('aside');
-        panel.id = 'flight-card';
-        panel.className = 'flight-card';
-        panel.setAttribute('role', 'dialog');
-        panel.setAttribute('aria-label', 'Карточка рейса');
-        panel.hidden = true;
-        document.body.appendChild(panel);
-        panel.addEventListener('click', onClick);
-        return panel;
+        return panelIn(hostDoc(), true);
+    }
+
+    function applyLayout() {
+        const local = panelIn(document, false);
+        const pinned = mode === 'pinned';
+        document.body.classList.toggle('flight-card-pinned', pinned && enabled());
+        if (local) {
+            local.classList.toggle('flight-card-is-pinned', pinned);
+            if (mode === 'window' && popupAlive()) local.hidden = true;
+        }
+    }
+
+    function openPopup() {
+        const w = window.open('', 'krasavia-flight-card', 'width=500,height=900');
+        if (!w) {
+            if (typeof showToast === 'function') showToast('Браузер не дал открыть окно — разрешите всплывающие окна для этого сайта', 'error');
+            return false;
+        }
+        popup = w;
+        const doc = w.document;
+        if (!doc.getElementById('flight-card')) {
+            const rootStyle = document.documentElement.getAttribute('style') || '';
+            const rootCls = document.documentElement.className || '';
+            const theme = document.documentElement.getAttribute('data-theme') || '';
+            doc.open();
+            doc.write(`<!doctype html><html lang="ru" class="${attr(rootCls)}"${theme ? ` data-theme="${attr(theme)}"` : ''} style="${attr(rootStyle)}"><head><meta charset="utf-8"><title>КРАСАВИА · Карточка рейса</title></head><body class="fc-window-body"></body></html>`);
+            doc.close();
+            // Стили — встроенной копией: подключить styles.css в такое окно Chrome не даёт (см. flight-card-window-css.js).
+            const style = doc.createElement('style');
+            style.textContent = window.FLIGHT_CARD_WINDOW_CSS || '';
+            doc.head.appendChild(style);
+            doc.addEventListener('keydown', onKey);
+            w.addEventListener('beforeunload', () => {
+                // Окно закрыли — карточка снова открывается на странице.
+                if (mode === 'window') saveMode('drawer');
+                popup = null;
+                if (chart && chart.canvas && chart.canvas.ownerDocument === doc) chart = null;
+                applyLayout();
+            });
+        }
+        try { w.focus(); } catch (e) { /* ignore */ }
+        return true;
+    }
+
+    function setMode(next) {
+        if (next === 'window') {
+            if (!openPopup()) return;
+            saveMode('window');
+            const local = panelIn(document, false);
+            if (local) local.hidden = true;
+        } else {
+            if (mode === 'window' && popupAlive()) {
+                const p = popup;
+                saveMode(next);
+                popup = null;
+                try { p.close(); } catch (e) { /* ignore */ }
+            }
+            saveMode(next);
+        }
+        applyLayout();
+        if (state) render();
+        else if (next !== 'drawer') renderEmpty();
+    }
+
+    function modeButtons() {
+        const pinOn = mode === 'pinned';
+        return `
+            <button type="button" class="fc-nav-btn${pinOn ? ' fc-on' : ''}" data-fc="pin" title="${pinOn ? 'Открепить: карточка снова выдвижная' : 'Закрепить справа: карточка всегда на экране и не закрывается при смене вкладки'}">📌</button>
+            ${mode === 'window'
+                ? '<button type="button" class="fc-nav-btn fc-on" data-fc="dock" title="Вернуть карточку в основное окно">⧉</button>'
+                : '<button type="button" class="fc-nav-btn" data-fc="window" title="Открыть в отдельном окне (например, на втором мониторе)">⧉</button>'}`;
     }
 
     function tile(label, value, sub, cls) {
         return `<div class="fc-tile${cls ? ' ' + cls : ''}"><div class="fc-tile-label">${esc(label)}</div><div class="fc-tile-value">${value}</div>${sub ? `<div class="fc-tile-sub">${sub}</div>` : ''}</div>`;
     }
 
+    // Закреплённая карточка или окно без выбранного рейса.
+    function renderEmpty() {
+        const panel = ensurePanel();
+        panel.hidden = false;
+        panel.innerHTML = `
+            <div class="fc-head">
+                <div class="fc-title-wrap"><div class="fc-title">Карточка рейса</div></div>
+                <div class="fc-nav">${modeButtons()}<button type="button" class="fc-close" data-fc="close" title="Закрыть" aria-label="Закрыть">✕</button></div>
+            </div>
+            <p class="fc-empty">Выберите рейс на Графплане, в RMS или «Загрузке рейсов».</p>`;
+    }
+
     function render() {
         const panel = ensurePanel();
         if (!state) return;
+        panel.hidden = false;
         const { code, date } = state;
         const base = getBaseFlight(code);
-        const row = rowFor(code, date);
+        const row = typeof getFlightRowForDate === 'function' ? getFlightRowForDate(base, date, code) : null;
         if (!row) {
-            panel.innerHTML = `<div class="fc-head"><div class="fc-title">${esc(code)} · ${esc(date)}</div><button type="button" class="fc-close" data-fc="close" aria-label="Закрыть">✕</button></div><p class="fc-empty">Нет данных по этому вылету.</p>`;
+            panel.innerHTML = `<div class="fc-head"><div class="fc-title">${esc(code)} · ${esc(date)}</div><div class="fc-nav">${modeButtons()}<button type="button" class="fc-close" data-fc="close" aria-label="Закрыть">✕</button></div></div><p class="fc-empty">Нет данных по этому вылету.</p>`;
             return;
         }
         const m = typeof getRowMetrics === 'function' ? getRowMetrics(row, base) : null;
@@ -108,7 +245,7 @@ window.FlightCard = (function () {
         const idx = dates.indexOf(date);
         const other = pairOf(code);
         const salesReady = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : true;
-        const mode = typeof FlightChecks !== 'undefined' && FlightChecks.modeBadge ? FlightChecks.modeBadge(code, date, row) : '';
+        const modeMark = typeof FlightChecks !== 'undefined' && FlightChecks.modeBadge ? FlightChecks.modeBadge(code, date, row) : '';
         const issues = typeof FlightChecks !== 'undefined' && FlightChecks.enabled() ? FlightChecks.issuesFor(code, date) : [];
         const comment = typeof FlightComments !== 'undefined' ? FlightComments.get(code, date) : '';
         const dtdTxt = m && m.dtd != null ? (m.dtd < 0 ? 'улетел' : `DTD ${m.dtd}`) : '';
@@ -118,17 +255,19 @@ window.FlightCard = (function () {
         const links = [['table', 'Динамика продаж'], ['pair', 'Экономика'], ['pkz', 'ПКЗ']]
             .filter(([t]) => canTab(t))
             .map(([t, l]) => `<button type="button" class="filter-btn" data-fc-tab="${t}">${l}</button>`).join('');
+        const altNumber = code !== base ? ` <span class="fc-alt" title="В эту дату рейс ${attr(base)} летит под номером ${attr(code)}">вместо ${esc(base)}</span>` : '';
 
         panel.innerHTML = `
             <div class="fc-head">
                 <div class="fc-title-wrap">
-                    <div class="fc-title">${esc(code)} <span class="fc-dir">${esc(getFlightDirection(code))}</span></div>
-                    <div class="fc-sub">${esc(getDayOfWeek(date))} ${esc(date)} · ${esc(getAircraftType(row[4]))}${dtdTxt ? ' · ' + esc(dtdTxt) : ''}${status ? ' · ' + esc(status) : ''} ${mode}</div>
+                    <div class="fc-title">${esc(code)}${altNumber} <span class="fc-dir">${esc(getFlightDirection(code))}</span></div>
+                    <div class="fc-sub">${esc(getDayOfWeek(date))} ${esc(date)} · ${esc(getAircraftType(row[4]))}${dtdTxt ? ' · ' + esc(dtdTxt) : ''}${status ? ' · ' + esc(status) : ''} ${modeMark}</div>
                 </div>
                 <div class="fc-nav">
                     <button type="button" class="fc-nav-btn" data-fc="prev" ${idx > 0 ? '' : 'disabled'} title="Предыдущая дата (←)">←</button>
                     <button type="button" class="fc-nav-btn" data-fc="next" ${idx >= 0 && idx < dates.length - 1 ? '' : 'disabled'} title="Следующая дата (→)">→</button>
                     ${other ? `<button type="button" class="fc-nav-btn" data-fc="pair" title="Обратный рейс ${attr(other)}">⇄ ${esc(other)}</button>` : ''}
+                    ${modeButtons()}
                     <button type="button" class="fc-close" data-fc="close" title="Закрыть (Esc)" aria-label="Закрыть">✕</button>
                 </div>
             </div>
@@ -141,23 +280,23 @@ window.FlightCard = (function () {
                 ${tile('Pickup 1–2 дн.', m && m.pickup != null && salesReady ? String(m.pickup) : '—', '')}
                 ${tile('Ср. тариф', m && m.avg && salesReady ? esc(formatRub(m.avg)) : '—', '')}
             </div>
-            <div class="fc-verdict" id="fc-verdict"></div>
-            <div class="fc-chart-wrap"><canvas id="fc-chart"></canvas></div>
-            <div class="fc-chart-note" id="fc-chart-note"></div>
+            <div class="fc-verdict" data-fc-part="verdict"></div>
+            <div class="fc-chart-wrap"><canvas data-fc-part="chart"></canvas></div>
+            <div class="fc-chart-note" data-fc-part="note"></div>
             ${typeof PriceMarks !== 'undefined' ? PriceMarks.buttonsHtml(code, date) : ''}
             ${typeof PriceMarks !== 'undefined' ? PriceMarks.decisionsHtml(base, code, date) : ''}
             ${comment ? `<div class="fc-comment"><strong>Комментарий:</strong> ${esc(comment)}</div>` : ''}
             ${links ? `<div class="fc-links">Открыть: ${links}</div>` : ''}
         `;
-        drawChart(base, code, date, row);
+        drawChart(panel, base, code, date, row);
     }
 
-    function drawChart(base, code, date, row) {
+    function drawChart(panel, base, code, date, row) {
         if (chart) { try { chart.destroy(); } catch (e) { /* ignore */ } chart = null; }
-        const canvas = document.getElementById('fc-chart');
+        const canvas = panel.querySelector('[data-fc-part="chart"]');
         if (!canvas || typeof Chart === 'undefined' || typeof buildFlightDtdBookingSeries !== 'function') return;
         const c = buildFlightDtdBookingSeries(base, date, code, 30, row[4]);
-        const verdict = document.getElementById('fc-verdict');
+        const verdict = panel.querySelector('[data-fc-part="verdict"]');
         if (verdict) { verdict.textContent = c.verdict; verdict.className = 'fc-verdict ' + c.verdictCls; }
         const datasets = [{
             label: 'Продано (билеты)', data: c.thisData, borderColor: '#1d4ed8', backgroundColor: 'rgba(29,78,216,0.08)',
@@ -167,15 +306,14 @@ window.FlightCard = (function () {
         if (c.expectedData) datasets.push({ label: 'Ожидаемая', data: c.expectedData, borderColor: '#d97706', borderDash: [6, 4], fill: false, pointRadius: 0, borderWidth: 2, spanGaps: true });
         // Загрузка по ежедневным срезам архива (с возвратами и бронями без билета).
         const slices = typeof SalesArchive !== 'undefined' ? SalesArchive.slicesFor(date, code) : [];
+        const fly = parseLocalDate(date);
         if (slices.length) {
-            const fly = parseLocalDate(date);
             const pts = c.dtds.map(t => {
                 const hit = slices.find(s => { const d = parseLocalDate(s.day); return d && fly && Math.round((fly - d) / 86400000) === t; });
                 return hit ? hit.sold : null;
             });
             if (pts.some(v => v != null)) datasets.push({ label: 'Загрузка по срезам', data: pts, borderColor: '#0d9488', backgroundColor: '#0d9488', showLine: false, pointRadius: 3, pointStyle: 'rectRot' });
         }
-        const fly = parseLocalDate(date);
         chart = new Chart(canvas, {
             type: 'line',
             data: { labels: c.dtds.map(t => t + 'д'), datasets },
@@ -199,29 +337,41 @@ window.FlightCard = (function () {
                 }
             }
         });
-        const note = document.getElementById('fc-chart-note');
+        const note = panel.querySelector('[data-fc-part="note"]');
         if (note) note.textContent = c.caption;
     }
 
     function open(code, date) {
-        const fl = cleanFlight(code);
-        if (!fl || !date) return;
-        state = { code: fl, date };
-        const panel = ensurePanel();
-        panel.hidden = false;
-        document.body.classList.add('flight-card-open');
+        const hit = resolve(code, date);
+        state = hit ? { code: hit.code, date: hit.date } : { code: cleanFlight(code), date };
+        if (mode === 'window' && !popupAlive()) {
+            // Окно закрыли вручную — показываем на странице.
+            saveMode('drawer');
+        }
+        if (mode !== 'window') document.body.classList.add('flight-card-open');
+        applyLayout();
         render();
+        const want = state;
         if (typeof SalesArchive !== 'undefined' && SalesArchive.ensureSlices) {
-            SalesArchive.ensureSlices().then(() => { if (state && state.code === fl && state.date === date) render(); }).catch(() => {});
+            SalesArchive.ensureSlices().then(() => { if (state === want) render(); }).catch(() => {});
         }
     }
 
     function close() {
+        if (mode === 'window' && popupAlive()) {
+            const p = popup;
+            popup = null;
+            saveMode('drawer');
+            try { p.close(); } catch (e) { /* ignore */ }
+        } else if (mode === 'pinned') {
+            saveMode('drawer');
+        }
         state = null;
         if (chart) { try { chart.destroy(); } catch (e) { /* ignore */ } chart = null; }
-        const panel = document.getElementById('flight-card');
+        const panel = panelIn(document, false);
         if (panel) panel.hidden = true;
         document.body.classList.remove('flight-card-open');
+        applyLayout();
     }
 
     function step(dir) {
@@ -229,7 +379,7 @@ window.FlightCard = (function () {
         const dates = datesOf(state.code);
         const i = dates.indexOf(state.date);
         const next = dates[i + dir];
-        if (next) open(state.code, next);
+        if (next) open(getBaseFlight(state.code), next);
     }
 
     function swapPair() {
@@ -245,6 +395,12 @@ window.FlightCard = (function () {
     }
 
     function onClick(e) {
+        const set = e.target.closest('[data-pm-set]');
+        if (set && typeof PriceMarks !== 'undefined') {
+            // В отдельном окне общий обработчик страницы кнопки не видит — отмечаем отсюда.
+            if (hostDoc() !== document) PriceMarks.setToday(set.dataset.pmCode, set.dataset.pmDate, set.dataset.pmSet || null);
+            return;
+        }
         const b = e.target.closest('[data-fc], [data-fc-tab]');
         if (!b) return;
         if (b.dataset.fcTab) {
@@ -252,8 +408,9 @@ window.FlightCard = (function () {
             if (!code) return;
             currentFlight = getBaseFlight(code);
             lastSelectedDate = date;
-            close();
+            if (mode === 'drawer') close();
             switchMainTab(b.dataset.fcTab);
+            try { window.focus(); } catch (err) { /* ignore */ }
             return;
         }
         const a = b.dataset.fc;
@@ -261,17 +418,25 @@ window.FlightCard = (function () {
         else if (a === 'prev') step(-1);
         else if (a === 'next') step(1);
         else if (a === 'pair') swapPair();
+        else if (a === 'pin') setMode(mode === 'pinned' ? 'drawer' : 'pinned');
+        else if (a === 'window') setMode('window');
+        else if (a === 'dock') setMode('pinned');
     }
 
-    document.addEventListener('keydown', (e) => {
+    function onKey(e) {
         if (!state) return;
         const t = e.target;
         if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
-        if (e.key === 'Escape') { close(); return; }
+        if (e.key === 'Escape') {
+            if (mode === 'drawer') close();
+            return;
+        }
         if (e.ctrlKey || e.altKey || e.metaKey) return;
         if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
         else if (e.key === 'ArrowRight') { e.preventDefault(); step(1); }
-    });
+    }
+
+    document.addEventListener('keydown', onKey);
 
     // Отметка поставлена — обновить кнопки и маркеры в открытой карточке.
     document.addEventListener('krasavia:mark', () => { if (state) render(); });
@@ -283,5 +448,15 @@ window.FlightCard = (function () {
         return true;
     }
 
-    return { open, close, maybeOpen, syncToggle, enabled, isOpen: () => !!state };
+    // После входа: закреплённая карточка сразу на месте (окно браузер сам не откроет — нужен клик).
+    function restoreMode() {
+        if (!allowed() || hiddenByUser()) return;
+        if (mode === 'window') saveMode('pinned');
+        if (mode === 'pinned' && !state) {
+            applyLayout();
+            renderEmpty();
+        }
+    }
+
+    return { open, close, maybeOpen, syncToggle, enabled, restoreMode, resolve, isOpen: () => !!state, mode: () => mode };
 })();
