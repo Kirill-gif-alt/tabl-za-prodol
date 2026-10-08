@@ -420,7 +420,7 @@ window.ReportsView = (function () {
     function checksHtml() {
         if (typeof FlightChecks === 'undefined' || !FlightChecks.enabled()) return '';
         if (!hasData()) {
-            return `<section class="rp-card rp-checks" id="rp-checks"><div class="rp-card-head"><h3 class="rp-card-title">Проверка рейсов</h3></div><p class="rp-note">Данных нет — нажмите «Загрузить» или «Последние».</p></section>${refsHtml()}`;
+            return `<section class="rp-card rp-checks" id="rp-checks"><div class="rp-card-head"><h3 class="rp-card-title">Проверка рейсов</h3></div><p class="rp-note">Данных нет — нажмите «Загрузить» или «Последние».</p></section>`;
         }
         const all = checksList();
         const flightKey = (i) => i.code + '|' + i.date;
@@ -450,7 +450,7 @@ window.ReportsView = (function () {
                     <h3 class="rp-card-title"><span class="fc-flag fc-flag-big" aria-hidden="true"></span> Проверка рейсов</h3>
                     <button type="button" class="btn-primary rp-btn" id="rp-checks-export"${all.length && hasPerm('export_excel') ? '' : ' disabled'}>В Excel</button>
                 </div>
-                <p class="rp-card-text">Проверяются субсидированные рейсы: межрегиональные с суммой субсидии больше 0 в «Экономической таблице» (краевые не субсидированные). Ошибка — если продан детский тариф со скидкой 50% (…/CN50) или билет дороже предельного тарифа из справочника ниже. Рейс с ошибкой помечен «!» в «Загрузке рейсов», «Экономической таблице» и «Динамике продаж».</p>
+                <p class="rp-card-text">Проверяются субсидированные рейсы: межрегиональные с суммой субсидии больше 0 в «Экономической таблице» (краевые не субсидированные). Ошибка — если продан детский тариф со скидкой 50% (…/CN50) или билет дороже предельного тарифа из справочника субсидированных тарифов. Рейс с ошибкой помечен «!» в «Загрузке рейсов», «Экономической таблице» и «Динамике продаж».</p>
                 <p class="rp-note">${summary}</p>
                 ${all.length ? `
                 <label class="rp-check"><input type="checkbox" id="rp-checks-future"${checksFutureOnly ? ' checked' : ''}> только рейсы до вылета</label>
@@ -460,8 +460,7 @@ window.ReportsView = (function () {
                         <tbody>${rows || '<tr><td colspan="9" class="rp-left">До вылета ошибок нет — снимите галочку, чтобы увидеть улетевшие.</td></tr>'}</tbody>
                     </table>
                 </div>` : ''}
-            </section>
-            ${refsHtml()}`;
+            </section>`;
     }
 
     // ---------- справочник субсидированных тарифов ----------
@@ -807,23 +806,60 @@ window.ReportsView = (function () {
             </section>`;
     }
 
+    // Внутренние вкладки: проверка, справочник (только с правом), выгрузки.
+    const SUBTAB_KEY = 'krasavia_reports_subtab';
+    let subtab = '';
+    try { subtab = localStorage.getItem(SUBTAB_KEY) || ''; } catch (e) { /* ignore */ }
+
+    function canRefs() {
+        return typeof FareRefs !== 'undefined' && FareRefs.canEdit();
+    }
+
+    function subtabs() {
+        const list = [];
+        const checksOn = typeof FlightChecks !== 'undefined' && FlightChecks.enabled();
+        if (checksOn) {
+            const n = hasData() ? new Set(checksList().filter(i => i.state !== 'Улетел').map(i => i.code + '|' + i.date)).size : 0;
+            list.push({ id: 'checks', label: 'Проверка рейсов', badge: n ? String(n) : '' });
+        }
+        if (canRefs()) {
+            const miss = hasData() && checksOn && typeof FlightChecks !== 'undefined' ? FlightChecks.missingRefs().length : 0;
+            list.push({ id: 'refs', label: 'Субсидированные тарифы', badge: miss ? miss + ' без предела' : '', warn: !!miss });
+        }
+        list.push({ id: 'export', label: 'Выгрузки в Excel', badge: '' });
+        return list;
+    }
+
     function renderBody() {
         const body = document.getElementById('rp-body');
         if (!body) return;
+        const tabs = subtabs();
+        if (!tabs.some(t => t.id === subtab)) subtab = tabs[0].id;
         const weeks = weekBounds();
-        body.innerHTML = [
-            checksHtml(),
-            card('rp-data', 'Выгрузить загрузку рейсов',
-                'Excel с карточками маршрутов, как на вкладке «Загрузка рейсов» (с её текущими фильтрами).',
-                canData(), 'Нужны вкладка «Загрузка рейсов» и право на экспорт Excel.'),
-            card('rp-sales', 'Выгрузить управление продажами',
-                'Excel вкладки «Управление продажами»: лист на каждый рейс с отметками по дням.',
-                canSales(), 'Нужна вкладка «Управление продажами».'),
-            card('rp-econ', 'Выгрузить для экономистов',
+        let content = '';
+        if (subtab === 'checks') content = checksHtml();
+        else if (subtab === 'refs') content = refsHtml();
+        else {
+            content = `<div class="rp-export-grid">${[
+                card('rp-data', 'Загрузка рейсов',
+                    'Excel с карточками маршрутов, как на вкладке «Загрузка рейсов» (с её текущими фильтрами).',
+                    canData(), 'Нужны вкладка «Загрузка рейсов» и право на экспорт Excel.'),
+                card('rp-sales', 'Управление продажами',
+                    'Excel вкладки «Управление продажами»: лист на каждый рейс с отметками по дням.',
+                    canSales(), 'Нужна вкладка «Управление продажами».')
+            ].join('')}</div>
+            ${card('rp-econ', 'Для экономистов',
                 `Факт кресел в продаже за прошлую неделю (${weekLabel(weeks.past)}) и план загрузки на следующую (${weekLabel(weeks.next)}), отдельно ВВЛ и МВЛ. Листы: сводка, факт по рейсам, план по рейсам.`,
                 canEcon(), 'Нужны право на экспорт Excel и одна из вкладок: «Загрузка рейсов», «Экономическая таблица», «Расчёт расходов».',
-                canEcon() ? `<div class="rp-preview" id="rp-preview">${previewHtml()}</div>` : '')
-        ].join('');
+                canEcon() ? `<div class="rp-preview" id="rp-preview">${previewHtml()}</div>` : '')}`;
+        }
+        body.innerHTML = `
+            <nav class="rp-subtabs" role="tablist">${tabs.map(t => `
+                <button type="button" role="tab" class="rp-subtab${t.id === subtab ? ' rp-subtab-on' : ''}" data-rp-tab="${t.id}" aria-selected="${t.id === subtab}">
+                    ${esc(t.label)}${t.badge ? ` <span class="rp-subtab-badge${t.warn ? ' rp-subtab-badge-warn' : ''}">${esc(t.badge)}</span>` : ''}
+                </button>`).join('')}
+            </nav>
+            <div class="rp-subtab-body">${content}</div>`;
         previewSig = signature();
     }
 
@@ -844,7 +880,7 @@ window.ReportsView = (function () {
                 <div class="table-page-hero">
                     <div class="table-page-hero-main">
                         <h2 class="rms-hero-title">Отчёты</h2>
-                        <span class="table-page-hint">Проверка рейсов и выгрузки в Excel одной кнопкой</span>
+                        <span class="table-page-hint">Проверка рейсов, справочник субсидированных тарифов и выгрузки в Excel</span>
                     </div>
                 </div>
                 <div class="table-page-body rp-body" id="rp-body"></div>
@@ -861,6 +897,12 @@ window.ReportsView = (function () {
         page.addEventListener('click', (event) => {
             const btn = event.target.closest('button');
             if (!btn || btn.disabled) return;
+            if (btn.dataset.rpTab) {
+                subtab = btn.dataset.rpTab;
+                try { localStorage.setItem(SUBTAB_KEY, subtab); } catch (e) { /* ignore */ }
+                renderBody();
+                return;
+            }
             if (btn.dataset.openBase) {
                 openFlight(btn.dataset.openBase, btn.dataset.openDate);
                 return;
@@ -934,7 +976,14 @@ window.ReportsView = (function () {
         renderBody();
     }
 
-    return { create, refresh, buildEconReport, weekBounds, exportEcon, exportData, exportSales, exportChecks };
+    // Открыть нужную внутреннюю вкладку (например, из счётчика ошибок в шапке).
+    function showSubtab(id) {
+        subtab = id;
+        try { localStorage.setItem(SUBTAB_KEY, id); } catch (e) { /* ignore */ }
+        if (document.getElementById('rp-page')) renderBody();
+    }
+
+    return { create, refresh, showSubtab, buildEconReport, weekBounds, exportEcon, exportData, exportSales, exportChecks };
 })();
 
 function createReportsView(panel) {
