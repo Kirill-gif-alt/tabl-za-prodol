@@ -682,8 +682,20 @@ window.SalesManagement = (function () {
         if (typeof salesCheckIsToday !== 'function' || !salesCheckIsToday(check)) return false;
         const key = markKey(flight, dep, check);
         if (!key) return false;
-        delete cache.marks[key];
-        dirty.set(key, null);
+        const mine = profileName();
+        if (!mine) return false;
+        const prev = cache.marks[key];
+        const chain = normalizeChain(prev);
+        if (!chain.some(item => item.author === mine)) return false;
+        const kept = chain.filter(item => item.author !== mine);
+        if (!kept.length) {
+            delete cache.marks[key];
+            dirty.set(key, null);
+        } else {
+            const mark = markFromChain(kept);
+            cache.marks[key] = mark;
+            dirty.set(key, mark);
+        }
         schedulePersist();
         return true;
     }
@@ -979,8 +991,8 @@ function salesSplitHtml(mark) {
     const entries = salesDisplayEntries(mark);
     if (entries.length < 2) return salesEsc(salesCellText(mark));
     const parts = entries.map((entry, index) => {
-        const slash = index < entries.length - 1 ? '<span class="sm-slash">/</span>' : '';
-        return `<span class="sm-part sm-st-${entry.status}">${salesEsc(salesEntryText(entry))}</span>${slash}`;
+        const slash = index < entries.length - 1 ? '<span class="sm-slash" aria-hidden="true">/</span>' : '';
+        return `<span class="sm-part sm-st-${entry.status}">${salesEsc(salesEntryText(entry))}${slash}</span>`;
     }).join('');
     return `<span class="sm-split-row">${parts}</span>`;
 }
@@ -1060,7 +1072,12 @@ function openSalesPopover(td) {
         setTimeout(() => input.focus(), 0);
     }
     const clearBtn = document.getElementById('sm-pop-clear');
-    if (clearBtn) clearBtn.hidden = !mark;
+    if (clearBtn) {
+        const mine = SalesManagement.profileName();
+        const hasMine = salesChainEntries(mark).some(item => item.author === mine);
+        clearBtn.hidden = !hasMine;
+        clearBtn.textContent = 'Убрать свою';
+    }
     placeSalesPopover(td);
     setTimeout(() => {
         salesPopCloser = (event) => {
@@ -1124,7 +1141,7 @@ function ensureSalesPopover() {
             <input id="sm-pop-author" class="sm-pop-author" maxlength="80" autocomplete="name">
         </label>
         <div class="sm-pop-actions">
-            <button type="button" id="sm-pop-clear" class="filter-btn">Очистить</button>
+            <button type="button" id="sm-pop-clear" class="filter-btn">Убрать свою</button>
             <button type="button" id="sm-pop-done" class="filter-btn sm-pop-done">Готово</button>
         </div>
     `;
@@ -1144,9 +1161,12 @@ function ensureSalesPopover() {
                 if (typeof showToast === 'function') showToast('Менять можно только в сегодняшнем столбце', 'error');
                 return;
             }
-            SalesManagement.clearMark(flight, dep, check);
+            if (!SalesManagement.clearMark(flight, dep, check)) {
+                if (typeof showToast === 'function') showToast('Можно убрать только свою отметку', 'error');
+                return;
+            }
             const td = document.querySelector(`.sm-cell[data-flight="${salesQueryEscape(flight)}"][data-dep="${salesQueryEscape(dep)}"][data-check="${salesQueryEscape(check)}"]`);
-            if (td) paintSalesCell(td, null);
+            if (td) paintSalesCell(td, SalesManagement.getMark(flight, dep, check));
             closeSalesPopover();
             return;
         }
