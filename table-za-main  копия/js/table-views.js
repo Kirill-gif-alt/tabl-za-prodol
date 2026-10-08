@@ -337,7 +337,8 @@ function actuallyRenderTable(base,targetDate=null){
 
         const status=(closed||flew)?(closed?'<span class="closed-text">ЗАКРЫТ</span>':'<span class="flew-text">УЛЕТЕЛ</span>'):(pct==null?'—':`<span class="${pct>=75?'occupancy-high':'occupancy-med'}">${pct}%</span>`);
         const checkFlag = typeof FlightChecks !== 'undefined' ? FlightChecks.flagForRow(row) : '';
-        const dateCell=(extra?`${escHtml(date)} <span class="font-semibold">${escHtml(orig)}</span> <span class="extra-badge ml-1">(ДОП)</span>`:escHtml(date))+checkFlag;
+        const modeMark = typeof FlightChecks !== 'undefined' && FlightChecks.modeBadge ? FlightChecks.modeBadge(orig, date, row) : '';
+        const dateCell=(extra?`${escHtml(date)} <span class="font-semibold">${escHtml(orig)}</span> <span class="extra-badge ml-1">(ДОП)</span>`:escHtml(date))+modeMark+checkFlag;
         const segmentCell=hasSegments&&showRoute?`<span class="segment-cell"><span class="segment-route">${escHtml(formatRouteDisplay(route))}</span></span>`:'';
         const ac=getAircraftType(row[4]);
         let expectedCells = '';

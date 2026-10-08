@@ -563,6 +563,38 @@ window.ReportsView = (function () {
                     <span class="rp-ref-error" id="rp-ref-error" role="alert"></span>
                 </div>
             </div>` : '<p class="rp-note">Менять справочник может администратор или профиль с правом «Правка справочника субсидированных тарифов».</p>';
+        const suggestions = can && missing.length && typeof FlightChecks !== 'undefined' && FlightChecks.suggestRefs
+            ? FlightChecks.suggestRefs() : [];
+        lastSuggestions = suggestions;
+        const ready = suggestions.filter(x => x.enough);
+        const suggestHtml = suggestions.length ? `
+            <div class="rp-suggest">
+                <div class="rp-suggest-head">
+                    <div><strong>Подсказки по продажам</strong>
+                        <div class="rp-sub-line">Предел — самый дорогой из ходовых (от 10% билетов) оплаченных взрослых тарифов на субсидированных датах рейса; дешевле него бывают другие тарифы. Проверьте и подтвердите: справочник сам ничего не заполняет.</div></div>
+                    ${ready.length > 1 ? `<button type="button" class="btn-primary rp-btn" id="rp-suggest-all">Принять все (${ready.length})</button>` : ''}
+                </div>
+                <div class="rp-scroll">
+                    <table class="rp-table rp-suggest-table">
+                        <thead><tr><th>Рейсы</th><th>Предел</th><th>Код тарифа</th><th>Билетов по пределу</th><th>Дешевле</th><th>Дороже (будут ошибки)</th><th>Вылетов</th><th></th></tr></thead>
+                        <tbody>${suggestions.map((x, i) => `
+                            <tr class="${x.enough ? '' : 'rp-suggest-weak'}">
+                                <td class="rp-left"><strong>${esc(x.flights.join(', '))}</strong><div class="rp-sub-line">${esc(x.flights.map(directionOf).join(' · '))}</div></td>
+                                <td><strong>${fmt(x.adult)} ₽</strong></td>
+                                <td>${esc(x.fareCode || '—')}</td>
+                                <td>${x.share}% <span class="rp-muted">(${fmt(x.tickets)} из ${fmt(x.total)})</span></td>
+                                <td>${x.belowShare}%</td>
+                                <td>${x.above ? `<span class="rp-warn-text">${fmt(x.above)}</span> <span class="rp-muted">до ${fmt(x.maxPaid)} ₽</span>` : '0'}</td>
+                                <td>${x.departures}</td>
+                                <td class="rp-nowrap">
+                                    <button type="button" class="filter-btn rp-open" data-suggest-accept="${i}"${x.enough ? '' : ' title="Подсказка ненадёжная — проверьте вручную"'}>Принять</button>
+                                    <button type="button" class="filter-btn rp-open" data-suggest-form="${i}">В форму</button>
+                                </td>
+                            </tr>`).join('')}</tbody>
+                    </table>
+                </div>
+                ${suggestions.length > ready.length ? '<p class="rp-note">Серым — ненадёжные подсказки: меньше 20 взрослых билетов или больше 5% билетов дороже предела (возможно, несколько субсидированных тарифов по периодам). Их «Принять все» не трогает.</p>' : ''}
+            </div>` : '';
         const missingHtml = missing.length
             ? `<p class="rp-note rp-warn">Субсидированные рейсы до вылета без тарифа в справочнике — для них проверка тарифа не выполняется: ${missing.map(c => can ? `<button type="button" class="rp-chip" data-ref-fill="${esc(c)}">${esc(c)}</button>` : `<span class="rp-chip">${esc(c)}</span>`).join(' ')}</p>`
             : '';
@@ -572,6 +604,7 @@ window.ReportsView = (function () {
                 <p class="rp-card-text">Предельный тариф на субсидированном рейсе: билет дороже предела — ошибка, дешевле — можно, в том числе детские. Детский предел необязателен: если он не задан, детский билет сравнивается со взрослым пределом. Сравнивается оплаченная сумма билета.</p>
                 <p class="rp-card-text">Запись «Не считать субсидированным» убирает рейс из перечня субсидированных: он не проверяется и не попадает в ошибки.</p>
                 ${missingHtml}
+                ${suggestHtml}
                 ${entries.length ? `
                 <div class="rp-scroll">
                     <table class="rp-table rp-refs-table">
@@ -581,6 +614,46 @@ window.ReportsView = (function () {
                 </div>` : '<p class="rp-note">Справочник пуст.</p>'}
                 ${form}
             </section>`;
+    }
+
+    let lastSuggestions = [];
+
+    function suggestionNote(x) {
+        return `по продажам: ${x.share}% взрослых билетов (${x.tickets} из ${x.total})`;
+    }
+
+    async function acceptSuggestions(list) {
+        let shared = true;
+        let done = 0;
+        for (const x of list) {
+            const res = await FareRefs.upsert({ mode: 'limit', flights: x.flights, fareCode: x.fareCode, adult: x.adult, note: suggestionNote(x) });
+            if (!res.ok) {
+                toast(res.error, 'error');
+                break;
+            }
+            shared = shared && res.shared;
+            done++;
+        }
+        if (!done) return;
+        afterRefChange(shared, done === 1
+            ? `Тариф для ${list[0].flights.join(', ')} сохранён (${fmt(list[0].adult)} ₽)`
+            : `Добавлено пределов: ${done}`);
+    }
+
+    function fillFormFromSuggestion(x) {
+        refEditId = '';
+        refPrefill = x.flights[0];
+        renderBody();
+        const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+        set('rp-ref-mode', 'limit');
+        syncModeFields();
+        const pair = document.getElementById('rp-ref-pair');
+        if (pair) pair.checked = x.flights.length > 1;
+        set('rp-ref-code', x.fareCode || '');
+        set('rp-ref-adult', String(x.adult));
+        set('rp-ref-note', suggestionNote(x));
+        const adult = document.getElementById('rp-ref-adult');
+        if (adult) { adult.scrollIntoView({ behavior: 'smooth', block: 'center' }); adult.focus(); }
     }
 
     function syncModeFields() {
@@ -806,6 +879,25 @@ window.ReportsView = (function () {
                 renderBody();
                 const adult = document.getElementById('rp-ref-adult');
                 if (adult) { adult.scrollIntoView({ behavior: 'smooth', block: 'center' }); adult.focus(); }
+                return;
+            }
+            if (btn.dataset.suggestAccept != null) {
+                const x = lastSuggestions[Number(btn.dataset.suggestAccept)];
+                if (!x) return;
+                btn.disabled = true;
+                acceptSuggestions([x]).catch(e => { console.error(e); toast('Не удалось сохранить', 'error'); }).finally(() => { btn.disabled = false; });
+                return;
+            }
+            if (btn.dataset.suggestForm != null) {
+                const x = lastSuggestions[Number(btn.dataset.suggestForm)];
+                if (x) fillFormFromSuggestion(x);
+                return;
+            }
+            if (btn.id === 'rp-suggest-all') {
+                const ready = lastSuggestions.filter(x => x.enough);
+                if (!ready.length || !window.confirm(`Добавить в справочник ${ready.length} пределов по подсказкам?\n\n${ready.map(x => `${x.flights.join(', ')} — ${fmt(x.adult)} ₽ ${x.fareCode}`).join('\n')}`)) return;
+                btn.disabled = true;
+                acceptSuggestions(ready).catch(e => { console.error(e); toast('Не удалось сохранить', 'error'); }).finally(() => { btn.disabled = false; });
                 return;
             }
             if (btn.id === 'rp-ref-cancel') { refEditId = ''; renderBody(); return; }

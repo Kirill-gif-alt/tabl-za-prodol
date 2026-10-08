@@ -162,8 +162,20 @@ window.SharedStorage = (function () {
         return data;
     }
 
+    // Архив продаж: shared/history/curves-ГГГГ-ММ.json и slices-ГГГГ-ММ.json (см. sales-archive.js).
+    const HISTORY_FILE_RE = /^history\/(curves|slices)-\d{4}-\d{2}\.json$/;
+
     function isAllowedSharedFile(filename) {
-        return ALLOWED_FILES.has(String(filename || ''));
+        const name = String(filename || '');
+        return ALLOWED_FILES.has(name) || HISTORY_FILE_RE.test(name);
+    }
+
+    // Папка и имя файла внутри shared/ (для архива — подпапка history/).
+    async function resolveSharedTarget(sharedDir, filename, create) {
+        const slash = filename.indexOf('/');
+        if (slash === -1) return { dir: sharedDir, name: filename };
+        const sub = await sharedDir.getDirectoryHandle(filename.slice(0, slash), { create: !!create });
+        return { dir: sub, name: filename.slice(slash + 1) };
     }
 
     async function readViaFetch(filename) {
@@ -189,7 +201,8 @@ window.SharedStorage = (function () {
         if (!handle) return null;
         try {
             const sharedDir = await getSharedDirFromHandle(handle);
-            const fileHandle = await sharedDir.getFileHandle(filename);
+            const target = await resolveSharedTarget(sharedDir, filename, false);
+            const fileHandle = await target.dir.getFileHandle(target.name);
             const file = await fileHandle.getFile();
             return parseJsonText(await file.text());
         } catch (e) {
@@ -358,7 +371,8 @@ window.SharedStorage = (function () {
             const sharedDir = await getSharedDirFromHandle(handle);
             if (opts && opts.forceBackup) lastBackupAt[filename] = 0;
             await backupViaHandle(sharedDir, filename);
-            const fileHandle = await sharedDir.getFileHandle(filename, { create: true });
+            const target = await resolveSharedTarget(sharedDir, filename, true);
+            const fileHandle = await target.dir.getFileHandle(target.name, { create: true });
             const writable = await fileHandle.createWritable();
             await writable.write(JSON.stringify(data));
             await writable.close();
@@ -464,6 +478,27 @@ window.SharedStorage = (function () {
             showToast('Подключите папку приложения (⚙ Профили), чтобы данные увидели другие ПК', 'error');
         }
         return ok;
+    }
+
+    // Можно ли записать общий файл без вопросов к пользователю (сервер или уже разрешённая папка).
+    async function canWrite() {
+        if (await detectServerWrite()) return true;
+        if (rootHandle) return true;
+        try {
+            const db = await openIdb();
+            const handle = await new Promise((resolve) => {
+                const tx = db.transaction(IDB_STORE, 'readonly');
+                const req = tx.objectStore(IDB_STORE).get(HANDLE_KEY);
+                req.onsuccess = () => resolve(req.result || null);
+                req.onerror = () => resolve(null);
+            });
+            if (handle && await handle.queryPermission({ mode: 'readwrite' }) === 'granted') {
+                rootHandle = handle;
+                linkStatus = 'linked';
+                return true;
+            }
+        } catch { /* нет доступа */ }
+        return false;
     }
 
     function isLinked() {
@@ -597,6 +632,7 @@ window.SharedStorage = (function () {
         restoreRootHandle,
         readJsonFile,
         writeJsonFile,
+        canWrite,
         listHistory,
         readHistory,
         restoreHistory,

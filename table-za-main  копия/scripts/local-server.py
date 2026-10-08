@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import tempfile
 import threading
@@ -33,6 +34,8 @@ HISTORY_POLICY = {
     "flight-comments.json": (3600, 24),
     "creative-layouts.json": (3600, 20),
 }
+# Архив продаж (js/sales-archive.js): shared/history/curves-ГГГГ-ММ.json и slices-ГГГГ-ММ.json.
+ARCHIVE_RE = re.compile(r"^history/(curves|slices)-\d{4}-\d{2}\.json$")
 MAX_BODY = 64 * 1024 * 1024
 WRITE_LOCK = threading.Lock()
 ALLOWED_HOSTS = {"127.0.0.1:%d" % PORT, "localhost:%d" % PORT}
@@ -139,7 +142,7 @@ class Handler(SimpleHTTPRequestHandler):
         name = path[len("/shared/"):] if path.startswith("/shared/") else ""
         if not self._same_origin():
             return self._send_json(403, {"error": "forbidden"})
-        if name not in SHARED_WRITABLE:
+        if name not in SHARED_WRITABLE and not ARCHIVE_RE.match(name):
             return self._send_json(404, {"error": "not allowed"})
         if not self.headers.get("Content-Type", "").startswith("application/json"):
             return self._send_json(415, {"error": "json only"})
@@ -159,7 +162,10 @@ class Handler(SimpleHTTPRequestHandler):
                 os.makedirs(SHARED_DIR, exist_ok=True)
                 backup_if_due(name, self.headers.get("X-Krasavia-Backup") == "force")
                 # Сначала во временный файл, потом подмена: другие ПК не прочитают недописанный файл.
-                fd, tmp = tempfile.mkstemp(prefix="." + name + ".", suffix=".tmp", dir=SHARED_DIR)
+                target = os.path.join(SHARED_DIR, *name.split("/"))
+                target_dir = os.path.dirname(target)
+                os.makedirs(target_dir, exist_ok=True)
+                fd, tmp = tempfile.mkstemp(prefix="." + os.path.basename(target) + ".", suffix=".tmp", dir=target_dir)
                 try:
                     with os.fdopen(fd, "wb") as f:
                         f.write(body)
@@ -167,7 +173,7 @@ class Handler(SimpleHTTPRequestHandler):
                         os.chmod(tmp, 0o644)  # mkstemp создаёт файл только для владельца
                     except OSError:
                         pass
-                    os.replace(tmp, os.path.join(SHARED_DIR, name))
+                    os.replace(tmp, target)
                 except BaseException:
                     try:
                         os.remove(tmp)

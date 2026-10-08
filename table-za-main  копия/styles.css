@@ -6603,3 +6603,38 @@ span.rp-chip {
     .shared-history-row { grid-template-columns: 1fr; }
     .shared-history-select { max-width: none; }
 }
+
+/* Подсказки пределов для справочника субсидированных тарифов */
+.rp-suggest {
+    margin: 12px 0;
+    padding: 12px;
+    border: 1px dashed var(--border, #cbd5e1);
+    border-radius: 10px;
+    background: rgb(14 165 233 / 0.04);
+}
+.rp-suggest-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.rp-suggest-weak td { opacity: 0.6; }
+.rp-nowrap { white-space: nowrap; }
+.rp-warn-text { color: #b91c1c; font-weight: 600; }
+
+/* Режим даты вылета: С — субсидия, К — коммерция (у субсидированного маршрута) */
+.mode-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 3px;
+    margin-left: 4px;
+    border-radius: 4px;
+    font-size: 0.6rem;
+    font-weight: 800;
+    line-height: 1;
+    vertical-align: middle;
+    cursor: help;
+}
+.mode-sub { color: #0f766e; border: 1px solid rgb(13 148 136 / 0.45); background: rgb(13 148 136 / 0.08); }
+.mode-com { color: #fff; background: #d97706; border: 1px solid #d97706; }
+.timeline-chip:not(.timeline-chip-gantt) { position: relative; }
+.timeline-chip .mode-badge { position: absolute; right: 6px; bottom: 9px; margin: 0; }
+.timeline-chip .mode-sub { color: inherit; border-color: currentColor; background: transparent; opacity: 0.75; }

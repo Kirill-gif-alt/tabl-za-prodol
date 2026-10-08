@@ -166,7 +166,7 @@ function renderRmsWatchlist() {
                     <div class="rms-flight-name">${escHtml(flightDir)}</div>
                     ${showRoute ? `<div class="rms-flight-route">${escHtml(formatRouteDisplay(f.route))}</div>` : ''}
                 </td>
-                <td class="rms-col-date col-date font-semibold">${escHtml(f.date)}</td>
+                <td class="rms-col-date col-date font-semibold">${escHtml(f.date)}${typeof FlightChecks !== 'undefined' && FlightChecks.modeBadge ? FlightChecks.modeBadge(flightCode, f.date) : ''}</td>
                 <td class="rms-col-dtd font-bold ${f.dtd <= 3 ? 'dtd-urgent' : ''}">${f.dtd}</td>
                 <td class="rms-col-load font-semibold"><span class="${f.pct >= 75 ? 'occupancy-high' : 'occupancy-med'}">${f.pct}%</span> <span class="rms-load-sub">${f.free} пасс.</span></td>
                 <td class="rms-col-remain font-semibold">${remainTxt}</td>
