@@ -225,12 +225,14 @@ function resolveSwlyDate(baseFlight, flyDateStr, flightCode) {
 //   до вылета так набирается меньше 2 вылетов — весь период данных.
 const WEEKDAY_NORM_WINDOW_DAYS = 56;
 const WEEKDAY_NORM_MIN_N = 2;
-let salesCutoffCache = { ref: null, time: 0 };
+let salesCutoffCache = { ref: null, sig: '', time: 0 };
 
 // Дата среза продаж: последний день, за который есть сделки (не дата на часах компьютера).
 function salesDataCutoffTime() {
     const ref = typeof salesDetails !== 'undefined' ? salesDetails : null;
-    if (salesCutoffCache.ref === ref && salesCutoffCache.time) return salesCutoffCache.time;
+    // Объект продаж заполняется постепенно (при загрузке CSV) — поэтому в ключе и число рейсов, и время файла.
+    const sig = `${Object.keys(ref || {}).length}|${typeof lastSalesUpdate !== 'undefined' && lastSalesUpdate ? new Date(lastSalesUpdate).getTime() : 0}|${typeof window !== 'undefined' && window.ingestQuiet ? 1 : 0}`;
+    if (salesCutoffCache.ref === ref && salesCutoffCache.sig === sig && salesCutoffCache.time) return salesCutoffCache.time;
     let max = 0;
     Object.keys(ref || {}).forEach(k => {
         const list = ref[k] || [];
@@ -242,7 +244,7 @@ function salesDataCutoffTime() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const time = max && max < today.getTime() ? max : today.getTime();
-    salesCutoffCache = { ref, time };
+    salesCutoffCache = { ref, sig, time };
     return time;
 }
 
@@ -555,7 +557,24 @@ function refreshOpenSalesReport() {
     if (!host || !host.isConnected || !host.innerHTML.trim()) return;
     const panel = host.closest('.is-hidden');
     if (panel) return;
+    // Сохраняем то, что пользователь мог трогать: набранный комментарий, раскрытые блоки, прокрутку.
+    const box = host.querySelector('.sd-comment');
+    const ta = host.querySelector('.flight-comment-input');
+    const keep = {
+        boxOpen: !!(box && !box.hidden),
+        text: ta ? ta.value : null,
+        focused: !!(ta && document.activeElement === ta),
+        details: [...host.querySelectorAll('details')].map(d => d.open),
+        scroll: host.scrollTop
+    };
     buildFlightSalesReportFor(a.baseFlight, a.flyDateStr, a.resultId, a.flightCode);
+    const box2 = host.querySelector('.sd-comment');
+    if (box2 && keep.boxOpen) box2.hidden = false;
+    const ta2 = host.querySelector('.flight-comment-input');
+    if (ta2 && keep.text != null) ta2.value = keep.text;
+    if (ta2 && keep.focused) ta2.focus();
+    host.querySelectorAll('details').forEach((d, i) => { if (i < keep.details.length) d.open = keep.details[i]; });
+    host.scrollTop = keep.scroll;
 }
 
 function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode) {

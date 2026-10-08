@@ -530,7 +530,8 @@ window.ReportsView = (function () {
         }).join('');
         const editing = refEditId ? entries.find(e => e.id === refEditId) : null;
         const pick = editing ? editing.flights[0] : (refPrefill || missing[0] || '');
-        const codes = interregionalCodes();
+        // Рейсы из записей справочника тоже в списке — иначе при правке сезонного рейса браузер молча выберет другой.
+        const codes = [...new Set(interregionalCodes().concat(entries.flatMap(e => e.flights), pick ? [pick] : []))];
         const subsidizedNow = new Set(missing.concat(entries.flatMap(e => e.flights)));
         const option = (c) => `<option value="${esc(c)}"${c === pick ? ' selected' : ''}>${esc(c)} · ${esc(directionOf(c))}</option>`;
         const options = `

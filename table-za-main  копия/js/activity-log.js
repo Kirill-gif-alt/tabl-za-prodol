@@ -104,7 +104,8 @@ window.ActivityLog = (function () {
             }
         }
 
-        cache = mergeEvents(local, shared);
+        // Пока ждали сеть, log() мог дописать событие в cache — сохраняем и его.
+        cache = mergeEvents(cache || [], mergeEvents(local, shared));
         try {
             localStorage.setItem(LOCAL_KEY, JSON.stringify(cache));
         } catch { /* ignore */ }

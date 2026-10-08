@@ -703,12 +703,14 @@ function initDataBoardDrag() {
         container.scrollLeft = scrollLeft - dx;
     });
 
-    const stop = () => {
-        if (didDrag) dataBoardSuppressClick = true;
+    // Подавляем только клик, который придёт сразу после отпускания кнопки над доской.
+    // Ушли мышью за край — клика не будет, и следующий настоящий клик терять нельзя.
+    const stop = (suppress) => {
+        if (didDrag && suppress) dataBoardSuppressClick = true;
         isDown = false;
         didDrag = false;
         container.classList.remove('data-board-dragging');
     };
-    container.addEventListener('mouseup', stop);
-    container.addEventListener('mouseleave', stop);
+    container.addEventListener('mouseup', () => stop(true));
+    container.addEventListener('mouseleave', () => stop(false));
 }

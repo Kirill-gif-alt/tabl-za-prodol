@@ -79,7 +79,11 @@ function refreshCostCalc() {
     const aircraft = RouteCosts.listAircraft(route.fromKey, route.toKey);
     let ac = aircraft.find(a => a.key === st.ac)?.key || aircraft[0]?.key || '';
     const formSig = routes.map(r => r.id).join(',') + '|' + ac;
-    if (form.dataset.built === formSig && form.childElementCount) return;
+    if (form.dataset.built === formSig && form.childElementCount) {
+        // Форма та же, но файл расходов мог обновиться — пересчитываем цифры.
+        if (typeof paintCostCalcResult === 'function') paintCostCalcResult(loadCostCalcState());
+        return;
+    }
     form.dataset.built = formSig;
 
     const routeOpts = routes.map(r =>

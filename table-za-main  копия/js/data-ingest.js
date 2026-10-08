@@ -204,6 +204,7 @@ async function processDataFromSources(avail, closed, sales, exp, weights, childr
     }
 
     window.ingestQuiet = false;
+    window.krasaviaIngestSeq = (window.krasaviaIngestSeq || 0) + 1; // для подписи локального снимка
     updateHeaderStatus();
     invalidateMetricsCache();
     refreshCurrentView();
@@ -216,6 +217,13 @@ async function processDataFromSources(avail, closed, sales, exp, weights, childr
         ActivityLog.log('data_load', `Рейсов: ${flightCount}`);
     }
     showToast('Данные успешно загружены');
+    } catch (e) {
+        // Данные уже сброшены — возвращаем последний сохранённый снимок, чтобы не остаться с пустыми таблицами.
+        window.ingestQuiet = false;
+        if (typeof SessionStore !== 'undefined' && SessionStore.restoreLastData) {
+            await SessionStore.restoreLastData(true).catch(err => console.warn('restoreLastData', err));
+        }
+        throw e;
     } finally {
         window.ingestQuiet = false;
     }

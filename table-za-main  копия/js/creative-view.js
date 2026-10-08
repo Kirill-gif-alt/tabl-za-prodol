@@ -88,7 +88,10 @@ window.CreativeView = (function () {
         return lazy(c, 'econ', () => (typeof RouteCosts !== 'undefined' && RouteCosts.lookup ? RouteCosts.lookup(c.row, c.code, c.date) : null));
     }
 
+    // Себестоимость и субсидия берутся по всему рейсу (по номеру) — считаем их один раз,
+    // на первом участке, как и выручку. Иначе у рейса из двух участков суммы удваиваются.
     function subsidyOf(c) {
+        if (!c.attach) return null;
         if (typeof SharedOverrides !== 'undefined' && SharedOverrides.hasSubsidy(c.code, c.date)) {
             return SharedOverrides.getSubsidy(c.code, c.date) || 0;
         }
@@ -97,6 +100,7 @@ window.CreativeView = (function () {
     }
 
     function costOf(c) {
+        if (!c.attach) return null;
         const econ = econOf(c);
         return econ && econ.unitCost != null ? econ.unitCost : null;
     }
@@ -109,6 +113,15 @@ window.CreativeView = (function () {
         if (typeof getPkzNavValue !== 'function') return null;
         const v = getPkzNavValue(c.date, c.code);
         return v == null || isNaN(v) ? null : Number(v);
+    }
+
+    // Номер недели (с понедельника) без ограничения 52: 28–31.12 — отдельная 53-я неделя.
+    function weekOfYear(d) {
+        const j = new Date(d.getFullYear(), 0, 1);
+        const mon = new Date(j);
+        mon.setDate(j.getDate() - (j.getDay() === 0 ? 6 : j.getDay() - 1));
+        const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        return Math.max(1, Math.floor(Math.round((day - mon) / 86400000) / 7) + 1);
     }
 
     function parsedDate(c) {
@@ -140,7 +153,7 @@ window.CreativeView = (function () {
         { key: 'arrTime', group: 'flight', label: 'Время прилёта', type: 'text', agg: 'text', get: c => (typeof getArrTime === 'function' ? getArrTime(c.row) : c.row[12]) || '' },
         { key: 'dtd', group: 'flight', label: 'Дней до вылета', type: 'num', agg: 'min', get: c => { const m = metricsOf(c); return m ? m.dtd : null; } },
         { key: 'status', group: 'flight', label: 'Статус', type: 'text', agg: 'text', get: c => { const m = metricsOf(c); if (!m) return ''; return m.closed ? 'Закрыт' : (m.flew ? 'Улетел' : 'Открыт'); } },
-        { key: 'week', group: 'flight', label: 'Неделя', type: 'text', agg: 'text', sortBy: c => { const d = parsedDate(c); return d && typeof getWeekNumber === 'function' ? d.getFullYear() * 100 + getWeekNumber(d) : 0; }, get: c => { const d = parsedDate(c); return d && typeof getWeekNumber === 'function' ? String(getWeekNumber(d)) : ''; } },
+        { key: 'week', group: 'flight', label: 'Неделя', type: 'text', agg: 'text', sortBy: c => { const d = parsedDate(c); return d ? d.getFullYear() * 100 + weekOfYear(d) : 0; }, get: c => { const d = parsedDate(c); return d ? `${weekOfYear(d)} (${d.getFullYear()})` : ''; } },
         { key: 'month', group: 'flight', label: 'Месяц', type: 'text', agg: 'text', sortBy: c => { const d = parsedDate(c); return d ? d.getFullYear() * 12 + d.getMonth() : 0; }, get: c => { const d = parsedDate(c); return d ? `${MONTHS_RU[d.getMonth()]} ${d.getFullYear()}` : ''; } },
         { key: 'comment', group: 'flight', label: 'Комментарий к рейсу', type: 'text', agg: 'text', get: c => { if (typeof FlightComments === 'undefined') return ''; return String(FlightComments.get(c.base, c.date) || FlightComments.get(c.code, c.date) || '').trim(); } },
 
@@ -171,7 +184,7 @@ window.CreativeView = (function () {
         { key: 'cost', group: 'econ', label: 'Себестоимость', type: 'rub', agg: 'sum', get: c => costOf(c) },
         { key: 'subsidy', group: 'econ', label: 'Субсидия', type: 'rub', agg: 'sum', get: c => subsidyOf(c) },
         { key: 'subsidized', group: 'econ', label: 'Субсидируемый', type: 'text', agg: 'text', get: c => { const e = econOf(c); return e ? (e.subsidized ? 'Да' : 'Нет') : ''; } },
-        { key: 'fin', group: 'econ', label: 'Фин. результат', type: 'rub', agg: 'sum', get: c => { const cost = costOf(c); const sub = subsidyOf(c); const rev = revenueOf(c); if (cost == null && sub == null && rev == null) return null; return (rev || 0) - (cost || 0) + (sub || 0); } },
+        { key: 'fin', group: 'econ', label: 'Фин. результат', type: 'rub', agg: 'sum', get: c => { if (!groupAllowed('sales')) return null; /* в фин. результате выручка — без права на продажи не показываем */ const cost = costOf(c); const sub = subsidyOf(c); const rev = revenueOf(c); if (cost == null && sub == null && rev == null) return null; return (rev || 0) - (cost || 0) + (sub || 0); } },
 
         { key: 'adults', group: 'pkz', label: 'Взрослых', type: 'num', agg: 'sum', get: c => { const p = pkzOf(c); return p ? p.adults : null; } },
         { key: 'children', group: 'pkz', label: 'Детей', type: 'num', agg: 'sum', get: c => { const p = pkzOf(c); return p ? p.children : null; } },
@@ -380,9 +393,10 @@ window.CreativeView = (function () {
         const today = startOfDay(new Date());
         switch (layout.period) {
             case 'today': return { from: today, to: today };
-            case 'next7': return { from: today, to: addDays(today, 7) };
-            case 'next30': return { from: today, to: addDays(today, 30) };
-            case 'next90': return { from: today, to: addDays(today, 90) };
+            // Границы включительные: «7 дней» — сегодня и ещё 6.
+            case 'next7': return { from: today, to: addDays(today, 6) };
+            case 'next30': return { from: today, to: addDays(today, 29) };
+            case 'next90': return { from: today, to: addDays(today, 89) };
             case 'past30': return { from: addDays(today, -30), to: addDays(today, -1) };
             case 'custom': {
                 const from = layout.from && parseLocalDate(layout.from);

@@ -106,11 +106,13 @@ window.FlightChecks = (function () {
     }
 
     function stateOf(c) {
-        if (typeof closedFlights !== 'undefined' && typeof getSalesLookupKey === 'function' && closedFlights.has(getSalesLookupKey(c.row))) return 'Закрыт';
+        // Сначала дата: закрытый, но уже улетевший рейс — «Улетел», а не «до вылета».
         const d = parseLocalDate(c.date);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        return d && d < today ? 'Улетел' : 'Открыт';
+        if (d && d < today) return 'Улетел';
+        if (typeof closedFlights !== 'undefined' && typeof getSalesLookupKey === 'function' && closedFlights.has(getSalesLookupKey(c.row))) return 'Закрыт';
+        return 'Открыт';
     }
 
     function rub(n) {

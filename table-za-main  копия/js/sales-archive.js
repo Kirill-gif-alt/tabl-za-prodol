@@ -42,7 +42,9 @@ window.SalesArchive = (function () {
         if (loadedMonths.has(month)) return;
         loadedMonths.add(month);
         if (typeof SharedStorage === 'undefined') return;
-        const c = await SharedStorage.readJsonFile(`history/curves-${month}.json`).catch(() => null);
+        const r = await SharedStorage.readJsonFileStrict(`history/curves-${month}.json`).catch(() => ({ ok: false }));
+        if (!r.ok) loadedMonths.delete(month); // нет доступа — перечитаем позже
+        const c = r.data;
         if (c && c.flights && typeof c.flights === 'object') {
             Object.keys(c.flights).forEach(k => {
                 const e = normalizeCurve(c.flights[k]);
@@ -55,7 +57,9 @@ window.SalesArchive = (function () {
         if (loadedSliceMonths.has(month)) return;
         loadedSliceMonths.add(month);
         if (typeof SharedStorage === 'undefined') return;
-        const s = await SharedStorage.readJsonFile(`history/slices-${month}.json`).catch(() => null);
+        const r = await SharedStorage.readJsonFileStrict(`history/slices-${month}.json`).catch(() => ({ ok: false }));
+        if (!r.ok) loadedSliceMonths.delete(month);
+        const s = r.data;
         if (s && s.days && typeof s.days === 'object') {
             Object.keys(s.days).forEach(day => {
                 const d = s.days[day];
@@ -209,7 +213,10 @@ window.SalesArchive = (function () {
     }
 
     async function mergeAndWrite(file, kind, additions) {
-        const remote = await SharedStorage.readJsonFile(file).catch(() => null);
+        // Строгое чтение: если файл не прочитался (ошибка, нет доступа), не перезаписываем архив.
+        const read = await SharedStorage.readJsonFileStrict(file).catch(() => ({ ok: false }));
+        if (!read.ok) return false;
+        const remote = read.data;
         const out = { version: 1, updatedAt: new Date().toISOString() };
         let changed = false;
         if (kind === 'curves') {

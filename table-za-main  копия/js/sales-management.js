@@ -846,7 +846,20 @@ window.SalesManagement = (function () {
 
     // Записать свои неподтверждённые отметки: прочитать свой файл, добавить, записать.
     // Не удалось прочитать — не пишем (иначе можно стереть свои прошлые отметки), повторяем позже.
-    async function persistPeople() {
+    // Запись и чтение файлов отметок идут строго по очереди: иначе медленная запись
+    // могла лечь поверх более новой, а опрос — вернуть старое содержимое своего файла.
+    let peopleChain = Promise.resolve();
+    function inPeopleQueue(fn) {
+        const run = peopleChain.then(fn, fn);
+        peopleChain = run.catch(() => {});
+        return run;
+    }
+
+    function persistPeople() {
+        return inPeopleQueue(persistPeopleNow);
+    }
+
+    async function persistPeopleNow() {
         if (!pending.size || typeof SharedStorage === 'undefined' || !SharedStorage.readJsonFileStrict) return;
         const groups = new Map();
         pending.forEach((p, id) => {
@@ -899,7 +912,11 @@ window.SalesManagement = (function () {
     }
 
     // Прочитать файлы отметок всех авторов. onlyCurrent — только текущий месяц (частый опрос).
-    async function loadPeople(onlyCurrent) {
+    function loadPeople(onlyCurrent) {
+        return inPeopleQueue(() => loadPeopleNow(onlyCurrent));
+    }
+
+    async function loadPeopleNow(onlyCurrent) {
         if (typeof SharedStorage === 'undefined' || !SharedStorage.listSharedDir) return false;
         const months = neededMonths();
         const list = onlyCurrent ? months.slice(-1) : months;
@@ -1247,12 +1264,19 @@ function paintSalesCell(td, mark) {
     }
 }
 
+let salesGridStale = false;
+
 function closeSalesPopover() {
     const pop = document.getElementById('sm-pop');
+    const wasOpen = pop && !pop.hidden;
     if (pop) pop.hidden = true;
     if (salesPopCloser) {
         document.removeEventListener('pointerdown', salesPopCloser, true);
         salesPopCloser = null;
+    }
+    if (wasOpen && salesGridStale) {
+        salesGridStale = false;
+        if (document.getElementById('sm-grid')) setTimeout(renderSalesGrid, 0);
     }
 }
 
@@ -1278,7 +1302,15 @@ function openSalesPopover(td) {
     const flight = td.dataset.flight;
     const dep = td.dataset.dep;
     const check = td.dataset.check;
-    const mark = SalesManagement.getOwnMark(flight, dep, check);
+    // «Своя» отметка — под именем профиля или под последней ручной подписью.
+    let customSig = '';
+    try { customSig = localStorage.getItem(SALES_SIG_KEY) || ''; } catch { /* ignore */ }
+    let mark = SalesManagement.getOwnMark(flight, dep, check);
+    let markAuthor = '';
+    if (!mark && customSig) {
+        mark = SalesManagement.getOwnMark(flight, dep, check, customSig);
+        if (mark) markAuthor = customSig;
+    }
     pop.dataset.flight = flight;
     pop.dataset.dep = dep;
     pop.dataset.check = check;
@@ -1289,8 +1321,8 @@ function openSalesPopover(td) {
     });
     const input = document.getElementById('sm-pop-author');
     if (input) {
-        input.value = SalesManagement.profileName();
-        input.dataset.touched = '';
+        input.value = markAuthor || SalesManagement.profileName();
+        input.dataset.touched = markAuthor ? '1' : '';
         setTimeout(() => input.focus(), 0);
     }
     const clearBtn = document.getElementById('sm-pop-clear');
@@ -1309,6 +1341,8 @@ function currentPopoverStatus() {
     const on = document.querySelector('#sm-pop [data-status].sm-status-on');
     return on ? on.dataset.status : '';
 }
+
+const SALES_SIG_KEY = 'krasavia_sm_custom_sig';
 
 function applySalesPopover(closeAfter) {
     const pop = document.getElementById('sm-pop');
@@ -1333,6 +1367,10 @@ function applySalesPopover(closeAfter) {
         if (typeof showToast === 'function') showToast('Нет права менять эту таблицу', 'error');
         return;
     }
+    try {
+        if (author && author !== SalesManagement.profileName()) localStorage.setItem(SALES_SIG_KEY, author);
+        else localStorage.removeItem(SALES_SIG_KEY);
+    } catch { /* ignore */ }
     repaintSalesCell(flight, dep, check);
     const clearBtn = document.getElementById('sm-pop-clear');
     if (clearBtn) clearBtn.hidden = false;
@@ -1396,9 +1434,10 @@ function ensureSalesPopover() {
             applySalesPopover(true);
         }
     });
+    // Подпись применяется по «Готово» / Enter / кнопке статуса, а не на каждую букву:
+    // иначе «П», «Пе», «Пет»… превращаются в отдельных авторов.
     document.getElementById('sm-pop-author')?.addEventListener('input', (event) => {
         event.target.dataset.touched = '1';
-        if (currentPopoverStatus()) applySalesPopover(false);
     });
 }
 
@@ -1691,7 +1730,10 @@ setInterval(() => {
 // Отметка изменилась (своя из RMS/карточки или чужая из файла) — перерисовать таблицу, если она открыта.
 document.addEventListener('krasavia:mark', () => {
     if (typeof currentTab === 'undefined' || currentTab !== 'sales') return;
-    if (salesPopoverOpen()) return;
+    if (salesPopoverOpen()) {
+        salesGridStale = true; // перерисуем после закрытия окна отметки
+        return;
+    }
     if (document.getElementById('sm-grid')) renderSalesGrid();
 });
 

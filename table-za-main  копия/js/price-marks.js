@@ -84,7 +84,8 @@ window.PriceMarks = (function () {
         const cutoff = typeof salesDataCutoffTime === 'function' ? salesDataCutoffTime() : Date.now();
         const lastAfterDay = parseLocalDate(flyDate);
         if (lastAfterDay) lastAfterDay.setDate(lastAfterDay.getDate() - afterTo);
-        const complete = !!(lastAfterDay && lastAfterDay.getTime() <= cutoff);
+        // Последний день окна «после» должен быть целиком в данных: день среза может быть неполным.
+        const complete = !!(lastAfterDay && lastAfterDay.getTime() < cutoff);
         const nb = normPickup(base, code, flyDate, d + WINDOW, d + 1);
         const na = normPickup(base, code, flyDate, d, afterTo);
         const effect = complete && nb && na ? (after.n - na.value) - (before.n - nb.value) : null;

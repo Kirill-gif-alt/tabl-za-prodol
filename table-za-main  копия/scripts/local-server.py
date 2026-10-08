@@ -125,7 +125,20 @@ class Handler(SimpleHTTPRequestHandler):
         origin = self.headers.get("Origin")
         return origin is None or origin in {"http://" + h for h in ALLOWED_HOSTS}
 
+    def list_directory(self, path):
+        # Списки папок не отдаём: приложению они не нужны.
+        self.send_error(404)
+        return None
+
+    def do_HEAD(self):
+        if self.headers.get("Host", "") not in ALLOWED_HOSTS:
+            return self._send_json(403, {"error": "forbidden"})
+        return super().do_HEAD()
+
     def do_GET(self):
+        # Чужой сайт, подменивший свой адрес на 127.0.0.1 (DNS rebinding), не прочитает файлы.
+        if self.headers.get("Host", "") not in ALLOWED_HOSTS:
+            return self._send_json(403, {"error": "forbidden"})
         if self.path.split("?")[0] == "/__krasavia/caps":
             if not self._same_origin():
                 return self._send_json(403, {"error": "forbidden"})
@@ -155,6 +168,8 @@ class Handler(SimpleHTTPRequestHandler):
     def do_PUT(self):
         path = self.path.split("?")[0]
         name = path[len("/shared/"):] if path.startswith("/shared/") else ""
+        # При отказе тело не читаем — закрываем соединение, чтобы остаток не приняли за новый запрос.
+        self.close_connection = True
         if not self._same_origin():
             return self._send_json(403, {"error": "forbidden"})
         if name not in SHARED_WRITABLE and not ARCHIVE_RE.match(name) and not MARKS_RE.match(name):

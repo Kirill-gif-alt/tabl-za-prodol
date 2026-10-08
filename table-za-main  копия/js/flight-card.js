@@ -152,7 +152,11 @@ window.FlightCard = (function () {
     // ---------- где рисуем: панель на странице или отдельное окно ----------
 
     function popupAlive() {
-        return !!(popup && !popup.closed && popup.document && popup.document.body);
+        try {
+            return !!(popup && !popup.closed && popup.document && popup.document.body);
+        } catch (e) {
+            return false;
+        }
     }
 
     function hostDoc() {
@@ -184,14 +188,25 @@ window.FlightCard = (function () {
     }
 
     function openPopup() {
-        const w = window.open('', 'krasavia-flight-card', 'width=500,height=900');
+        let w = window.open('', 'krasavia-flight-card', 'width=500,height=900');
         if (!w) {
             if (typeof showToast === 'function') showToast('Браузер не дал открыть окно — разрешите всплывающие окна для этого сайта', 'error');
             return false;
         }
+        // После F5 главной страницы окно с прошлого раза остаётся открытым: его документ создан
+        // старой страницей (на file:// он может быть недоступен) — пересоздаём окно и подключаем заново.
+        const fresh = popup !== w;
+        let doc = null;
+        try { doc = w.document; doc.getElementById('flight-card'); } catch (e) { doc = null; }
+        if (!doc) {
+            try { w.close(); } catch (e) { /* ignore */ }
+            w = window.open('', 'krasavia-flight-card', 'width=500,height=900');
+            if (!w) return false;
+            try { doc = w.document; } catch (e) { return false; }
+        }
         popup = w;
-        const doc = w.document;
-        if (!doc.getElementById('flight-card')) {
+        if (fresh || !doc.getElementById('flight-card')) {
+            if (chart && chart.canvas && chart.canvas.ownerDocument === doc) chart = null;
             const rootStyle = document.documentElement.getAttribute('style') || '';
             const rootCls = document.documentElement.className || '';
             const theme = document.documentElement.getAttribute('data-theme') || '';

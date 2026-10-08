@@ -11,6 +11,16 @@ window.FlightComments = (function () {
         return fl && d ? `${fl}|${d}` : '';
     }
 
+    // Слияние по каждому рейсу: остаётся более свежая запись (удаление — запись с пустым текстом).
+    function mergeComments(a, b) {
+        const out = { ...(a && typeof a === 'object' ? a : {}) };
+        Object.entries(b && typeof b === 'object' ? b : {}).forEach(([k, v]) => {
+            if (!v) return;
+            if (!out[k] || String(v.updatedAt || '') > String(out[k].updatedAt || '')) out[k] = v;
+        });
+        return out;
+    }
+
     async function load() {
         let remote = null;
         if (typeof SharedStorage !== 'undefined' && typeof SharedStorage.readJsonFile === 'function') {
@@ -21,24 +31,16 @@ window.FlightComments = (function () {
                 if (res.ok) remote = await res.json();
             } catch { /* ignore */ }
         }
+        let local = null;
         try {
-            const local = JSON.parse(localStorage.getItem(LOCAL_KEY) || 'null');
-            if (local?.comments) {
-                if (!remote?.comments) remote = local;
-                else if ((local.updatedAt || '') > (remote.updatedAt || '')) remote = local;
-                else if ((remote.updatedAt || '') > (local.updatedAt || '')) {
-                    /* keep remote */
-                } else {
-                    remote.comments = { ...local.comments, ...remote.comments };
-                }
-            }
+            local = JSON.parse(localStorage.getItem(LOCAL_KEY) || 'null');
         } catch { /* ignore */ }
-
-        if (remote?.comments) {
+        const merged = mergeComments(remote?.comments, local?.comments);
+        if (remote?.comments || local?.comments) {
             cache = {
                 version: 1,
-                updatedAt: remote.updatedAt || null,
-                comments: { ...remote.comments }
+                updatedAt: [remote?.updatedAt, local?.updatedAt].filter(Boolean).sort().pop() || null,
+                comments: merged
             };
         }
         loaded = true;
@@ -79,25 +81,27 @@ window.FlightComments = (function () {
             ? Security.sanitizeTextInput(String(text || ''), 2000)
             : String(text || '').trim().slice(0, 2000);
 
-        if (!clean) {
-            delete cache.comments[k];
-        } else {
-            cache.comments[k] = {
-                text: clean,
-                updatedAt: new Date().toISOString(),
-                author: author || (typeof ProfileAuth !== 'undefined' ? ProfileAuth.getCurrentProfile()?.name : '') || ''
-            };
+        const now = new Date().toISOString();
+        const entry = {
+            text: clean || '',
+            updatedAt: now,
+            author: author || (typeof ProfileAuth !== 'undefined' ? ProfileAuth.getCurrentProfile()?.name : '') || ''
+        };
+        // Перед записью перечитываем общий файл — иначе затрём комментарии, добавленные другими.
+        let read = { ok: false };
+        if (typeof SharedStorage !== 'undefined' && typeof SharedStorage.readJsonFileStrict === 'function') {
+            read = await SharedStorage.readJsonFileStrict(FILE).catch(() => ({ ok: false }));
+            if (read.ok && read.data?.comments) cache.comments = mergeComments(cache.comments, read.data.comments);
         }
-        cache.updatedAt = new Date().toISOString();
+        cache.comments[k] = entry;
+        cache.updatedAt = now;
 
         try {
             localStorage.setItem(LOCAL_KEY, JSON.stringify(cache));
         } catch { /* ignore */ }
 
-        if (typeof SharedStorage !== 'undefined' && typeof SharedStorage.writeJsonFile === 'function') {
+        if (read.ok && typeof SharedStorage.writeJsonFile === 'function') {
             await SharedStorage.writeJsonFile(FILE, cache);
-        } else if (typeof SharedStorage !== 'undefined' && SharedStorage.isLinked?.()) {
-            // use writeViaHandle if exposed later
         }
         return true;
     }
