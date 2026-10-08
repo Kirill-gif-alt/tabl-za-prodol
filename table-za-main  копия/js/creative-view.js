@@ -250,9 +250,13 @@ window.CreativeView = (function () {
     let saved = {};
     let shared = {};
     let sharedLoaded = false;
-    let panelOpen = true;
+    // Панель столбцов — выдвижная справа, по умолчанию закрыта (таблица на всю ширину).
+    let panelOpen = false;
+    let filtersOpen = false;
+    let menuOpen = false;
     let fieldSearch = '';
     const collapsed = new Set();
+    const collapsedTouched = new Set();
     let loadedFor = '';
     let built = { sig: '', result: null };
     let saveTimer = null;
@@ -415,7 +419,7 @@ window.CreativeView = (function () {
         const fullRev = typeof SalesManagement !== 'undefined' && SalesManagement.revision ? SalesManagement.revision() : '';
         const marks = fullRev.slice(fullRev.indexOf('\u0001') + 1);
         const ov = typeof SharedOverrides !== 'undefined' && SharedOverrides.subsidyRevision
-            ? SharedOverrides.subsidyRevision() + ':' + (SharedOverrides.navRevision ? SharedOverrides.navRevision() : 0)
+            ? SharedOverrides.subsidyRevision() + ':' + (SharedOverrides.navRevision ? SharedOverrides.navRevision() : 0) + ':' + (typeof SubsidyRef !== 'undefined' ? SubsidyRef.revision() : 0)
             : '';
         return [epoch, rows, today, ov, JSON.stringify(layout), marks].join('|');
     }
@@ -726,7 +730,7 @@ window.CreativeView = (function () {
         const result = buildResult();
         if (!result.cols.length) {
             if (typeof TableVirtual !== 'undefined') TableVirtual.destroyHandle(wrap);
-            wrap.innerHTML = '<div class="table-empty-state"><div class="table-empty-title">Столбцы не выбраны</div><div class="table-empty-hint">Отметьте нужные данные в панели «Настройка» слева.</div></div>';
+            wrap.innerHTML = '<div class="table-empty-state"><div class="table-empty-title">Столбцы не выбраны</div><div class="table-empty-hint">Нажмите «Столбцы» и отметьте нужные данные.</div></div>';
             if (count) count.textContent = '';
             return;
         }
@@ -774,12 +778,55 @@ window.CreativeView = (function () {
         }).join('');
     }
 
+    function condsHtml() {
+        const conds = layout.conds.map((cond, i) => `
+            <div class="cr-cond" data-index="${i}">
+                <select class="cr-input" data-cond="field">${fieldOptions(cond.field)}</select>
+                <select class="cr-input cr-op" data-cond="op">${OPS.map(o => `<option value="${o.id}"${o.id === cond.op ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>
+                <input class="cr-input cr-cond-value" data-cond="value" value="${attr(cond.value)}" placeholder="значение"${cond.op === 'empty' || cond.op === 'filled' ? ' hidden' : ''}>
+                <button type="button" class="cr-mini" data-cond-remove="${i}" title="Убрать условие">✕</button>
+            </div>`).join('');
+        return `${conds || '<p class="cr-note">Без условий — показаны все вылеты периода.</p>'}
+            <button type="button" class="filter-btn cr-add-cond" id="cr-add-cond">+ Условие</button>
+            <p class="cr-note">Даты — ДД.ММ.ГГГГ. Условия проверяются по каждому вылету до группировки.</p>`;
+    }
+
+    // Всплывающее меню «Фильтры»: маршруты, статусы рейсов, условия.
+    function renderFilterPop() {
+        const pop = document.getElementById('cr-filter-pop');
+        if (!pop) return;
+        pop.hidden = !filtersOpen;
+        const btn = document.getElementById('cr-filters-btn');
+        if (btn) btn.classList.toggle('filter-btn-active', filtersOpen);
+        if (!filtersOpen) return;
+        pop.innerHTML = `
+            <div class="cr-pop-head"><strong>Фильтры</strong><button type="button" class="cr-mini" data-cr-close="filters" title="Закрыть">✕</button></div>
+            <div class="cr-pop-row">
+                <span class="cr-label">Маршруты</span>
+                <select id="cr-route-type" class="cr-input">
+                    <option value="all"${layout.routeType === 'all' ? ' selected' : ''}>Все маршруты</option>
+                    <option value="krai"${layout.routeType === 'krai' ? ' selected' : ''}>Краевые</option>
+                    <option value="interregional"${layout.routeType === 'interregional' ? ' selected' : ''}>Межрегиональные</option>
+                </select>
+            </div>
+            <div class="cr-pop-row">
+                <span class="cr-label">Рейсы</span>
+                <label class="cr-check"><input type="checkbox" data-status="open"${layout.status.open ? ' checked' : ''}> открытые</label>
+                <label class="cr-check"><input type="checkbox" data-status="closed"${layout.status.closed ? ' checked' : ''}> закрытые</label>
+                <label class="cr-check"><input type="checkbox" data-status="flew"${layout.status.flew ? ' checked' : ''}> улетевшие</label>
+            </div>
+            <div class="cr-pop-section">
+                <span class="cr-label">Условия</span>
+                ${condsHtml()}
+            </div>`;
+    }
+
+    // Выдвижная панель «Столбцы»: выбранные (порядок) и каталог данных.
     function renderPanel() {
+        renderFilterPop();
         const panel = document.getElementById('cr-panel');
         if (!panel) return;
         panel.hidden = !panelOpen;
-        const grid = panel.parentElement;
-        if (grid) grid.classList.toggle('cr-layout-full', !panelOpen);
         const toggle = document.getElementById('cr-panel-toggle');
         if (toggle) toggle.classList.toggle('filter-btn-active', panelOpen);
         if (!panelOpen) return;
@@ -795,69 +842,97 @@ window.CreativeView = (function () {
         const groups = GROUPS.filter(g => groupAllowed(g.id)).map(g => {
             const items = FIELDS.filter(f => f.group === g.id && (!q || f.label.toLowerCase().indexOf(q) !== -1 || g.label.toLowerCase().indexOf(q) !== -1));
             if (!items.length) return '';
+            const on = items.filter(f => layout.cols.indexOf(f.key) !== -1).length;
             const boxes = items.map(f => `
                 <label class="cr-field">
                     <input type="checkbox" data-field="${attr(f.key)}"${layout.cols.indexOf(f.key) !== -1 ? ' checked' : ''}>
                     <span>${esc(colLabel(f.key))}</span>
                 </label>`).join('');
-            return `<details class="cr-group" data-group="${attr(g.id)}"${collapsed.has(g.id) && !q ? '' : ' open'}><summary>${esc(g.label)}</summary><div class="cr-fields">${boxes}</div></details>`;
+            return `<details class="cr-group" data-group="${attr(g.id)}"${(collapsed.has(g.id) || (!on && !collapsedTouched.has(g.id))) && !q ? '' : ' open'}><summary>${esc(g.label)}${on ? ` <span class="cr-group-n">${on}</span>` : ''}</summary><div class="cr-fields">${boxes}</div></details>`;
         }).join('');
-        const conds = layout.conds.map((cond, i) => `
-            <div class="cr-cond" data-index="${i}">
-                <select class="cr-input" data-cond="field">${fieldOptions(cond.field)}</select>
-                <select class="cr-input cr-op" data-cond="op">${OPS.map(o => `<option value="${o.id}"${o.id === cond.op ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>
-                <input class="cr-input cr-cond-value" data-cond="value" value="${attr(cond.value)}" placeholder="значение"${cond.op === 'empty' || cond.op === 'filled' ? ' hidden' : ''}>
-                <button type="button" class="cr-mini" data-cond-remove="${i}" title="Убрать условие">✕</button>
-            </div>`).join('');
         panel.innerHTML = `
-            <section class="cr-section">
-                <h3 class="cr-section-title">Столбцы в таблице</h3>
-                ${chosen ? `<ol class="cr-chosen-list" id="cr-chosen">${chosen}</ol>` : '<p class="cr-note">Пока пусто — отметьте данные ниже.</p>'}
-            </section>
-            <section class="cr-section">
-                <h3 class="cr-section-title">Добавить данные</h3>
-                <input type="search" id="cr-field-search" class="cr-input cr-field-search" placeholder="Найти показатель" value="${attr(fieldSearch)}">
-                ${groups || '<p class="cr-note">Ничего не найдено</p>'}
-            </section>
-            <section class="cr-section">
-                <h3 class="cr-section-title">Условия</h3>
-                ${conds || '<p class="cr-note">Без условий — показаны все вылеты периода.</p>'}
-                <button type="button" class="filter-btn cr-add-cond" id="cr-add-cond">+ Условие</button>
-                <p class="cr-note">Даты в условиях — ДД.ММ.ГГГГ. Условия проверяются по каждому вылету до группировки.</p>
-            </section>
+            <div class="cr-drawer-head">
+                <strong>Столбцы таблицы</strong>
+                <button type="button" class="cr-mini" data-cr-close="panel" title="Закрыть">✕</button>
+            </div>
+            <div class="cr-drawer-body">
+                <section class="cr-section">
+                    <h3 class="cr-section-title">Выбрано — перетащите, чтобы поменять порядок</h3>
+                    ${chosen ? `<ol class="cr-chosen-list" id="cr-chosen">${chosen}</ol>` : '<p class="cr-note">Пока пусто — отметьте данные ниже.</p>'}
+                </section>
+                <section class="cr-section">
+                    <h3 class="cr-section-title">Добавить данные</h3>
+                    <input type="search" id="cr-field-search" class="cr-input cr-field-search" placeholder="Найти показатель" value="${attr(fieldSearch)}">
+                    ${groups || '<p class="cr-note">Ничего не найдено</p>'}
+                </section>
+            </div>
         `;
+    }
+
+    // Улетевшие скрыты по умолчанию для будущих периодов — это не «фильтр»; фильтр — когда убраны открытые или закрытые.
+    function statusFiltered() {
+        return !(layout.status.open && layout.status.closed);
+    }
+
+    function periodText() {
+        const b = periodBounds();
+        const f = (d) => (d && typeof formatDateRu === 'function' ? formatDateRu(d) : '');
+        if (!b.from && !b.to) return 'все даты';
+        if (b.from && b.to && f(b.from) === f(b.to)) return f(b.from);
+        return `${f(b.from) || '…'} – ${f(b.to) || '…'}`;
+    }
+
+    // Активные фильтры чипами под панелью: видно, что отфильтровано, и убирается в один клик.
+    function renderChips() {
+        const box = document.getElementById('cr-chips');
+        if (!box) return;
+        const chips = [];
+        const routeLabel = { krai: 'Краевые', interregional: 'Межрегиональные' }[layout.routeType];
+        if (routeLabel) chips.push({ id: 'route', text: routeLabel });
+        if (layout.search) chips.push({ id: 'search', text: `«${layout.search}»` });
+        const st = layout.status;
+        const stNames = [st.open ? 'открытые' : '', st.closed ? 'закрытые' : '', st.flew ? 'улетевшие' : ''].filter(Boolean);
+        if (statusFiltered()) chips.push({ id: 'status', text: 'Рейсы: ' + (stNames.join(', ') || 'никакие') });
+        layout.conds.forEach((c, i) => {
+            const f = FIELD_BY_KEY[c.field];
+            const op = OPS.find(o => o.id === c.op);
+            chips.push({ id: 'cond:' + i, text: `${f ? f.label : c.field} ${op ? op.label : c.op}${c.op === 'empty' || c.op === 'filled' ? '' : ' ' + (c.value || '…')}` });
+        });
+        box.hidden = !chips.length;
+        box.innerHTML = chips.map(c => `<span class="cr-chip">${esc(c.text)}<button type="button" data-chip-remove="${attr(c.id)}" title="Убрать">✕</button></span>`).join('')
+            + (chips.length > 1 ? '<button type="button" class="cr-chip-clear" data-chip-remove="all">Сбросить фильтры</button>' : '');
     }
 
     function renderToolbar() {
         const bar = document.getElementById('cr-filters');
         if (!bar) return;
-        const periodBtns = PERIODS.map(p => `<button type="button" class="filter-btn${layout.period === p.id ? ' filter-btn-active' : ''}" data-period="${p.id}">${esc(p.label)}</button>`).join('');
         const b = periodBounds();
         const iso = (d) => (d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : '');
+        const custom = layout.period === 'custom';
+        const nFilters = (layout.routeType !== 'all' ? 1 : 0) + layout.conds.length
+            + (statusFiltered() ? 1 : 0);
         bar.innerHTML = `
-            <div class="cr-filter-row">
-                <span class="cr-label">Период</span>
-                ${periodBtns}
+            <label class="cr-field-inline"><span class="cr-label">Период</span>
+                <select id="cr-period" class="cr-input">
+                    ${PERIODS.map(p => `<option value="${p.id}"${layout.period === p.id ? ' selected' : ''}>${esc(p.label)}</option>`).join('')}
+                    <option value="custom"${custom ? ' selected' : ''}>Свои даты…</option>
+                </select></label>
+            ${custom ? `
                 <label class="cr-date">с <input type="date" id="cr-from" class="cr-input" value="${iso(b.from)}"></label>
-                <label class="cr-date">по <input type="date" id="cr-to" class="cr-input" value="${iso(b.to)}"></label>
+                <label class="cr-date">по <input type="date" id="cr-to" class="cr-input" value="${iso(b.to)}"></label>`
+                : `<span class="cr-period-text" title="Даты периода">${esc(periodText())}</span>`}
+            <input type="search" id="cr-search" class="cr-input cr-search" placeholder="Рейс или маршрут" value="${attr(layout.search)}">
+            <div class="cr-pop-wrap">
+                <button type="button" id="cr-filters-btn" class="filter-btn${filtersOpen ? ' filter-btn-active' : ''}">Фильтры${nFilters ? ` <span class="cr-badge">${nFilters}</span>` : ''} ▾</button>
+                <div id="cr-filter-pop" class="cr-pop" hidden></div>
             </div>
-            <div class="cr-filter-row">
-                <input type="search" id="cr-search" class="cr-input cr-search" placeholder="Рейс или маршрут" value="${attr(layout.search)}">
-                <select id="cr-route-type" class="cr-input">
-                    <option value="all"${layout.routeType === 'all' ? ' selected' : ''}>Все маршруты</option>
-                    <option value="krai"${layout.routeType === 'krai' ? ' selected' : ''}>Краевые</option>
-                    <option value="interregional"${layout.routeType === 'interregional' ? ' selected' : ''}>Межрегиональные</option>
-                </select>
-                <label class="cr-check"><input type="checkbox" data-status="open"${layout.status.open ? ' checked' : ''}> открытые</label>
-                <label class="cr-check"><input type="checkbox" data-status="closed"${layout.status.closed ? ' checked' : ''}> закрытые</label>
-                <label class="cr-check"><input type="checkbox" data-status="flew"${layout.status.flew ? ' checked' : ''}> улетевшие</label>
-                <span class="cr-label">Группировка</span>
-                <select id="cr-group" class="cr-input">${GROUP_BY.filter(g => !g.key || fieldAllowed(g.key)).map(g => `<option value="${attr(g.key)}"${layout.groupBy === g.key ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}</select>
-                <label class="cr-check"><input type="checkbox" id="cr-totals"${layout.totals ? ' checked' : ''}> итоги</label>
-                <span class="table-controls-spacer"></span>
-                <span id="cr-count" class="cr-count"></span>
-            </div>
+            <label class="cr-field-inline"><span class="cr-label">Группировка</span>
+                <select id="cr-group" class="cr-input">${GROUP_BY.filter(g => !g.key || fieldAllowed(g.key)).map(g => `<option value="${attr(g.key)}"${layout.groupBy === g.key ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}</select></label>
+            <label class="cr-check"><input type="checkbox" id="cr-totals"${layout.totals ? ' checked' : ''}> итоги</label>
         `;
+        updateBadges();
+        renderFilterPop();
+        renderChips();
     }
 
     function templateOptions() {
@@ -886,6 +961,7 @@ window.CreativeView = (function () {
     }
 
     function renderAll() {
+        renderMenu();
         renderTemplates();
         renderToolbar();
         renderPanel();
@@ -900,8 +976,27 @@ window.CreativeView = (function () {
         persistState();
         if (o.templates !== false) renderTemplates();
         if (o.toolbar) renderToolbar();
+        else renderChips();
         if (o.panel) renderPanel();
+        updateBadges();
         renderTable();
+    }
+
+    // Счётчики на кнопках «Фильтры» и «Столбцы» без перерисовки всей панели (не сбивает ввод).
+    function updateBadges() {
+        const nFilters = (layout.routeType !== 'all' ? 1 : 0) + layout.conds.length
+            + (statusFiltered() ? 1 : 0);
+        const fb = document.getElementById('cr-filters-btn');
+        if (fb) fb.innerHTML = `Фильтры${nFilters ? ` <span class="cr-badge">${nFilters}</span>` : ''} ▾`;
+        const cb = document.getElementById('cr-panel-toggle');
+        if (cb) cb.innerHTML = `Столбцы <span class="cr-badge">${layout.cols.filter(fieldAllowed).length}</span>`;
+    }
+
+    function renderMenu() {
+        const menu = document.getElementById('cr-menu');
+        if (menu) menu.hidden = !menuOpen;
+        const btn = document.getElementById('cr-menu-btn');
+        if (btn) btn.classList.toggle('filter-btn-active', menuOpen);
     }
 
     function applyTemplate(ref) {
@@ -999,6 +1094,37 @@ window.CreativeView = (function () {
     function bind(root) {
         root.addEventListener('click', (event) => {
             const t = event.target;
+            const closeBtn = t.closest('[data-cr-close]');
+            if (closeBtn) {
+                if (closeBtn.dataset.crClose === 'panel') { panelOpen = false; renderPanel(); }
+                else { filtersOpen = false; renderFilterPop(); }
+                return;
+            }
+            const chipX = t.closest('[data-chip-remove]');
+            if (chipX) {
+                const id = chipX.dataset.chipRemove;
+                if (id === 'route' || id === 'all') layout.routeType = 'all';
+                if (id === 'search' || id === 'all') layout.search = '';
+                if (id === 'status' || id === 'all') layout.status = { open: true, closed: true, flew: true };
+                if (id === 'all') layout.conds = [];
+                if (id.indexOf('cond:') === 0) layout.conds.splice(parseInt(id.slice(5), 10), 1);
+                changed({ toolbar: true, panel: true });
+                return;
+            }
+            if (t.closest('#cr-menu-btn')) {
+                menuOpen = !menuOpen;
+                renderMenu();
+                return;
+            }
+            if (t.closest('#cr-filters-btn')) {
+                filtersOpen = !filtersOpen;
+                renderFilterPop();
+                return;
+            }
+            if (t.closest('#cr-menu button')) {
+                menuOpen = false;
+                renderMenu();
+            }
             const period = t.closest('[data-period]');
             if (period) {
                 layout.period = period.dataset.period;
@@ -1031,7 +1157,7 @@ window.CreativeView = (function () {
                 changed({ panel: true });
                 return;
             }
-            if (t.id === 'cr-panel-toggle') {
+            if (t.closest('#cr-panel-toggle')) {
                 panelOpen = !panelOpen;
                 renderPanel();
                 return;
@@ -1052,6 +1178,19 @@ window.CreativeView = (function () {
         root.addEventListener('change', (event) => {
             const t = event.target;
             if (t.id === 'cr-template') { if (t.value) applyTemplate(t.value); return; }
+            if (t.id === 'cr-period') {
+                if (t.value === 'custom') {
+                    const b = periodBounds();
+                    const fmt = (d) => (d && typeof formatDateRu === 'function' ? formatDateRu(d) : '');
+                    layout.from = fmt(b.from) || layout.from;
+                    layout.to = fmt(b.to) || layout.to;
+                } else if (t.value === 'past30' || t.value === 'all') {
+                    layout.status.flew = true;
+                }
+                layout.period = t.value;
+                changed({ toolbar: true });
+                return;
+            }
             if (t.dataset.field) {
                 const key = t.dataset.field;
                 if (t.checked && layout.cols.indexOf(key) === -1) layout.cols.push(key);
@@ -1092,7 +1231,8 @@ window.CreativeView = (function () {
                 const item = layout.conds[parseInt(cond.dataset.index, 10)];
                 if (!item) return;
                 item[t.dataset.cond] = t.value;
-                changed({ panel: t.dataset.cond !== 'value' });
+                if (t.dataset.cond !== 'value') changed({ panel: true });
+                else changed();
             }
         });
 
@@ -1117,6 +1257,18 @@ window.CreativeView = (function () {
                     try { again.setSelectionRange(pos, pos); } catch (e) { /* ignore */ }
                 }
             }
+        });
+
+        // Клик мимо всплывающих меню закрывает их.
+        document.addEventListener('pointerdown', (event) => {
+            const t = event.target;
+            if (menuOpen && !t.closest('#cr-menu') && !t.closest('#cr-menu-btn')) { menuOpen = false; renderMenu(); }
+            if (filtersOpen && !t.closest('#cr-filter-pop') && !t.closest('#cr-filters-btn')) { filtersOpen = false; renderFilterPop(); }
+        }, true);
+        document.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape' || !document.getElementById('cr-page')) return;
+            if (menuOpen || filtersOpen) { menuOpen = false; filtersOpen = false; renderMenu(); renderFilterPop(); return; }
+            if (panelOpen && document.getElementById('cr-panel')?.contains(document.activeElement)) { panelOpen = false; renderPanel(); }
         });
 
         let dragKey = '';
@@ -1151,6 +1303,7 @@ window.CreativeView = (function () {
         root.addEventListener('toggle', (event) => {
             const d = event.target;
             if (!d || !d.dataset || !d.dataset.group || fieldSearch.trim()) return;
+            collapsedTouched.add(d.dataset.group);
             if (d.open) collapsed.delete(d.dataset.group);
             else collapsed.add(d.dataset.group);
         }, true);
@@ -1234,24 +1387,32 @@ window.CreativeView = (function () {
                     </div>
                 </div>
                 <div class="table-page-body">
-                    <div class="table-controls-wrap">
+                    <div class="table-controls-wrap cr-top">
                         <div class="table-controls-bar cr-controls">
-                            <button type="button" id="cr-panel-toggle" class="filter-btn filter-btn-active">Настройка</button>
-                            <span class="cr-label">Шаблон</span>
-                            <select id="cr-template" class="cr-input cr-template"></select>
-                            <button type="button" id="cr-save" class="filter-btn">Сохранить</button>
-                            <button type="button" id="cr-save-as" class="filter-btn">Сохранить как…</button>
-                            <button type="button" id="cr-share" class="filter-btn" title="Записать шаблон в общую папку — увидят все">Сделать общим</button>
-                            <button type="button" id="cr-delete" class="filter-btn">Удалить</button>
-                            <button type="button" id="cr-reset" class="filter-btn" title="Вернуть готовый шаблон «Загрузка и экономика»">Сброс</button>
+                            <label class="cr-field-inline"><span class="cr-label">Шаблон</span>
+                                <select id="cr-template" class="cr-input cr-template"></select></label>
+                            <div class="cr-pop-wrap">
+                                <button type="button" id="cr-menu-btn" class="filter-btn" title="Сохранить, поделиться, удалить шаблон">Сохранить ▾</button>
+                                <div id="cr-menu" class="cr-pop cr-menu" hidden>
+                                    <button type="button" id="cr-save" class="cr-menu-item">Сохранить</button>
+                                    <button type="button" id="cr-save-as" class="cr-menu-item">Сохранить как…</button>
+                                    <button type="button" id="cr-share" class="cr-menu-item" title="Записать шаблон в общую папку — увидят все">Сделать общим</button>
+                                    <button type="button" id="cr-reset" class="cr-menu-item" title="Вернуть готовый шаблон «Загрузка и экономика»">Сбросить к стандартному</button>
+                                    <button type="button" id="cr-delete" class="cr-menu-item cr-menu-danger">Удалить шаблон</button>
+                                </div>
+                            </div>
+                            <span class="cr-sep" aria-hidden="true"></span>
+                            <div id="cr-filters" class="cr-filters"></div>
                             <span class="table-controls-spacer"></span>
+                            <button type="button" id="cr-panel-toggle" class="filter-btn">Столбцы</button>
+                            <span id="cr-count" class="cr-count"></span>
                             <button type="button" id="cr-export" class="filter-btn">В Excel</button>
                         </div>
-                        <div id="cr-filters" class="cr-filters"></div>
+                        <div id="cr-chips" class="cr-chips" hidden></div>
                     </div>
-                    <div class="cr-layout">
-                        <aside id="cr-panel" class="cr-panel" aria-label="Настройка таблицы"></aside>
+                    <div class="cr-layout cr-layout-full">
                         <div id="cr-grid" class="table-wrapper cr-grid" data-zoom-target="creative"></div>
+                        <aside id="cr-panel" class="cr-panel cr-drawer" aria-label="Столбцы таблицы" hidden></aside>
                     </div>
                 </div>
             </div>

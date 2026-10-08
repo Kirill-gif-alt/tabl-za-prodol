@@ -2,10 +2,17 @@
 // Себестоимость на направление = столбец «Себестоимость» / 2 * 1000
 // Периоды 1–3 в «Период субсидии» = коммерция (без субсидии)
 
+// Справочник субсидий в приложении (subsidy-ref.js) важнее файлов: costRows/periodsByNum ниже —
+// уже итог «файл + справочник», а данные самих файлов лежат в fileCostRows/filePeriods.
+
 window.RouteCosts = (function () {
     let costRows = [];
     let costIndex = Object.create(null);
     let periodsByNum = {};
+    let fileCostRows = [];
+    let filePeriods = {};
+    let refPeriods = {};
+    let refAmounts = {};
 
     function parseNumber(val) {
         if (val == null || val === '') return null;
@@ -213,27 +220,65 @@ window.RouteCosts = (function () {
         return XLSX.utils.sheet_to_json(sh, { header: 1, raw: true, defval: '' });
     }
 
-    async function loadFiles(expensesFile, periodsFile) {
-        if (expensesFile) {
-            const json = await readXlsxJson(expensesFile);
-            costRows = parseCostsSheet(json || []);
-            rebuildCostIndex();
-        }
-        if (periodsFile) {
-            const json = await readXlsxJson(periodsFile);
-            periodsByNum = parsePeriodsSheet(json || []);
-        }
+    function rangeOf(r) {
+        const k0 = dateKey(r.from);
+        const k1 = dateKey(r.to);
+        return { from: r.from, to: r.to, k0: Math.min(k0, k1), k1: Math.max(k0, k1) };
+    }
+
+    function routePairKey(fromKey, toKey, acK) {
+        return (fromKey < toKey ? `${fromKey}|${toKey}` : `${toKey}|${fromKey}`) + '|' + acK;
+    }
+
+    // Итог: данные файлов, поверх — записи справочника (по номеру рейса и по маршруту+типу ВС).
+    function rebuild() {
+        const periods = { ...filePeriods };
+        Object.keys(refPeriods).forEach(n => {
+            periods[n] = (refPeriods[n].ranges || []).map(rangeOf).filter(r => r.k0 && r.k1);
+        });
+        periodsByNum = periods;
+        const refKeys = new Set(Object.keys(refAmounts));
+        const fileByKey = {};
+        fileCostRows.forEach(r => { fileByKey[routePairKey(r.fromKey, r.toKey, r.acK) + '|' + r.flag] = r; });
+        const rows = fileCostRows.filter(r => !refKeys.has(routePairKey(r.fromKey, r.toKey, r.acK)));
+        Object.keys(refAmounts).forEach(key => {
+            const e = refAmounts[key];
+            const base = { from: e.from, to: e.to, ac: e.ac, fromKey: cityKey(e.from), toKey: cityKey(e.to), acK: acKey(e.ac), fromRef: true };
+            const fDa = fileByKey[key + '|да'];
+            const fNet = fileByKey[key + '|нет'];
+            rows.push({ ...base, scepka: '', flag: 'да', costPair: e.costSub != null ? e.costSub : (fDa ? fDa.costPair : null), subsidyAmt: e.subsidy != null ? e.subsidy : (fDa ? fDa.subsidyAmt : 0) });
+            rows.push({ ...base, scepka: '', flag: 'нет', costPair: e.costCom != null ? e.costCom : (fNet ? fNet.costPair : null), subsidyAmt: 0 });
+        });
+        costRows = rows;
+        rebuildCostIndex();
         if (typeof dataLoadStatus !== 'undefined') {
             dataLoadStatus.costs = costRows.length > 0;
             dataLoadStatus.subsidy = Object.keys(periodsByNum).length > 0;
         }
-        return { costs: costRows.length, periods: Object.keys(periodsByNum).length };
+    }
+
+    function applyRef(periods, amounts) {
+        refPeriods = periods || {};
+        refAmounts = amounts || {};
+        rebuild();
+    }
+
+    async function loadFiles(expensesFile, periodsFile) {
+        if (expensesFile) {
+            const json = await readXlsxJson(expensesFile);
+            fileCostRows = parseCostsSheet(json || []);
+        }
+        if (periodsFile) {
+            const json = await readXlsxJson(periodsFile);
+            filePeriods = parsePeriodsSheet(json || []);
+        }
+        rebuild();
+        return { costs: fileCostRows.length, periods: Object.keys(filePeriods).length };
     }
 
     function applySnapshot(snap) {
         if (snap && Array.isArray(snap.costRows)) {
-            costRows = snap.costRows;
-            rebuildCostIndex();
+            fileCostRows = snap.costRows.filter(r => r && !r.fromRef);
         }
         if (snap && snap.periodsByNum && typeof snap.periodsByNum === 'object') {
             const next = {};
@@ -246,16 +291,40 @@ window.RouteCosts = (function () {
                     return { from, to, k0: Math.min(k0, k1), k1: Math.max(k0, k1) };
                 }).filter(r => r.k0 && r.k1);
             });
-            periodsByNum = next;
+            filePeriods = next;
         }
-        if (typeof dataLoadStatus !== 'undefined') {
-            dataLoadStatus.costs = costRows.length > 0;
-            dataLoadStatus.subsidy = Object.keys(periodsByNum).length > 0;
-        }
+        rebuild();
     }
 
+    // В снимок для других ПК — только данные файлов: справочник они читают сами из общей папки.
     function toSnapshot() {
-        return { costRows, periodsByNum };
+        return { costRows: fileCostRows, periodsByNum: filePeriods };
+    }
+
+    // Все маршруты с суммами (итог файл + справочник) для раздела «Справочник».
+    function amountRows() {
+        const map = {};
+        costRows.forEach(r => {
+            const key = routePairKey(r.fromKey, r.toKey, r.acK);
+            const e = map[key] || (map[key] = { key, from: r.from, to: r.to, ac: r.ac, acLabel: acDisplay(r.acK, r.ac), subsidy: null, costSub: null, costCom: null, source: refAmounts[key] ? 'ref' : 'file' });
+            if (r.flag === 'да') {
+                e.costSub = r.costPair;
+                e.subsidy = r.subsidyAmt || null;
+            } else {
+                e.costCom = r.costPair;
+            }
+        });
+        return Object.values(map).sort((a, b) => (a.from + a.to).localeCompare(b.from + b.to, 'ru') || a.acLabel.localeCompare(b.acLabel, 'ru'));
+    }
+
+    function fileData() {
+        return { costRows: fileCostRows, periodsByNum: filePeriods };
+    }
+
+    // Откуда берутся периоды рейса и суммы маршрута: 'ref' — справочник, 'file' — файл, '' — нигде.
+    function periodSource(num) {
+        if (refPeriods[num]) return 'ref';
+        return filePeriods[num] ? 'file' : '';
     }
 
     function flightNum(flightCode) {
@@ -266,7 +335,8 @@ window.RouteCosts = (function () {
     /** Только своя строка в «Период субсидии». 105 ≠ 106. */
     function periodsForFlight(flightCode) {
         const n = flightNum(flightCode);
-        if (n && periodsByNum[n] && periodsByNum[n].length) return periodsByNum[n];
+        // В справочнике пустой список — «коммерции нет», это тоже ответ (к базовому рейсу не идём).
+        if (n && periodsByNum[n] && (periodsByNum[n].length || refPeriods[n])) return periodsByNum[n];
         // доп. 305 и т.п. — если своего номера в таблице нет
         if (typeof getBaseFlight === 'function') {
             const b = flightNum(getBaseFlight(flightCode));
@@ -442,6 +512,14 @@ window.RouteCosts = (function () {
         loadFiles,
         applySnapshot,
         toSnapshot,
+        fileData,
+        applyRef,
+        amountRows,
+        periodsFor: (code) => periodsForFlight(code),
+        periodSource,
+        cityKey,
+        acKey,
+        acLabels: () => ({ ...AC_LABELS }),
         lookup,
         listRoutes,
         listAircraft,

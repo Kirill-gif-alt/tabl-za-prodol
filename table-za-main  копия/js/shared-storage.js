@@ -10,7 +10,7 @@ window.SharedStorage = (function () {
     const ALLOWED_FILES = new Set([
         'profiles.json', 'snapshot.json', 'activity.json', 'flight-comments.json',
         'subsidy-overrides.json', 'pkz-nav.json', 'sales-management.json', 'rms-widget.json',
-        'creative-layouts.json', 'subsidy-fares.json'
+        'creative-layouts.json', 'subsidy-fares.json', 'subsidy-ref.json'
     ]);
 
     // Резервные копии перед перезаписью — та же политика, что в scripts/local-server.py.
@@ -22,6 +22,7 @@ window.SharedStorage = (function () {
         'sales-management.json': { every: 3600, keep: 24 },
         'subsidy-overrides.json': { every: 600, keep: 30 },
         'subsidy-fares.json': { every: 600, keep: 30 },
+        'subsidy-ref.json': { every: 600, keep: 30 },
         'pkz-nav.json': { every: 600, keep: 30 },
         'flight-comments.json': { every: 3600, keep: 24 },
         'creative-layouts.json': { every: 3600, keep: 20 }
