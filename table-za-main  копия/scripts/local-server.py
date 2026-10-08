@@ -36,6 +36,9 @@ HISTORY_POLICY = {
 }
 # Архив продаж (js/sales-archive.js): shared/history/curves-ГГГГ-ММ.json и slices-ГГГГ-ММ.json.
 ARCHIVE_RE = re.compile(r"^history/(curves|slices)-\d{4}-\d{2}\.json$")
+# Отметки «Управления продажами»: свой файл у каждого автора (js/sales-management.js).
+MARKS_RE = re.compile(r"^sales-marks/\d{4}-\d{2}/[a-z0-9_]{1,40}\.json$")
+MARKS_DIR_RE = re.compile(r"^sales-marks/\d{4}-\d{2}$")
 MAX_BODY = 64 * 1024 * 1024
 WRITE_LOCK = threading.Lock()
 ALLOWED_HOSTS = {"127.0.0.1:%d" % PORT, "localhost:%d" % PORT}
@@ -135,6 +138,18 @@ class Handler(SimpleHTTPRequestHandler):
                 _, items = _history_versions(name)
                 out[name] = [{"id": fn, "size": size} for fn, size, _ in items]
             return self._send_json(200, {"files": out})
+        if self.path.split("?")[0] == "/__krasavia/list":
+            if not self._same_origin():
+                return self._send_json(403, {"error": "forbidden"})
+            from urllib.parse import parse_qs, urlparse
+            folder = (parse_qs(urlparse(self.path).query).get("dir") or [""])[0]
+            if not MARKS_DIR_RE.match(folder):
+                return self._send_json(404, {"error": "not allowed"})
+            full = os.path.join(SHARED_DIR, *folder.split("/"))
+            names = []
+            if os.path.isdir(full):
+                names = sorted(n for n in os.listdir(full) if re.match(r"^[a-z0-9_]{1,40}\.json$", n))
+            return self._send_json(200, {"files": names})
         return super().do_GET()
 
     def do_PUT(self):
@@ -142,7 +157,7 @@ class Handler(SimpleHTTPRequestHandler):
         name = path[len("/shared/"):] if path.startswith("/shared/") else ""
         if not self._same_origin():
             return self._send_json(403, {"error": "forbidden"})
-        if name not in SHARED_WRITABLE and not ARCHIVE_RE.match(name):
+        if name not in SHARED_WRITABLE and not ARCHIVE_RE.match(name) and not MARKS_RE.match(name):
             return self._send_json(404, {"error": "not allowed"})
         if not self.headers.get("Content-Type", "").startswith("application/json"):
             return self._send_json(415, {"error": "json only"})

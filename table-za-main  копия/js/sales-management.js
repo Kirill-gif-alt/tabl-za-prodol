@@ -435,7 +435,7 @@ window.SalesManagement = (function () {
     function updateSaveStatus() {
         const el = document.getElementById('sm-save-status');
         if (!el) return;
-        if (!dirty.size && lastWriteOk) {
+        if (!dirty.size && !pending.size && lastWriteOk) {
             el.textContent = cache.updatedAt ? 'Отметки общие' : '';
             el.className = 'sm-save-status';
             return;
@@ -640,6 +640,7 @@ window.SalesManagement = (function () {
         if (!keepHistory && rangeState.dirty && canEdit()) historyDirty = true;
         if (dirty.size || routesDirty || historyDirty) schedulePersist();
         else updateSaveStatus();
+        await loadPeople(false);
         loadedAt = Date.now();
         builtFlights = null;
         return cache;
@@ -675,29 +676,147 @@ window.SalesManagement = (function () {
         ].join(':');
     }
 
-    function getMark(flight, dep, check) {
-        const key = markKey(flight, dep, check);
-        return key ? (cache.marks[key] || null) : null;
+    // ---------- Отметки: у каждого автора свой файл ----------
+    // shared/sales-marks/ГГГГ-ММ/<автор>.json (месяц — по дате проверки): { author, marks: { ключ: { s, at } } }.
+    // Каждый пишет только свой файл, поэтому одновременные отметки разных людей не затирают друг друга.
+    // s = 'none' — человек снял свою отметку (чужие остаются). Старые отметки из sales-management.json
+    // читаются как раньше и показываются вместе с новыми; новые туда больше не пишутся.
+    // В ячейке до трёх авторов: самый новый слева.
+    const MARKS_DIR = 'sales-marks';
+    const PENDING_KEY = 'krasavia_sm_pending_v2';
+    const MAX_AUTHORS = 3;
+    let people = {};            // месяц → slug → { author, marks }
+    let peopleRev = 0;
+    let pending = readPending(); // 'ключ|slug' → { key, slug, author, s, at } — ещё не подтверждено в файле
+    let peopleTimer = null;
+    let peopleRetryMs = 10000;
+    let entriesCache = { rev: '', map: new Map() };
+
+    function readPending() {
+        const map = new Map();
+        try {
+            const raw = JSON.parse(localStorage.getItem(PENDING_KEY) || '[]');
+            (Array.isArray(raw) ? raw : []).forEach(e => {
+                if (e && e.key && e.slug && (statusOk(e.s) || e.s === 'none')) map.set(e.key + '|' + e.slug, e);
+            });
+        } catch (e) { /* ignore */ }
+        return map;
     }
 
-    // Все отметки вылета (по датам проверки): [{ check, status, author, updatedAt }], от ранних к поздним.
+    function savePending() {
+        try { localStorage.setItem(PENDING_KEY, JSON.stringify([...pending.values()])); } catch (e) { /* ignore */ }
+    }
+
+    function slugOf(author) {
+        const s = typeof Security !== 'undefined' && Security.transliterateProfileSlug
+            ? Security.transliterateProfileSlug(author) : String(author || '').toLowerCase().replace(/[^a-z0-9]+/g, '_');
+        return s || 'bez_podpisi';
+    }
+
+    function authorId(name) {
+        return String(name || '').trim().toLowerCase();
+    }
+
+    function monthOfDate(dateStr) {
+        const d = typeof parseLocalDate === 'function' ? parseLocalDate(dateStr) : null;
+        return d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` : '';
+    }
+
+    function monthOfKey(key) {
+        return monthOfDate(String(key).split('|')[2]);
+    }
+
+    function marksFile(month, slug) {
+        return `${MARKS_DIR}/${month}/${slug}.json`;
+    }
+
+    // Отметки ячейки: [{ status, author, updatedAt }], самая новая первой, не больше трёх авторов.
+    function cellEntries(key) {
+        const rev = markRevision();
+        if (entriesCache.rev !== rev) entriesCache = { rev, map: new Map() };
+        if (entriesCache.map.has(key)) return entriesCache.map.get(key);
+        const by = new Map();
+        const apply = (author, s, at) => {
+            const name = authorSignature(author) || String(author || '');
+            const id = authorId(name);
+            const prev = by.get(id);
+            if (prev && String(prev.updatedAt) > String(at || '')) return;
+            by.set(id, { status: s, author: name, updatedAt: String(at || '') });
+        };
+        const legacy = cache.marks[key];
+        if (legacy && statusOk(legacy.status)) apply(legacy.author, legacy.status, legacy.updatedAt);
+        const files = people[monthOfKey(key)] || {};
+        Object.keys(files).forEach(slug => {
+            const f = files[slug];
+            const e = f && f.marks && f.marks[key];
+            if (e) apply(f.author, e.s, e.at);
+        });
+        pending.forEach(p => { if (p.key === key) apply(p.author, p.s, p.at); });
+        const list = [...by.values()]
+            .filter(e => statusOk(e.status))
+            .sort((x, y) => (String(x.updatedAt) < String(y.updatedAt) ? 1 : -1))
+            .slice(0, MAX_AUTHORS);
+        entriesCache.map.set(key, list);
+        return list;
+    }
+
+    // Все отметки ячейки, новая первой.
+    function getMarks(flight, dep, check) {
+        const key = markKey(flight, dep, check);
+        return key ? cellEntries(key) : [];
+    }
+
+    // Самая новая отметка ячейки (для чипов, «Творческой», RMS).
+    function getMark(flight, dep, check) {
+        return getMarks(flight, dep, check)[0] || null;
+    }
+
+    // Своя отметка в ячейке (по подписи).
+    function getOwnMark(flight, dep, check, author) {
+        const id = authorId(authorSignature(author || profileName()));
+        return getMarks(flight, dep, check).find(e => authorId(e.author) === id) || null;
+    }
+
+    // Все отметки вылета по датам проверки: [{ check, status, author, updatedAt }], от ранних к поздним.
     function marksFor(flight, dep) {
         const fl = typeof cleanFlight === 'function' ? cleanFlight(flight) : String(flight || '');
         const d1 = typeof normalizeDate === 'function' ? normalizeDate(dep) : String(dep || '');
         const prefix = `${fl}|${d1}|`;
+        const keys = new Set(Object.keys(cache.marks || {}).filter(k => k.indexOf(prefix) === 0));
+        Object.values(people).forEach(files => Object.values(files).forEach(f => {
+            Object.keys((f && f.marks) || {}).forEach(k => { if (k.indexOf(prefix) === 0) keys.add(k); });
+        }));
+        pending.forEach(p => { if (p.key.indexOf(prefix) === 0) keys.add(p.key); });
         const out = [];
-        Object.keys(cache.marks || {}).forEach(key => {
-            if (key.indexOf(prefix) !== 0) return;
-            const m = cache.marks[key];
-            if (m && STATUSES[m.status]) out.push({ check: key.slice(prefix.length), status: m.status, author: m.author || '', updatedAt: m.updatedAt || '' });
+        keys.forEach(key => {
+            cellEntries(key).forEach(e => out.push({ check: key.slice(prefix.length), status: e.status, author: e.author, updatedAt: e.updatedAt }));
         });
-        return out.sort((a, b) => (parseLocalDate(a.check) || 0) - (parseLocalDate(b.check) || 0));
+        return out.sort((a, b) => ((parseLocalDate(a.check) || 0) - (parseLocalDate(b.check) || 0)) || (String(a.updatedAt) < String(b.updatedAt) ? -1 : 1));
     }
 
     // Дешёвый счётчик изменений отметок (для подписи кэша таблиц).
     let markRev = 0;
     function markRevision() {
-        return markRev + ':' + Object.keys(cache.marks || {}).length;
+        return markRev + ':' + peopleRev + ':' + pending.size + ':' + Object.keys(cache.marks || {}).length;
+    }
+
+    function stamp(key) {
+        // Время отметки не раньше уже стоящих в ячейке: «новая слева» не зависит от часов на ПК.
+        let at = new Date().toISOString();
+        cellEntries(key).forEach(e => {
+            if (String(e.updatedAt) >= at) at = new Date(Date.parse(e.updatedAt) + 1).toISOString();
+        });
+        return at;
+    }
+
+    function setOwn(key, s, author) {
+        const name = authorSignature(author) || profileName() || 'Без подписи';
+        const slug = slugOf(name);
+        pending.set(key + '|' + slug, { key, slug, author: name, s, at: stamp(key) });
+        savePending();
+        markRev++;
+        schedulePeoplePersist(400);
+        return true;
     }
 
     function putMark(flight, dep, check, status, author) {
@@ -705,28 +824,115 @@ window.SalesManagement = (function () {
         if (typeof salesCheckIsToday !== 'function' || !salesCheckIsToday(check)) return false;
         const key = markKey(flight, dep, check);
         if (!key || !statusOk(status)) return false;
-        const mark = {
-            status,
-            author: authorSignature(author),
-            updatedAt: new Date().toISOString()
-        };
-        cache.marks[key] = mark;
-        markRev++;
-        dirty.set(key, mark);
-        schedulePersist();
-        return true;
+        return setOwn(key, status, author || profileName());
     }
 
-    function clearMark(flight, dep, check) {
+    // Снять только свою отметку: отметки других людей в ячейке остаются.
+    function clearMark(flight, dep, check, author) {
         if (!canEdit()) return false;
         if (typeof salesCheckIsToday !== 'function' || !salesCheckIsToday(check)) return false;
         const key = markKey(flight, dep, check);
         if (!key) return false;
-        delete cache.marks[key];
-        markRev++;
-        dirty.set(key, null);
-        schedulePersist();
-        return true;
+        return setOwn(key, 'none', author || profileName());
+    }
+
+    function schedulePeoplePersist(ms) {
+        clearTimeout(peopleTimer);
+        peopleTimer = setTimeout(() => {
+            peopleTimer = null;
+            persistPeople().catch(e => console.warn('persistPeople', e));
+        }, ms);
+    }
+
+    // Записать свои неподтверждённые отметки: прочитать свой файл, добавить, записать.
+    // Не удалось прочитать — не пишем (иначе можно стереть свои прошлые отметки), повторяем позже.
+    async function persistPeople() {
+        if (!pending.size || typeof SharedStorage === 'undefined' || !SharedStorage.readJsonFileStrict) return;
+        const groups = new Map();
+        pending.forEach((p, id) => {
+            const file = marksFile(monthOfKey(p.key), p.slug);
+            if (!groups.has(file)) groups.set(file, []);
+            groups.get(file).push([id, p]);
+        });
+        let failed = false;
+        for (const [file, items] of groups) {
+            const month = file.split('/')[1];
+            const slug = items[0][1].slug;
+            const read = await SharedStorage.readJsonFileStrict(file);
+            if (!read.ok) { failed = true; continue; }
+            const remote = read.data && typeof read.data === 'object' ? read.data : {};
+            const marks = { ...(remote.marks && typeof remote.marks === 'object' ? remote.marks : {}) };
+            items.forEach(([, p]) => {
+                const prev = marks[p.key];
+                if (!prev || String(prev.at || '') <= String(p.at)) marks[p.key] = { s: p.s, at: p.at };
+            });
+            const payload = { version: 1, author: items[items.length - 1][1].author, updatedAt: new Date().toISOString(), marks };
+            const ok = await SharedStorage.writeJsonFile(file, payload);
+            if (!ok) { failed = true; continue; }
+            if (!people[month]) people[month] = {};
+            people[month][slug] = { author: payload.author, marks };
+            items.forEach(([id, p]) => { if (pending.get(id) === p) pending.delete(id); });
+        }
+        savePending();
+        peopleRev++;
+        lastWriteOk = !failed;
+        updateSaveStatus();
+        if (failed && pending.size) {
+            schedulePeoplePersist(peopleRetryMs);
+            peopleRetryMs = Math.min(peopleRetryMs * 3, 120000);
+        } else {
+            peopleRetryMs = 10000;
+        }
+    }
+
+    // Месяцы, за которые нужны отметки: от начала столбцов до сегодня (не больше трёх).
+    function neededMonths() {
+        const out = [];
+        const today = typeof parseLocalDate === 'function' ? parseLocalDate(columnTodayStr()) : null;
+        if (!today) return out;
+        const from = parseLocalDate(colsFromValue()) || today;
+        const start = new Date(Math.max(from.getTime(), new Date(today.getFullYear(), today.getMonth() - 2, 1).getTime()));
+        for (let d = new Date(start.getFullYear(), start.getMonth(), 1); d <= today; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) {
+            out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+        }
+        return out;
+    }
+
+    // Прочитать файлы отметок всех авторов. onlyCurrent — только текущий месяц (частый опрос).
+    async function loadPeople(onlyCurrent) {
+        if (typeof SharedStorage === 'undefined' || !SharedStorage.listSharedDir) return false;
+        const months = neededMonths();
+        const list = onlyCurrent ? months.slice(-1) : months;
+        let changed = false;
+        for (const month of list) {
+            const names = await SharedStorage.listSharedDir(`${MARKS_DIR}/${month}`);
+            if (!names) continue;
+            const next = {};
+            for (const name of names) {
+                const slug = name.replace(/\.json$/, '');
+                const data = await SharedStorage.readJsonFile(`${MARKS_DIR}/${month}/${name}`).catch(() => null);
+                if (data && data.marks && typeof data.marks === 'object') {
+                    next[slug] = { author: cleanAuthor(data.author || slug), marks: data.marks };
+                } else if (people[month] && people[month][slug]) {
+                    next[slug] = people[month][slug];
+                }
+            }
+            if (JSON.stringify(next) !== JSON.stringify(people[month] || {})) {
+                people[month] = next;
+                changed = true;
+            }
+        }
+        // Своё неподтверждённое: если в файле уже то же или новее — подтверждено.
+        let confirmed = false;
+        pending.forEach((p, id) => {
+            const f = (people[monthOfKey(p.key)] || {})[p.slug];
+            const e = f && f.marks && f.marks[p.key];
+            if (e && String(e.at || '') >= String(p.at)) { pending.delete(id); confirmed = true; }
+        });
+        if (confirmed) savePending();
+        if (pending.size) schedulePeoplePersist(400);
+        if (changed) peopleRev++;
+        return changed;
     }
 
     function rememberDeparture(code, date, aircraft) {
@@ -897,6 +1103,7 @@ window.SalesManagement = (function () {
         });
         const routes = Array.isArray(cache.enabledRoutes) ? cache.enabledRoutes.join('\n') : '*';
         return [
+            markRevision(),
             cache.updatedAt || '',
             rowsFromValue(),
             rowsToValue(),
@@ -922,8 +1129,11 @@ window.SalesManagement = (function () {
         checkDatesBetween,
         columnCheckDates,
         getMark,
+        getMarks,
+        getOwnMark,
         marksFor,
         markRevision,
+        loadPeople,
         putMark,
         clearMark,
         listFlights,
@@ -988,6 +1198,43 @@ function salesMarkExportText(mark, colored) {
     return status.short + (mark.author ? ' — ' + mark.author : '');
 }
 
+// Фамилия для ячейки из нескольких отметок: «Табалюк М.А.» → «Табалюк».
+function salesShortAuthor(author) {
+    const name = String(author || '').trim();
+    return name.split(/\s+/)[0] || name;
+}
+
+function salesEntryText(mark, short) {
+    const status = SalesManagement.STATUSES[mark.status];
+    const name = short ? salesShortAuthor(mark.author) : mark.author;
+    if (status.sign) return name ? status.sign + ' ' + name : status.sign;
+    return name || status.short;
+}
+
+function salesEntriesTitle(list) {
+    return list.map(m => `${SalesManagement.STATUSES[m.status].label}${m.author ? ' · ' + m.author : ''}`).join('\n');
+}
+
+// Содержимое ячейки: одна отметка — как раньше; несколько — части своих цветов, новая слева.
+function salesCellInner(list) {
+    if (!list.length) return '';
+    if (list.length === 1) return salesEsc(salesCellText(list[0]));
+    return `<span class="sm-split">${list.map(m => `<span class="sm-part sm-st-${m.status}">${salesEsc(salesEntryText(m, true))}</span>`).join('')}</span>`;
+}
+
+function paintSalesCellList(td, list) {
+    td.classList.remove('sm-st-keep', 'sm-st-attn', 'sm-st-down', 'sm-st-up', 'sm-multi');
+    if (list.length === 1) td.classList.add('sm-st-' + list[0].status);
+    else if (list.length > 1) td.classList.add('sm-multi');
+    td.innerHTML = salesCellInner(list);
+    td.title = list.length ? salesEntriesTitle(list) : (td.dataset.edit === '1' ? 'Не проверен — нажмите, чтобы отметить' : 'Не проверен');
+}
+
+function repaintSalesCell(flight, dep, check) {
+    const td = document.querySelector(`.sm-cell[data-flight="${salesQueryEscape(flight)}"][data-dep="${salesQueryEscape(dep)}"][data-check="${salesQueryEscape(check)}"]`);
+    if (td) paintSalesCellList(td, SalesManagement.getMarks(flight, dep, check));
+}
+
 function paintSalesCell(td, mark) {
     td.classList.remove('sm-st-keep', 'sm-st-attn', 'sm-st-down', 'sm-st-up');
     if (mark && SalesManagement.STATUSES[mark.status]) {
@@ -1031,7 +1278,7 @@ function openSalesPopover(td) {
     const flight = td.dataset.flight;
     const dep = td.dataset.dep;
     const check = td.dataset.check;
-    const mark = SalesManagement.getMark(flight, dep, check);
+    const mark = SalesManagement.getOwnMark(flight, dep, check);
     pop.dataset.flight = flight;
     pop.dataset.dep = dep;
     pop.dataset.check = check;
@@ -1086,8 +1333,7 @@ function applySalesPopover(closeAfter) {
         if (typeof showToast === 'function') showToast('Нет права менять эту таблицу', 'error');
         return;
     }
-    const td = document.querySelector(`.sm-cell[data-flight="${salesQueryEscape(flight)}"][data-dep="${salesQueryEscape(dep)}"][data-check="${salesQueryEscape(check)}"]`);
-    if (td) paintSalesCell(td, SalesManagement.getMark(flight, dep, check));
+    repaintSalesCell(flight, dep, check);
     const clearBtn = document.getElementById('sm-pop-clear');
     if (clearBtn) clearBtn.hidden = false;
     if (closeAfter) closeSalesPopover();
@@ -1111,7 +1357,7 @@ function ensureSalesPopover() {
             <input id="sm-pop-author" class="sm-pop-author" maxlength="80" autocomplete="name">
         </label>
         <div class="sm-pop-actions">
-            <button type="button" id="sm-pop-clear" class="filter-btn">Очистить</button>
+            <button type="button" id="sm-pop-clear" class="filter-btn" title="Снимается только ваша отметка, отметки других остаются">Очистить свою</button>
             <button type="button" id="sm-pop-done" class="filter-btn sm-pop-done">Готово</button>
         </div>
     `;
@@ -1131,9 +1377,10 @@ function ensureSalesPopover() {
                 if (typeof showToast === 'function') showToast('Менять можно только в сегодняшнем столбце', 'error');
                 return;
             }
-            SalesManagement.clearMark(flight, dep, check);
-            const td = document.querySelector(`.sm-cell[data-flight="${salesQueryEscape(flight)}"][data-dep="${salesQueryEscape(dep)}"][data-check="${salesQueryEscape(check)}"]`);
-            if (td) paintSalesCell(td, null);
+            const authorInput = document.getElementById('sm-pop-author');
+            const author = authorInput && authorInput.dataset.touched === '1' ? (authorInput.value || '') : '';
+            SalesManagement.clearMark(flight, dep, check, author);
+            repaintSalesCell(flight, dep, check);
             closeSalesPopover();
             return;
         }
@@ -1252,14 +1499,13 @@ function renderSalesGrid() {
     const editable = SalesManagement.canEdit();
     const body = flight.departures.map(dep => {
         const cells = flight.checks.map(check => {
-            const mark = SalesManagement.getMark(dep.code, dep.date, check);
+            const list = SalesManagement.getMarks(dep.code, dep.date, check);
             const canCell = editable && !dep.flown && salesCheckIsToday(check);
-            const cls = mark ? ` sm-st-${mark.status}` : '';
-            const text = salesCellText(mark);
-            const title = mark
-                ? `${SalesManagement.STATUSES[mark.status].label}${mark.author ? ' · ' + mark.author : ''}`
+            const cls = list.length === 1 ? ` sm-st-${list[0].status}` : (list.length > 1 ? ' sm-multi' : '');
+            const title = list.length
+                ? salesEntriesTitle(list)
                 : (canCell ? 'Не проверен — нажмите, чтобы отметить' : (dep.flown ? 'Рейс уже выполнен' : 'Отметить можно только сегодня'));
-            return `<td class="sm-cell${cls}" data-edit="${canCell ? '1' : '0'}" data-flight="${salesAttr(dep.code)}" data-dep="${salesAttr(dep.date)}" data-check="${salesAttr(check)}" title="${salesAttr(title)}">${salesEsc(text)}</td>`;
+            return `<td class="sm-cell${cls}" data-edit="${canCell ? '1' : '0'}" data-flight="${salesAttr(dep.code)}" data-dep="${salesAttr(dep.date)}" data-check="${salesAttr(check)}" title="${salesAttr(title)}">${salesCellInner(list)}</td>`;
         }).join('');
         const rowClass = dep.flown ? 'sm-row-flew' : (salesNearDeparture(dep.date, today) ? 'sm-row-near' : '');
         return `<tr class="${rowClass}">
@@ -1428,6 +1674,26 @@ function startSalesSharedSync() {
 }
 
 startSalesSharedSync();
+
+// Чужие отметки — раз в минуту, пока открыты «Управление продажами» или RMS (читаются только
+// файлы отметок за текущий месяц — несколько небольших файлов).
+const SALES_MARKS_POLL_MS = 60 * 1000;
+setInterval(() => {
+    if (document.hidden || typeof SalesManagement === 'undefined' || !SalesManagement.loadPeople) return;
+    if (typeof currentTab === 'undefined' || (currentTab !== 'sales' && currentTab !== 'rms')) return;
+    if (typeof ProfileAuth !== 'undefined' && ProfileAuth.getCurrentProfile && !ProfileAuth.getCurrentProfile()) return;
+    SalesManagement.loadPeople(true).then(changed => {
+        if (!changed) return;
+        document.dispatchEvent(new CustomEvent('krasavia:mark', { detail: { remote: true } }));
+    }).catch(() => {});
+}, SALES_MARKS_POLL_MS);
+
+// Отметка изменилась (своя из RMS/карточки или чужая из файла) — перерисовать таблицу, если она открыта.
+document.addEventListener('krasavia:mark', () => {
+    if (typeof currentTab === 'undefined' || currentTab !== 'sales') return;
+    if (salesPopoverOpen()) return;
+    if (document.getElementById('sm-grid')) renderSalesGrid();
+});
 
 function createSalesManagementView(panel) {
     panel.innerHTML = `
@@ -1693,12 +1959,27 @@ function buildSalesIndexSheet(lib, entries, stamp, colored) {
 }
 
 function salesFlightWorksheet(lib, flight, stamp, colored) {
+    // Отметки ячеек заранее: у даты столько подстолбцов, сколько максимум человек отметили в этот день
+    // (1–3, только в цветной выгрузке). Одна отметка — подстолбцы объединены, как обычный столбец.
+    const marksAt = flight.departures.map(dep => flight.checks.map(check => SalesManagement.getMarks(dep.code, dep.date, check)));
+    const widths = flight.checks.map((check, k) => colored
+        ? Math.max(1, ...marksAt.map(row => row[k].length))
+        : 1);
+    const starts = [];
+    let nextCol = 5;
+    widths.forEach(w => { starts.push(nextCol); nextCol += w; });
+    const spread = (values) => {
+        const out = [];
+        values.forEach((v, k) => { out.push(v); for (let j = 1; j < widths[k]; j++) out.push(''); });
+        return out;
+    };
     const header = ['Дата', 'Номер рейса', 'День недели', 'Тип ВС', 'Наименование маршрута']
-        .concat(flight.checks);
-    const dowRow = ['', '', '', '', ''].concat(flight.checks.map(date => {
+        .concat(spread(flight.checks));
+    const dowRow = ['', '', '', '', ''].concat(spread(flight.checks.map(date => {
         const d = parseLocalDate(date);
         return (d && typeof DAYS_RU !== 'undefined') ? DAYS_RU[d.getDay()] : '';
-    }));
+    })));
+    const cellMerges = [];
     const legend = salesLegendModel();
     const aoa = legend.rows.map(row => row.cells.slice());
     const kinds = legend.rows.map(row => row.kinds.slice());
@@ -1708,21 +1989,40 @@ function salesFlightWorksheet(lib, flight, stamp, colored) {
     kinds.push(header.map(() => 'head'));
     aoa.push(dowRow);
     kinds.push(header.map(() => 'head'));
-    flight.departures.forEach(dep => {
+    const firstDataRow = aoa.length;
+    flight.departures.forEach((dep, i) => {
         const row = [dep.date, dep.code, dep.weekday, dep.aircraft, dep.route];
         const near = !dep.flown && salesNearDeparture(dep.date);
         const baseKind = dep.flown ? 'gray' : (near ? 'near' : 'id');
         const kind = [baseKind, baseKind, baseKind, baseKind, baseKind];
-        flight.checks.forEach(check => {
-            const mark = SalesManagement.getMark(dep.code, dep.date, check);
-            if (!mark) {
-                row.push('');
-                kind.push(dep.flown ? 'gray' : (near ? 'near' : 'empty'));
+        const r = firstDataRow + i;
+        flight.checks.forEach((check, k) => {
+            const list = marksAt[i][k];
+            const w = widths[k];
+            const c0 = starts[k];
+            if (!list.length) {
+                const empty = dep.flown ? 'gray' : (near ? 'near' : 'empty');
+                for (let j = 0; j < w; j++) { row.push(''); kind.push(empty); }
+                if (w > 1) cellMerges.push({ s: { r, c: c0 }, e: { r, c: c0 + w - 1 } });
                 return;
             }
-            const text = salesMarkExportText(mark, colored);
-            row.push(text);
-            kind.push(mark.status);
+            if (!colored) {
+                row.push(list.map(m => salesMarkExportText(m, false)).join(' / '));
+                kind.push(list[0].status);
+                return;
+            }
+            if (list.length === 1) {
+                row.push(salesMarkExportText(list[0], true));
+                kind.push(list[0].status);
+                for (let j = 1; j < w; j++) { row.push(''); kind.push(list[0].status); }
+                if (w > 1) cellMerges.push({ s: { r, c: c0 }, e: { r, c: c0 + w - 1 } });
+                return;
+            }
+            // Несколько отметок: новая слева, у каждой свой цвет.
+            list.forEach(m => { row.push(salesEntryText(m, true)); kind.push(m.status); });
+            const last = list[list.length - 1].status;
+            for (let j = list.length; j < w; j++) { row.push(''); kind.push(last); }
+            if (list.length < w) cellMerges.push({ s: { r, c: c0 + list.length - 1 }, e: { r, c: c0 + w - 1 } });
         });
         aoa.push(row);
         kinds.push(kind);
@@ -1734,10 +2034,17 @@ function salesFlightWorksheet(lib, flight, stamp, colored) {
     const freeze = salesSheetFreeze(legend.count);
     const cols = [
         { wch: 14 }, { wch: 22 }, { wch: 14 }, { wch: 12 }, { wch: 38 }
-    ].concat(flight.checks.map(() => ({ wch: 18 })));
+    ];
+    widths.forEach(w => { for (let j = 0; j < w; j++) cols.push({ wch: w > 1 ? 13 : 18 }); });
     ws['!cols'] = cols;
     ws['!rows'] = legend.rows.map(() => ({ hpt: 18 })).concat([{ hpt: 20 }, { hpt: 22 }, { hpt: 18 }]);
     ws['!merges'] = [{ s: { r: stampRow, c: 0 }, e: { r: stampRow, c: 4 } }];
+    // Заголовок даты и день недели — над всеми подстолбцами даты.
+    widths.forEach((w, k) => {
+        if (w < 2) return;
+        [stampRow + 1, stampRow + 2].forEach(r => ws['!merges'].push({ s: { r, c: starts[k] }, e: { r, c: starts[k] + w - 1 } }));
+    });
+    cellMerges.forEach(m => ws['!merges'].push(m));
     ws['!views'] = [{
         state: 'frozen',
         xSplit: freeze.xSplit,

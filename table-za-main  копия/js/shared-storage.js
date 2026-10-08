@@ -164,18 +164,93 @@ window.SharedStorage = (function () {
 
     // Архив продаж: shared/history/curves-ГГГГ-ММ.json и slices-ГГГГ-ММ.json (см. sales-archive.js).
     const HISTORY_FILE_RE = /^history\/(curves|slices)-\d{4}-\d{2}\.json$/;
+    // Отметки «Управления продажами»: у каждого автора свой файл за месяц — никто не перезаписывает чужое.
+    const MARKS_FILE_RE = /^sales-marks\/\d{4}-\d{2}\/[a-z0-9_]{1,40}\.json$/;
+    const MARKS_DIR_RE = /^sales-marks\/\d{4}-\d{2}$/;
 
     function isAllowedSharedFile(filename) {
         const name = String(filename || '');
-        return ALLOWED_FILES.has(name) || HISTORY_FILE_RE.test(name);
+        return ALLOWED_FILES.has(name) || HISTORY_FILE_RE.test(name) || MARKS_FILE_RE.test(name);
     }
 
     // Папка и имя файла внутри shared/ (для архива — подпапка history/).
     async function resolveSharedTarget(sharedDir, filename, create) {
-        const slash = filename.indexOf('/');
-        if (slash === -1) return { dir: sharedDir, name: filename };
-        const sub = await sharedDir.getDirectoryHandle(filename.slice(0, slash), { create: !!create });
-        return { dir: sub, name: filename.slice(slash + 1) };
+        const parts = filename.split('/');
+        const name = parts.pop();
+        let dir = sharedDir;
+        for (const part of parts) dir = await dir.getDirectoryHandle(part, { create: !!create });
+        return { dir, name };
+    }
+
+    // Чтение с различием «файла нет» и «не удалось прочитать»: писать поверх непрочитанного нельзя.
+    // { ok: true, data } — прочитан; { ok: true, data: null } — файла нет; { ok: false } — ошибка/нет доступа.
+    async function readJsonFileStrict(filename) {
+        if (!isAllowedSharedFile(filename)) return { ok: false };
+        if (await detectServerWrite()) {
+            try {
+                const res = await fetch(`./${SHARED_DIR}/${filename}`, { cache: 'no-store' });
+                if (res.status === 404) return { ok: true, data: null };
+                if (!res.ok) return { ok: false };
+                const text = await res.text();
+                return { ok: true, data: text.trim() ? JSON.parse(text) : null };
+            } catch (e) {
+                return { ok: false };
+            }
+        }
+        const handle = rootHandle || await restoreRootHandle();
+        if (!handle) return { ok: false };
+        try {
+            const sharedDir = await getSharedDirFromHandle(handle);
+            let target;
+            try {
+                target = await resolveSharedTarget(sharedDir, filename, false);
+            } catch (e) {
+                if (e && e.name === 'NotFoundError') return { ok: true, data: null };
+                throw e;
+            }
+            let file;
+            try {
+                file = await (await target.dir.getFileHandle(target.name)).getFile();
+            } catch (e) {
+                if (e && e.name === 'NotFoundError') return { ok: true, data: null };
+                throw e;
+            }
+            const text = await file.text();
+            return { ok: true, data: text.trim() ? JSON.parse(text) : null };
+        } catch (e) {
+            console.warn('readJsonFileStrict', filename, e);
+            return { ok: false };
+        }
+    }
+
+    // Список .json в папке отметок (sales-marks/ГГГГ-ММ). null — нет доступа.
+    async function listSharedDir(dir) {
+        if (!MARKS_DIR_RE.test(String(dir || ''))) return null;
+        if (await detectServerWrite()) {
+            try {
+                const res = await fetch(`./__krasavia/list?dir=${encodeURIComponent(dir)}`, { cache: 'no-store' });
+                if (res.ok) return (await res.json()).files || [];
+            } catch (e) { /* попробуем через папку */ }
+        }
+        const handle = rootHandle || await restoreRootHandle();
+        if (!handle) return null;
+        try {
+            const sharedDir = await getSharedDirFromHandle(handle);
+            let folder = sharedDir;
+            try {
+                for (const part of dir.split('/')) folder = await folder.getDirectoryHandle(part);
+            } catch (e) {
+                return [];
+            }
+            const out = [];
+            for await (const [name, entry] of folder.entries()) {
+                if (entry.kind === 'file' && /^[a-z0-9_]{1,40}\.json$/.test(name)) out.push(name);
+            }
+            return out;
+        } catch (e) {
+            console.warn('listSharedDir', dir, e);
+            return null;
+        }
     }
 
     async function readViaFetch(filename) {
@@ -631,6 +706,8 @@ window.SharedStorage = (function () {
         needsLinkPrompt,
         restoreRootHandle,
         readJsonFile,
+        readJsonFileStrict,
+        listSharedDir,
         writeJsonFile,
         canWrite,
         listHistory,
