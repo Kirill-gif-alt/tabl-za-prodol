@@ -6745,3 +6745,11 @@ body.fc-window-body .flight-card { position: static; width: auto; max-width: non
 .pm-eff-verdict.pm-eff-down { color: #b91c1c; }
 .sd-fare-table td, .sd-fare-table th { white-space: nowrap; padding: 6px 8px; }
 .sd-block-head h5 { white-space: nowrap; }
+
+/* Вывод «продано / обычно / по плану» */
+.booking-curve-verdict .vd-head { margin-bottom: 2px; }
+.booking-curve-verdict .vd-head strong { font-size: 1.05em; }
+.booking-curve-verdict .vd-muted { font-weight: 500; opacity: 0.75; }
+.booking-curve-verdict .vd-line { font-weight: 500; color: var(--text, #334155); }
+.booking-curve-verdict .vd-up { color: #15803d; font-weight: 700; }
+.booking-curve-verdict .vd-down { color: #b91c1c; font-weight: 700; }

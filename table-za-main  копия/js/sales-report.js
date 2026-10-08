@@ -432,29 +432,36 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
         if (pts.some(v => v !== null)) expectedData = pts;
     }
 
-    // Вывод: сколько продано и как это к норме и к файлу ожидаемой загрузки (если они есть).
+    // Вывод простыми словами: сколько продано и сравнение с обычным темпом и с планом (файл ожидаемой).
+    //   Продано 4 · за 18 дн. до вылета
+    //   Обычно к этому дню 11 — на 7 меньше
+    //   По плану 5 — на 1 меньше
     const refVal = refData && refData.length ? refData[refData.length - 1] : null;
     const expVal = expectedData && expectedData.length ? expectedData[expectedData.length - 1] : null;
-    const signed = (d) => (d > 0 ? '+' + d : (d < 0 ? '−' + Math.abs(d) : '0'));
-    const parts = [`На ${axisMin} дн. до вылета продано ${nowVal}`];
+    const diffText = (d) => (d > 0 ? `на ${d} больше` : (d < 0 ? `на ${Math.abs(d)} меньше` : 'столько же'));
+    const diffCls = (d) => (d > 0 ? 'vd-up' : (d < 0 ? 'vd-down' : ''));
+    const lines = [];
     let mainDelta = null;
     if (refVal != null && !isNaN(refVal)) {
         const d = nowVal - refVal;
-        const nNote = refBand ? ` по ${refBand.n[refBand.n.length - 1]} вылетам` : '';
-        parts.push(`норма${nNote} ${refVal}: ${signed(d)}`);
+        const nNote = refBand ? `по ${refBand.n[refBand.n.length - 1]} прошлым вылетам в этот день недели` : 'по прошлым вылетам';
+        lines.push({ label: 'Обычно к этому дню', value: refVal, d, title: `Норма ${nNote}` });
         mainDelta = d;
     }
     if (expVal != null && !isNaN(expVal)) {
         const d = nowVal - expVal;
-        parts.push(`ожидаемая ${expVal}: ${signed(d)}`);
+        lines.push({ label: 'По плану', value: expVal, d, title: 'Из файла ожидаемой загрузки' });
         if (mainDelta == null) mainDelta = d;
     }
-    if (mainDelta != null) parts.push(mainDelta > 0 ? 'опережаем' : (mainDelta < 0 ? 'отстаём' : 'как в норме'));
-    const verdict = parts.join(' · ');
+    const head = `Продано ${nowVal} · за ${axisMin} дн. до вылета`;
+    const verdict = [head].concat(lines.map(l => `${l.label} ${l.value} — ${diffText(l.d)}`)).join('\n');
+    const esc = typeof escHtml === 'function' ? escHtml : String;
+    const verdictHtml = `<div class="vd-head"><strong>Продано ${nowVal}</strong> <span class="vd-muted">· за ${axisMin} дн. до вылета</span></div>`
+        + lines.map(l => `<div class="vd-line" title="${esc(l.title)}">${esc(l.label)} <strong>${l.value}</strong> — <span class="${diffCls(l.d)}">${diffText(l.d)}</span></div>`).join('');
     const verdictCls = mainDelta == null || mainDelta === 0 ? 'booking-curve-verdict-neutral'
         : (mainDelta > 0 ? 'booking-curve-verdict-up' : 'booking-curve-verdict-down');
 
-    return { dtds, thisData, refData, refBand, normInfo, refLabel, caption, verdict, verdictCls, expectedData };
+    return { dtds, thisData, refData, refBand, normInfo, refLabel, caption, verdict, verdictHtml, verdictCls, expectedData };
 }
 
 // Таблица под графиком: из каких вылетов посчитана норма.
@@ -704,7 +711,7 @@ function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode)
         <div class="sd-comment" hidden>${buildFlightCommentBlockHtml(salesFlight, flyDateStr)}</div>
         ${comment ? `<div class="sd-comment-text">💬 ${escHtml(comment)}</div>` : ''}
         <div class="sd-verdict-row">
-            <div class="booking-curve-verdict ${dtdCurve.verdictCls}">${escHtml(dtdCurve.verdict)}</div>
+            <div class="booking-curve-verdict ${dtdCurve.verdictCls}">${dtdCurve.verdictHtml}</div>
             ${typeof PriceMarks !== 'undefined' ? PriceMarks.buttonsHtml(salesFlight, flyDateStr) : ''}
         </div>
         <div class="sd-block">
