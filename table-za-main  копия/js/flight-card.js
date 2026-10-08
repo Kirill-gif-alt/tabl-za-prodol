@@ -330,7 +330,7 @@ window.FlightCard = (function () {
         if (!canvas || typeof Chart === 'undefined' || typeof buildFlightDtdBookingSeries !== 'function') return;
         const c = buildFlightDtdBookingSeries(base, date, code, 30, row[4]);
         const verdict = panel.querySelector('[data-fc-part="verdict"]');
-        if (verdict) { verdict.textContent = c.verdict; verdict.className = 'fc-verdict ' + c.verdictCls; }
+        if (verdict) { verdict.innerHTML = c.verdictHtml; verdict.className = 'fc-verdict booking-curve-verdict ' + c.verdictCls; }
         const datasets = [{
             label: 'Продано (билеты)', data: c.thisData, borderColor: '#1d4ed8', backgroundColor: 'rgba(29,78,216,0.08)',
             fill: true, tension: 0.15, pointRadius: 0, pointHoverRadius: 3, borderWidth: 2, spanGaps: true
