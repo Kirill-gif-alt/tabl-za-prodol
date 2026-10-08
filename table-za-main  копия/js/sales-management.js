@@ -353,21 +353,48 @@ window.SalesManagement = (function () {
         return true;
     }
 
+    function chainEntry(item) {
+        if (!item || !statusOk(item.status)) return null;
+        return {
+            status: item.status,
+            author: authorSignature(cleanAuthor(item.author || '')),
+            updatedAt: item.updatedAt || ''
+        };
+    }
+
+    function normalizeChain(entry) {
+        const raw = entry && Array.isArray(entry.chain) && entry.chain.length ? entry.chain : [entry];
+        const out = [];
+        raw.forEach(item => {
+            const next = chainEntry(item);
+            if (next) out.push(next);
+        });
+        return out.slice(0, 3);
+    }
+
+    function markFromChain(chain) {
+        const final = chain[chain.length - 1];
+        return {
+            status: final.status,
+            author: final.author,
+            updatedAt: final.updatedAt || '',
+            chain
+        };
+    }
+
     function absorbMarks(src, into, renamed) {
         Object.keys(src || {}).forEach(key => {
             const entry = src[key];
             if (!entry || !statusOk(entry.status)) return;
-            const rawAuthor = cleanAuthor(entry.author || '');
-            const author = authorSignature(rawAuthor);
+            const chain = normalizeChain(entry);
+            if (!chain.length) return;
+            const mark = markFromChain(chain);
             const prev = into[key];
-            if (!prev || String(entry.updatedAt || '') >= String(prev.updatedAt || '')) {
-                into[key] = {
-                    status: entry.status,
-                    author,
-                    updatedAt: entry.updatedAt || ''
-                };
+            if (!prev || String(mark.updatedAt || '') >= String(prev.updatedAt || '')) {
+                into[key] = mark;
                 if (renamed) {
-                    if (author !== rawAuthor) renamed.add(key);
+                    const rawAuthor = cleanAuthor(entry.author || '');
+                    if (mark.author !== rawAuthor) renamed.add(key);
                     else renamed.delete(key);
                 }
             }
@@ -629,11 +656,21 @@ window.SalesManagement = (function () {
         if (typeof salesCheckIsToday !== 'function' || !salesCheckIsToday(check)) return false;
         const key = markKey(flight, dep, check);
         if (!key || !statusOk(status)) return false;
-        const mark = {
-            status,
-            author: authorSignature(author),
-            updatedAt: new Date().toISOString()
-        };
+        const name = authorSignature(author);
+        const entry = { status, author: name, updatedAt: new Date().toISOString() };
+        let chain = normalizeChain(cache.marks[key]);
+        if (!chain.length) {
+            chain = [entry];
+        } else if (chain[chain.length - 1].author === name) {
+            chain = chain.slice();
+            chain[chain.length - 1] = entry;
+        } else {
+            chain = [chain[0]].concat(chain.slice(1).filter(item => item.author !== name));
+            if (chain.length >= 3) chain = [chain[0], chain[chain.length - 1]];
+            chain.push(entry);
+            if (chain.length > 3) chain = [chain[0], chain[chain.length - 2], chain[chain.length - 1]];
+        }
+        const mark = markFromChain(chain);
         cache.marks[key] = mark;
         dirty.set(key, mark);
         schedulePersist();
@@ -819,7 +856,8 @@ window.SalesManagement = (function () {
         let body = '';
         keys.forEach(key => {
             const mark = marks[key];
-            body += key + '\t' + (mark && mark.status || '') + '\t' + (mark && mark.author || '') + '\t' + (mark && mark.updatedAt || '') + '\n';
+            const chain = mark && mark.chain ? mark.chain.map(item => (item.status || '') + ':' + (item.author || '')).join('/') : '';
+            body += key + '\t' + (mark && mark.status || '') + '\t' + (mark && mark.author || '') + '\t' + (mark && mark.updatedAt || '') + '\t' + chain + '\n';
         });
         const routes = Array.isArray(cache.enabledRoutes) ? cache.enabledRoutes.join('\n') : '*';
         return [
@@ -897,31 +935,82 @@ function salesCheckIsToday(check) {
     return !!today && day === today;
 }
 
+function salesChainEntries(mark) {
+    if (!mark || !SalesManagement.STATUSES[mark.status]) return [];
+    const raw = Array.isArray(mark.chain) && mark.chain.length ? mark.chain : [mark];
+    const out = [];
+    raw.forEach(item => {
+        if (!item || !SalesManagement.STATUSES[item.status]) return;
+        out.push({ status: item.status, author: item.author || '', updatedAt: item.updatedAt || '' });
+    });
+    return out.slice(0, 3);
+}
+
+function salesDisplayEntries(mark) {
+    return salesChainEntries(mark).slice().reverse();
+}
+
+function salesEntryText(entry) {
+    if (!entry || !SalesManagement.STATUSES[entry.status]) return '';
+    const status = SalesManagement.STATUSES[entry.status];
+    if (status.sign) return entry.author ? (status.sign + ' ' + entry.author) : status.sign;
+    return entry.author || status.short;
+}
+
+function salesEntryTitle(entry) {
+    const status = SalesManagement.STATUSES[entry.status];
+    return status.label + (entry.author ? ' · ' + entry.author : '');
+}
+
 function salesCellText(mark) {
-    if (!mark || !SalesManagement.STATUSES[mark.status]) return '';
-    const status = SalesManagement.STATUSES[mark.status];
-    if (status.sign) return mark.author ? (status.sign + ' ' + mark.author) : status.sign;
-    return mark.author || status.short;
+    const entries = salesDisplayEntries(mark);
+    if (!entries.length) return '';
+    return entries.map(salesEntryText).join(' / ');
+}
+
+function salesCellTitle(mark) {
+    const entries = salesDisplayEntries(mark);
+    if (!entries.length) return '';
+    if (entries.length === 1) return salesEntryTitle(entries[0]);
+    return entries.map(salesEntryTitle).join(' / ');
+}
+
+function salesSplitHtml(mark) {
+    const entries = salesDisplayEntries(mark);
+    if (entries.length < 2) return salesEsc(salesCellText(mark));
+    const parts = entries.map((entry, index) => {
+        const slash = index < entries.length - 1 ? '<span class="sm-slash">/</span>' : '';
+        return `<span class="sm-part sm-st-${entry.status}">${salesEsc(salesEntryText(entry))}</span>${slash}`;
+    }).join('');
+    return `<span class="sm-split-row">${parts}</span>`;
 }
 
 function salesMarkExportText(mark, colored) {
-    if (!mark || !SalesManagement.STATUSES[mark.status]) return '';
-    const status = SalesManagement.STATUSES[mark.status];
-    if (status.sign) return salesCellText(mark);
-    if (colored) return mark.author || status.short;
-    return status.short + (mark.author ? ' — ' + mark.author : '');
+    const entries = salesDisplayEntries(mark);
+    if (!entries.length) return '';
+    if (entries.length > 1) return entries.map(salesEntryText).join(' / ');
+    const status = SalesManagement.STATUSES[entries[0].status];
+    if (status.sign) return salesEntryText(entries[0]);
+    if (colored) return entries[0].author || status.short;
+    return status.short + (entries[0].author ? ' — ' + entries[0].author : '');
 }
 
 function paintSalesCell(td, mark) {
-    td.classList.remove('sm-st-keep', 'sm-st-attn', 'sm-st-down', 'sm-st-up');
-    if (mark && SalesManagement.STATUSES[mark.status]) {
-        td.classList.add('sm-st-' + mark.status);
-        td.textContent = salesCellText(mark);
-        td.title = SalesManagement.STATUSES[mark.status].label + (mark.author ? ' · ' + mark.author : '');
-    } else {
+    td.classList.remove('sm-st-keep', 'sm-st-attn', 'sm-st-down', 'sm-st-up', 'sm-split');
+    const entries = salesDisplayEntries(mark);
+    if (!entries.length) {
         td.textContent = '';
         td.title = td.dataset.edit === '1' ? 'Не проверен — нажмите, чтобы отметить' : 'Не проверен';
+        return;
     }
+    td.title = salesCellTitle(mark);
+    if (entries.length === 1) {
+        td.classList.add('sm-st-' + entries[0].status);
+        td.textContent = salesCellText(mark);
+        return;
+    }
+    td.classList.add('sm-split');
+    td.innerHTML = salesSplitHtml(mark);
 }
 
 function closeSalesPopover() {
@@ -1178,12 +1267,13 @@ function renderSalesGrid() {
         const cells = flight.checks.map(check => {
             const mark = SalesManagement.getMark(dep.code, dep.date, check);
             const canCell = editable && !dep.flown && salesCheckIsToday(check);
-            const cls = mark ? ` sm-st-${mark.status}` : '';
-            const text = salesCellText(mark);
+            const entries = salesDisplayEntries(mark);
+            const cls = entries.length > 1 ? ' sm-split' : (entries.length ? ` sm-st-${entries[0].status}` : '');
+            const text = entries.length > 1 ? salesSplitHtml(mark) : salesEsc(salesCellText(mark));
             const title = mark
-                ? `${SalesManagement.STATUSES[mark.status].label}${mark.author ? ' · ' + mark.author : ''}`
+                ? salesCellTitle(mark)
                 : (canCell ? 'Не проверен — нажмите, чтобы отметить' : (dep.flown ? 'Рейс уже выполнен' : 'Отметить можно только сегодня'));
-            return `<td class="sm-cell${cls}" data-edit="${canCell ? '1' : '0'}" data-flight="${salesAttr(dep.code)}" data-dep="${salesAttr(dep.date)}" data-check="${salesAttr(check)}" title="${salesAttr(title)}">${salesEsc(text)}</td>`;
+            return `<td class="sm-cell${cls}" data-edit="${canCell ? '1' : '0'}" data-flight="${salesAttr(dep.code)}" data-dep="${salesAttr(dep.date)}" data-check="${salesAttr(check)}" title="${salesAttr(title)}">${text}</td>`;
         }).join('');
         const rowClass = dep.flown ? 'sm-row-flew' : (salesNearDeparture(dep.date, today) ? 'sm-row-near' : '');
         return `<tr class="${rowClass}">
@@ -1478,7 +1568,30 @@ function salesThemeFill(kind) {
     }
 }
 
+function salesGradientStops(statuses) {
+    const stops = [];
+    const count = statuses.length || 1;
+    statuses.forEach((status, index) => {
+        const hex = salesThemeFill(status)[0];
+        stops.push({ rgb: hex, pos: (index / count).toFixed(4) });
+        stops.push({ rgb: hex, pos: ((index + 1) / count).toFixed(4) });
+    });
+    return stops;
+}
+
 function salesCellStyle(kind, col, row) {
+    if (kind.indexOf('split:') === 0) {
+        const statuses = kind.slice(6).split(',').filter(Boolean);
+        const stops = salesGradientStops(statuses);
+        const ink = salesThemeFill(statuses[0] || 'keep')[1];
+        const style = salesStyle(stops[0] ? stops[0].rgb : 'FFFFFF', ink, true, 'center', true, true);
+        style.fill = {
+            patternType: 'solid',
+            fgColor: { rgb: stops[0] ? stops[0].rgb : 'FFFFFF' },
+            gradientStops: stops
+        };
+        return style;
+    }
     const swatch = kind.indexOf('swatch-') === 0 ? kind.slice(7) : '';
     const legend = kind === 'legend';
     const palette = salesThemeFill(swatch || (legend ? 'title' : kind));
@@ -1646,7 +1759,8 @@ function salesFlightWorksheet(lib, flight, stamp, colored) {
             }
             const text = salesMarkExportText(mark, colored);
             row.push(text);
-            kind.push(mark.status);
+            const people = salesDisplayEntries(mark);
+            kind.push(people.length > 1 ? ('split:' + people.map(item => item.status).join(',')) : mark.status);
         });
         aoa.push(row);
         kinds.push(kind);
@@ -1658,9 +1772,13 @@ function salesFlightWorksheet(lib, flight, stamp, colored) {
     const freeze = salesSheetFreeze(legend.count);
     const cols = [
         { wch: 14 }, { wch: 22 }, { wch: 14 }, { wch: 12 }, { wch: 38 }
-    ].concat(flight.checks.map(() => ({ wch: 18 })));
+    ].concat(flight.checks.map(() => ({ wch: 28 })));
     ws['!cols'] = cols;
-    ws['!rows'] = legend.rows.map(() => ({ hpt: 18 })).concat([{ hpt: 20 }, { hpt: 22 }, { hpt: 18 }]);
+    const dataHeights = flight.departures.map((dep, index) => {
+        const kindRow = kinds[legend.count + 3 + index] || [];
+        return { hpt: kindRow.some(kind => String(kind).indexOf('split:') === 0) ? 36 : 18 };
+    });
+    ws['!rows'] = legend.rows.map(() => ({ hpt: 18 })).concat([{ hpt: 20 }, { hpt: 22 }, { hpt: 18 }], dataHeights);
     ws['!merges'] = [{ s: { r: stampRow, c: 0 }, e: { r: stampRow, c: 4 } }];
     ws['!views'] = [{
         state: 'frozen',

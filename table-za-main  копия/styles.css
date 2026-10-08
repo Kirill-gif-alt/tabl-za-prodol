@@ -5624,6 +5624,39 @@ html[data-theme="dark"] textarea {
 .sm-st-down { background: var(--sm-down, #8e1b2f) !important; color: var(--sm-down-text, #fff); }
 .sm-st-up { background: var(--sm-up, #7dcea0) !important; color: var(--sm-up-text, #145a32); }
 
+.sm-cell.sm-split {
+    padding: 0;
+    background: transparent !important;
+    color: inherit;
+}
+.sm-split-row {
+    display: flex;
+    align-items: stretch;
+    width: 100%;
+    min-height: 32px;
+    height: 100%;
+}
+.sm-part {
+    flex: 1 1 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 4px;
+    text-align: center;
+    line-height: 1.15;
+    word-break: break-word;
+}
+.sm-slash {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    padding: 0 2px;
+    font-weight: 800;
+    color: #1c2833;
+    background: #fff;
+}
+
+
 .sm-row-flew .sm-freeze {
     background: var(--sm-flew, #d5d8dc);
     color: var(--sm-flew-text, #2c3e50);

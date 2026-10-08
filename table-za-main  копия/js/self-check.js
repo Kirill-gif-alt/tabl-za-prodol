@@ -221,6 +221,8 @@ window.KrasaviaSelfCheck = (function () {
                 && salesMarkExportText({ status: 'attn', author: 'Петров' }, true) === '! Петров'
                 && salesMarkExportText({ status: 'down', author: 'Петров' }, true) === 'Петров'
                 && salesMarkExportText({ status: 'down', author: 'Петров' }, false) === 'Снижение — Петров'
+                && salesCellText({ status: 'attn', author: 'Табалюк', chain: [{ status: 'keep', author: 'Лобанов' }, { status: 'attn', author: 'Табалюк' }] }) === '! Табалюк / Лобанов'
+                && salesMarkExportText({ status: 'down', author: 'Иванов', chain: [{ status: 'keep', author: 'Лобанов' }, { status: 'attn', author: 'Табалюк' }, { status: 'down', author: 'Иванов' }] }, true) === 'Иванов / ! Табалюк / Лобанов'
             ));
         }
         if (typeof salesCheckIsToday === 'function' && typeof getTodayDate === 'function') {
