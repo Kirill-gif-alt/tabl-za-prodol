@@ -18,7 +18,7 @@ SHARED_DIR = os.path.join(ROOT, "shared")
 SHARED_WRITABLE = {
     "profiles.json", "snapshot.json", "activity.json", "flight-comments.json",
     "subsidy-overrides.json", "pkz-nav.json", "sales-management.json", "rms-widget.json",
-    "creative-layouts.json", "subsidy-fares.json",
+    "creative-layouts.json", "subsidy-fares.json", "subsidy-ref.json",
 }
 # Резервные копии перед перезаписью: shared/_history/<имя>/<имя>__ГГГГ-ММ-ДД_ЧЧ-ММ-СС.json.
 # every — не чаще раза в столько секунд, keep — сколько последних копий хранить.
@@ -30,6 +30,7 @@ HISTORY_POLICY = {
     "sales-management.json": (3600, 24),
     "subsidy-overrides.json": (600, 30),
     "subsidy-fares.json": (600, 30),
+    "subsidy-ref.json": (600, 30),
     "pkz-nav.json": (600, 30),
     "flight-comments.json": (3600, 24),
     "creative-layouts.json": (3600, 20),

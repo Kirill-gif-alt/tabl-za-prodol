@@ -196,6 +196,16 @@ window.SharedOverrides = (function () {
         return true;
     }
 
+    // Все значения ПКЗ из NAV для справочника: [{ date, flight, value, at, by }].
+    function listPkzNav() {
+        return Object.keys(pkzNav).map(k => {
+            const e = pkzNav[k];
+            if (!present(e)) return null;
+            const [date, flight] = k.split('|');
+            return { date, flight, value: valueOf(e), at: e && e.at || '', by: e && e.by || '' };
+        }).filter(Boolean);
+    }
+
     function getPkzNav(date, flight) {
         const k = navKey(date, flight);
         if (!k || !present(pkzNav[k])) return null;
@@ -222,6 +232,7 @@ window.SharedOverrides = (function () {
         getSubsidy,
         setSubsidy,
         getPkzNav,
-        setPkzNav
+        setPkzNav,
+        listPkzNav
     };
 })();

@@ -23,9 +23,13 @@ window.ProfileAuth = (function () {
         export_excel: { label: 'Экспорт Excel', group: 'Данные' },
         sales_detail: { label: 'Детализация продаж', group: 'Данные' },
         edit_subsidy: { label: 'Правка субсидии', group: 'Данные' },
-        edit_pkz_nav: { label: 'Правка ПКЗ из NAV', group: 'Данные' },
         edit_sales_mgmt: { label: 'Изменение таблицы управления продажами', group: 'Данные' },
-        edit_fare_refs: { label: 'Справочник субсидированных тарифов: видеть и править (без галочки раздел и суммы пределов скрыты)', group: 'Данные' },
+        view_fare_refs: { label: 'Тарифы субсидии — видеть (без галочки раздел и суммы пределов скрыты)', group: 'Справочник' },
+        edit_fare_refs: { label: 'Тарифы субсидии — менять', group: 'Справочник' },
+        view_subsidy_ref: { label: 'Периоды, суммы субсидии и себестоимость — видеть', group: 'Справочник' },
+        edit_subsidy_ref: { label: 'Периоды, суммы субсидии и себестоимость — менять', group: 'Справочник' },
+        view_pkz_nav: { label: 'ПКЗ из NAV — видеть', group: 'Справочник' },
+        edit_pkz_nav: { label: 'ПКЗ из NAV — менять (и в таблице ПКЗ)', group: 'Справочник' },
         manage_profiles: { label: 'Управление профилями', group: 'Админ' }
     };
 

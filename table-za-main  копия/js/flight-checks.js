@@ -140,12 +140,12 @@ window.FlightChecks = (function () {
 
     // Суммы пределов видит только тот, кому админ дал право на справочник.
     function canSeeRefs() {
-        return typeof FareRefs !== 'undefined' && FareRefs.canEdit();
+        return typeof FareRefs !== 'undefined' && FareRefs.canView();
     }
 
     function revisionToken() {
         const refs = typeof FareRefs !== 'undefined' ? FareRefs.revision() : 0;
-        const subs = typeof SharedOverrides !== 'undefined' && SharedOverrides.subsidyRevision ? SharedOverrides.subsidyRevision() : 0;
+        const subs = (typeof SharedOverrides !== 'undefined' && SharedOverrides.subsidyRevision ? SharedOverrides.subsidyRevision() : 0) + ':' + (typeof SubsidyRef !== 'undefined' ? SubsidyRef.revision() : 0);
         const today = typeof getTodayDate === 'function' ? getTodayDate() : '';
         return refs + '|' + subs + '|' + today + '|' + (canSeeRefs() ? 1 : 0);
     }

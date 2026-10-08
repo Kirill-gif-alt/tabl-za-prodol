@@ -160,6 +160,11 @@ window.FareRefs = (function () {
         return typeof ProfileAuth !== 'undefined' && ProfileAuth.hasPermission('edit_fare_refs');
     }
 
+    // Видеть справочник (и суммы пределов в проверке) — с правом просмотра или правки.
+    function canView() {
+        return canEdit() || (typeof ProfileAuth !== 'undefined' && ProfileAuth.hasPermission('view_fare_refs'));
+    }
+
     function authorName() {
         const p = typeof ProfileAuth !== 'undefined' && ProfileAuth.getCurrentProfile ? ProfileAuth.getCurrentProfile() : null;
         return p ? String(p.name || p.id || '') : '';
@@ -234,6 +239,7 @@ window.FareRefs = (function () {
     }
 
     return {
+        canView,
         load,
         list,
         match,

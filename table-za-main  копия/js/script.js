@@ -694,6 +694,7 @@ async function loadSharedSideData() {
     if (typeof SalesManagement !== 'undefined') run('SalesManagement.load', () => SalesManagement.load());
     if (typeof SharedOverrides !== 'undefined') run('SharedOverrides.load', () => SharedOverrides.load());
     if (typeof FareRefs !== 'undefined') run('FareRefs.load', () => FareRefs.load());
+    if (typeof SubsidyRef !== 'undefined') run('SubsidyRef.load', () => SubsidyRef.load());
     await Promise.all(jobs);
 }
 

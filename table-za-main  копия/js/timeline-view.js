@@ -56,7 +56,7 @@ function getTimelineCacheSignature() {
     const nf = window.networkMapFilter;
     const filt = nf ? `${nf.city || ''}|${(nf.flights || []).join(',')}` : '';
     const modeSig = typeof FareRefs !== 'undefined' ? FareRefs.revision() : 0;
-    const subSig = typeof SharedOverrides !== 'undefined' && SharedOverrides.subsidyRevision ? SharedOverrides.subsidyRevision() : 0;
+    const subSig = (typeof SharedOverrides !== 'undefined' && SharedOverrides.subsidyRevision ? SharedOverrides.subsidyRevision() : 0) + ':' + (typeof SubsidyRef !== 'undefined' ? SubsidyRef.revision() : 0);
     return `${getMetricsCacheSignature()}|${(cfg.globalOrder || []).join('\x1f')}|grid2|e:${expanded}|w:${cfg.slotPx || 80}|f:${filt}|m:${modeSig}.${subSig}`;
 }
 

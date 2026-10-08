@@ -562,7 +562,7 @@ window.ReportsView = (function () {
                     ${editing ? '<button type="button" class="filter-btn" id="rp-ref-cancel">Отмена</button>' : ''}
                     <span class="rp-ref-error" id="rp-ref-error" role="alert"></span>
                 </div>
-            </div>` : '<p class="rp-note">Менять справочник может администратор или профиль с правом «Правка справочника субсидированных тарифов».</p>';
+            </div>` : '<p class="rp-note">Менять тарифы может администратор или профиль с правом «Тарифы субсидии — менять».</p>';
         const suggestions = can && missing.length && typeof FlightChecks !== 'undefined' && FlightChecks.suggestRefs
             ? FlightChecks.suggestRefs() : [];
         lastSuggestions = suggestions;
@@ -600,7 +600,7 @@ window.ReportsView = (function () {
             : '';
         return `
             <section class="rp-card rp-refs" id="rp-refs">
-                <div class="rp-card-head"><h3 class="rp-card-title">Справочник субсидированных тарифов</h3></div>
+                <div class="rp-card-head"><h3 class="rp-card-title">Тарифы субсидии</h3></div>
                 <p class="rp-card-text">Предельный тариф на субсидированном рейсе: билет дороже предела — ошибка, дешевле — можно, в том числе детские. Детский предел необязателен: если он не задан, детский билет сравнивается со взрослым пределом. Сравнивается оплаченная сумма билета.</p>
                 <p class="rp-card-text">Запись «Не считать субсидированным» убирает рейс из перечня субсидированных: он не проверяется и не попадает в ошибки.</p>
                 ${missingHtml}
@@ -823,9 +823,9 @@ window.ReportsView = (function () {
             const n = hasData() ? new Set(checksList().filter(i => i.state !== 'Улетел').map(i => i.code + '|' + i.date)).size : 0;
             list.push({ id: 'checks', label: 'Проверка рейсов', badge: n ? String(n) : '' });
         }
-        if (canRefs()) {
-            const miss = hasData() && checksOn && typeof FlightChecks !== 'undefined' ? FlightChecks.missingRefs().length : 0;
-            list.push({ id: 'refs', label: 'Субсидированные тарифы', badge: miss ? miss + ' без предела' : '', warn: !!miss });
+        if (typeof ReferenceView !== 'undefined' ? ReferenceView.canAny() : canRefs()) {
+            const miss = canRefs() && hasData() && checksOn && typeof FlightChecks !== 'undefined' ? FlightChecks.missingRefs().length : 0;
+            list.push({ id: 'refs', label: 'Справочник', badge: miss ? miss + ' без предела' : '', warn: !!miss });
         }
         list.push({ id: 'export', label: 'Выгрузки в Excel', badge: '' });
         return list;
@@ -839,7 +839,7 @@ window.ReportsView = (function () {
         const weeks = weekBounds();
         let content = '';
         if (subtab === 'checks') content = checksHtml();
-        else if (subtab === 'refs') content = refsHtml();
+        else if (subtab === 'refs') content = typeof ReferenceView !== 'undefined' ? ReferenceView.html(refsHtml) : refsHtml();
         else {
             content = `<div class="rp-export-grid">${[
                 card('rp-data', 'Загрузка рейсов',
@@ -870,7 +870,9 @@ window.ReportsView = (function () {
         const prof = typeof ProfileAuth !== 'undefined' && ProfileAuth.getCurrentProfile ? (ProfileAuth.getCurrentProfile()?.id || '') : '';
         const rows = typeof allData !== 'undefined' && allData ? allData.length : 0;
         const checksOn = (typeof FlightChecks !== 'undefined' && FlightChecks.enabled() ? 1 : 0)
-            + ':' + (typeof FareRefs !== 'undefined' ? FareRefs.revision() : 0);
+            + ':' + (typeof FareRefs !== 'undefined' ? FareRefs.revision() : 0)
+            + ':' + (typeof SubsidyRef !== 'undefined' ? SubsidyRef.revision() : 0)
+            + ':' + (typeof SharedOverrides !== 'undefined' && SharedOverrides.navRevision ? SharedOverrides.navRevision() : 0);
         const checks = checksList().map(i => i.code + i.date).join(',');
         return [epoch, today, prof, rows, checksOn, checks].join('|');
     }
@@ -881,7 +883,7 @@ window.ReportsView = (function () {
                 <div class="table-page-hero">
                     <div class="table-page-hero-main">
                         <h2 class="rms-hero-title">Отчёты</h2>
-                        <span class="table-page-hint">Проверка рейсов, справочник субсидированных тарифов и выгрузки в Excel</span>
+                        <span class="table-page-hint">Проверка рейсов, справочник (тарифы, периоды и суммы субсидии, ПКЗ из NAV) и выгрузки в Excel</span>
                     </div>
                 </div>
                 <div class="table-page-body rp-body" id="rp-body"></div>
@@ -889,15 +891,20 @@ window.ReportsView = (function () {
         `;
         const page = panel.querySelector('#rp-page');
         page.addEventListener('change', (event) => {
+            if (typeof ReferenceView !== 'undefined' && ReferenceView.handleChange(event.target, renderBody)) return;
             if (event.target.id === 'rp-ref-flight') { syncPairLabel(); return; }
             if (event.target.id === 'rp-ref-mode') { syncModeFields(); return; }
             if (event.target.id !== 'rp-checks-future') return;
             checksFutureOnly = event.target.checked;
             renderBody();
         });
+        page.addEventListener('input', (event) => {
+            if (typeof ReferenceView !== 'undefined') ReferenceView.handleInput(event.target, renderBody);
+        });
         page.addEventListener('click', (event) => {
             const btn = event.target.closest('button');
             if (!btn || btn.disabled) return;
+            if (typeof ReferenceView !== 'undefined' && ReferenceView.handleClick(btn, renderBody)) return;
             if (btn.dataset.rpTab) {
                 subtab = btn.dataset.rpTab;
                 try { localStorage.setItem(SUBTAB_KEY, subtab); } catch (e) { /* ignore */ }
@@ -980,6 +987,7 @@ window.ReportsView = (function () {
     // Открыть нужную внутреннюю вкладку (например, из счётчика ошибок в шапке).
     function showSubtab(id) {
         subtab = id;
+        if (id === 'refs' && typeof ReferenceView !== 'undefined') ReferenceView.openSection('fares');
         try { localStorage.setItem(SUBTAB_KEY, id); } catch (e) { /* ignore */ }
         if (document.getElementById('rp-page')) renderBody();
     }
