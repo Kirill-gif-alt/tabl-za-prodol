@@ -173,6 +173,45 @@ function resolveSwlyDate(baseFlight, flyDateStr, flightCode) {
     return canonical;
 }
 
+// ---------- Норма продаж: тот же рейс, тот же день недели ----------
+// Норма — средний темп продаж других вылетов этого рейса в тот же день недели (серая линия).
+// • На каждом «дне до вылета» t учитываются только вылеты, у которых этот день уже прошёл:
+//   улетевшие — целиком, будущие — только до даты среза продаж. Раньше будущий вылет входил
+//   с «продано на сегодня» как с итогом и занижал норму у дня вылета.
+// • Продажи считаются в доле от кресел и пересчитываются на кресла этого вылета, поэтому
+//   ATR-42, ATR-72 и Як-42 можно усреднять вместе.
+// • Берутся вылеты в пределах ±8 недель (без смешивания сезонов); если на сегодняшний день
+//   до вылета так набирается меньше 2 вылетов — весь период данных.
+const WEEKDAY_NORM_WINDOW_DAYS = 56;
+const WEEKDAY_NORM_MIN_N = 2;
+let salesCutoffCache = { ref: null, time: 0 };
+
+// Дата среза продаж: последний день, за который есть сделки (не дата на часах компьютера).
+function salesDataCutoffTime() {
+    const ref = typeof salesDetails !== 'undefined' ? salesDetails : null;
+    if (salesCutoffCache.ref === ref && salesCutoffCache.time) return salesCutoffCache.time;
+    let max = 0;
+    Object.keys(ref || {}).forEach(k => {
+        const list = ref[k] || [];
+        for (let i = 0; i < list.length; i++) {
+            const d = parseLocalDate(list[i].dealDate);
+            if (d && d.getTime() > max) max = d.getTime();
+        }
+    });
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const time = max && max < today.getTime() ? max : today.getTime();
+    salesCutoffCache = { ref, time };
+    return time;
+}
+
+// С какого «дня до вылета» продажи по вылету уже известны (0 — вылет состоялся).
+function observedFromDtd(flyDateStr) {
+    const fd = parseLocalDate(flyDateStr);
+    if (!fd) return 0;
+    return Math.max(0, Math.round((fd.getTime() - salesDataCutoffTime()) / 86400000));
+}
+
 function collectSameWeekdayCohort(baseFlight, flyDateStr, flightCode) {
     const flyDt = parseLocalDate(flyDateStr);
     if (!flyDt) return [];
@@ -191,9 +230,50 @@ function collectSameWeekdayCohort(baseFlight, flyDateStr, flightCode) {
         const salesCode = getFlightSalesList(dtStr, orig).length ? orig : code;
         if (!getFlightSalesList(dtStr, salesCode).length) return;
         seen.add(dtStr);
-        dates.push({ date: dtStr, code: salesCode });
+        dates.push({
+            date: dtStr,
+            code: salesCode,
+            seats: typeof getSeatsOnSale === 'function' ? getSeatsOnSale(row) : 0,
+            aircraft: typeof getAircraftType === 'function' ? getAircraftType(row[4]) : '',
+            load: parseInt(row[6] || 0, 10) || 0,
+            observedFrom: observedFromDtd(dtStr),
+            dayGap: Math.round(Math.abs(dt.getTime() - flyDt.getTime()) / 86400000)
+        });
     });
     return dates;
+}
+
+// Норма по когорте на каждом дне до вылета: среднее, разброс и число вылетов.
+function weekdayNormSeries(cohort, dtds, targetSeats) {
+    const curves = cohort.filter(c => c.seats > 0).map(c => ({ ...c, curve: buildOnHandByDtd(c.date, c.code) }));
+    const avgSeats = curves.length ? curves.reduce((a, c) => a + c.seats, 0) / curves.length : 0;
+    const scale = targetSeats > 0 ? targetSeats : avgSeats;
+    const points = dtds.map(t => {
+        const lfs = [];
+        curves.forEach(c => {
+            const v = weekdayNormValueAt(c, t);
+            // Не больше 100%: билетов бывает больше кресел из-за возвратов и обменов.
+            if (v != null) lfs.push(Math.min(1, v / c.seats));
+        });
+        if (lfs.length < WEEKDAY_NORM_MIN_N || !scale) return { n: lfs.length, value: null, lo: null, hi: null, lf: null };
+        const mean = lfs.reduce((a, b) => a + b, 0) / lfs.length;
+        return {
+            n: lfs.length,
+            value: Math.round(mean * scale),
+            lo: Math.round(Math.min.apply(null, lfs) * scale),
+            hi: Math.round(Math.max.apply(null, lfs) * scale),
+            lf: Math.round(mean * 100)
+        };
+    });
+    return { points, curves };
+}
+
+// Сколько билетов было продано на вылете за t дней до вылета; null — этот день ещё не наступил.
+function weekdayNormValueAt(c, t) {
+    if (t < c.observedFrom) return null;
+    const oh = c.curve.onHand[t];
+    if (oh != null) return oh;
+    return t > c.curve.maxDtd ? 0 : c.curve.total;
 }
 
 function weekdayRuPrep(dowShort) {
@@ -208,7 +288,8 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
     const code = cleanFlight(flightCode || baseFlight);
     const thisCurve = buildOnHandByDtd(flyDateStr, code);
     const asOf = typeof getDaysUntil === 'function' ? getDaysUntil(flyDateStr) : null;
-    const axisMin = asOf === null ? 0 : Math.max(0, asOf);
+    // Ось кончается на последнем дне, за который есть продажи (дата среза), а не на дате компьютера.
+    const axisMin = Math.max(asOf === null ? 0 : Math.max(0, asOf), observedFromDtd(flyDateStr));
     const lookback = Math.min(180, Math.max(1, parseInt(period, 10) || 30));
     const hi = Math.min(180, axisMin + lookback);
     const dtds = [];
@@ -223,6 +304,8 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
     const swlyDate = resolveSwlyDate(baseFlight, flyDateStr, code);
     const swlyHasSales = !!(swlyDate && getFlightSalesList(swlyDate, code).length);
     let refData = null;
+    let refBand = null;
+    let normInfo = null;
     let refLabel = '';
     let caption = 'Кривая 14д: накоплено билетов к моменту «N дней до вылета» (окно файла Tickets_SALE_Last14Days, не полный pickup −21).';
     const dowName = typeof getDayOfWeek === 'function' ? getDayOfWeek(flyDateStr) : '';
@@ -237,19 +320,31 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
         refLabel = `Год назад, тот же день недели (${swlyDate})`;
         caption = `Серая линия — как продавался этот рейс год назад в тот же день недели (${dowName} ${swlyDate}), не то же календарное число.`;
     } else {
-        const cohort = collectSameWeekdayCohort(baseFlight, flyDateStr, code);
-        if (cohort.length) {
-            const curves = cohort.map(c => buildOnHandByDtd(c.date, c.code));
-            refData = dtds.map(t => {
-                let sum = 0, n = 0;
-                curves.forEach(c => {
-                    if (c.onHand[t] != null) { sum += c.onHand[t]; n++; }
-                });
-                return n ? Math.round(sum / n) : null;
-            });
-            const prep = weekdayRuPrep(dowName);
-            refLabel = `Средняя загрузка по ${prep}, ${code} (${cohort.length} вылетов)`;
-            caption = `Серая линия — средняя кривая продаж по ${prep} рейса ${code} (взято ${cohort.length} других вылетов из загруженных данных). Это не «тот же день прошлого года»: такого вылета в файле продаж нет.`;
+        const cohortAll = collectSameWeekdayCohort(baseFlight, flyDateStr, code);
+        const targetRow = typeof getFlightRowForDate === 'function' ? getFlightRowForDate(baseFlight, flyDateStr, code) : null;
+        const targetSeats = targetRow && typeof getSeatsOnSale === 'function' ? getSeatsOnSale(targetRow) : 0;
+        const near = cohortAll.filter(c => c.dayGap <= WEEKDAY_NORM_WINDOW_DAYS);
+        let norm = weekdayNormSeries(near, dtds, targetSeats);
+        let windowed = true;
+        const last = norm.points[norm.points.length - 1];
+        if (!last || last.value == null) {
+            const wide = weekdayNormSeries(cohortAll, dtds, targetSeats);
+            const wideLast = wide.points[wide.points.length - 1];
+            if (wideLast && wideLast.value != null) { norm = wide; windowed = false; }
+        }
+        const prep = weekdayRuPrep(dowName);
+        if (norm.points.some(p => p.value != null)) {
+            refData = norm.points.map(p => p.value);
+            refBand = { lo: norm.points.map(p => p.lo), hi: norm.points.map(p => p.hi), n: norm.points.map(p => p.n), lf: norm.points.map(p => p.lf) };
+            const nowN = last && last.value != null && windowed ? last.n : norm.points[norm.points.length - 1].n;
+            refLabel = `Норма по ${prep}, ${code}`;
+            caption = `Серая линия — норма: средний темп продаж по ${prep} рейса ${code}`
+                + `${windowed ? ' (вылеты ±8 недель)' : ' (весь период данных)'}, в пересчёте на ${targetSeats ? targetSeats + ' кресел этого вылета' : 'кресла'}.`
+                + ` На каждом дне до вылета учтены только вылеты, у которых этот день уже прошёл`
+                + ` — на ${axisMin} дн. до вылета это ${nowN}. Заливка — разброс между вылетами.`;
+            normInfo = { prep, windowed, curves: norm.curves, asOfDtd: axisMin, targetSeats };
+        } else if (cohortAll.length) {
+            caption = `Серая норма не построена: среди ${cohortAll.length} других вылетов по ${prep} меньше ${WEEKDAY_NORM_MIN_N} таких, у которых этот день до вылета уже прошёл. Норма появится, когда накопится история.`;
         } else {
             caption = 'Серая норма не построена: в файле нет других вылетов этого рейса в тот же день недели. Синяя линия — загрузка этого рейса.';
         }
@@ -261,14 +356,15 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
     let verdictCls = 'booking-curve-verdict-neutral';
     if (refVal != null && !isNaN(refVal)) {
         const delta = nowVal - refVal;
+        const nNote = refBand ? ` по ${refBand.n[refBand.n.length - 1]} вылетам` : '';
         if (delta > 0) {
-            verdict += ` · норма ${refVal} (+${delta}, опережаем)`;
+            verdict += ` · норма${nNote} ${refVal} (+${delta}, опережаем)`;
             verdictCls = 'booking-curve-verdict-up';
         } else if (delta < 0) {
-            verdict += ` · норма ${refVal} (${delta}, отстаём)`;
+            verdict += ` · норма${nNote} ${refVal} (${delta}, отстаём)`;
             verdictCls = 'booking-curve-verdict-down';
         } else {
-            verdict += ` · норма ${refVal} (как в базе)`;
+            verdict += ` · норма${nNote} ${refVal} (как в норме)`;
         }
     }
 
@@ -283,7 +379,39 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
         if (pts.some(v => v !== null)) expectedData = pts;
     }
 
-    return { dtds, thisData, refData, refLabel, caption, verdict, verdictCls, expectedData };
+    return { dtds, thisData, refData, refBand, normInfo, refLabel, caption, verdict, verdictCls, expectedData };
+}
+
+// Таблица под графиком: из каких вылетов посчитана норма.
+function buildWeekdayNormTableHtml(dtdCurve) {
+    const info = dtdCurve && dtdCurve.normInfo;
+    if (!info || !info.curves.length) return '';
+    const t = info.asOfDtd;
+    const rows = info.curves.slice().sort((a, b) => (parseLocalDate(a.date) || 0) - (parseLocalDate(b.date) || 0)).map(c => {
+        const v = weekdayNormValueAt(c, t);
+        const flown = c.observedFrom === 0;
+        const state = flown ? 'улетел' : `продаётся (до ${c.observedFrom} дн.)`;
+        const atT = v == null ? '<span class="norm-muted">ещё не наступило</span>' : `${v} (${Math.round(v / c.seats * 100)}%)`;
+        return `<tr class="${v == null ? 'norm-row-out' : ''}">
+            <td>${escHtml(c.date)}</td>
+            <td>${escHtml(c.aircraft || '—')}</td>
+            <td>${c.seats}</td>
+            <td>${atT}</td>
+            <td>${c.curve.total}${flown ? '' : ' <span class="norm-muted">пока</span>'}</td>
+            <td>${escHtml(state)}</td>
+        </tr>`;
+    }).join('');
+    const used = info.curves.filter(c => weekdayNormValueAt(c, t) != null).length;
+    return `
+        <details class="norm-cohort">
+            <summary>Из чего посчитана норма: ${used} из ${info.curves.length} вылетов по ${escHtml(info.prep)}${info.windowed ? ' (±8 недель)' : ''} учтены на ${t} дн. до вылета</summary>
+            <div class="report-table-scroll">
+                <table class="report-data-table norm-cohort-table">
+                    <thead><tr><th>Вылет</th><th>Тип ВС</th><th>Кресел</th><th>Продано за ${t} дн. до вылета</th><th>Всего продано</th><th>Статус</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        </details>`;
 }
 
 function buildDateRangeInclusive(fromDate, toDate) {
@@ -477,6 +605,7 @@ function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode)
                             class="chart-expand-btn">⛶</button>
                 </div>
                 <div class="chart-scroll-x"><div class="chart-container sales-chart-canvas" style="min-width:${Math.max(280, dtdCurve.dtds.length * 14)}px"><canvas id="report-booking-curve"></canvas></div></div>
+                ${buildWeekdayNormTableHtml(dtdCurve)}
             </div>
         </div>
 
@@ -602,6 +731,32 @@ function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode)
             spanGaps: true,
             borderWidth: 2
         }];
+        if (dtdCurve.refData && dtdCurve.refBand) {
+            dtdDatasets.push({
+                label: 'Разброс нормы',
+                data: dtdCurve.refBand.hi,
+                borderWidth: 0,
+                pointRadius: 0,
+                pointHoverRadius: 0,
+                backgroundColor: 'rgba(100, 116, 139, 0.14)',
+                fill: '+1',
+                spanGaps: true,
+                tension: 0.15,
+                _band: true
+            }, {
+                label: 'Разброс нормы (низ)',
+                data: dtdCurve.refBand.lo,
+                borderWidth: 0,
+                pointRadius: 0,
+                pointHoverRadius: 0,
+                backgroundColor: 'transparent',
+                fill: false,
+                spanGaps: true,
+                tension: 0.15,
+                _band: true,
+                _hideLegend: true
+            });
+        }
         if (dtdCurve.refData) {
             dtdDatasets.push({
                 label: dtdCurve.refLabel,
@@ -643,15 +798,27 @@ function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode)
                 plugins: {
                     legend: {
                         display: true,
-                        labels: { color: '#0f172a', boxWidth: 12, font: { size: 11 } }
+                        labels: {
+                            color: '#0f172a',
+                            boxWidth: 12,
+                            font: { size: 11 },
+                            filter: (item, data) => !data.datasets[item.datasetIndex]._hideLegend
+                        }
                     },
                     tooltip: {
+                        filter: (item) => !item.dataset._band,
                         callbacks: {
                             title: (items) => {
                                 const idx = items[0]?.dataIndex;
                                 if (idx === undefined) return '';
                                 const t = dtdCurve.dtds[idx];
                                 return `${t} дн. до вылета`;
+                            },
+                            afterBody: (items) => {
+                                const idx = items[0]?.dataIndex;
+                                const band = dtdCurve.refBand;
+                                if (idx === undefined || !band || band.n[idx] == null || dtdCurve.refData[idx] == null) return '';
+                                return `Норма по ${band.n[idx]} вылетам, загрузка ${band.lf[idx]}%, разброс ${band.lo[idx]}–${band.hi[idx]}`;
                             }
                         }
                     }

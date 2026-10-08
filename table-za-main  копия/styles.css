@@ -6526,3 +6526,29 @@ span.rp-chip {
 .rp-ref-grid label[hidden] {
     display: none;
 }
+
+/* ===== Норма продаж по дню недели: из чего посчитана ===== */
+.norm-cohort {
+    margin-top: 8px;
+    font-size: 0.78rem;
+}
+
+.norm-cohort summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.norm-cohort-table td,
+.norm-cohort-table th {
+    font-size: 0.75rem;
+}
+
+.norm-cohort-table tr.norm-row-out td {
+    color: #94a3b8;
+}
+
+.norm-muted {
+    color: #94a3b8;
+    font-weight: 400;
+}
