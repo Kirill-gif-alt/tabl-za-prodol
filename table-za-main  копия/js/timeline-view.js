@@ -123,6 +123,7 @@ function selectFlightFromTimeline(flight, date) {
     lastSelectedDate = date || null;
     if (typeof SessionStore !== 'undefined') SessionStore.saveUiSession();
     markTimelineSelectedChip();
+    if (typeof FlightCard !== 'undefined') FlightCard.maybeOpen(flight, date);
 }
 
 function markTimelineSelectedChip() {

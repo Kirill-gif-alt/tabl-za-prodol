@@ -402,6 +402,7 @@ function openDataBoardFlight(base, date) {
     currentFlight = flight;
     lastSelectedDate = flyDate;
     if (typeof SessionStore !== 'undefined') SessionStore.saveUiSession();
+    if (typeof FlightCard !== 'undefined') FlightCard.maybeOpen(flight, flyDate);
 }
 
 function bindDataBoardInteractions(track) {

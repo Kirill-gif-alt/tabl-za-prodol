@@ -6638,3 +6638,142 @@ span.rp-chip {
 .timeline-chip:not(.timeline-chip-gantt) { position: relative; }
 .timeline-chip .mode-badge { position: absolute; right: 6px; bottom: 9px; margin: 0; }
 .timeline-chip .mode-sub { color: inherit; border-color: currentColor; background: transparent; opacity: 0.75; }
+
+/* Ценовые решения и отметка в один клик */
+.pm-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 26px;
+    height: 24px;
+    padding: 0 6px;
+    border-radius: 7px;
+    border: 1px dashed var(--border, #cbd5e1);
+    background: transparent;
+    color: var(--text-muted, #64748b);
+    font-weight: 800;
+    font-size: 0.78rem;
+    cursor: pointer;
+}
+.pm-chip.sm-st-keep, .pm-chip.sm-st-attn, .pm-chip.sm-st-down, .pm-chip.sm-st-up { border-style: solid; border-color: transparent; }
+.pm-chip:hover { border-color: var(--primary, #1d4ed8); }
+.rms-col-mark { width: 64px; text-align: center; }
+.pm-pop {
+    position: fixed;
+    z-index: 16000;
+    width: 300px;
+    max-width: calc(100vw - 16px);
+    padding: 10px;
+    border-radius: 12px;
+    background: var(--surface, #fff);
+    border: 1px solid var(--border, #e2e8f0);
+    box-shadow: 0 12px 32px rgb(15 23 42 / 0.18);
+}
+.pm-pop-title { font-weight: 700; font-size: 0.82rem; margin-bottom: 6px; }
+.pm-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0; }
+.pm-buttons-label { font-size: 0.78rem; color: var(--text-muted, #64748b); margin-right: 2px; }
+.pm-pop .pm-buttons-label { display: none; }
+.pm-btn {
+    padding: 5px 10px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    opacity: 0.85;
+}
+.pm-btn:hover { opacity: 1; }
+.pm-btn-on { opacity: 1; box-shadow: 0 0 0 2px var(--primary, #1d4ed8); }
+.pm-btn-clear { background: transparent; border-color: var(--border, #cbd5e1); color: var(--text-muted, #64748b); }
+.pm-block {
+    margin: 12px 0;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border, #e2e8f0);
+    background: var(--surface, #fff);
+}
+.pm-title { font-weight: 700; font-size: 0.85rem; margin-bottom: 6px; }
+.pm-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.pm-item { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; font-size: 0.8rem; }
+.pm-glyph { font-weight: 800; width: 14px; text-align: center; }
+.pm-glyph.pm-up { color: #15803d; }
+.pm-glyph.pm-down { color: var(--sm-down, #8e1b2f); }
+.pm-glyph.pm-attn { color: #ea580c; }
+.pm-eff { color: var(--text-muted, #64748b); }
+.pm-eff-up { color: #15803d; }
+.pm-eff-down { color: #b91c1c; }
+.pm-hint { margin-top: 6px; font-size: 0.7rem; color: var(--text-muted, #64748b); }
+
+/* Карточка рейса */
+.flight-card {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 14000;
+    width: 460px;
+    max-width: 100vw;
+    overflow-y: auto;
+    padding: 14px 16px 20px;
+    box-sizing: border-box;
+    background: var(--surface, #fff);
+    color: var(--text, #0f172a);
+    border-left: 1px solid var(--border, #e2e8f0);
+    box-shadow: -12px 0 32px rgb(15 23 42 / 0.16);
+    animation: fc-in 0.16s ease-out;
+}
+.flight-card[hidden] { display: none; }
+@keyframes fc-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+.fc-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 10px; }
+.fc-title { font-size: 1.15rem; font-weight: 800; color: var(--primary, #012a4a); }
+.fc-dir { font-size: 0.85rem; font-weight: 600; color: var(--text-muted, #64748b); }
+.fc-sub { font-size: 0.8rem; color: var(--text-muted, #64748b); margin-top: 2px; }
+.fc-nav { display: flex; gap: 4px; flex-shrink: 0; }
+.fc-nav-btn, .fc-close {
+    border: 1px solid var(--border, #e2e8f0);
+    background: var(--surface, #fff);
+    color: inherit;
+    border-radius: 8px;
+    padding: 4px 8px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+.fc-nav-btn:disabled { opacity: 0.35; cursor: default; }
+.fc-issues { margin-bottom: 8px; padding: 6px 8px; border-radius: 8px; background: #fef2f2; color: #991b1b; font-size: 0.78rem; }
+.fc-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-bottom: 8px; }
+.fc-tile { padding: 7px 8px; border-radius: 10px; background: var(--muted-bg, #f1f5f9); }
+.fc-tile-label { font-size: 0.66rem; color: var(--text-muted, #64748b); text-transform: uppercase; letter-spacing: 0.03em; }
+.fc-tile-value { font-size: 1.05rem; font-weight: 800; }
+.fc-tile-sub { font-size: 0.7rem; color: var(--text-muted, #64748b); }
+.fc-neg { color: #b91c1c; }
+.fc-pos { color: #15803d; }
+.fc-verdict { font-size: 0.8rem; font-weight: 600; margin: 4px 0; }
+.fc-chart-wrap { position: relative; height: 220px; }
+.fc-chart-note { font-size: 0.68rem; color: var(--text-muted, #64748b); margin: 4px 0 6px; }
+.fc-comment { font-size: 0.8rem; padding: 8px; border-radius: 8px; background: #fffbeb; margin: 8px 0; }
+.fc-links { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 0.78rem; color: var(--text-muted, #64748b); margin-top: 10px; }
+.fc-empty { color: var(--text-muted, #64748b); }
+.flight-card-toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+    border-radius: 8px;
+    border: 1px solid rgb(255 255 255 / 0.25);
+    color: rgb(255 255 255 / 0.45);
+    cursor: pointer;
+    user-select: none;
+}
+.flight-card-toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.flight-card-toggle:has(input:checked) { color: #fff; background: rgb(255 255 255 / 0.14); border-color: rgb(255 255 255 / 0.45); }
+.flight-card-toggle:focus-within { outline: 2px solid #93c5fd; }
+.flight-card-toggle-icon { font-size: 0.95rem; line-height: 1; }
+.flight-card-toggle[hidden] { display: none; }
+@media (max-width: 560px) {
+    .flight-card { width: 100vw; padding: 12px; }
+    .fc-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
