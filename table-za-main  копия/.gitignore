@@ -5,3 +5,5 @@ shared/activity.json
 *.crswap
 shared/*.json
 shared/*.crswap
+shared/_history/
+shared/history/

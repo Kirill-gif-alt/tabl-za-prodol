@@ -13,6 +13,22 @@ window.SharedStorage = (function () {
         'creative-layouts.json', 'subsidy-fares.json'
     ]);
 
+    // Резервные копии перед перезаписью — та же политика, что в scripts/local-server.py.
+    // every — не чаще раза в столько секунд, keep — сколько последних копий хранить.
+    const HISTORY_DIR = '_history';
+    const HISTORY_POLICY = {
+        'snapshot.json': { every: 6 * 3600, keep: 4 },
+        'profiles.json': { every: 600, keep: 30 },
+        'sales-management.json': { every: 3600, keep: 24 },
+        'subsidy-overrides.json': { every: 600, keep: 30 },
+        'subsidy-fares.json': { every: 600, keep: 30 },
+        'pkz-nav.json': { every: 600, keep: 30 },
+        'flight-comments.json': { every: 3600, keep: 24 },
+        'creative-layouts.json': { every: 3600, keep: 20 }
+    };
+    const lastBackupAt = {};
+    let serverHistory = false;
+
     let rootHandle = null;
     let linkStatus = 'unknown'; // unknown | linked | server | fetch | none
     // Запись через локальный сервер (Start-Krasavia.cmd): не зависит от разрешения браузера на папку,
@@ -25,18 +41,24 @@ window.SharedStorage = (function () {
         if (typeof location === 'undefined' || location.protocol !== 'http:') return serverWrite;
         try {
             const res = await fetch('./__krasavia/caps', { cache: 'no-store' });
-            if (res.ok) serverWrite = !!(await res.json()).sharedWrite;
+            if (res.ok) {
+                const caps = await res.json();
+                serverWrite = !!caps.sharedWrite;
+                serverHistory = !!caps.history;
+            }
         } catch { serverWrite = false; }
         if (serverWrite && !rootHandle) linkStatus = 'server';
         return serverWrite;
     }
 
-    async function writeViaServer(filename, data) {
+    async function writeViaServer(filename, data, opts) {
         if (!(await detectServerWrite())) return false;
         try {
+            const headers = { 'Content-Type': 'application/json' };
+            if (opts && opts.forceBackup) headers['X-Krasavia-Backup'] = 'force';
             const res = await fetch(`./${SHARED_DIR}/${filename}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify(data)
             });
             return res.ok;
@@ -130,6 +152,16 @@ window.SharedStorage = (function () {
         }
     }
 
+    // Исходный текст прочитанного JSON — для снимка: его копию в браузер дешевле хранить строкой.
+    const rawTextOf = new WeakMap();
+
+    function parseJsonText(text) {
+        if (!text || !text.trim()) return null;
+        const data = JSON.parse(text);
+        if (data && typeof data === 'object' && text.length > 100000) rawTextOf.set(data, text);
+        return data;
+    }
+
     function isAllowedSharedFile(filename) {
         return ALLOWED_FILES.has(String(filename || ''));
     }
@@ -141,7 +173,7 @@ window.SharedStorage = (function () {
         try {
             const res = await fetch(`./${SHARED_DIR}/${filename}`, { cache: 'no-store' });
             if (!res.ok) return null;
-            return await res.json();
+            return parseJsonText(await res.text());
         } catch {
             return null;
         }
@@ -159,9 +191,7 @@ window.SharedStorage = (function () {
             const sharedDir = await getSharedDirFromHandle(handle);
             const fileHandle = await sharedDir.getFileHandle(filename);
             const file = await fileHandle.getFile();
-            const text = await file.text();
-            if (!text.trim()) return null;
-            return JSON.parse(text);
+            return parseJsonText(await file.text());
         } catch (e) {
             if (e?.name !== 'NotFoundError') console.warn('readViaHandle', filename, e);
             return null;
@@ -190,14 +220,144 @@ window.SharedStorage = (function () {
         return result;
     }
 
-    async function writeViaHandle(filename, data) {
+    function historyStamp(ms) {
+        const d = new Date(ms);
+        const p = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
+    }
+
+    // Версии файла в shared/_history/<имя>/ — от новых к старым.
+    async function listHistoryDir(histDir, base, withTimes) {
+        const items = [];
+        for await (const [name, entry] of histDir.entries()) {
+            if (entry.kind !== 'file' || !name.startsWith(base + '__') || !name.endsWith('.json')) continue;
+            const item = { id: name, entry };
+            if (withTimes) {
+                try {
+                    const f = await entry.getFile();
+                    item.size = f.size;
+                    item.lastModified = f.lastModified;
+                } catch { /* пропускаем */ }
+            }
+            items.push(item);
+        }
+        return items.sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+    }
+
+    // Копия текущей версии перед перезаписью (запись без сервера). Ошибка копии запись не останавливает.
+    async function backupViaHandle(sharedDir, filename) {
+        const pol = HISTORY_POLICY[filename];
+        if (!pol) return;
+        const now = Date.now();
+        if (lastBackupAt[filename] && now - lastBackupAt[filename] < pol.every * 1000) return;
+        try {
+            let current;
+            try {
+                current = await (await sharedDir.getFileHandle(filename)).getFile();
+            } catch {
+                return; // файла ещё нет — копировать нечего
+            }
+            const base = filename.slice(0, -5);
+            const root = await sharedDir.getDirectoryHandle(HISTORY_DIR, { create: true });
+            const histDir = await root.getDirectoryHandle(base, { create: true });
+            const items = await listHistoryDir(histDir, base, true);
+            const newest = items.reduce((m, it) => Math.max(m, it.lastModified || 0), 0);
+            if (newest && now - newest < pol.every * 1000) {
+                lastBackupAt[filename] = newest;
+                return;
+            }
+            const name = `${base}__${historyStamp(current.lastModified || now)}.json`;
+            if (!items.some(it => it.id === name)) {
+                const fh = await histDir.getFileHandle(name, { create: true });
+                const w = await fh.createWritable();
+                await w.write(current);
+                await w.close();
+                items.unshift({ id: name });
+                items.sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+            }
+            lastBackupAt[filename] = now;
+            for (const old of items.slice(pol.keep)) {
+                try { await histDir.removeEntry(old.id); } catch { /* ignore */ }
+            }
+        } catch (e) {
+            console.warn('backupViaHandle', filename, e);
+        }
+    }
+
+    function historyFileNameOk(filename, id) {
+        if (!HISTORY_POLICY[filename]) return false;
+        const base = filename.slice(0, -5);
+        return new RegExp('^' + base.replace(/[-.]/g, '\\$&') + '__\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}\\.json$').test(String(id || ''));
+    }
+
+    // Список резервных копий: { 'profiles.json': [{ id, size }], ... }.
+    async function listHistory() {
+        if (await detectServerWrite() && serverHistory) {
+            try {
+                const res = await fetch('./__krasavia/history', { cache: 'no-store' });
+                if (res.ok) return (await res.json()).files || {};
+            } catch { /* попробуем через папку */ }
+        }
+        const handle = rootHandle || await restoreRootHandle();
+        if (!handle) return null;
+        const out = {};
+        try {
+            const sharedDir = await getSharedDirFromHandle(handle);
+            const root = await sharedDir.getDirectoryHandle(HISTORY_DIR, { create: true });
+            for (const filename of Object.keys(HISTORY_POLICY)) {
+                const base = filename.slice(0, -5);
+                let dir = null;
+                try { dir = await root.getDirectoryHandle(base); } catch { /* нет копий */ }
+                out[filename] = dir ? (await listHistoryDir(dir, base, true)).map(it => ({ id: it.id, size: it.size || 0 })) : [];
+            }
+        } catch (e) {
+            console.warn('listHistory', e);
+            return null;
+        }
+        return out;
+    }
+
+    async function readHistory(filename, id) {
+        if (!historyFileNameOk(filename, id)) return null;
+        const base = filename.slice(0, -5);
+        if (await detectServerWrite() && serverHistory) {
+            try {
+                const res = await fetch(`./${SHARED_DIR}/${HISTORY_DIR}/${base}/${id}`, { cache: 'no-store' });
+                if (res.ok) return JSON.parse(await res.text());
+            } catch { /* попробуем через папку */ }
+        }
+        const handle = rootHandle || await restoreRootHandle();
+        if (!handle) return null;
+        try {
+            const sharedDir = await getSharedDirFromHandle(handle);
+            const dir = await (await sharedDir.getDirectoryHandle(HISTORY_DIR)).getDirectoryHandle(base);
+            const text = await (await (await dir.getFileHandle(id)).getFile()).text();
+            return JSON.parse(text);
+        } catch (e) {
+            console.warn('readHistory', e);
+            return null;
+        }
+    }
+
+    // Восстановить версию: текущая версия перед этим тоже уходит в копии.
+    async function restoreHistory(filename, id) {
+        const data = await readHistory(filename, id);
+        if (!data || typeof data !== 'object') return { ok: false, error: 'Не удалось прочитать копию' };
+        lastBackupAt[filename] = 0;
+        const ok = await writeViaHandle(filename, data, { forceBackup: true });
+        return ok ? { ok: true, data } : { ok: false, error: 'Не удалось записать файл — подключите общую папку' };
+    }
+
+    async function writeViaHandle(filename, data, opts) {
         if (!isAllowedSharedFile(filename)) return false;
         // Сначала сервер — он всегда может записать; папка браузера — запасной путь.
-        if (await writeViaServer(filename, data)) return true;
+        if (await writeViaServer(filename, data, opts)) return true;
         const handle = rootHandle || await restoreRootHandle();
         if (!handle) return false;
         try {
             const sharedDir = await getSharedDirFromHandle(handle);
+            if (opts && opts.forceBackup) lastBackupAt[filename] = 0;
+            await backupViaHandle(sharedDir, filename);
             const fileHandle = await sharedDir.getFileHandle(filename, { create: true });
             const writable = await fileHandle.createWritable();
             await writable.write(JSON.stringify(data));
@@ -272,8 +432,8 @@ window.SharedStorage = (function () {
         };
     }
 
-    async function loadSnapshot() {
-        const wrapper = await readSharedJson(SNAPSHOT_FILE, 'savedAt');
+    // Общий файл снимка → объект снимка, как его ждёт SessionStore.applySnapshot.
+    function snapshotFromWrapper(wrapper) {
         if (!wrapper?.data || !wrapper.savedAt) return null;
         const snap = {
             version: wrapper.version || 1,
@@ -282,6 +442,15 @@ window.SharedStorage = (function () {
             lastSalesUpdate: wrapper.data.lastSalesUpdate || null
         };
         if (typeof Security !== 'undefined' && !Security.validateSnapshotPayload(snap)) return null;
+        return snap;
+    }
+
+    async function loadSnapshot() {
+        const wrapper = await readSharedJson(SNAPSHOT_FILE, 'savedAt');
+        const snap = snapshotFromWrapper(wrapper);
+        if (!snap) return null;
+        const text = rawTextOf.get(wrapper);
+        if (text) Object.defineProperty(snap, 'sharedText', { value: text, enumerable: false });
         return snap;
     }
 
@@ -415,6 +584,7 @@ window.SharedStorage = (function () {
         loadProfiles,
         saveProfiles,
         loadSnapshot,
+        snapshotFromWrapper,
         saveSnapshot,
         loadActivity,
         saveActivity,
@@ -426,6 +596,10 @@ window.SharedStorage = (function () {
         needsLinkPrompt,
         restoreRootHandle,
         readJsonFile,
-        writeJsonFile
+        writeJsonFile,
+        listHistory,
+        readHistory,
+        restoreHistory,
+        historyFiles: () => Object.keys(HISTORY_POLICY)
     };
 })();

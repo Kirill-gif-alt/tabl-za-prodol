@@ -11,6 +11,8 @@ window.ActivityLog = (function () {
         data_load: 'Загрузка данных',
         data_restore: 'Восстановление данных',
         data_share: 'Публикация данных',
+        data_share_blocked: 'Публикация остановлена (подозрительные данные)',
+        history_restore: 'Восстановление из резервной копии',
         export: 'Экспорт',
         fare_refs: 'Справочник тарифов',
         password_self: 'Смена своего пароля',

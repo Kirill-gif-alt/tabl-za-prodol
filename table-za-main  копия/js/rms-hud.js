@@ -43,10 +43,24 @@ var RmsHud = (function () {
             && ProfileAuth.screenWidgetsOn() === true;
     }
 
+    var dockTopCache = 0;
+    var dockTopPending = false;
+
+    // Высота шапки: читаем размеры только в кадре отрисовки, а не посреди построения страницы —
+    // иначе браузер пересчитывает раскладку всей страницы (на слабом ПК это секунды при входе).
     function dockTop() {
-        var nav = document.querySelector('.top-nav');
-        if (!nav) return 148;
-        return Math.max(72, Math.round(nav.getBoundingClientRect().bottom + 8));
+        if (!dockTopPending) {
+            dockTopPending = true;
+            window.requestAnimationFrame(function () {
+                dockTopPending = false;
+                var nav = document.querySelector('.top-nav');
+                var next = nav ? Math.max(72, Math.round(nav.getBoundingClientRect().bottom + 8)) : 148;
+                if (next === dockTopCache) return;
+                dockTopCache = next;
+                if (root && (state.dock === 'left' || state.dock === 'right')) root.style.top = next + 'px';
+            });
+        }
+        return dockTopCache || 148;
     }
 
     function applyPlacement() {

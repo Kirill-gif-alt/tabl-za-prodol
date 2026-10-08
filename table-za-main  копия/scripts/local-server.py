@@ -19,9 +19,70 @@ SHARED_WRITABLE = {
     "subsidy-overrides.json", "pkz-nav.json", "sales-management.json", "rms-widget.json",
     "creative-layouts.json", "subsidy-fares.json",
 }
+# Резервные копии перед перезаписью: shared/_history/<имя>/<имя>__ГГГГ-ММ-ДД_ЧЧ-ММ-СС.json.
+# every — не чаще раза в столько секунд, keep — сколько последних копий хранить.
+# Такая же политика в js/shared-storage.js (HISTORY_POLICY) для записи без сервера.
+HISTORY_DIR = os.path.join(SHARED_DIR, "_history")
+HISTORY_POLICY = {
+    "snapshot.json": (6 * 3600, 4),
+    "profiles.json": (600, 30),
+    "sales-management.json": (3600, 24),
+    "subsidy-overrides.json": (600, 30),
+    "subsidy-fares.json": (600, 30),
+    "pkz-nav.json": (600, 30),
+    "flight-comments.json": (3600, 24),
+    "creative-layouts.json": (3600, 20),
+}
 MAX_BODY = 64 * 1024 * 1024
 WRITE_LOCK = threading.Lock()
 ALLOWED_HOSTS = {"127.0.0.1:%d" % PORT, "localhost:%d" % PORT}
+
+
+def _history_versions(name):
+    base = name[:-5]
+    folder = os.path.join(HISTORY_DIR, base)
+    if not os.path.isdir(folder):
+        return folder, []
+    items = []
+    for fn in os.listdir(folder):
+        if fn.startswith(base + "__") and fn.endswith(".json"):
+            full = os.path.join(folder, fn)
+            try:
+                st = os.stat(full)
+            except OSError:
+                continue
+            items.append((fn, st.st_size, st.st_mtime))
+    items.sort(key=lambda x: x[0], reverse=True)
+    return folder, items
+
+
+def backup_if_due(name, force=False):
+    """Копия текущей версии файла перед перезаписью. Ошибка копии не мешает записи."""
+    policy = HISTORY_POLICY.get(name)
+    target = os.path.join(SHARED_DIR, name)
+    if not policy or not os.path.isfile(target):
+        return
+    every, keep = policy
+    try:
+        import shutil
+        import time
+        folder, items = _history_versions(name)
+        if items and not force and time.time() - items[0][2] < every:
+            return
+        os.makedirs(folder, exist_ok=True)
+        stamp = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime(os.path.getmtime(target)))
+        dest = os.path.join(folder, "%s__%s.json" % (name[:-5], stamp))
+        if not os.path.exists(dest):
+            shutil.copy2(target, dest)
+            os.utime(dest)  # время копии — для интервала; время версии — в имени
+        _, items = _history_versions(name)
+        for fn, _, _ in items[keep:]:
+            try:
+                os.remove(os.path.join(folder, fn))
+            except OSError:
+                pass
+    except OSError as e:
+        sys.stderr.write("backup %s: %s\n" % (name, e))
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -62,7 +123,15 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path.split("?")[0] == "/__krasavia/caps":
             if not self._same_origin():
                 return self._send_json(403, {"error": "forbidden"})
-            return self._send_json(200, {"sharedWrite": os.path.isdir(SHARED_DIR) or os.access(ROOT, os.W_OK)})
+            return self._send_json(200, {"sharedWrite": os.path.isdir(SHARED_DIR) or os.access(ROOT, os.W_OK), "history": True})
+        if self.path.split("?")[0] == "/__krasavia/history":
+            if not self._same_origin():
+                return self._send_json(403, {"error": "forbidden"})
+            out = {}
+            for name in HISTORY_POLICY:
+                _, items = _history_versions(name)
+                out[name] = [{"id": fn, "size": size} for fn, size, _ in items]
+            return self._send_json(200, {"files": out})
         return super().do_GET()
 
     def do_PUT(self):
@@ -88,6 +157,7 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             with WRITE_LOCK:
                 os.makedirs(SHARED_DIR, exist_ok=True)
+                backup_if_due(name, self.headers.get("X-Krasavia-Backup") == "force")
                 # Сначала во временный файл, потом подмена: другие ПК не прочитают недописанный файл.
                 fd, tmp = tempfile.mkstemp(prefix="." + name + ".", suffix=".tmp", dir=SHARED_DIR)
                 try:

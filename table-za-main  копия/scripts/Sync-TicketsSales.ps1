@@ -145,9 +145,15 @@ $cleanData = $csvData.Values | Where-Object {
     return $false
 }
 
+# Write to a temp file first, then replace: the app never reads a half-written CSV.
+$tmpCsv = "$outputCsv.tmp"
 try {
-    $cleanData | Export-Csv $outputCsv -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
-} catch { exit 1 }
+    $cleanData | Export-Csv $tmpCsv -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
+    Move-Item -LiteralPath $tmpCsv -Destination $outputCsv -Force -ErrorAction Stop
+} catch {
+    try { Remove-Item -LiteralPath $tmpCsv -Force -ErrorAction SilentlyContinue } catch {}
+    exit 1
+}
 
 try { $Active | Out-File $activeLog -Encoding UTF8 -ErrorAction Stop } catch {}
 

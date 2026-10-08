@@ -315,8 +315,18 @@ function emptySalesBucket() {
  * Пересчёт salesMap / KPI из salesDetails по текущей дате.
  * Нужен после восстановления снимка: «сегодня/вчера» в snapshot устаревают на следующий день.
  */
+let salesAggregatesBuiltFor = null;
+
+// Агрегаты уже посчитаны по этим же продажам и на эту же дату — повторный пересчёт не нужен.
+function salesAggregatesFresh() {
+    return !!salesAggregatesBuiltFor
+        && salesAggregatesBuiltFor.details === salesDetails
+        && salesAggregatesBuiltFor.today === getTodayDate();
+}
+
 function rebuildSalesAggregatesFromDetails() {
     const details = salesDetails || {};
+    salesAggregatesBuiltFor = { details: salesDetails, today: getTodayDate() };
     if (!Object.keys(details).length) {
         // Нет детализации — salesMap из снимка оставляем как есть
         if (typeof invalidateMetricsCache === 'function') invalidateMetricsCache();
@@ -675,6 +685,34 @@ function initKeyboardShortcuts() {
 }
 
 
+// Общие справочники и отметки читаются параллельно: друг от друга они не зависят.
+async function loadSharedSideData() {
+    const jobs = [];
+    const run = (name, fn) => jobs.push(Promise.resolve().then(fn).catch(e => console.warn(name, e)));
+    if (typeof FlightComments !== 'undefined') run('FlightComments.load', () => FlightComments.load());
+    if (typeof SalesManagement !== 'undefined') run('SalesManagement.load', () => SalesManagement.load());
+    if (typeof SharedOverrides !== 'undefined') run('SharedOverrides.load', () => SharedOverrides.load());
+    if (typeof FareRefs !== 'undefined') run('FareRefs.load', () => FareRefs.load());
+    await Promise.all(jobs);
+}
+
+// Общий запуск после входа — и при восстановленной сессии, и после ввода пароля.
+// Стартовая вкладка выбирается заранее, чтобы не рисовать сначала одну вкладку, а сразу за ней другую.
+async function startAppAfterLogin() {
+    await loadSharedSideData();
+    const startTab = typeof ProfileAuth !== 'undefined' && ProfileAuth.canAccessTab('home') ? 'home' : null;
+    if (typeof SessionStore !== 'undefined') {
+        await SessionStore.initOnStartup({ startTab });
+    } else {
+        switchMainTab(startTab || currentTab || 'main');
+    }
+    if (typeof ProfileAuth !== 'undefined') ProfileAuth.applyPermissions();
+    if (typeof SalesSync !== 'undefined') {
+        await SalesSync.initAfterLogin();
+    }
+    if (typeof SalesArchive !== 'undefined') SalesArchive.scheduleAfterStart();
+}
+
 window.onload=()=>{
     setTimeout(async ()=>{
         applyChartRuLocale();
@@ -692,31 +730,6 @@ window.onload=()=>{
         }
 
         if (!loggedIn) return;
-
-        if (typeof FlightComments !== 'undefined') {
-            await FlightComments.load();
-        }
-        if (typeof SalesManagement !== 'undefined') {
-            await SalesManagement.load();
-        }
-        if (typeof SharedOverrides !== 'undefined') {
-            await SharedOverrides.load();
-        }
-        if (typeof FareRefs !== 'undefined') {
-            await FareRefs.load();
-        }
-
-        if (typeof SessionStore !== 'undefined') {
-            await SessionStore.initOnStartup();
-        } else {
-            switchMainTab(currentTab || 'main');
-        }
-        if (typeof ProfileAuth !== 'undefined') ProfileAuth.applyPermissions();
-        if (typeof ProfileAuth !== 'undefined' && ProfileAuth.canAccessTab('home')) {
-            switchMainTab('home');
-        }
-        if (typeof SalesSync !== 'undefined') {
-            await SalesSync.initAfterLogin();
-        }
+        await startAppAfterLogin();
     }, 300);
 };

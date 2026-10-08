@@ -714,6 +714,11 @@ window.ProfileAuth = (function () {
             e.preventDefault();
             const profileId = document.getElementById('login-profile-select')?.value;
             const password = document.getElementById('login-password')?.value || '';
+            // Доступ к общей папке Chrome возвращает только по клику: просим сразу, пока клик «свежий»,
+            // а не после проверки пароля. Иначе после перезапуска браузера папка выглядит отключённой.
+            const folderJob = typeof SharedStorage !== 'undefined'
+                ? SharedStorage.restoreRootHandle().catch(() => null)
+                : Promise.resolve(null);
             const err = document.getElementById('login-error');
             const btn = document.getElementById('login-submit-btn');
             if (btn) btn.disabled = true;
@@ -727,7 +732,7 @@ window.ProfileAuth = (function () {
             document.querySelector('.main-layout')?.classList.remove('app-locked');
             applyPermissions();
             if (typeof SharedStorage !== 'undefined') {
-                await SharedStorage.restoreRootHandle();
+                await folderJob;
                 if (!SharedStorage.isLinked() && SharedStorage.needsLinkPrompt()) {
                     await SharedStorage.ensureWritableLink();
                 }
@@ -741,6 +746,10 @@ window.ProfileAuth = (function () {
         if (typeof ActivityLog !== 'undefined') ActivityLog.startBackgroundSync();
         if (typeof loadPinnedFlights === 'function') loadPinnedFlights();
         if (typeof loadFlightOpenMode === 'function') loadFlightOpenMode();
+        if (typeof startAppAfterLogin === 'function') {
+            await startAppAfterLogin();
+            return;
+        }
         if (typeof SessionStore !== 'undefined') {
             await SessionStore.initOnStartup();
         } else if (typeof switchMainTab === 'function') {
@@ -1056,6 +1065,9 @@ window.ProfileAuth = (function () {
         document.getElementById('profile-admin-close')?.addEventListener('click', closeAdminPanel);
         document.getElementById('profile-admin-save')?.addEventListener('click', saveAdminPanel);
         document.getElementById('profile-link-folder-btn')?.addEventListener('click', () => handleLinkFolder(true));
+        document.getElementById('profile-history-btn')?.addEventListener('click', () => {
+            if (typeof SharedHistory !== 'undefined') SharedHistory.open();
+        });
         document.getElementById('login-link-folder')?.addEventListener('click', () => handleLinkFolder(false));
         document.getElementById('profile-admin-modal')?.addEventListener('click', (e) => {
             if (e.target.classList.contains('profile-admin-backdrop')) closeAdminPanel();

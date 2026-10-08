@@ -71,6 +71,7 @@ window.SalesSync = (function () {
 
     async function initAfterLogin() {
         await restoreDataFolderHandle();
+        if (typeof salesAggregatesFresh === 'function' && salesAggregatesFresh()) return;
         if (typeof rebuildSalesAggregatesFromDetails === 'function') {
             rebuildSalesAggregatesFromDetails();
         }

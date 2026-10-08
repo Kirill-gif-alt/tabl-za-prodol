@@ -501,6 +501,12 @@ function getTimelineGlobalAcOrder(allTypes, cfg) {
     return mergeTimelineAcOrder(cfg?.globalOrder, allTypes);
 }
 
+function timelineIsWeekend(date) {
+    const d = parseLocalDate(date);
+    const wd = d ? d.getDay() : -1;
+    return wd === 0 || wd === 6;
+}
+
 function renderTimelineChipHtml(flight, date, meta, opts = {}) {
     const chipCls = getTimelineChipClass(meta);
     const selected = typeof currentFlight !== 'undefined' && currentFlight
@@ -512,7 +518,14 @@ function renderTimelineChipHtml(flight, date, meta, opts = {}) {
     const airports = timelineAirportPair(meta.route);
     const times = [meta.dep, meta.arr].filter(Boolean).join('–');
     const plus = opts.plus1 ? ' +1' : '';
-    const title = [flight, airports || meta.direction, times ? times + plus : 'без времени', meta.ac].filter(Boolean).join(' · ');
+    const loadBits = [];
+    if (meta.flew) loadBits.push('улетел');
+    else if (meta.closed) loadBits.push('закрыт');
+    if (meta.pct !== null && meta.pct !== undefined) loadBits.push(`загрузка ${meta.pct}%` + (meta.sold != null ? ` (${meta.sold})` : ''));
+    if (meta.evR !== null && meta.evR !== undefined && !meta.flew) loadBits.push(`ожидаемая ${meta.evR}`);
+    if (meta.delta !== null && meta.delta !== undefined && !meta.flew) loadBits.push(`Δ ${meta.delta > 0 ? '+' : ''}${meta.delta}`);
+    const title = [flight, airports || meta.direction, times ? times + plus : 'без времени', meta.ac].filter(Boolean).join(' · ')
+        + (loadBits.length ? '\n' + loadBits.join(' · ') : '');
     const ganttCls = opts.gantt ? ' timeline-chip-gantt' : '';
     const selCls = selected ? ' timeline-chip-selected' : '';
     const style = opts.style ? ` style="${opts.style}"` : '';
@@ -558,6 +571,9 @@ function buildTimelineHtml() {
                 const arrMin = arrStr && typeof timeToMinutes === 'function' ? timeToMinutes(arrStr) : 9999;
                 metaByDateFlight[dk] = {
                     pct: m ? m.pct : null,
+                    sold: m ? m.free : null,
+                    evR: m ? m.evR : null,
+                    delta: m ? m.delta : null,
                     closed: m ? m.closed : false,
                     flew: m ? m.flew : false,
                     direction: getFlightDirection(base),
@@ -677,7 +693,7 @@ function buildTimelineHtml() {
     );
     const gridCols = `92px ${colWidths.join(' ')}`;
     const gridRows = `${headerH}px ${globalAcOrder.map(ac => `${rowHeights[ac]}px`).join(' ')}`;
-    const gridParts = [`<div class="timeline-corner-cell" style="grid-column:1;grid-row:1;height:${headerH}px">ВС</div>`];
+    const gridParts = [`<div class="timeline-corner-cell" style="grid-column:1;grid-row:1;height:${headerH}px" title="Тип воздушного судна">Тип ВС</div>`];
 
     orderedDates.forEach((date, colIdx) => {
         const col = colIdx + 2;
@@ -694,11 +710,10 @@ function buildTimelineHtml() {
         ].filter(Boolean).join(' ');
         const dow = getDayOfWeek(date);
         const hint = expanded ? 'Двойной клик — свернуть' : 'Двойной клик — сетка 2 ч';
-        const dateLabel = expanded ? String(date).slice(0, 5) : String(date).slice(0, 5);
-        gridParts.push(`<div class="${headCls}" style="grid-column:${col};grid-row:1;height:${headerH}px" data-date="${escAttr(date)}" title="${escAttr(date + ' · ' + hint)}">
-            <span class="timeline-date">${escHtml(dateLabel)}</span>
-            ${expanded ? '' : `<span class="timeline-dow">${escHtml(dow)}</span>`}
-            ${flights.length ? `<span class="timeline-count">${flights.length}</span>` : ''}
+        const dateLabel = String(date).slice(0, 5);
+        // Одна строка «чт 08.10» и число рейсов: в две-три строки дата обрезалась по высоте.
+        gridParts.push(`<div class="${headCls}${timelineIsWeekend(date) ? ' timeline-date-head-weekend' : ''}" style="grid-column:${col};grid-row:1;height:${headerH}px" data-date="${escAttr(date)}" title="${escAttr(date + ' · ' + dow + (isToday ? ' · сегодня' : '') + ' · рейсов: ' + flights.length + ' · ' + hint)}">
+            <span class="timeline-date-line"><span class="timeline-dow">${escHtml(dow)}</span><span class="timeline-date">${escHtml(dateLabel)}</span>${flights.length ? `<span class="timeline-count">${flights.length}</span>` : ''}</span>
             ${expanded ? renderTimelineHourScale() : ''}
         </div>`);
     });
@@ -757,6 +772,12 @@ function buildTimelineHtml() {
                         }).join('')}</div>`
                         : '';
                     inner = untimedHtml + ganttHtml || inner;
+                    if (date === getTodayDate() && ganttHtml) {
+                        // Линия «сейчас» по оси Красноярска (UTC+7), как и блоки рейсов.
+                        const now = new Date();
+                        const hubMin = ((now.getUTCHours() + TIMELINE_HUB_UTC) % 24) * 60 + now.getUTCMinutes();
+                        inner += `<span class="timeline-now-line" style="left:${(hubMin / TIMELINE_DAY_MIN) * 100}%" title="Сейчас"></span>`;
+                    }
                 } else {
                     inner = items.map(({ flight, meta }) => renderTimelineChipHtml(flight, date, meta)).join('');
                 }
@@ -765,6 +786,7 @@ function buildTimelineHtml() {
                 'timeline-cell',
                 `timeline-ac-${slug}`,
                 isPast ? 'timeline-cell-past' : '',
+                timelineIsWeekend(date) ? 'timeline-cell-weekend' : '',
                 expanded ? 'timeline-cell-expanded' : ''
             ].filter(Boolean).join(' ');
             gridParts.push(`<div class="${cellCls}" data-ac="${escAttr(ac)}" data-date="${escAttr(date)}" style="grid-column:${col};grid-row:${row};height:${h}px">${inner}</div>`);
