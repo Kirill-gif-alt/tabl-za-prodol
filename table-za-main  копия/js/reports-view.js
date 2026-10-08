@@ -494,6 +494,7 @@ window.ReportsView = (function () {
         });
         return [...set]
             .filter(c => /^KV-\d+$/.test(c) && typeof getFlightRouteType === 'function' && getFlightRouteType(c) === 'interregional')
+            .filter(c => !neverSubsidized(c))
             .sort((a, b) => (parseInt(a.slice(3), 10) || 0) - (parseInt(b.slice(3), 10) || 0));
     }
 
@@ -501,10 +502,17 @@ window.ReportsView = (function () {
         return typeof getFlightDirection === 'function' ? getFlightDirection(code) : code;
     }
 
+    function neverSubsidized(code) {
+        return typeof FlightChecks !== 'undefined' && FlightChecks.isNeverSubsidized && FlightChecks.isNeverSubsidized(code);
+    }
+
     function refsHtml() {
         if (typeof FareRefs === 'undefined') return '';
         const can = FareRefs.canEdit();
-        const entries = FareRefs.list();
+        // Рейсы без субсидии (KV-247/248) в справочнике не показываются, даже если записи с ними есть в файле.
+        const entries = FareRefs.list()
+            .map(e => ({ ...e, flights: e.flights.filter(f => !neverSubsidized(f)) }))
+            .filter(e => e.flights.length);
         const missing = hasData() && typeof FlightChecks !== 'undefined' ? FlightChecks.missingRefs() : [];
         const rows = entries.map(e => {
             const excl = e.mode === 'exclude';
@@ -562,7 +570,7 @@ window.ReportsView = (function () {
             <section class="rp-card rp-refs" id="rp-refs">
                 <div class="rp-card-head"><h3 class="rp-card-title">Справочник субсидированных тарифов</h3></div>
                 <p class="rp-card-text">Предельный тариф на субсидированном рейсе: билет дороже предела — ошибка, дешевле — можно, в том числе детские. Детский предел необязателен: если он не задан, детский билет сравнивается со взрослым пределом. Сравнивается оплаченная сумма билета.</p>
-                <p class="rp-card-text">Запись «Не считать субсидированным» убирает рейс из перечня субсидированных: он не проверяется и не попадает в ошибки. По умолчанию так исключены KV-247/248 Томск — Стрежевой — запись можно изменить или удалить.</p>
+                <p class="rp-card-text">Запись «Не считать субсидированным» убирает рейс из перечня субсидированных: он не проверяется и не попадает в ошибки.</p>
                 ${missingHtml}
                 ${entries.length ? `
                 <div class="rp-scroll">
