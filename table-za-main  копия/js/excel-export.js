@@ -1033,6 +1033,12 @@ async function exportTableToExcel(tableElement, filename = 'КРАСАВИА_э�
                 const num = Number(text.replace(',', '.'));
                 if (isFinite(num)) return num;
             }
+            // «1 234» и «12 345 ₽» — тоже числа (иначе СУММ в Excel их пропускает).
+            const m = /^(-?\d{1,3}(?:[\s\u00a0\u202f]\d{3})+(?:[.,]\d+)?|-?\d+(?:[.,]\d+)?)(?:[\s\u00a0\u202f]*₽)?$/.exec(text);
+            if (m && /\d[\s\u00a0\u202f]\d|₽/.test(text)) {
+                const num = Number(m[1].replace(/[\s\u00a0\u202f]/g, '').replace(',', '.'));
+                if (isFinite(num) && Math.abs(num) < 1e13) return num;
+            }
             return text;
         }));
         const aoa = [[`Дата выгрузки: ${stamp}`]].concat(body);

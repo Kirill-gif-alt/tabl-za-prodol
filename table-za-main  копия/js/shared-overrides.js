@@ -44,6 +44,18 @@ window.SharedOverrides = (function () {
         };
     }
 
+    function tombstone() {
+        return {
+            v: null,
+            at: new Date().toISOString(),
+            by: (typeof ProfileAuth !== 'undefined' ? ProfileAuth.getCurrentProfile()?.name : '') || ''
+        };
+    }
+
+    function present(entry) {
+        return entry != null && parseNum(entry) !== null;
+    }
+
     function valueOf(entry) {
         if (entry == null) return null;
         if (typeof entry === 'number') return entry;
@@ -104,6 +116,15 @@ window.SharedOverrides = (function () {
     }
 
     async function persist(filename, localKey, values) {
+        // Перед записью сливаем с общим файлом: правки других ПК, сделанные после нашей загрузки, не теряются.
+        let read = { ok: true, data: null };
+        if (typeof SharedStorage !== 'undefined' && SharedStorage.readJsonFileStrict) {
+            read = await SharedStorage.readJsonFileStrict(filename).catch(() => ({ ok: false }));
+            if (read.ok && read.data && read.data.values) {
+                const merged = mergeKeyMaps(read.data.values, values);
+                Object.keys(merged).forEach(k => { values[k] = merged[k]; });
+            }
+        }
         const payload = {
             version: 1,
             updatedAt: new Date().toISOString(),
@@ -112,7 +133,7 @@ window.SharedOverrides = (function () {
         try {
             localStorage.setItem(localKey, JSON.stringify(payload));
         } catch { /* ignore */ }
-        if (typeof SharedStorage !== 'undefined' && SharedStorage.writeJsonFile) {
+        if (read.ok && typeof SharedStorage !== 'undefined' && SharedStorage.writeJsonFile) {
             await SharedStorage.writeJsonFile(filename, payload);
         }
         if (typeof SalesSync !== 'undefined') {
@@ -150,12 +171,12 @@ window.SharedOverrides = (function () {
 
     function hasSubsidy(flight, date) {
         const k = subKey(flight, date);
-        return !!(k && subsidy[k]);
+        return !!(k && present(subsidy[k]));
     }
 
     function getSubsidy(flight, date) {
         const k = subKey(flight, date);
-        if (!k || !subsidy[k]) return null;
+        if (!k || !present(subsidy[k])) return null;
         return valueOf(subsidy[k]);
     }
 
@@ -167,13 +188,9 @@ window.SharedOverrides = (function () {
         if (!canWrite('edit_subsidy')) return false;
         const k = subKey(flight, date);
         if (!k) return false;
-        if (value === '' || value === null || value === undefined) {
-            delete subsidy[k];
-        } else {
-            const rec = entryOf(value);
-            if (!rec) delete subsidy[k];
-            else subsidy[k] = rec;
-        }
+        // Очистка — запись «пусто» со временем: иначе старое значение вернётся из копии на другом ПК.
+        const rec = value === '' || value === null || value === undefined ? null : entryOf(value);
+        subsidy[k] = rec || tombstone();
         subsidyRev++;
         await persist(SUB_FILE, SUB_LOCAL, subsidy);
         return true;
@@ -181,7 +198,7 @@ window.SharedOverrides = (function () {
 
     function getPkzNav(date, flight) {
         const k = navKey(date, flight);
-        if (!k || !pkzNav[k]) return null;
+        if (!k || !present(pkzNav[k])) return null;
         return valueOf(pkzNav[k]);
     }
 
@@ -189,13 +206,9 @@ window.SharedOverrides = (function () {
         if (!canWrite('edit_pkz_nav')) return false;
         const k = navKey(date, flight);
         if (!k) return false;
-        if (value === '' || value === null || value === undefined) {
-            delete pkzNav[k];
-        } else {
-            const rec = entryOf(value);
-            if (!rec) delete pkzNav[k];
-            else pkzNav[k] = rec;
-        }
+        // Очистка — запись «пусто» со временем: иначе старое значение вернётся из копии на другом ПК.
+        const rec = value === '' || value === null || value === undefined ? null : entryOf(value);
+        pkzNav[k] = rec || tombstone();
         navRev++;
         await persist(NAV_FILE, NAV_LOCAL, pkzNav);
         return true;

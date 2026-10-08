@@ -182,7 +182,8 @@ window.SessionStore = (function () {
             Object.keys(expectedLoadData || {}).length,
             Object.keys(typeof baggageWeightsData !== 'undefined' ? baggageWeightsData : {}).length,
             typeof RouteCosts !== 'undefined' && RouteCosts.loaded ? 1 : 0,
-            lastSalesUpdate ? lastSalesUpdate.getTime() : 0
+            lastSalesUpdate ? lastSalesUpdate.getTime() : 0,
+            window.krasaviaIngestSeq || 0
         ].join('|');
     }
 

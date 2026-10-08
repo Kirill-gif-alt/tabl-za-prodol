@@ -298,6 +298,8 @@ window.ProfileAuth = (function () {
         return changed;
     }
 
+    let profilesFromShared = false;
+
     async function loadProfiles() {
         if (profilesCache) return profilesCache;
 
@@ -306,6 +308,7 @@ window.ProfileAuth = (function () {
             const shared = await SharedStorage.loadProfiles();
             if (shared?.length) {
                 profilesCache = shared;
+                profilesFromShared = true;
                 persistLocalProfilesCache();
                 await ensureAdminPasswordFix();
                 if (migrateSalesViewPermission()) await saveProfiles(true);
@@ -320,8 +323,10 @@ window.ProfileAuth = (function () {
                 if (Array.isArray(parsed) && parsed.length) {
                     const usable = parsed.some(p => p && p.hash && p.salt);
                     profilesCache = parsed;
+                    profilesFromShared = false;
                     if (usable) await ensureAdminPasswordFix();
-                    if (migrateSalesViewPermission()) await saveProfiles(true);
+                    // Локальная копия может быть без паролей и устаревшей — в общий файл её не пишем.
+                    if (migrateSalesViewPermission()) persistLocalProfilesCache();
                     return profilesCache;
                 }
             }
@@ -329,9 +334,23 @@ window.ProfileAuth = (function () {
             console.warn('loadProfiles', e);
         }
 
+        // Стандартные профили пишем в общую папку, только если файла профилей там точно нет.
+        // Ошибка чтения или битый файл — не повод затирать все пароли и права.
+        let read = { ok: false };
+        if (typeof SharedStorage !== 'undefined' && SharedStorage.readJsonFileStrict) {
+            read = await SharedStorage.readJsonFileStrict('profiles.json').catch(() => ({ ok: false }));
+            if (read.ok && read.data?.profiles?.length) {
+                profilesCache = read.data.profiles;
+                profilesFromShared = true;
+                persistLocalProfilesCache();
+                return profilesCache;
+            }
+        }
         profilesCache = await buildDefaultStore();
+        profilesFromShared = false;
         migrateSalesViewPermission();
-        await saveProfiles(true);
+        if (read.ok) await saveProfiles(true);
+        else persistLocalProfilesCache();
         try { localStorage.setItem(ADMIN_PWD_FIX_KEY, '1'); } catch (e) { /* ignore */ }
         return profilesCache;
     }
@@ -721,6 +740,12 @@ window.ProfileAuth = (function () {
             const err = document.getElementById('login-error');
             const btn = document.getElementById('login-submit-btn');
             if (btn) btn.disabled = true;
+            // Если профили взяты из локальной копии (папка была недоступна), а доступ вернулся —
+            // перечитываем общий файл: там актуальные пароли и права.
+            await folderJob;
+            if (!profilesFromShared && typeof SharedStorage !== 'undefined' && SharedStorage.isLinked()) {
+                profilesCache = null;
+            }
             const result = await login(profileId, password);
             if (btn) btn.disabled = false;
             if (!result.ok) {

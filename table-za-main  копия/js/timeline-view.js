@@ -390,7 +390,8 @@ function timelineBlockForMeta(meta) {
     if (ends?.to && arrMin != null && arrMin < TIMELINE_DAY_MIN) {
         arrMin = timelineToHubMin(arrMin, ends.to);
     }
-    const untimed = depMin == null || depMin >= TIMELINE_DAY_MIN || depMin < 0;
+    // Ранний вылет с востока (01:30 местного = 23:30 предыдущего дня по Красноярску) — к началу шкалы.
+    const untimed = depMin == null || depMin >= TIMELINE_DAY_MIN;
     if (untimed) return { untimed: true };
     if (depMin < 0) depMin = 0;
     let plus1 = false;

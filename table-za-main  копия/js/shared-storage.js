@@ -333,11 +333,11 @@ window.SharedStorage = (function () {
     }
 
     // Копия текущей версии перед перезаписью (запись без сервера). Ошибка копии запись не останавливает.
-    async function backupViaHandle(sharedDir, filename) {
+    async function backupViaHandle(sharedDir, filename, force) {
         const pol = HISTORY_POLICY[filename];
         if (!pol) return;
         const now = Date.now();
-        if (lastBackupAt[filename] && now - lastBackupAt[filename] < pol.every * 1000) return;
+        if (!force && lastBackupAt[filename] && now - lastBackupAt[filename] < pol.every * 1000) return;
         try {
             let current;
             try {
@@ -350,7 +350,7 @@ window.SharedStorage = (function () {
             const histDir = await root.getDirectoryHandle(base, { create: true });
             const items = await listHistoryDir(histDir, base, true);
             const newest = items.reduce((m, it) => Math.max(m, it.lastModified || 0), 0);
-            if (newest && now - newest < pol.every * 1000) {
+            if (!force && newest && now - newest < pol.every * 1000) {
                 lastBackupAt[filename] = newest;
                 return;
             }
@@ -445,7 +445,7 @@ window.SharedStorage = (function () {
         try {
             const sharedDir = await getSharedDirFromHandle(handle);
             if (opts && opts.forceBackup) lastBackupAt[filename] = 0;
-            await backupViaHandle(sharedDir, filename);
+            await backupViaHandle(sharedDir, filename, !!(opts && opts.forceBackup));
             const target = await resolveSharedTarget(sharedDir, filename, true);
             const fileHandle = await target.dir.getFileHandle(target.name, { create: true });
             const writable = await fileHandle.createWritable();
@@ -604,7 +604,10 @@ window.SharedStorage = (function () {
     async function saveActivity(events) {
         // Без подключённой папки записать нельзя — не качаем файл журнала зря.
         if (!(rootHandle || await detectServerWrite() || await restoreRootHandle())) return false;
-        const remote = await loadActivity();
+        // Не удалось прочитать общий журнал — не пишем, иначе затрём чужие события.
+        const read = await readJsonFileStrict(ACTIVITY_FILE);
+        if (!read.ok) return false;
+        const remote = Array.isArray(read.data?.events) ? read.data.events : [];
         const merged = mergeActivityEvents(remote, events, 2000);
         const payload = {
             version: 1,
