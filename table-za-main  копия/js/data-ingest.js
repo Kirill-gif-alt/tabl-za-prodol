@@ -314,6 +314,11 @@ async function loadFromDirectoryPicker() {
     if (typeof SalesSync !== 'undefined') await SalesSync.saveDataFolderHandle(dir);
     showLoading('Сканирование папки...');
     const sources = await scanDirectoryHandle(dir);
+    // Не та папка — не стираем текущие данные (сброс идёт до чтения файлов).
+    if (!sources.avail.length && !sources.closed.length && !sources.sales && !sources.exp && !sources.weights) {
+        showToast('В папке не найдены нужные файлы (загрузка таб, закрытие, продажи)', 'error');
+        return;
+    }
     await processDataFromSources(sources.avail, sources.closed, sources.sales, sources.exp, sources.weights, sources.children, sources.costs, sources.subsidyPeriods);
 }
 

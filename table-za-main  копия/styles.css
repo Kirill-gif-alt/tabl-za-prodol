@@ -3572,6 +3572,37 @@ table.pair-table button {
 .timeline-cell.timeline-ac-an24 { background: rgb(217 119 6 / 0.05); }
 .timeline-cell.timeline-ac-an26 { background: rgb(234 88 12 / 0.05); }
 .timeline-cell.timeline-ac-yak42 { background: rgb(13 148 136 / 0.05); }
+/* Графплан: заголовок дня в одну строку «чт 08.10 · 11», выходные, линия «сейчас» */
+.timeline-date-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 100%;
+    white-space: nowrap;
+}
+.timeline-date-line .timeline-count { margin-top: 0; }
+.timeline-date-head:not(.timeline-date-head-expanded) { padding: 4px 6px; }
+.timeline-date-head-expanded .timeline-date-line { margin-bottom: 2px; }
+.timeline-date-head-weekend:not(.timeline-date-head-today) { background: rgb(254 242 242 / 0.85); border-color: #fecaca; }
+.timeline-date-head-weekend .timeline-dow { color: #b91c1c; }
+.timeline-cell.timeline-cell-weekend { box-shadow: inset 0 0 0 999px rgb(239 68 68 / 0.035); }
+.timeline-cell { position: relative; }
+.timeline-now-line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin-left: -1px;
+    background: #ef4444;
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.6);
+    pointer-events: none;
+    z-index: 3;
+}
+/* Подпись типа ВС — сверху строки и прилипает при прокрутке, а не теряется в середине высокой строки */
+.timeline-side-ac { align-items: flex-start; }
+.timeline-side-ac .timeline-ac-name, .timeline-side-ac .timeline-ac-dot { position: sticky; top: 64px; }
+.timeline-side-ac .timeline-ac-dot { margin-top: 3px; }
+
 
 .timeline-order-modal {
     display: none;
@@ -6551,4 +6582,24 @@ span.rp-chip {
 .norm-muted {
     color: #94a3b8;
     font-weight: 400;
+}
+
+/* Резервные копии общих файлов */
+.shared-history-panel { max-width: 720px; }
+.shared-history-hint { font-size: 0.8rem; color: var(--text-muted); margin: 0 0 12px; line-height: 1.45; }
+.shared-history-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    border-top: 1px solid var(--border, #e2e8f0);
+}
+.shared-history-name { font-weight: 600; font-size: 0.85rem; }
+.shared-history-file { display: block; font-weight: 400; font-size: 0.7rem; color: var(--text-muted); }
+.shared-history-select { max-width: 230px; }
+.shared-history-empty { font-size: 0.78rem; color: var(--text-muted); grid-column: span 2; }
+@media (max-width: 560px) {
+    .shared-history-row { grid-template-columns: 1fr; }
+    .shared-history-select { max-width: none; }
 }

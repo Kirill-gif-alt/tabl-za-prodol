@@ -232,10 +232,61 @@ window.SessionStore = (function () {
         }
     }
 
+    // Шлюз качества: что было в последних общих данных этого ПК (снимок при входе или прошлая публикация).
+    let baselineStats = null;
+
+    function currentDataStats() {
+        let tickets = 0;
+        Object.values(salesDetails || {}).forEach(list => { if (Array.isArray(list)) tickets += list.length; });
+        const st = typeof dataLoadStatus !== 'undefined' && dataLoadStatus ? dataLoadStatus : {};
+        return {
+            flights: Object.keys(groupedData || {}).length,
+            rows: allData?.length || 0,
+            tickets,
+            sources: ['availability', 'sales', 'closed', 'expected', 'costs'].filter(k => st[k])
+        };
+    }
+
+    const SOURCE_NAMES = { availability: 'загрузка таб', sales: 'продажи', closed: 'закрытые рейсы', expected: 'ожидаемая загрузка', costs: 'расходы' };
+
+    // Что подозрительно в новых данных по сравнению с прошлыми: пропал источник или резко меньше строк.
+    function suspiciousChanges(prev, next) {
+        if (!prev) return [];
+        const out = [];
+        const drop = (label, a, b) => {
+            if (a >= 100 && b < a * 0.8) out.push(`${label}: ${a.toLocaleString('ru-RU')} → ${b.toLocaleString('ru-RU')} (−${Math.round((1 - b / a) * 100)}%)`);
+        };
+        drop('Рейсов', prev.flights, next.flights);
+        drop('Строк загрузки', prev.rows, next.rows);
+        drop('Билетов', prev.tickets, next.tickets);
+        prev.sources.forEach(k => {
+            if (next.sources.indexOf(k) === -1) out.push(`Нет файла: ${SOURCE_NAMES[k] || k}`);
+        });
+        return out;
+    }
+
+    function rememberBaseline() {
+        baselineStats = currentDataStats();
+    }
+
     async function publishSharedSnapshot(announce) {
         if (typeof ProfileAuth === 'undefined' || !ProfileAuth.hasPermission('share_data')) return false;
         if (typeof SharedStorage === 'undefined') return false;
+        const nextStats = currentDataStats();
+        const issues = suspiciousChanges(baselineStats, nextStats);
+        if (issues.length) {
+            // Неудачная загрузка (файл не дописан, не та папка) не должна уйти на все ПК без спроса.
+            const okToPublish = announce && typeof confirm === 'function'
+                && confirm('Новые данные заметно отличаются от прошлых:\n\n' + issues.join('\n')
+                    + '\n\nОпубликовать их для всех пользователей?\n«Отмена» — данные останутся только на этом ПК.');
+            if (!okToPublish) {
+                if (announce && typeof showToast === 'function') showToast('Данные не опубликованы — остались только на этом ПК', 'error');
+                if (typeof ActivityLog !== 'undefined') ActivityLog.log('data_share_blocked', issues.join('; ').slice(0, 300));
+                return false;
+            }
+        }
         const ok = await SharedStorage.saveSnapshot(announce);
+        if (ok) baselineStats = nextStats;
         if (ok && announce && typeof ActivityLog !== 'undefined') {
             const flightCount = Object.keys(groupedData || {}).length;
             ActivityLog.log('data_share', `Рейсов: ${flightCount}`);
@@ -302,6 +353,11 @@ window.SessionStore = (function () {
                 req.onsuccess = () => resolve(req.result || null);
                 req.onerror = () => resolve(null);
             });
+            if (snap && typeof snap.sharedText === 'string') {
+                // Копия общего снимка, сохранённая строкой (см. saveSharedTextCopy).
+                if (typeof SharedStorage === 'undefined' || !SharedStorage.snapshotFromWrapper) return null;
+                return SharedStorage.snapshotFromWrapper(JSON.parse(snap.sharedText));
+            }
             if (snap && typeof Security !== 'undefined' && !Security.validateSnapshotPayload(snap)) return null;
             return snap;
         } catch {
@@ -338,6 +394,7 @@ window.SessionStore = (function () {
         CACHED_TODAY = null;
         CACHED_YESTERDAY = null;
         processData();
+        rememberBaseline();
         // Пересчёт продаж «сегодня/вчера/7/14/30» по актуальной дате (не по дате снимка)
         if (typeof rebuildSalesAggregatesFromDetails === 'function') {
             rebuildSalesAggregatesFromDetails();
@@ -354,8 +411,34 @@ window.SessionStore = (function () {
         if (btn) btn.style.display = visible ? '' : 'none';
     }
 
-    function renderOpenViews() {
-        if (typeof switchMainTab === 'function') switchMainTab(currentTab || 'main');
+    function renderOpenViews(startTab) {
+        if (typeof switchMainTab === 'function') switchMainTab(startTab || currentTab || 'main');
+    }
+
+    // Копия общего снимка в браузер — исходной строкой: строка сохраняется за миллисекунды,
+    // а 8 МБ объектов браузер копирует секундами и подвисает.
+    async function saveSharedTextCopy(snap) {
+        const db = await openDb();
+        await new Promise((resolve, reject) => {
+            const tx = db.transaction(IDB_STORE, 'readwrite');
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+            tx.objectStore(IDB_STORE).put({ version: 2, savedAt: snap.savedAt, sharedText: snap.sharedText }, SNAPSHOT_KEY);
+        });
+        localStorage.setItem('krasavia_snapshot_at', String(snap.savedAt));
+        lastSavedSignature = getSnapshotSignature();
+        updateRestoreButtonVisibility(true);
+        return true;
+    }
+
+    // Копия общего снимка в браузер — не в момент входа, а когда браузер свободен.
+    function saveLocalCopyWhenIdle(snap) {
+        const run = () => {
+            const job = snap && snap.sharedText ? saveSharedTextCopy(snap) : saveLocalSnapshot(true);
+            job.catch(e => console.warn('saveLocalSnapshot', e));
+        };
+        if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 15000 });
+        else setTimeout(run, 4000);
     }
 
     async function restoreLastData(silent) {
@@ -380,14 +463,23 @@ window.SessionStore = (function () {
         return true;
     }
 
+    // Снимок «из будущего» (часы ПК публикатора ушли вперёд) не должен побеждать навсегда.
+    const FUTURE_SLACK_MS = 10 * 60 * 1000;
+    function fromFuture(snap) {
+        return !!(snap && snap.savedAt && snap.savedAt > Date.now() + FUTURE_SLACK_MS);
+    }
+
     async function pickNewestSnapshot(sharedSnap, localSnap) {
+        if (fromFuture(sharedSnap) && localSnap?.savedAt && !fromFuture(localSnap)) return localSnap;
+        if (fromFuture(localSnap) && sharedSnap?.savedAt && !fromFuture(sharedSnap)) return sharedSnap;
         if (sharedSnap?.savedAt && localSnap?.savedAt) {
             return sharedSnap.savedAt >= localSnap.savedAt ? sharedSnap : localSnap;
         }
         return sharedSnap?.savedAt ? sharedSnap : (localSnap || null);
     }
 
-    async function initOnStartup() {
+    async function initOnStartup(opts) {
+        const startTab = opts && opts.startTab ? opts.startTab : null;
         const useSpinner = typeof showLoading === 'function' && typeof hideLoading === 'function';
         if (useSpinner) showLoading('Загрузка данных с диска...');
         try {
@@ -398,8 +490,14 @@ window.SessionStore = (function () {
             if (typeof SharedStorage !== 'undefined') {
                 await SharedStorage.init();
                 const sharedSnap = await SharedStorage.loadSnapshot();
-                const localSnap = await loadSnapshot();
+                // Локальную копию (≈8 МБ) читаем, только если она может оказаться новее общей.
+                let localAt = 0;
+                try { localAt = Number(localStorage.getItem('krasavia_snapshot_at')) || 0; } catch (e) { /* ignore */ }
+                const localSnap = (!sharedSnap?.savedAt || !localAt || localAt > sharedSnap.savedAt)
+                    ? await loadSnapshot()
+                    : { savedAt: localAt, skipped: true };
                 snap = await pickNewestSnapshot(sharedSnap, localSnap);
+                if (snap && snap.skipped) snap = await loadSnapshot();
                 if (snap && sharedSnap?.savedAt && (!localSnap?.savedAt || sharedSnap.savedAt > localSnap.savedAt)) {
                     needsLocalCopy = snap.savedAt === sharedSnap.savedAt;
                 }
@@ -415,13 +513,11 @@ window.SessionStore = (function () {
                     updateRestoreButtonVisibility(false);
                 } else {
                     restoreUiSession();
-                    renderOpenViews();
-                    if (needsLocalCopy) {
-                        saveLocalSnapshot(true).catch(e => console.warn('saveLocalSnapshot', e));
-                    }
+                    renderOpenViews(startTab);
+                    if (needsLocalCopy) saveLocalCopyWhenIdle(snap);
                 }
             } else if (typeof switchMainTab === 'function') {
-                switchMainTab(currentTab || 'main');
+                switchMainTab(startTab || currentTab || 'main');
             }
         } finally {
             if (useSpinner) hideLoading();
