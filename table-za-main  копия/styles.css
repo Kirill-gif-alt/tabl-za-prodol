@@ -8041,3 +8041,37 @@ table.sm-table thead th.sm-check-today { box-shadow: inset 0 -3px 0 #fde68a; }
 table.data-table thead,
 table.rp-table thead,
 table.td-table thead { box-shadow: none; }
+
+
+/* ---------- цвета новых вкладок из «Настроек» (Сегодня, Творческая, Отчёты) ---------- */
+.td-stat,
+.td-day { background: var(--today-card-bg, var(--surface)); }
+.td-day-on {
+    border-color: var(--today-active, var(--text));
+    box-shadow: 0 0 0 1px var(--today-active, var(--text));
+}
+.td-tab-on { box-shadow: inset 0 -2px 0 var(--today-active, var(--text)); }
+table.td-table thead th { background: var(--today-head-bg, var(--table-head-bg, #012A4A)); }
+table.rp-table thead th { background: var(--rp-head-bg, var(--table-head-bg, #012A4A)); }
+.rp-table tbody tr:nth-child(even) > td { background-color: var(--rp-row-even, #f4f8fe); }
+.rp-table tbody tr:hover > td { background-color: var(--hover-bg, #eef2f7); }
+.rc-row-big > td { background-color: color-mix(in srgb, #dc2626 5%, var(--surface)) !important; }
+table.cr-table thead tr:first-child th { background: var(--cr-head-bg, var(--table-head-bg, #012A4A)); }
+table.cr-table thead tr:first-child th.cr-sorted { background: color-mix(in srgb, var(--cr-head-bg, #012A4A) 65%, #4a90b8); }
+table.cr-table thead tr.cr-totals th { background: var(--cr-totals-bg, #e2e8f0); color: var(--cr-totals-text, var(--text)); }
+.cr-table tbody tr:nth-child(even) td { background: var(--cr-row-even, #f8fafc); }
+.tab-order-hint { margin: 0 0 10px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; }
+.tab-order-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.88rem;
+    font-weight: 600;
+}
+.tab-order-name::placeholder { color: var(--text); opacity: 0.55; font-weight: 600; }
+.tab-order-name:focus { outline: none; border-color: var(--accent, #10b981); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #10b981) 25%, transparent); }
