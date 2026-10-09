@@ -31,6 +31,8 @@ window.ProfileAuth = (function () {
         edit_subsidy_ref: { label: 'Периоды, суммы субсидии и себестоимость — менять', group: 'Справочник' },
         view_pkz_nav: { label: 'ПКЗ из NAV — видеть', group: 'Справочник' },
         edit_pkz_nav: { label: 'ПКЗ из NAV — менять (и в таблице ПКЗ)', group: 'Справочник' },
+        edit_flights: { label: 'Справочник рейсов — добавлять и менять рейсы (видят все)', group: 'Справочник' },
+        edit_calendar: { label: 'Календарь событий (праздники, каникулы) — менять; видят все', group: 'Справочник' },
         manage_profiles: { label: 'Управление профилями', group: 'Админ' }
     };
 

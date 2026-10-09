@@ -8,6 +8,8 @@ window.SharedHistory = (function () {
         'subsidy-overrides.json': 'Правки субсидий',
         'subsidy-fares.json': 'Справочник субсидированных тарифов',
         'subsidy-ref.json': 'Справочник: периоды и суммы субсидии',
+        'calendar.json': 'Календарь событий (праздники, каникулы)',
+        'flights.json': 'Справочник рейсов',
         'pkz-nav.json': 'ПКЗ',
         'flight-comments.json': 'Комментарии к рейсам',
         'creative-layouts.json': 'Творческая (макеты)'

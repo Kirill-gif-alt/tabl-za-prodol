@@ -10,6 +10,10 @@ window.ReferenceView = (function () {
     let navEdit = null;      // правило ПКЗ в форме ({ id, from, to, direction, ac, value })
     let amountFilter = '';
     let navFlight = '';      // фильтр по направлению
+    let calEdit = null;      // событие в форме ({ id, from, to, type, name, norm })
+    let flEdit = null;       // рейс в форме ({ id, code, from, to, back, extras, backExtras, type })
+    let flFilter = '';
+    let calYear = String(new Date().getFullYear());
 
     function esc(v) {
         return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -55,7 +59,9 @@ window.ReferenceView = (function () {
         { id: 'fares', label: 'Тарифы субсидии', view: () => typeof FareRefs !== 'undefined' && FareRefs.canView() },
         { id: 'periods', label: 'Периоды субсидии', view: () => typeof SubsidyRef !== 'undefined' && SubsidyRef.canView() },
         { id: 'amounts', label: 'Суммы субсидии и себестоимость', view: () => typeof SubsidyRef !== 'undefined' && SubsidyRef.canView() },
-        { id: 'nav', label: 'ПКЗ из NAV', view: () => typeof SubsidyRef !== 'undefined' && SubsidyRef.canViewPkz() }
+        { id: 'nav', label: 'ПКЗ из NAV', view: () => typeof SubsidyRef !== 'undefined' && SubsidyRef.canViewPkz() },
+        { id: 'flights', label: 'Рейсы', view: () => typeof FlightRegistry !== 'undefined' },
+        { id: 'calendar', label: 'Календарь событий', view: () => typeof CalendarEvents !== 'undefined' }
     ];
 
     function visibleSections() {
@@ -399,6 +405,169 @@ window.ReferenceView = (function () {
             </section>`;
     }
 
+    // ---------- справочник рейсов ----------
+
+    function knownCities() {
+        const set = new Set();
+        const cfg = window.CITY_CLASSIFICATION || {};
+        ['HUB_CITIES', 'KRAI_CITIES', 'INTERREGIONAL_CITIES'].forEach(k => (cfg[k] || []).forEach(c => set.add(c)));
+        Object.values(window.FLIGHT_DIRECTIONS || {}).forEach(d => {
+            if (typeof parseDirectionCities === 'function') parseDirectionCities(d).forEach(c => set.add(c));
+        });
+        return [...set].sort((a, b) => a.localeCompare(b, 'ru'));
+    }
+
+    function unknownCity(name) {
+        if (!name || typeof isHubCity !== 'function') return false;
+        return !isHubCity(name) && !isKraiCity(name) && !isInterregionalCity(name);
+    }
+
+    function extrasOf(c) {
+        // Доп. номера, которые сейчас сводятся к этому рейсу (встроенные правила и справочник).
+        const out = [];
+        for (let n = 100; n < 1000; n++) {
+            const x = 'KV-' + n;
+            if (x !== c && typeof getBaseFlight === 'function' && getBaseFlight(x) === c && window.FLIGHT_DIRECTIONS && !window.FLIGHT_DIRECTIONS[x]) {
+                if (typeof groupedData !== 'undefined' && groupedData[c] && groupedData[c].some(r => cleanFlight(r[0]) === x)) out.push(x);
+            }
+        }
+        const own = FlightRegistry.get(c);
+        if (own) own.extras.concat(own.backExtras).forEach(x => { if (!out.includes(x)) out.push(x); });
+        return out;
+    }
+
+    function warnText(list) {
+        return `Города «${esc(list.join('», «'))}» нет в списках краевых и межрегиональных — выберите тип рейса, иначе он будет «не классифицирован».`;
+    }
+
+    function flightsHtml() {
+        const can = FlightRegistry.canEdit();
+        const added = FlightRegistry.list();
+        const addedCodes = new Set(added.map(e => e.code));
+        const builtin = FlightRegistry.builtinPairs().filter(b => !addedCodes.has(b.code));
+        const q = flFilter.trim().toLowerCase();
+        const rowsData = added.map(e => ({ code: e.code, back: e.back, direction: `${e.from} — ${e.to}`, extras: e.extras.concat(e.backExtras), type: e.type, by: e.by, at: e.at, own: true, builtinCode: FlightRegistry.isBuiltin(e.code) }))
+            .concat(builtin.map(b => ({ code: b.code, back: b.back, direction: b.direction, extras: extrasOf(b.code).concat(b.back ? extrasOf(b.back) : []), type: 'auto', own: false })))
+            .filter(r => !q || (r.code + ' ' + r.back + ' ' + r.direction + ' ' + r.extras.join(' ')).toLowerCase().includes(q))
+            .sort((a, b) => (parseInt(a.code.slice(3), 10) || 0) - (parseInt(b.code.slice(3), 10) || 0));
+        const fe = flEdit;
+        const cities = knownCities();
+        const warn = fe ? [fe.from, fe.to].filter(unknownCity) : [];
+        const form = can && fe ? `
+            <div class="rp-ref-form" id="ref-flight-form">
+                <div class="rp-ref-form-title">${fe.id ? 'Изменить рейс' : 'Новый рейс'}</div>
+                <datalist id="ref-f-cities">${cities.map(c => `<option value="${esc(c)}">`).join('')}</datalist>
+                <div class="rp-ref-grid">
+                    <label>Номер туда<input id="ref-f-code" class="cr-input" type="text" inputmode="numeric" placeholder="например, 131" value="${esc(fe.code ? fe.code.replace('KV-', '') : '')}"></label>
+                    <label>Откуда<input id="ref-f-from" class="cr-input" type="text" list="ref-f-cities" value="${esc(fe.from || '')}" placeholder="Красноярск"></label>
+                    <label>Куда<input id="ref-f-to" class="cr-input" type="text" list="ref-f-cities" value="${esc(fe.to || '')}" placeholder="город"></label>
+                    <label>Номер обратно<input id="ref-f-back" class="cr-input" type="text" inputmode="numeric" placeholder="пусто — без обратного" value="${esc(fe.back ? fe.back.replace('KV-', '') : '')}"></label>
+                    <label>Доп. номера туда<input id="ref-f-extras" class="cr-input" type="text" placeholder="например, 331, 431" value="${esc((fe.extras || []).map(x => x.replace('KV-', '')).join(', '))}"></label>
+                    <label>Доп. номера обратно<input id="ref-f-bextras" class="cr-input" type="text" placeholder="например, 332" value="${esc((fe.backExtras || []).map(x => x.replace('KV-', '')).join(', '))}"></label>
+                    <label>Тип рейса<select id="ref-f-type" class="cr-input">${Object.keys(FlightRegistry.TYPES).map(t => `<option value="${t}"${t === (fe.type || 'auto') ? ' selected' : ''}>${esc(FlightRegistry.TYPES[t])}</option>`).join('')}</select></label>
+                </div>
+                <p class="rp-note ref-warn" id="ref-f-warn"${warn.length ? '' : ' hidden'}>${warn.length ? warnText(warn) : ''}</p>
+                <p class="rp-muted ref-hint">Доп. номера — под которыми этот рейс летает, когда в день два вылета: все данные, нормы и справочники берутся от основного номера.
+                    Обратный номер подставляется сам (нечётный + 1), его можно поменять.</p>
+                <div class="rp-ref-actions">
+                    <button type="button" class="btn-primary rp-btn" data-reff-save>Сохранить</button>
+                    <button type="button" class="filter-btn" data-reff-cancel>Отмена</button>
+                    <span class="rp-ref-error" id="ref-f-error" role="alert"></span>
+                </div>
+            </div>` : '';
+        const typeLabel = (r) => {
+            const t = r.own && r.type !== 'auto' ? FlightRegistry.TYPES[r.type] : (typeof getFlightRouteTypeLabel === 'function' ? getFlightRouteTypeLabel(r.code) : '');
+            return esc(t || '');
+        };
+        const rows = rowsData.map(r => `
+            <tr>
+                <td><strong>${esc(r.code)}</strong>${r.back ? ' / ' + esc(r.back) : ''}</td>
+                <td class="rp-left">${esc(r.direction)}</td>
+                <td class="rp-left">${r.extras.length ? esc(r.extras.join(', ')) : '<span class="rp-muted">—</span>'}</td>
+                <td>${typeLabel(r)}</td>
+                <td class="rp-left rp-muted">${r.own ? esc(r.by || '') + (r.at ? '<br>' + esc(when(r.at)) : '') : 'встроен'}</td>
+                ${can ? `<td class="rp-nowrap">
+                    <button type="button" class="filter-btn rp-open" data-reff-edit="${esc(r.code)}">Изменить</button>
+                    ${r.own ? `<button type="button" class="filter-btn rp-open rp-danger" data-reff-del="${esc(r.code)}">${r.builtinCode ? 'Как было' : 'Удалить'}</button>` : ''}
+                </td>` : ''}
+            </tr>`).join('');
+        return `
+            <section class="rp-card">
+                <div class="rp-card-head"><h3 class="rp-card-title">Рейсы</h3>
+                    ${can && !fe ? '<button type="button" class="btn-primary rp-btn" data-reff-new>Добавить рейс</button>' : ''}</div>
+                <p class="rp-card-text">Номер, маршрут, обратный номер и доп. номера рейса. Новый рейс сразу появляется везде: направление на Графплане и в таблицах,
+                    пара туда–обратно в «Экономической таблице», доп. номера сводятся к основному. Менять может тот, кому администратор дал право «Справочник рейсов».</p>
+                ${form}
+                <div class="ref-toolbar">
+                    <label>Поиск <input class="cr-input" id="ref-f-filter" type="search" placeholder="номер или город" value="${esc(flFilter)}"></label>
+                    <span class="rp-muted">Рейсов: ${rowsData.length}</span>
+                </div>
+                ${rows ? `<div class="rp-scroll"><table class="rp-table rp-refs-table">
+                    <thead><tr><th>Туда / обратно</th><th>Маршрут</th><th>Доп. номера</th><th>Тип</th><th>Добавил</th>${can ? '<th></th>' : ''}</tr></thead>
+                    <tbody>${rows}</tbody></table></div>` : '<p class="rp-note">Ничего не найдено.</p>'}
+            </section>`;
+    }
+
+    // ---------- календарь событий ----------
+
+    function calendarHtml() {
+        const can = CalendarEvents.canEdit();
+        const all = CalendarEvents.list();
+        const years = [...new Set(all.map(e => e.from.slice(6)).concat(all.map(e => e.to.slice(6))))].sort();
+        if (!years.includes(calYear)) years.push(calYear);
+        years.sort();
+        const list = all.filter(e => e.from.slice(6) === calYear || e.to.slice(6) === calYear);
+        const ce = calEdit;
+        const types = CalendarEvents.TYPES;
+        const form = can && ce ? `
+            <div class="rp-ref-form" id="ref-cal-form">
+                <div class="rp-ref-form-title">${ce.id ? 'Изменить событие' : 'Новое событие'}</div>
+                <div class="rp-ref-grid">
+                    <label>С<input id="ref-c-from" class="cr-input" type="date" value="${esc(isoOf(ce.from))}"></label>
+                    <label>по<input id="ref-c-to" class="cr-input" type="date" value="${esc(isoOf(ce.to))}"></label>
+                    <label>Тип<select id="ref-c-type" class="cr-input">${Object.keys(types).map(t => `<option value="${t}"${t === ce.type ? ' selected' : ''}>${esc(types[t].label)}</option>`).join('')}</select></label>
+                    <label>Название<input id="ref-c-name" class="cr-input" type="text" maxlength="120" value="${esc(ce.name || '')}" placeholder="например, Енисейский форум"></label>
+                    <label class="ref-check"><input id="ref-c-norm" type="checkbox"${ce.norm !== false ? ' checked' : ''}> Особые дни для нормы продаж</label>
+                </div>
+                <div class="rp-ref-actions">
+                    <button type="button" class="btn-primary rp-btn" data-refc-save>Сохранить</button>
+                    <button type="button" class="filter-btn" data-refc-cancel>Отмена</button>
+                    <span class="rp-ref-error" id="ref-c-error" role="alert"></span>
+                </div>
+            </div>` : '';
+        const rows = list.map(e => `
+            <tr>
+                <td class="rp-nowrap">${esc(e.from)}${e.to !== e.from ? ' – ' + esc(e.to) : ''}</td>
+                <td class="rp-left"><span class="cal-type cal-type-${esc(e.type)}">${esc(types[e.type] ? types[e.type].short : e.type)}</span> <strong>${esc(e.name)}</strong></td>
+                <td>${e.norm ? 'да' : '<span class="rp-muted">нет</span>'}</td>
+                <td class="rp-left rp-muted">${e.builtin && !e.edited ? 'встроено' : esc(e.by || '') + (e.at ? '<br>' + esc(when(e.at)) : '')}</td>
+                ${can ? `<td class="rp-nowrap">
+                    <button type="button" class="filter-btn rp-open" data-refc-edit="${esc(e.id)}">Изменить</button>
+                    ${e.builtin && e.edited ? `<button type="button" class="filter-btn rp-open" data-refc-restore="${esc(e.id)}" title="Вернуть даты из встроенного календаря">Как было</button>` : ''}
+                    <button type="button" class="filter-btn rp-open rp-danger" data-refc-del="${esc(e.id)}">Удалить</button>
+                </td>` : ''}
+            </tr>`).join('');
+        const removed = can ? CalendarEvents.deletedBuiltins().filter(b => b.from.slice(6) === calYear || b.to.slice(6) === calYear) : [];
+        return `
+            <section class="rp-card">
+                <div class="rp-card-head"><h3 class="rp-card-title">Календарь событий</h3>
+                    ${can && !ce ? '<button type="button" class="btn-primary rp-btn" data-refc-new>Добавить событие</button>' : ''}</div>
+                <p class="rp-card-text">Праздники, школьные каникулы и свои события (форум, концерт, отмена рейсов). Встроены нерабочие праздничные дни РФ
+                    на 2025–2027 годы и школьные каникулы по рекомендациям Минпросвещения — если в крае даты другие, их можно поправить.
+                    <strong>Особые дни для нормы</strong>: обычный вылет не сравнивается с праздничными, а праздничный — сравнивается с такими же праздничными
+                    (если их мало — с обычными). Отметки видны на Графплане, на вкладке «Сегодня» и в карточке рейса.</p>
+                ${form}
+                <div class="ref-toolbar">
+                    <label>Год <select class="cr-input" id="ref-c-year">${years.map(y => `<option${y === calYear ? ' selected' : ''}>${esc(y)}</option>`).join('')}</select></label>
+                    <span class="rp-muted">Событий: ${list.length}</span>
+                    ${removed.length ? `<span class="rp-muted">Удалены встроенные: ${removed.map(b => `<button type="button" class="filter-btn rp-open" data-refc-restore="${esc(b.id)}" title="Вернуть">${esc(b.name)} ${esc(b.from.slice(0, 5))}</button>`).join(' ')}</span>` : ''}
+                </div>
+                ${rows ? `<div class="rp-scroll"><table class="rp-table rp-refs-table">
+                    <thead><tr><th>Даты</th><th>Событие</th><th>Особые для нормы</th><th>Изменил</th>${can ? '<th></th>' : ''}</tr></thead>
+                    <tbody>${rows}</tbody></table></div>` : '<p class="rp-note">В этом году событий нет.</p>'}
+            </section>`;
+    }
+
     // ---------- проверка полноты (без ПКЗ) ----------
     // На 60 дней вперёд: рейсы без периодов, маршруты без себестоимости, субсидированные вылеты без суммы
     // субсидии, пересекающиеся периоды. Считается только при открытии раздела и в утренней сводке.
@@ -722,6 +891,8 @@ window.ReferenceView = (function () {
         else if (section === 'periods') body = periodsHtml();
         else if (section === 'amounts') body = amountsHtml();
         else if (section === 'nav') body = navHtml();
+        else if (section === 'calendar') body = calendarHtml();
+        else if (section === 'flights') body = flightsHtml();
         return `
             ${excelBarHtml()}
             <div class="ref-sections" role="tablist">${list.map(s => `
@@ -885,6 +1056,80 @@ window.ReferenceView = (function () {
             run(btn, () => SubsidyRef.removeAmount(d.refaDel), null, () => { refreshAll(); rerender(); });
             return true;
         }
+        // справочник рейсов
+        if (d.reffNew != null) { flEdit = { code: '', from: '', to: '', back: '', extras: [], backExtras: [], type: 'auto' }; rerender(); return true; }
+        if (d.reffEdit) {
+            const c = d.reffEdit;
+            const own = FlightRegistry.get(c);
+            if (own) flEdit = { ...own, id: c };
+            else {
+                const b = FlightRegistry.builtinPairs().find(x => x.code === c);
+                const cities = typeof parseDirectionCities === 'function' && b ? parseDirectionCities(b.direction) : [];
+                flEdit = { id: '', code: c, from: cities[0] || '', to: cities[1] || '', back: b ? b.back : '', extras: [], backExtras: [], type: 'auto' };
+            }
+            rerender();
+            document.getElementById('ref-flight-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return true;
+        }
+        if (d.reffCancel != null) { flEdit = null; rerender(); return true; }
+        if (d.reffSave != null) {
+            const val = (id) => document.getElementById(id)?.value ?? '';
+            const entry = { code: val('ref-f-code'), from: val('ref-f-from'), to: val('ref-f-to'), back: val('ref-f-back'), extras: FlightRegistry.codes(val('ref-f-extras')), backExtras: FlightRegistry.codes(val('ref-f-bextras')), type: val('ref-f-type') };
+            if (!String(entry.code).replace(/[^0-9]/g, '')) { showError('ref-f-error', 'Укажите номер рейса'); return true; }
+            if (!entry.from.trim() || !entry.to.trim()) { showError('ref-f-error', 'Укажите, откуда и куда'); return true; }
+            run(btn, () => FlightRegistry.save(entry, flEdit && flEdit.id), 'ref-f-error', () => {
+                flEdit = null;
+                toast('Рейс сохранён');
+                refreshAll();
+                rerender();
+            });
+            return true;
+        }
+        if (d.reffDel) {
+            const own = FlightRegistry.get(d.reffDel);
+            if (!own) return true;
+            const builtin = FlightRegistry.isBuiltin(d.reffDel);
+            if (!window.confirm(builtin
+                ? `Вернуть рейс ${own.code} к встроенному описанию (routes.js)?`
+                : `Удалить рейс ${own.code}${own.back ? ' / ' + own.back : ''} (${own.from} — ${own.to}) из справочника?`)) return true;
+            run(btn, () => FlightRegistry.remove(d.reffDel), null, () => { refreshAll(); rerender(); });
+            return true;
+        }
+        // календарь событий
+        if (d.refcNew != null) { calEdit = { from: '', to: '', type: 'event', name: '', norm: true }; rerender(); return true; }
+        if (d.refcEdit) {
+            const e = CalendarEvents.list().find(x => x.id === d.refcEdit);
+            if (!e) return true;
+            calEdit = { ...e };
+            rerender();
+            document.getElementById('ref-cal-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return true;
+        }
+        if (d.refcCancel != null) { calEdit = null; rerender(); return true; }
+        if (d.refcSave != null) {
+            const val = (id) => document.getElementById(id)?.value ?? '';
+            const entry = { from: ruOf(val('ref-c-from')), to: ruOf(val('ref-c-to')) || ruOf(val('ref-c-from')), type: val('ref-c-type'), name: val('ref-c-name').trim(), norm: !!document.getElementById('ref-c-norm')?.checked };
+            if (!entry.from) { showError('ref-c-error', 'Укажите дату начала'); return true; }
+            if (!entry.name) { showError('ref-c-error', 'Укажите название'); return true; }
+            run(btn, () => CalendarEvents.save(entry, calEdit && calEdit.id), 'ref-c-error', () => {
+                calEdit = null;
+                calYear = entry.from.slice(6);
+                toast('Событие сохранено');
+                refreshAll();
+                rerender();
+            });
+            return true;
+        }
+        if (d.refcDel) {
+            const e = CalendarEvents.list().find(x => x.id === d.refcDel);
+            if (!e || !window.confirm(`Удалить событие «${e.name}» ${e.from}${e.to !== e.from ? ' – ' + e.to : ''}?`)) return true;
+            run(btn, () => CalendarEvents.remove(d.refcDel), null, () => { refreshAll(); rerender(); });
+            return true;
+        }
+        if (d.refcRestore) {
+            run(btn, () => CalendarEvents.restore(d.refcRestore), null, () => { refreshAll(); rerender(); });
+            return true;
+        }
         // ПКЗ из NAV
         if (d.refnNew != null) { navEdit = { from: '', to: '', direction: navFlight || '', ac: '', value: null }; rerender(); return true; }
         if (d.refnEdit || d.refnCopy) {
@@ -930,11 +1175,36 @@ window.ReferenceView = (function () {
             return true;
         }
         if (target.id === 'ref-n-filter') { navFlight = target.value || ''; rerender(); return true; }
+        if (target.id === 'ref-c-year') { calYear = target.value || calYear; rerender(); return true; }
+        if (target.id === 'ref-f-code' && flEdit) {
+            // Номер туда ввели — обратный подставляем сам, если его не трогали.
+            const back = document.getElementById('ref-f-back');
+            if (back && !back.value.trim()) back.value = FlightRegistry.suggestBack(target.value).replace('KV-', '');
+            return true;
+        }
+        if ((target.id === 'ref-f-from' || target.id === 'ref-f-to') && flEdit) {
+            // Новый город — подсказка выбрать тип рейса (без перерисовки формы, чтобы не сбить ввод).
+            const val = (id) => (document.getElementById(id)?.value ?? '').trim();
+            const unknown = [val('ref-f-from'), val('ref-f-to')].filter(unknownCity);
+            const box = document.getElementById('ref-f-warn');
+            if (box) { box.hidden = !unknown.length; box.innerHTML = unknown.length ? warnText(unknown) : ''; }
+            return true;
+        }
         return false;
     }
 
     let filterTimer = null;
     function handleInput(target, rerender) {
+        if (target.id === 'ref-f-filter') {
+            flFilter = target.value || '';
+            clearTimeout(filterTimer);
+            filterTimer = setTimeout(() => {
+                rerender();
+                const el = document.getElementById('ref-f-filter');
+                if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+            }, 250);
+            return true;
+        }
         if (target.id !== 'ref-a-filter') return false;
         amountFilter = target.value || '';
         clearTimeout(filterTimer);

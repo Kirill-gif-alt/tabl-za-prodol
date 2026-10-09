@@ -717,9 +717,13 @@ function buildTimelineHtml() {
         const dow = getDayOfWeek(date);
         const hint = expanded ? 'Двойной клик — свернуть' : 'Двойной клик — сетка 2 ч';
         const dateLabel = String(date).slice(0, 5);
+        // Праздник / каникулы / своё событие из календаря — цветная точка и название в подсказке.
+        const calKey = typeof CalendarEvents !== 'undefined' ? (CalendarEvents.on(date)[0] || null) : null;
+        const calName = calKey ? CalendarEvents.label(date) : '';
+        const calDot = calKey ? `<span class="cal-dot cal-dot-${escAttr(calKey.type)}" aria-label="${escAttr(calName)}"></span>` : '';
         // Одна строка «чт 08.10» и число рейсов: в две-три строки дата обрезалась по высоте.
-        gridParts.push(`<div class="${headCls}${timelineIsWeekend(date) ? ' timeline-date-head-weekend' : ''}" style="grid-column:${col};grid-row:1;height:${headerH}px" data-date="${escAttr(date)}" title="${escAttr(date + ' · ' + dow + (isToday ? ' · сегодня' : '') + ' · рейсов: ' + flights.length + ' · ' + hint)}">
-            <span class="timeline-date-line"><span class="timeline-dow">${escHtml(dow)}</span><span class="timeline-date">${escHtml(dateLabel)}</span>${flights.length ? `<span class="timeline-count">${flights.length}</span>` : ''}</span>
+        gridParts.push(`<div class="${headCls}${timelineIsWeekend(date) ? ' timeline-date-head-weekend' : ''}" style="grid-column:${col};grid-row:1;height:${headerH}px" data-date="${escAttr(date)}" title="${escAttr(date + ' · ' + dow + (isToday ? ' · сегодня' : '') + (calName ? ' · ' + calName : '') + ' · рейсов: ' + flights.length + ' · ' + hint)}">
+            <span class="timeline-date-line">${calDot}<span class="timeline-dow">${escHtml(dow)}</span><span class="timeline-date">${escHtml(dateLabel)}</span>${flights.length ? `<span class="timeline-count">${flights.length}</span>` : ''}</span>
             ${expanded ? renderTimelineHourScale() : ''}
         </div>`);
     });

@@ -39,6 +39,9 @@ window.PerfCache = (function () {
     function getBaseFlightMemo(flight) {
         const key = String(flight || '');
         if (baseFlightCache.has(key)) return baseFlightCache.get(key);
+        // Справочник рейсов (flight-registry.js): свои доп. номера и рейсы важнее встроенных правил.
+        const reg = window.FLIGHT_EXTRA_BASE;
+        if (reg && reg[key]) return memoSet(baseFlightCache, key, reg[key], MEMO_CACHE_MAX);
         let n = parseInt(key.replace('KV-', ''), 10) || 0;
         let result = key;
         if ([151, 351, 355, 455].includes(n)) result = 'KV-155';
@@ -55,6 +58,11 @@ window.PerfCache = (function () {
         else if (n >= 300 && n <= 399) result = 'KV-' + (n - 200);
         else if (n >= 400 && n <= 499) result = 'KV-' + (n - 300);
         return memoSet(baseFlightCache, key, result, MEMO_CACHE_MAX);
+    }
+
+    // Справочник рейсов изменился — базовые номера пересчитать.
+    function clearFlightCaches() {
+        baseFlightCache.clear();
     }
 
     function cloneMemoDate(d) {
@@ -210,6 +218,7 @@ window.PerfCache = (function () {
         getBaseFlightMemo,
         parseLocalDateMemo,
         dateTsMemo,
+        clearFlightCaches,
         getDayOfWeekMemo,
         getDaysUntilMemo,
         getWeekNumberMemo,

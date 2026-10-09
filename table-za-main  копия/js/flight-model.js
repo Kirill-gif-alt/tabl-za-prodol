@@ -23,6 +23,7 @@ function getFlightDirection(f) {
 
 function getBaseFlight(f) {
     if (typeof PerfCache !== 'undefined') return PerfCache.getBaseFlightMemo(f);
+    if (window.FLIGHT_EXTRA_BASE && window.FLIGHT_EXTRA_BASE[f]) return window.FLIGHT_EXTRA_BASE[f];
     let n = parseInt(String(f).replace('KV-', ''), 10) || 0;
     if ([151, 351, 355, 455].includes(n)) return 'KV-155';
     if ([152, 352, 356, 456].includes(n)) return 'KV-156';

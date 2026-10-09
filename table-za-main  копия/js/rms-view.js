@@ -162,11 +162,15 @@ function renderRmsWatchlist() {
         const pickupTxt = (f.pickup === null || f.pickup === undefined || !salesReady) ? '—' : f.pickup;
         const todayTxt = salesReady ? (f.s.today || 0) : '—';
         const remainTxt = f.remainder != null ? f.remainder : '—';
+        const fc = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(flightCode, f.date) : null;
+        const fcCls = fc && fc.source !== 'flown' ? (fc.soldOutDtd != null && fc.load < fc.seats ? 'rms-fc-up' : (fc.lf < 60 ? 'rms-fc-down' : '')) : '';
+        const fcTitle = fc ? FlightInsights.forecastText(fc) : 'Мало истории для прогноза';
+        const grp = typeof FlightInsights !== 'undefined' ? FlightInsights.groupSeats(flightCode, f.date) : 0;
         return `
             <tr class="rms-row ${zebra} ${alertCls}" data-rms-base="${escAttr(f.base)}" data-rms-date="${escAttr(f.date)}" data-rms-orig="${escAttr(flightCode)}" data-pm-row="1" tabindex="0">
                 <td class="rms-col-alert">${f.alertLevel >= 2 ? `<span class="rms-alert-badge rms-alert-badge-${f.alertLevel}">${f.alertLevel >= 3 ? 'КРИТ' : '!'}</span>` : ''}</td>
                 <td class="rms-col-flight">
-                    <div class="rms-flight-code">${escHtml(flightCode)}${routeTypeLabel ? `<span class="rms-route-badge ${routeTypeCls}">${escHtml(routeTypeLabel)}</span>` : ''}</div>
+                    <div class="rms-flight-code">${escHtml(flightCode)}${routeTypeLabel ? `<span class="rms-route-badge ${routeTypeCls}">${escHtml(routeTypeLabel)}</span>` : ''}${grp ? `<span class="grp-badge" title="Групповые брони: ${grp} бил. в заказах от ${FlightInsights.GROUP_MIN} билетов">Г ${grp}</span>` : ''}</div>
                     <div class="rms-flight-name">${escHtml(flightDir)}</div>
                     ${showRoute ? `<div class="rms-flight-route">${escHtml(formatRouteDisplay(f.route))}</div>` : ''}
                 </td>
@@ -174,6 +178,7 @@ function renderRmsWatchlist() {
                 <td class="rms-col-dtd font-bold ${f.dtd <= 3 ? 'dtd-urgent' : ''}">${f.dtd}</td>
                 <td class="rms-col-load font-semibold"><span class="${f.pct >= 75 ? 'occupancy-high' : 'occupancy-med'}">${f.pct}%</span> <span class="rms-load-sub">${f.free} пасс.</span></td>
                 <td class="rms-col-remain font-semibold">${remainTxt}</td>
+                <td class="rms-col-fc font-semibold ${fcCls}" title="${escAttr(fcTitle)}">${fc && fc.source !== 'flown' ? escHtml(FlightInsights.forecastShort(fc)) : '—'}</td>
                 ${expectedCells}
                 <td class="rms-col-pickup font-semibold">${pickupTxt}</td>
                 <td class="rms-col-today font-bold ${salesReady && f.s.today ? 'rms-today-hot' : ''}">${todayTxt}</td>
@@ -194,6 +199,7 @@ function renderRmsWatchlist() {
                     <th class="rms-col-dtd" title="Дней до вылета">DTD</th>
                     <th class="rms-col-load" title="Загрузка / (AU снимка − спец.брони)">ЗПК</th>
                     <th class="rms-col-remain" title="AU − загрузка − спец.брони">Остаток</th>
+                    <th class="rms-col-fc" title="Прогноз загрузки к вылету: сколько обычно добирают такие же вылеты (тот же день недели) от этого дня; в скобках — разброс">Прогноз к вылету</th>
                     ${hasExpected ? '<th class="rms-col-forecast" title="Ожидаемая загрузка.xlsx">Ожидаемая</th><th class="rms-col-delta">Δ к ожидаемой</th>' : ''}
                     <th class="rms-col-pickup" title="Билеты сегодня+вчера из файла 14д">Pickup 1–2д</th>
                     <th class="rms-col-today" title="Билеты с DEALDATE=сегодня из файла 14д">Сегодня (файл 14д)</th>

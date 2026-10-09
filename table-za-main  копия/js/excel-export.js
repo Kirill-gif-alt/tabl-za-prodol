@@ -955,7 +955,7 @@ function exportRmsToExcel() {
 
     const hasExpected = Object.keys(expectedLoadData).length > 0;
     const salesReady = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(typeof dataLoadStatus !== 'undefined' && dataLoadStatus.sales);
-    const headers = ['Код рейса', 'Тип рейса', 'Направление', 'Дата вылета', 'Дней до вылета', 'ЗПК %', 'Загрузка', 'Остаток'];
+    const headers = ['Код рейса', 'Тип рейса', 'Направление', 'Дата вылета', 'Дней до вылета', 'ЗПК %', 'Загрузка', 'Остаток', 'Прогноз к вылету', 'Прогноз ЗПК %'];
     if (hasExpected) headers.push('Ожидаемая', 'Δ к ожидаемой');
     headers.push('Pickup 1–2д (файл 14д)', 'Сегодня (файл 14д)', 'Ср. тариф 14д', 'Уровень предупреждения', 'Причина');
 
@@ -970,6 +970,8 @@ function exportRmsToExcel() {
             f.free,
             f.remainder != null ? f.remainder : ''
         ];
+        const fc = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(f.orig || f.base, f.date) : null;
+        row.push(fc && fc.source !== 'flown' ? fc.final : '', fc && fc.source !== 'flown' ? fc.lf : '');
         if (hasExpected) {
             row.push(f.evR !== null ? f.evR : '');
             row.push(f.delta !== null ? f.delta : '');

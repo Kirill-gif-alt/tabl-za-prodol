@@ -2,20 +2,15 @@
 // • curves-ГГГГ-ММ.json — итог каждого улетевшего вылета: кресла, тип ВС, билеты и выручка,
 //   и сколько билетов продано в каждый «день до вылета». По ним строится норма по дням недели
 //   (sales-report.js) и «год назад», когда вылет уже пропал из файла продаж.
-// • slices-ГГГГ-ММ.json — ежедневный срез загрузки вылетов на 60 дней вперёд (продано, кресла):
-//   видно, как менялась загрузка с учётом возвратов. Читается только по запросу (карточка рейса).
 // Пишет только тот, кто публикует данные (право share_data), в фоне и не чаще раза на новые данные.
 // Читаются файлы тоже в фоне после входа: несколько сотен КБ, старт не задерживают. Без ФИО и PNR.
 window.SalesArchive = (function () {
     const MONTHS_BACK = 3;           // норма берёт вылеты ±8 недель — хватает трёх месяцев
     const MAX_DTD = 365;
-    const SLICE_DAYS_AHEAD = 60;
     const DONE_KEY = 'krasavia_archive_done';
 
     let curves = Object.create(null);   // 'дд.мм.гггг|KV-107' → запись
-    let slices = Object.create(null);   // 'дд.мм.гггг' (дата среза) → { at, rows: { 'дата вылета': { 'KV-107': [продано, кресла] } } }
     const loadedMonths = new Set();
-    const loadedSliceMonths = new Set();
     let loading = null;
     let rev = 0;
 
@@ -51,30 +46,6 @@ window.SalesArchive = (function () {
                 if (e && (!curves[k] || e.t > curves[k].t)) curves[k] = e;
             });
         }
-    }
-
-    async function readSliceMonth(month) {
-        if (loadedSliceMonths.has(month)) return;
-        loadedSliceMonths.add(month);
-        if (typeof SharedStorage === 'undefined') return;
-        const r = await SharedStorage.readJsonFileStrict(`history/slices-${month}.json`).catch(() => ({ ok: false }));
-        if (!r.ok) loadedSliceMonths.delete(month);
-        const s = r.data;
-        if (s && s.days && typeof s.days === 'object') {
-            Object.keys(s.days).forEach(day => {
-                const d = s.days[day];
-                if (d && d.rows && typeof d.rows === 'object' && (!slices[day] || String(d.at || '') > slices[day].at)) {
-                    slices[day] = { at: String(d.at || ''), rows: d.rows };
-                }
-            });
-        }
-    }
-
-    // Срезы за этот и прошлый месяц — для истории загрузки вылета (вылеты до 60 дней вперёд).
-    function ensureSlices() {
-        const now = monthOf(todayStr());
-        if (!now) return Promise.resolve();
-        return Promise.all([readSliceMonth(now), readSliceMonth(shiftMonth(now, -1))]).then(() => { rev++; });
     }
 
     function normalizeCurve(e) {
@@ -149,15 +120,6 @@ window.SalesArchive = (function () {
         return out;
     }
 
-    // Загрузка вылета по дням среза: [{ day, sold, seats }] — от старых к новым.
-    function slicesFor(dateStr, code) {
-        return Object.keys(slices)
-            .map(day => ({ day, v: (slices[day].rows[dateStr] || {})[code] }))
-            .filter(x => Array.isArray(x.v))
-            .sort((a, b) => (parseLocalDate(a.day) || 0) - (parseLocalDate(b.day) || 0))
-            .map(x => ({ day: x.day, sold: x.v[0], seats: x.v[1] }));
-    }
-
     // ---------- запись ----------
 
     function eachDeparture(fn) {
@@ -201,12 +163,6 @@ window.SalesArchive = (function () {
         };
     }
 
-    function sliceDay() {
-        const d = typeof lastSalesUpdate !== 'undefined' && lastSalesUpdate instanceof Date && !isNaN(lastSalesUpdate)
-            ? lastSalesUpdate : new Date();
-        return { day: formatDateRu(d), at: d.toISOString() };
-    }
-
     function dataToken() {
         const at = typeof lastSalesUpdate !== 'undefined' && lastSalesUpdate ? new Date(lastSalesUpdate).getTime() : 0;
         return `${at}|${(allData || []).length}|${Object.keys(salesDetails || {}).length}`;
@@ -231,16 +187,6 @@ window.SalesArchive = (function () {
                 }
             });
             out.flights = flights;
-        } else {
-            const days = remote && remote.days && typeof remote.days === 'object' ? { ...remote.days } : {};
-            Object.keys(additions).forEach(day => {
-                const prev = days[day];
-                if (!prev || String(additions[day].at) >= String(prev.at || '')) {
-                    days[day] = additions[day];
-                    changed = true;
-                }
-            });
-            out.days = days;
         }
         if (!changed) return true;
         return SharedStorage.writeJsonFile(file, out);
@@ -257,7 +203,6 @@ window.SalesArchive = (function () {
 
         const today = parseLocalDate(todayStr());
         const curvesByMonth = {};
-        const sliceRows = {};
         eachDeparture((key, date, code, row) => {
             const fly = parseLocalDate(date);
             if (!fly || !today) return;
@@ -266,10 +211,6 @@ window.SalesArchive = (function () {
                 if (!e) return;
                 const m = monthOf(date);
                 (curvesByMonth[m] || (curvesByMonth[m] = {}))[key] = e;
-            } else if ((fly - today) / 86400000 <= SLICE_DAYS_AHEAD) {
-                const sold = typeof getSoldFromRow === 'function' ? getSoldFromRow(row) : (parseInt(row[6], 10) || 0);
-                const seats = typeof getSeatsOnSale === 'function' ? getSeatsOnSale(row) : 0;
-                (sliceRows[date] || (sliceRows[date] = {}))[code] = [sold, seats];
             }
         });
 
@@ -280,11 +221,6 @@ window.SalesArchive = (function () {
                 const e = normalizeCurve(v);
                 if (e && (!curves[k] || e.t > curves[k].t)) curves[k] = e;
             });
-        }
-        const { day, at } = sliceDay();
-        if (Object.keys(sliceRows).length) {
-            ok = (await mergeAndWrite(`history/slices-${monthOf(day)}.json`, 'slices', { [day]: { at, rows: sliceRows } })) && ok;
-            slices[day] = { at, rows: sliceRows };
         }
         rev++;
         if (ok) {
@@ -313,10 +249,8 @@ window.SalesArchive = (function () {
     return {
         ensureLoaded,
         ensureMonth,
-        ensureSlices,
         curveFor,
         departuresFor,
-        slicesFor,
         capture,
         captureSoon,
         scheduleAfterStart,

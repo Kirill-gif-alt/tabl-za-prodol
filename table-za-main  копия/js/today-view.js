@@ -166,9 +166,11 @@ window.TodayView = (function () {
             const wk = dt && (dt.getDay() === 0 || dt.getDay() === 6);
             const dec = byDay.get(date) || 0;
             const cls = lf == null ? '' : lf >= 85 ? 'td-hi' : lf >= 60 ? 'td-mid' : lf >= 40 ? 'td-low' : 'td-bad';
+            const calEv = typeof CalendarEvents !== 'undefined' ? CalendarEvents.on(date)[0] : null;
+            const calName = calEv ? CalendarEvents.label(date) : '';
             cells.push(`
-                <button type="button" class="td-day${pickDay === date && tab === 'day' ? ' td-day-on' : ''}${wk ? ' td-day-wk' : ''}" data-td-day="${esc(date)}" title="${esc(date)}: ${deps.length} вылет(ов)${lf != null ? `, загрузка ${lf}%` : ''}${dec ? `, ждут решения: ${dec}` : ''}">
-                    <span class="td-dow">${esc(i === 0 ? 'сегодня' : i === 1 ? 'завтра' : dow)}</span>
+                <button type="button" class="td-day${pickDay === date && tab === 'day' ? ' td-day-on' : ''}${wk ? ' td-day-wk' : ''}" data-td-day="${esc(date)}" title="${esc(date)}${calName ? ' · ' + esc(calName) : ''}: ${deps.length} вылет(ов)${lf != null ? `, загрузка ${lf}%` : ''}${dec ? `, ждут решения: ${dec}` : ''}">
+                    <span class="td-dow">${calEv ? `<span class="cal-dot cal-dot-${esc(calEv.type)}"></span>` : ''}${esc(i === 0 ? 'сегодня' : i === 1 ? 'завтра' : dow)}</span>
                     <span class="td-date">${esc(date.slice(0, 5))}</span>
                     <span class="td-bar"><i class="${cls}" style="width:${lf || 0}%"></i></span>
                     <span class="td-meta">${lf != null ? lf + '%' : '—'} · ${deps.length}</span>
@@ -196,12 +198,16 @@ window.TodayView = (function () {
         const adv = item.adv !== undefined ? item.adv : (typeof SalesAdvice !== 'undefined' ? SalesAdvice.forDeparture(item.code, item.date, aheadDays()) : null);
         const ref = adv && adv.refs ? adv.refs.map(x => x.value).join(' / ') : '—';
         const on = selected && selected.code === item.code && selected.date === item.date;
+        const fc = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(item.code, item.date) : null;
+        const fcCls = fc && fc.source !== 'flown' ? (fc.soldOutDtd != null && fc.load < fc.seats ? ' td-fc-up' : (fc.lf < 60 ? ' td-fc-down' : '')) : '';
+        const grp = typeof FlightInsights !== 'undefined' ? FlightInsights.groupSeats(item.code, item.date) : 0;
         return `
             <tr class="td-row${on ? ' td-row-on' : ''}" data-td-code="${esc(item.code)}" data-td-date="${esc(item.date)}">
-                <td><strong>${esc(item.code)}</strong></td>
+                <td><strong>${esc(item.code)}</strong>${grp ? `<span class="grp-badge" title="Групповые брони: ${grp} бил.">Г ${grp}</span>` : ''}</td>
                 <td>${esc(typeof getFlightDirection === 'function' ? getFlightDirection(item.code) : '')}<div class="td-muted">${esc(ac)}</div></td>
                 <td class="td-nowrap">${esc(item.date.slice(0, 5))}<div class="td-muted">${dtd == null ? '' : dtd === 0 ? 'сегодня' : dtd + ' дн.'}</div></td>
                 <td>${loadCell(sold, seats)}</td>
+                <td class="td-nowrap${fcCls}" title="${esc(fc ? FlightInsights.forecastText(fc) : 'Мало истории для прогноза')}">${fc && fc.source !== 'flown' ? esc(FlightInsights.forecastShort(fc)) : '—'}</td>
                 <td class="td-nowrap">${esc(ref)}</td>
                 <td>${extraCell != null ? extraCell : (adv && adv.status ? `<span class="td-pill td-pill-${adv.status}">${LABEL[adv.status]}</span>` : '<span class="td-pill">в норме</span>')}</td>
                 <td class="td-go-cell">${openable(item.code, item.date) ? '<button type="button" class="td-go" data-td-go title="Открыть рейс в «Управлении продажами» (если он там есть) или в «Динамике продаж»">Открыть</button>' : ''}</td>
@@ -240,14 +246,14 @@ window.TodayView = (function () {
     function tableHtml(pend, errs) {
         let rows = '';
         let empty = '';
-        let head = '<th>Рейс</th><th>Маршрут</th><th>Вылет</th><th>Загрузка</th><th>Обычно / план</th><th>Подсказка</th><th></th>';
+        let head = '<th>Рейс</th><th>Маршрут</th><th>Вылет</th><th>Загрузка</th><th title="Прогноз загрузки к вылету; в скобках — разброс">Прогноз</th><th>Обычно / план</th><th>Подсказка</th><th></th>';
         if (tab === 'advice') {
             const order = { down: 0, attn: 1, up: 2 };
             const list = pend.slice().sort((a, b) => order[a.status] - order[b.status] || a.dtd - b.dtd);
             rows = list.slice(0, 200).map(a => rowHtml({ code: a.code, date: a.date, adv: a })).join('');
             empty = canTab('sales') ? `Все вылеты на ${aheadDays()} дн. в норме или уже отмечены сегодня.` : 'Нет доступа к «Управлению продажами».';
         } else if (tab === 'errors') {
-            head = '<th>Рейс</th><th>Маршрут</th><th>Вылет</th><th>Загрузка</th><th>Обычно / план</th><th>Ошибка</th><th></th>';
+            head = '<th>Рейс</th><th>Маршрут</th><th>Вылет</th><th>Загрузка</th><th title="Прогноз загрузки к вылету; в скобках — разброс">Прогноз</th><th>Обычно / план</th><th>Ошибка</th><th></th>';
             rows = errs.map(e => rowHtml({ code: e.code, date: e.date }, `<span class="td-err">${esc(e.items.map(i => i.title).join(', '))}</span>`)).join('');
             empty = 'Ошибок тарифов нет.';
         } else {

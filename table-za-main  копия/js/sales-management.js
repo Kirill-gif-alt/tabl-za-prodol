@@ -794,6 +794,22 @@ window.SalesManagement = (function () {
         return out.sort((a, b) => ((parseLocalDate(a.check) || 0) - (parseLocalDate(b.check) || 0)) || (String(a.updatedAt) < String(b.updatedAt) ? -1 : 1));
     }
 
+    // Все отметки по всем вылетам (журнал решений в «Отчётах»): [{ flight, dep, check, status, author, updatedAt }].
+    function allMarks() {
+        const keys = new Set(Object.keys(cache.marks || {}));
+        Object.values(people).forEach(files => Object.values(files).forEach(f => {
+            Object.keys((f && f.marks) || {}).forEach(k => keys.add(k));
+        }));
+        pending.forEach(p => keys.add(p.key));
+        const out = [];
+        keys.forEach(key => {
+            const parts = key.split('|');
+            if (parts.length !== 3) return;
+            cellEntries(key).forEach(e => out.push({ flight: parts[0], dep: parts[1], check: parts[2], status: e.status, author: e.author, updatedAt: e.updatedAt }));
+        });
+        return out;
+    }
+
     // Дешёвый счётчик изменений отметок (для подписи кэша таблиц).
     let markRev = 0;
     // Зовётся на каждую ячейку: число старых отметок считаем один раз на объект (он не меняется на месте — только заменяется).
@@ -1150,6 +1166,7 @@ window.SalesManagement = (function () {
         checkDatesBetween,
         columnCheckDates,
         getMark,
+        allMarks,
         getMarks,
         getOwnMark,
         marksFor,

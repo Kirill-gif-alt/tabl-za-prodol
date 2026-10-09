@@ -18,7 +18,7 @@ SHARED_DIR = os.path.join(ROOT, "shared")
 SHARED_WRITABLE = {
     "profiles.json", "snapshot.json", "activity.json", "flight-comments.json",
     "subsidy-overrides.json", "pkz-nav.json", "sales-management.json",
-    "creative-layouts.json", "subsidy-fares.json", "subsidy-ref.json",
+    "creative-layouts.json", "subsidy-fares.json", "subsidy-ref.json", "calendar.json", "flights.json",
 }
 # Резервные копии перед перезаписью: shared/_history/<имя>/<имя>__ГГГГ-ММ-ДД_ЧЧ-ММ-СС.json.
 # every — не чаще раза в столько секунд, keep — сколько последних копий хранить.
@@ -31,12 +31,14 @@ HISTORY_POLICY = {
     "subsidy-overrides.json": (600, 30),
     "subsidy-fares.json": (600, 30),
     "subsidy-ref.json": (600, 30),
+    "calendar.json": (600, 30),
+    "flights.json": (600, 30),
     "pkz-nav.json": (600, 30),
     "flight-comments.json": (3600, 24),
     "creative-layouts.json": (3600, 20),
 }
-# Архив продаж (js/sales-archive.js): shared/history/curves-ГГГГ-ММ.json и slices-ГГГГ-ММ.json.
-ARCHIVE_RE = re.compile(r"^history/(curves|slices)-\d{4}-\d{2}\.json$")
+# Архив продаж (js/sales-archive.js): shared/history/curves-ГГГГ-ММ.json.
+ARCHIVE_RE = re.compile(r"^history/curves-\d{4}-\d{2}\.json$")
 # Отметки «Управления продажами»: свой файл у каждого автора (js/sales-management.js).
 MARKS_RE = re.compile(r"^sales-marks/\d{4}-\d{2}/[a-z0-9_]{1,40}\.json$")
 MARKS_DIR_RE = re.compile(r"^sales-marks/\d{4}-\d{2}$")

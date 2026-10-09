@@ -74,13 +74,21 @@ window.PriceMarks = (function () {
         return { value: Math.max(0, pts[1].value - pts[0].value), n: Math.min(pts[0].n, pts[1].n) };
     }
 
+    // Вылет уже выпал из файла продаж — число билетов по дням берём из архива кривых (без тарифов).
+    function curveStats(curve, dtdFrom, dtdTo) {
+        const val = (t) => (t > curve.maxDtd ? 0 : (curve.onHand[t] != null ? curve.onHand[t] : curve.total));
+        return { n: Math.max(0, val(dtdTo) - val(dtdFrom + 1)), avg: null };
+    }
+
     function effectFor(base, code, flyDate, mark) {
         const list = typeof getFlightSalesList === 'function' ? getFlightSalesList(flyDate, code) : [];
         const d = dayDiff(flyDate, mark.check);
         if (d == null) return null;
-        const before = windowStats(list, flyDate, d + WINDOW, d + 1);
+        const archived = !list.length && typeof SalesArchive !== 'undefined' ? SalesArchive.curveFor(flyDate, code) : null;
+        const stats = (from, to) => (archived ? curveStats(archived, from, to) : windowStats(list, flyDate, from, to));
+        const before = stats(d + WINDOW, d + 1);
         const afterTo = Math.max(0, d - (WINDOW - 1));
-        const after = windowStats(list, flyDate, d, afterTo);
+        const after = stats(d, afterTo);
         const cutoff = typeof salesDataCutoffTime === 'function' ? salesDataCutoffTime() : Date.now();
         const lastAfterDay = parseLocalDate(flyDate);
         if (lastAfterDay) lastAfterDay.setDate(lastAfterDay.getDate() - afterTo);
