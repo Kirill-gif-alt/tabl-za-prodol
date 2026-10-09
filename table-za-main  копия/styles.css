@@ -7373,17 +7373,19 @@ html[data-theme="dark"] .cr-pop { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
     color: var(--text-muted);
 }
 
-.td-h1 {
-    margin: 4px 0 2px;
-    font-size: 1.7rem;
-    letter-spacing: -0.02em;
+.td-today-date {
+    margin: 2px 0 6px;
+    font-size: 1.4rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
     color: var(--text);
 }
 
 .td-lead {
     margin: 0 0 18px;
-    color: var(--text-muted);
-    font-size: 0.92rem;
+    color: var(--text);
+    font-size: 1.12rem;
+    line-height: 1.45;
 }
 
 .td-link {
@@ -7773,7 +7775,7 @@ html[data-theme="dark"] .cr-pop { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
 
 @media (max-width: 560px) {
     .td-days { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    .td-h1 { font-size: 1.35rem; }
+    .td-today-date { font-size: 1.15rem; }
 }
 
 /* тёмная тема: светлые плашки подсказок приглушаем */

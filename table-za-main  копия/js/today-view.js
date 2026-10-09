@@ -130,11 +130,6 @@ window.TodayView = (function () {
         return parts.length ? parts.join(', ') + '.' : '';
     }
 
-    function greeting() {
-        const h = new Date().getHours();
-        return h < 5 ? 'Доброй ночи' : h < 12 ? 'Доброе утро' : h < 18 ? 'Добрый день' : 'Добрый вечер';
-    }
-
     // ---------- полоса дней ----------
 
     function dayStripHtml(pend) {
@@ -293,7 +288,7 @@ window.TodayView = (function () {
         const root = document.getElementById('td-page');
         if (!root) return;
         if (!hasData()) {
-            root.innerHTML = `<div class="td-wrap"><div class="td-main"><div class="td-crumb">${esc(today())}</div><h1 class="td-h1">${greeting()}</h1>
+            root.innerHTML = `<div class="td-wrap"><div class="td-main"><div class="td-today-date">${esc(today())}</div>
                 <p class="td-lead">Данных пока нет. Нажмите «Загрузить» или «Последние» вверху.</p></div></div>`;
             return;
         }
@@ -317,8 +312,7 @@ window.TodayView = (function () {
         root.innerHTML = `
             <div class="td-wrap">
                 <section class="td-main">
-                    <div class="td-crumb">Сегодня · ${esc(longDate)}</div>
-                    <h1 class="td-h1">${greeting()}</h1>
+                    <div class="td-today-date">Сегодня · ${esc(longDate)}</div>
                     <p class="td-lead">${esc(leadText(pend.length, errs.length, gaps))}${gaps ? ' <button type="button" class="td-link" data-td-gaps>Открыть справочник</button>' : ''}</p>
                     <div class="td-stats">
                         <div class="td-stat"><span>Загрузка вылетов, 7 дней</span><b>${k.lf != null ? k.lf + '%' : '—'}</b><em>${fmt(k.sold)} из ${fmt(k.seats)} мест</em></div>
