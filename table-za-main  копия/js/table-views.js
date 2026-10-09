@@ -66,8 +66,11 @@ function buildTableFilterPanel(base, foundCount, totalCount, hasExpectedLoad = t
             </div>
             ${showFlightTools ? `
             <div class="table-flight-tools">
-                <input type="text" id="table-flight-search" class="table-flight-search" placeholder="№ рейса, напр. 101"
-                       value="${escAttr(tableFlightSearchQuery)}" title="Поиск по номеру рейса">
+                <label class="fs-field" title="Номер рейса (101, доп. 301) или город. Ctrl+K — поиск с любой вкладки">
+                    <svg class="fs-field-icon" width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="8.5" cy="8.5" r="6"/><path d="M13 13l5 5"/></svg>
+                    <input type="text" id="table-flight-search" class="table-flight-search fs-input" placeholder="Рейс или город" aria-label="Поиск рейса по номеру или городу">
+                    <kbd class="fs-field-kbd">Ctrl K</kbd>
+                </label>
                 <button type="button" class="btn-secondary table-return-flight-btn" id="table-return-flight-btn">⇄ ${escHtml(returnLabel)}</button>
             </div>` : ''}
             ${showSpecToggle ? `
@@ -143,19 +146,7 @@ function bindTableControls(cont, base, targetDate, rerenderFn) {
     }
 
     const searchInput = cont.querySelector('#table-flight-search');
-    if (searchInput && !searchInput.dataset.bound) {
-        searchInput.dataset.bound = '1';
-        searchInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                tableFlightSearchQuery = searchInput.value.trim();
-                switchToTableFlightBySearch(tableFlightSearchQuery);
-            }
-        });
-        searchInput.addEventListener('change', () => {
-            tableFlightSearchQuery = searchInput.value.trim();
-        });
-    }
+    if (searchInput && typeof FlightSearch !== 'undefined') FlightSearch.attach(searchInput);
     const retBtn = cont.querySelector('#table-return-flight-btn');
     if (retBtn && !retBtn.dataset.bound) {
         retBtn.dataset.bound = '1';
@@ -174,6 +165,7 @@ function selectFlight(base,targetDate=null){
     if (currentFlight !== flight && typeof closeTableSalesPanel === 'function') closeTableSalesPanel();
     currentFlight=flight;
     lastSelectedDate=targetDate;
+    if (typeof FlightSearch !== 'undefined') FlightSearch.remember(flight);
     if (typeof SessionStore !== 'undefined') SessionStore.saveUiSession();
     if (typeof ActivityLog !== 'undefined') {
         ActivityLog.log('flight', flight, {
