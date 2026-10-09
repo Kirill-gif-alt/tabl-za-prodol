@@ -1579,7 +1579,7 @@ function renderSalesGrid() {
             let title = list.length
                 ? salesEntriesTitle(list)
                 : (canCell ? 'Не проверен — нажмите, чтобы отметить' : (dep.flown ? 'Рейс уже выполнен' : 'Отметить можно только сегодня'));
-            // Пустая ячейка «сегодня» у вылета в ближайшие 20 дней — подсказка решения (только подсветка).
+            // Пустая ячейка «сегодня» у вылета в ближайшие 15 дней — подсказка решения (только подсветка).
             let inner = salesCellInner(list);
             if (!list.length && !dep.flown && salesCheckIsToday(check) && typeof SalesAdvice !== 'undefined') {
                 const adv = SalesAdvice.forDeparture(dep.code, dep.date);

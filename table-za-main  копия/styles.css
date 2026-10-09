@@ -7541,6 +7541,26 @@ html[data-theme="dark"] .cr-pop { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
     box-shadow: inset 0 -2px 0 var(--text);
 }
 
+.td-ahead {
+    margin-left: auto;
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.td-ahead select {
+    padding: 3px 6px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+}
+
 .td-table-wrap {
     border: 1px solid var(--border);
     border-radius: 14px;
