@@ -217,7 +217,11 @@ window.FlightChecks = (function () {
         return issuesFor(code, date)[0] || null;
     }
 
+    let listCache = { token: '', map: null, out: [] };
     function list() {
+        const map = candidates();
+        const token = revisionToken();
+        if (listCache.map === map && listCache.token === token) return listCache.out.slice();
         const out = [];
         candidates().forEach(c => { evaluate(c).issues.forEach(i => out.push(i)); });
         out.sort((a, b) => {
@@ -226,7 +230,8 @@ window.FlightChecks = (function () {
             const t = (da ? da.getTime() : 0) - (db ? db.getTime() : 0);
             return t || String(a.code).localeCompare(String(b.code), 'ru', { numeric: true }) || String(a.rule).localeCompare(String(b.rule));
         });
-        return out;
+        listCache = { token, map, out };
+        return out.slice();
     }
 
     // Субсидированные рейсы с продажами до вылета, для которых в справочнике нет тарифа.

@@ -212,7 +212,9 @@ window.RouteCosts = (function () {
     }
 
     async function readXlsxJson(file) {
-        if (!file || typeof XLSX === 'undefined') return null;
+        if (!file) return null;
+        const XLSX = await loadPlainXlsx();
+        if (!XLSX) return null;
         const buf = await file.arrayBuffer();
         // cellDates:false — сырые серийники Excel, без сдвига часового пояса
         const wb = XLSX.read(buf, { type: 'array', cellDates: false });

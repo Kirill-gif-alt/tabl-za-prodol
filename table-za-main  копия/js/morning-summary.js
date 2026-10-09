@@ -39,13 +39,21 @@ window.MorningSummary = (function () {
     }
 
     // Вылеты, которые есть во вкладке «Управление продажами» (с учётом выбранных там маршрутов).
+    // Список УП тот же (кэш в SalesManagement) — набор вылетов не пересобираем.
+    let depCache = { list: null, set: new Set() };
     function salesDepartures() {
-        const set = new Set();
-        if (typeof SalesManagement === 'undefined' || !SalesManagement.listFlights) return set;
+        if (typeof SalesManagement === 'undefined' || !SalesManagement.listFlights) return new Set();
         try {
-            SalesManagement.listFlights().forEach(f => (f.departures || []).forEach(d => set.add(d.code + '|' + d.date)));
-        } catch (e) { console.warn('MorningSummary.salesDepartures', e); }
-        return set;
+            const list = SalesManagement.listFlights();
+            if (depCache.list === list) return depCache.set;
+            const set = new Set();
+            list.forEach(f => (f.departures || []).forEach(d => set.add(d.code + '|' + d.date)));
+            depCache = { list, set };
+            return set;
+        } catch (e) {
+            console.warn('MorningSummary.salesDepartures', e);
+            return new Set();
+        }
     }
 
     // Подсказки только по вылетам из «Управления продажами», по которым сегодня ещё никто не отметился.

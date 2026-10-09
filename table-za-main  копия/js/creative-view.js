@@ -668,10 +668,13 @@ window.CreativeView = (function () {
         return typeof escAttr === 'function' ? escAttr(v) : String(v == null ? '' : v);
     }
 
+    // Форматтеры создаются один раз: toLocaleString на каждую ячейку заметно тормозит большие таблицы.
+    const numFormats = {};
     function fmtNumber(n, digits) {
         if (n == null || isNaN(n)) return '—';
-        const opts = { maximumFractionDigits: digits == null ? 0 : digits };
-        return Number(n).toLocaleString('ru-RU', opts);
+        const d = digits == null ? 0 : digits;
+        const f = numFormats[d] || (numFormats[d] = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: d }));
+        return f.format(Number(n));
     }
 
     function formatValue(key, v) {

@@ -569,7 +569,9 @@ function loadSalesFile(fh) {
     });
 }
 async function loadExpectedLoadFile(fh){
-    if(!fh||typeof XLSX==='undefined')return;
+    if(!fh)return;
+    const XLSX=await loadPlainXlsx();
+    if(!XLSX)return;
     try{
         const wb=XLSX.read(await (await toFile(fh)).arrayBuffer(),{type:'array'});
         const sh=wb.Sheets[wb.SheetNames[0]];

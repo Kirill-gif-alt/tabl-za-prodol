@@ -60,8 +60,6 @@ window.TabOrder = (function () {
     }
 
     function apply() {
-        // Левое меню по разделам: порядок применяется внутри групп.
-        if (typeof AppShell !== 'undefined' && document.querySelector('.side-nav')) { AppShell.place(); return; }
         const nav = document.querySelector('.tab-nav');
         if (!nav) return;
         const order = load();

@@ -796,8 +796,12 @@ window.SalesManagement = (function () {
 
     // Дешёвый счётчик изменений отметок (для подписи кэша таблиц).
     let markRev = 0;
+    // Зовётся на каждую ячейку: число старых отметок считаем один раз на объект (он не меняется на месте — только заменяется).
+    let marksCountMemo = { marks: null, n: 0 };
     function markRevision() {
-        return markRev + ':' + peopleRev + ':' + pending.size + ':' + Object.keys(cache.marks || {}).length;
+        const marks = cache.marks || null;
+        if (marksCountMemo.marks !== marks) marksCountMemo = { marks, n: marks ? Object.keys(marks).length : 0 };
+        return markRev + ':' + peopleRev + ':' + pending.size + ':' + marksCountMemo.n;
     }
 
     function stamp(key) {
@@ -2195,7 +2199,7 @@ async function exportSalesManagementExcel() {
         if (typeof showToast === 'function') showToast('Вкладка недоступна для вашего профиля', 'error');
         return;
     }
-    if (typeof XLSX === 'undefined') {
+    if (!(await loadPlainXlsx())) {
         if (typeof showToast === 'function') showToast('Библиотека Excel не загружена', 'error');
         return;
     }

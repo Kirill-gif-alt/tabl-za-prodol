@@ -8,6 +8,7 @@ window.ProfileAuth = (function () {
     const PBKDF2_ITERATIONS = 120_000;
 
     const PERMISSIONS = {
+        tab_today: { label: 'Сегодня', group: 'Вкладки' },
         tab_main: { label: 'Графический план', group: 'Вкладки' },
         tab_table: { label: 'Динамика продаж', group: 'Вкладки' },
         tab_pkz: { label: 'ПКЗ', group: 'Вкладки' },
@@ -69,6 +70,7 @@ window.ProfileAuth = (function () {
     }
 
     const TAB_PERM = {
+        today: 'tab_today',
         main: 'tab_main',
         table: 'tab_table',
         pkz: 'tab_pkz',
@@ -528,8 +530,6 @@ window.ProfileAuth = (function () {
     }
 
     function canAccessTab(tab) {
-        // «Сегодня» — стартовая страница нового оформления, для всех; что на ней видно, решают права на остальные вкладки.
-        if (tab === 'today') return !!currentProfile && (typeof AppShell === 'undefined' || AppShell.layout() === 'new');
         if (tab === 'home') return resolveShowHomeMap(currentProfile);
         if (tab === 'stats') return !!(currentProfile?.isAdmin);
         const perm = TAB_PERM[tab];
@@ -542,7 +542,7 @@ window.ProfileAuth = (function () {
     }
 
     function getFirstAllowedTab() {
-        const order = ['today', 'home', 'main', 'table', 'pkz', 'pair', 'costs', 'data', 'rms', 'sales', 'creative', 'reports'];
+        const order = ['home', 'main', 'table', 'pkz', 'pair', 'costs', 'data', 'rms', 'sales', 'creative', 'reports', 'today'];
         return order.find(t => canAccessTab(t)) || null;
     }
 
@@ -642,6 +642,7 @@ window.ProfileAuth = (function () {
 
     function applyPermissions() {
         const tabMap = {
+            'tab-today': 'tab_today',
             'tab-main': 'tab_main',
             'tab-table': 'tab_table',
             'tab-pkz': 'tab_pkz',
@@ -679,7 +680,6 @@ window.ProfileAuth = (function () {
         }
 
         if (typeof FlightCard !== 'undefined') FlightCard.syncToggle();
-        if (typeof AppShell !== 'undefined') { AppShell.applyForProfile(); AppShell.sync(); }
         const settingsBtn = document.getElementById('profile-settings-btn');
         if (settingsBtn) {
             settingsBtn.style.display = currentProfile ? '' : 'none';
