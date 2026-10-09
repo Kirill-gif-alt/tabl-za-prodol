@@ -4,6 +4,7 @@ window.ThemeSettings = (function () {
     let previewTimer = null;
     let formBuilt = false;
     let pendingTabOrder = null;
+    let pendingTabNames = null;
 
     const SECTIONS = [
         { id: 'general', label: 'Общее' },
@@ -13,6 +14,9 @@ window.ThemeSettings = (function () {
         { id: 'data', label: 'Загрузка рейсов' },
         { id: 'rms', label: 'RMS' },
         { id: 'sales', label: 'Управление продажами' },
+        { id: 'today', label: 'Сегодня' },
+        { id: 'creative', label: 'Творческая' },
+        { id: 'reports', label: 'Отчёты' },
         { id: 'excel', label: 'Выгрузка Excel' },
         { id: 'tabs', label: 'Вкладки' },
         { id: 'password', label: 'Пароль' }
@@ -69,6 +73,20 @@ window.ThemeSettings = (function () {
             { key: 'smDown', label: 'Снижение', hint: 'Насыщенно-красная отметка', css: '--sm-down' },
             { key: 'smUp', label: 'Повышение', hint: 'Зелёная отметка', css: '--sm-up' },
             { key: 'smFlew', label: 'Улетевшие', hint: 'Прошедшие даты', css: '--sm-flew' }
+        ],
+        today: [
+            { key: 'todayHead', label: 'Шапка таблицы', hint: 'Заголовки «Ждут решения», «Вылеты дня»', css: '--today-head-bg' },
+            { key: 'todayCard', label: 'Плитки и дни', hint: 'Фон плиток и полосы дней', css: '--today-card-bg' },
+            { key: 'todayActive', label: 'Выбранный день', hint: 'Рамка выбранного дня и вкладки', css: '--today-active' }
+        ],
+        creative: [
+            { key: 'crHead', label: 'Шапка таблицы', hint: 'Заголовки столбцов', css: '--cr-head-bg' },
+            { key: 'crTotals', label: 'Строка «Итого»', hint: 'Итоги под шапкой', css: '--cr-totals-bg' },
+            { key: 'crRowEven', label: 'Чётные строки', hint: 'Зебра', css: '--cr-row-even' }
+        ],
+        reports: [
+            { key: 'rpHead', label: 'Шапка таблиц', hint: 'Проверка, справочник, сверка, решения', css: '--rp-head-bg' },
+            { key: 'rpRowEven', label: 'Чётные строки', hint: 'Зебра', css: '--rp-row-even' }
         ]
     };
 
@@ -86,7 +104,8 @@ window.ThemeSettings = (function () {
             pairOutHead: '#1e40af', pairInHead: '#047857', pairOutBg: '#eff6ff', pairInBg: '#ecfdf5',
             dataOut: '#eff6ff', dataIn: '#ecfdf5', flewBg: '#e8ecf1', dataCardHead: '#f8fafc',
             rmsHead: '#012A4A', rmsRowEven: '#f1f5f9',
-            smHead: '#012A4A', smKeep: '#F7DC6F', smAttn: '#F5B7B1', smDown: '#8E1B2F', smUp: '#7DCEA0', smFlew: '#D5D8DC'
+            smHead: '#012A4A', smKeep: '#F7DC6F', smAttn: '#F5B7B1', smDown: '#8E1B2F', smUp: '#7DCEA0', smFlew: '#D5D8DC',
+            todayHead: '#012A4A', todayCard: '#ffffff', todayActive: '#012A4A', crHead: '#012A4A', crTotals: '#e2e8f0', crRowEven: '#f8fafc', rpHead: '#012A4A', rpRowEven: '#f4f8fe'
         },
         blue: {
             name: 'Синяя',
@@ -99,7 +118,8 @@ window.ThemeSettings = (function () {
             pairOutHead: '#2563a8', pairInHead: '#1b7a5a', pairOutBg: '#f3f7fb', pairInBg: '#f3faf6',
             dataOut: '#f3f7fb', dataIn: '#f3faf6', flewBg: '#e8eef4', dataCardHead: '#f7f9fc',
             rmsHead: '#205493', rmsRowEven: '#eef3f8',
-            smHead: '#205493', smKeep: '#F7DC6F', smAttn: '#F5B7B1', smDown: '#8E1B2F', smUp: '#7DCEA0', smFlew: '#D5D8DC'
+            smHead: '#205493', smKeep: '#F7DC6F', smAttn: '#F5B7B1', smDown: '#8E1B2F', smUp: '#7DCEA0', smFlew: '#D5D8DC',
+            todayHead: '#205493', todayCard: '#ffffff', todayActive: '#1a2b3c', crHead: '#205493', crTotals: '#e3e9f0', crRowEven: '#f6f9fc', rpHead: '#205493', rpRowEven: '#f6f9fc'
         },
         gray: {
             name: 'Серая',
@@ -112,7 +132,8 @@ window.ThemeSettings = (function () {
             pairOutHead: '#3d5a80', pairInHead: '#2d6a4f', pairOutBg: '#eef2f6', pairInBg: '#eef6f1',
             dataOut: '#eef2f6', dataIn: '#eef6f1', flewBg: '#e4e6ea', dataCardHead: '#f4f5f7',
             rmsHead: '#3d434b', rmsRowEven: '#eceef1',
-            smHead: '#3d434b', smKeep: '#F7DC6F', smAttn: '#F5B7B1', smDown: '#8E1B2F', smUp: '#7DCEA0', smFlew: '#D5D8DC'
+            smHead: '#3d434b', smKeep: '#F7DC6F', smAttn: '#F5B7B1', smDown: '#8E1B2F', smUp: '#7DCEA0', smFlew: '#D5D8DC',
+            todayHead: '#3d434b', todayCard: '#ffffff', todayActive: '#1F2328', crHead: '#3d434b', crTotals: '#e4e6ea', crRowEven: '#f6f7f9', rpHead: '#3d434b', rpRowEven: '#f6f7f9'
         },
         dark: {
             name: 'Тёмная',
@@ -125,7 +146,8 @@ window.ThemeSettings = (function () {
             pairOutHead: '#1f6feb', pairInHead: '#238636', pairOutBg: '#12202e', pairInBg: '#12241c',
             dataOut: '#12202e', dataIn: '#12241c', flewBg: '#0d1117', dataCardHead: '#161b22',
             rmsHead: '#161b22', rmsRowEven: '#1c2128',
-            smHead: '#161b22', smKeep: '#F7DC6F', smAttn: '#F5B7B1', smDown: '#8E1B2F', smUp: '#7DCEA0', smFlew: '#30363d'
+            smHead: '#161b22', smKeep: '#F7DC6F', smAttn: '#F5B7B1', smDown: '#8E1B2F', smUp: '#7DCEA0', smFlew: '#30363d',
+            todayHead: '#161b22', todayCard: '#161b22', todayActive: '#e6edf3', crHead: '#161b22', crTotals: '#21262d', crRowEven: '#1c2128', rpHead: '#161b22', rpRowEven: '#1c2128'
         }
     };
 
@@ -173,6 +195,10 @@ window.ThemeSettings = (function () {
             if (full.includes('stats') && !merged.includes('stats')) merged.push('stats');
             TabOrder.save(merged);
             pendingTabOrder = null;
+        }
+        if (pendingTabNames && typeof TabOrder !== 'undefined') {
+            TabOrder.saveNames(pendingTabNames);
+            pendingTabNames = null;
         }
         return merged;
     }
@@ -222,7 +248,8 @@ window.ThemeSettings = (function () {
             ['smDown', '--sm-down-text'],
             ['smUp', '--sm-up-text'],
             ['smFlew', '--sm-flew-text'],
-            ['smHead', '--sm-head-text']
+            ['smHead', '--sm-head-text'],
+            ['crTotals', '--cr-totals-text']
         ].forEach(([key, cssVar]) => {
             const hex = t[key] || DEFAULTS[key];
             if (hex) root.style.setProperty(cssVar, hexLuminance(hex) < 0.45 ? '#ffffff' : '#1c2833');
@@ -247,6 +274,7 @@ window.ThemeSettings = (function () {
         try { localStorage.removeItem(getStorageKey()); } catch { /* ignore */ }
         if (typeof TabOrder !== 'undefined') TabOrder.reset();
         pendingTabOrder = null;
+        pendingTabNames = null;
         apply(DEFAULTS, true);
         return { ...DEFAULTS };
     }
@@ -334,7 +362,8 @@ window.ThemeSettings = (function () {
         if (sectionId === 'tabs' && typeof TabOrder !== 'undefined') {
             const editor = container.querySelector('#theme-tab-order-editor');
             if (editor) {
-                TabOrder.renderEditor(editor, (order) => { pendingTabOrder = order; }, pendingTabOrder || TabOrder.getEditableTabs());
+                TabOrder.renderEditor(editor, (order) => { pendingTabOrder = order; }, pendingTabOrder || TabOrder.getEditableTabs(),
+                    (names) => { pendingTabNames = names; }, pendingTabNames || TabOrder.loadNames());
             }
         }
         if (sectionId === 'excel') renderExcelFolders(container);
@@ -627,6 +656,10 @@ window.ThemeSettings = (function () {
         const body = document.getElementById('profile-settings-body');
         if (!modal || !body) return;
         pendingTabOrder = typeof TabOrder !== 'undefined' ? TabOrder.getEditableTabs() : null;
+        pendingTabNames = null;
+        // Раздел «Вкладки» мог остаться открытым с прошлого раза — перерисовать с сохранёнными данными.
+        const tabsOpen = body.querySelector('.theme-section-panel[data-section="tabs"].active');
+        if (tabsOpen) showSection(body, 'tabs');
         buildFormOnce(body);
         syncAdminSettings(body);
         if (body.querySelector('.theme-section-panel[data-section="excel"].active')) renderExcelFolders(body);
