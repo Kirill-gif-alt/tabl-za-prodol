@@ -1,6 +1,6 @@
 // Утренняя сводка: что требует внимания сегодня. Открывается сама один раз в день (на профиль),
 // потом — по значку «☀ N» в шапке. Считается после старта в фоне, порциями (не тормозит вход).
-//  • ждут решения: вылеты на 20 дней с подсказкой (▼ / ! / ▲) и без отметки за сегодня в УП;
+//  • ждут решения: вылеты из «Управления продажами» на 20 дней с подсказкой (▼ / ! / ▲) и без отметки за сегодня;
 //  • ошибки тарифов: рейсы до вылета с ошибкой проверки;
 //  • пропуски справочника (только тем, кто видит справочник).
 window.MorningSummary = (function () {
@@ -31,17 +31,29 @@ window.MorningSummary = (function () {
 
     function sig() {
         return [typeof dataEpoch === 'number' ? dataEpoch : 0, today(), profile() ? profile().id : '',
-            typeof allData !== 'undefined' && allData ? allData.length : 0].join('|');
+            typeof allData !== 'undefined' && allData ? allData.length : 0, salesDepartures().size].join('|');
     }
 
     function hasData() {
         return typeof groupedData !== 'undefined' && groupedData && Object.keys(groupedData).length > 0;
     }
 
-    // Подсказки, по которым сегодня ещё никто не отметился.
+    // Вылеты, которые есть во вкладке «Управление продажами» (с учётом выбранных там маршрутов).
+    function salesDepartures() {
+        const set = new Set();
+        if (typeof SalesManagement === 'undefined' || !SalesManagement.listFlights) return set;
+        try {
+            SalesManagement.listFlights().forEach(f => (f.departures || []).forEach(d => set.add(d.code + '|' + d.date)));
+        } catch (e) { console.warn('MorningSummary.salesDepartures', e); }
+        return set;
+    }
+
+    // Подсказки только по вылетам из «Управления продажами», по которым сегодня ещё никто не отметился.
     function pending() {
         const t = today();
-        return advice.filter(a => !(typeof SalesManagement !== 'undefined' && SalesManagement.getMarks(a.code, a.date, t).length));
+        const inSales = salesDepartures();
+        return advice.filter(a => inSales.has(a.code + '|' + a.date)
+            && !SalesManagement.getMarks(a.code, a.date, t).length);
     }
 
     function fareErrors() {
@@ -54,7 +66,7 @@ window.MorningSummary = (function () {
     }
 
     function adviceAllowed() {
-        return canTab('sales') || canTab('rms');
+        return canTab('sales') && typeof SalesManagement !== 'undefined';
     }
 
     async function build() {
@@ -63,7 +75,7 @@ window.MorningSummary = (function () {
         if (builtFor === s) return;
         if (building) return building;
         building = (async () => {
-            advice = adviceAllowed() && typeof SalesAdvice !== 'undefined' ? await SalesAdvice.scanAll() : [];
+            advice = adviceAllowed() && typeof SalesAdvice !== 'undefined' ? await SalesAdvice.scanAll(salesDepartures()) : [];
             builtFor = s;
             if (typeof updateHeaderStatus === 'function') updateHeaderStatus();
         })().finally(() => { building = null; });
@@ -122,7 +134,7 @@ window.MorningSummary = (function () {
                 <td class="ms-nowrap"><strong>${esc(a.code)}</strong> ${esc(a.date)}</td>
                 <td class="ms-muted">${esc(dir(a.code))}</td>
                 <td>${esc(a.text)}</td>
-                <td class="ms-nowrap">${canTab('sales') ? `<button type="button" class="filter-btn rp-open" data-ms-sales="${esc(a.code)}" data-ms-date="${esc(a.date)}">В УП</button>` : ''}</td>
+                <td class="ms-nowrap"><button type="button" class="filter-btn rp-open" data-ms-sales="${esc(a.code)}" data-ms-date="${esc(a.date)}">В УП</button></td>
             </tr>`).join('');
         box.innerHTML = `
             <div class="ms-tiles">
@@ -131,7 +143,7 @@ window.MorningSummary = (function () {
                 ${typeof SubsidyRef !== 'undefined' && SubsidyRef.canView() ? `<button type="button" class="ms-tile ms-tile-btn" data-ms-open="refs"><div class="ms-tile-n${gaps ? ' ms-warn' : ''}">${gaps}</div><div class="ms-tile-l">пропусков в справочнике<br><span class="ms-muted">открыть проверку →</span></div></button>` : ''}
             </div>
             ${adviceAllowed() ? (list.length ? `
-                <p class="ms-note">Вылеты на ${typeof SalesAdvice !== 'undefined' ? SalesAdvice.DAYS_AHEAD : 20} дней, где продажи заметно расходятся с нормой и планом, а отметки за сегодня ещё нет. Нажмите строку — карточка рейса, «В УП» — поставить отметку.</p>
+                <p class="ms-note">Вылеты из «Управления продажами» на ${typeof SalesAdvice !== 'undefined' ? SalesAdvice.DAYS_AHEAD : 20} дней, где продажи заметно расходятся с нормой и планом, а отметки за сегодня ещё нет. Нажмите строку — карточка рейса, «В УП» — поставить отметку.</p>
                 <div class="ms-scroll"><table class="ms-table"><tbody>${rows}</tbody></table></div>
                 ${list.length > shown.length ? `<p class="ms-note">Показаны первые ${shown.length} из ${list.length}.</p>` : ''}`
                 : '<p class="ms-note ms-ok">По вылетам на 20 дней всё в норме или уже отмечено сегодня.</p>') : ''}`;

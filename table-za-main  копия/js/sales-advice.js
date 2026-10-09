@@ -89,8 +89,9 @@ window.SalesAdvice = (function () {
     }
 
     // Подсказки по всем вылетам окна (для сводки). Считается порциями, чтобы не подвешивать страницу.
-    async function scanAll(onProgress) {
-        const list = departuresAhead();
+    // only — набор «рейс|дата»: считать только эти вылеты (например, из «Управления продажами»).
+    async function scanAll(only, onProgress) {
+        const list = departuresAhead().filter(d => !only || only.has(d.code + '|' + d.date));
         const out = [];
         for (let i = 0; i < list.length; i++) {
             const a = forDeparture(list[i].code, list[i].date);
