@@ -640,12 +640,12 @@ function createDataView(c) {
                     </div>
                     <div class="data-hero-toolbar data-hero-toolbar-top-right">
                         <input type="search" id="data-search-input" class="data-search-input data-ctrl-sm" placeholder="Поиск" autocomplete="off">
-                        <select id="data-route-type-filter" class="table-sort-select data-ctrl-sm">
+                        <select id="data-route-type-filter" class="table-sort-select data-ctrl-sm" aria-label="Тип рейса">
                             <option value="all">Все</option>
                             <option value="krai">Краевые</option>
                             <option value="interregional">Межрег.</option>
                         </select>
-                        <select id="data-sort-select" class="table-sort-select data-ctrl-sm">
+                        <select id="data-sort-select" class="table-sort-select data-ctrl-sm" aria-label="Сортировка">
                             <option value="route-asc">Маршрут ↑</option>
                             <option value="route-desc">Маршрут ↓</option>
                             <option value="date-asc">Дата ↑</option>

@@ -55,7 +55,7 @@ function buildTableFilterPanel(base, foundCount, totalCount, hasExpectedLoad = t
 
             <div class="table-sort-wrap">
                 <span class="table-sort-label">Сортировка</span>
-                <select id="table-sort-select" class="table-sort-select">
+                <select id="table-sort-select" class="table-sort-select" aria-label="Сортировка">
                     <option value="date-asc" ${tableSort.by==='date' && tableSort.dir==='asc' ? 'selected' : ''}>Дата ↑</option>
                     <option value="date-desc" ${tableSort.by==='date' && tableSort.dir==='desc' ? 'selected' : ''}>Дата ↓</option>
                     <option value="load-desc" ${tableSort.by==='load' && tableSort.dir==='desc' ? 'selected' : ''}>Загрузка % ↓</option>

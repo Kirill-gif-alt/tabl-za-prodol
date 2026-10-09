@@ -26,7 +26,7 @@ function createRmsView(c) {
                         </div>
                         <div class="table-sort-wrap">
                             <span class="table-sort-label">Период</span>
-                            <select id="rms-days-filter" onchange="renderRmsWatchlist()" class="table-sort-select">
+                            <select id="rms-days-filter" aria-label="Период" onchange="renderRmsWatchlist()" class="table-sort-select">
                                 <option value="7">7 дней</option>
                                 <option value="14">14 дней</option>
                                 <option value="30" selected>30 дней</option>
@@ -34,7 +34,7 @@ function createRmsView(c) {
                         </div>
                         <div class="table-sort-wrap">
                             <span class="table-sort-label">Тип рейса</span>
-                            <select id="rms-route-type-filter" onchange="renderRmsWatchlist()" class="table-sort-select">
+                            <select id="rms-route-type-filter" aria-label="Тип рейса" onchange="renderRmsWatchlist()" class="table-sort-select">
                                 <option value="all">Все</option>
                                 <option value="krai">Краевые</option>
                                 <option value="interregional">Межрегиональные</option>
@@ -42,7 +42,7 @@ function createRmsView(c) {
                         </div>
                         <div class="table-sort-wrap">
                             <span class="table-sort-label">Показать</span>
-                            <select id="rms-alert-filter" onchange="renderRmsWatchlist()" class="table-sort-select">
+                            <select id="rms-alert-filter" aria-label="Показать" onchange="renderRmsWatchlist()" class="table-sort-select">
                                 <option value="all">Все рейсы</option>
                                 <option value="alerts">Только предупреждения</option>
                             </select>
