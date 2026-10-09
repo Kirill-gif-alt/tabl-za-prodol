@@ -528,6 +528,8 @@ window.ProfileAuth = (function () {
     }
 
     function canAccessTab(tab) {
+        // «Сегодня» — стартовая страница для всех; что на ней видно, решают права на остальные вкладки.
+        if (tab === 'today') return !!currentProfile;
         if (tab === 'home') return resolveShowHomeMap(currentProfile);
         if (tab === 'stats') return !!(currentProfile?.isAdmin);
         const perm = TAB_PERM[tab];
@@ -540,7 +542,7 @@ window.ProfileAuth = (function () {
     }
 
     function getFirstAllowedTab() {
-        const order = ['home', 'main', 'table', 'pkz', 'pair', 'costs', 'data', 'rms', 'sales', 'creative', 'reports'];
+        const order = ['today', 'home', 'main', 'table', 'pkz', 'pair', 'costs', 'data', 'rms', 'sales', 'creative', 'reports'];
         return order.find(t => canAccessTab(t)) || null;
     }
 
@@ -677,6 +679,7 @@ window.ProfileAuth = (function () {
         }
 
         if (typeof FlightCard !== 'undefined') FlightCard.syncToggle();
+        if (typeof AppShell !== 'undefined') { AppShell.applyForProfile(); AppShell.sync(); }
         const settingsBtn = document.getElementById('profile-settings-btn');
         if (settingsBtn) {
             settingsBtn.style.display = currentProfile ? '' : 'none';

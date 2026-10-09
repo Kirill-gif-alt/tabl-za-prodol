@@ -143,6 +143,7 @@ let dataBoardRenderCache = { sig: '', html: '', stats: '' };
 let dataBoardRenderGen = 0;
 
 const TAB_HOST_CLASSES = {
+    today: 'content-area content-today',
     main: 'content-area',
     table: 'content-area',
     pkz: 'content-area',
@@ -466,6 +467,10 @@ function invalidateTabPanelState() {
 }
 
 function refreshTabPanel(tab) {
+    if (tab === 'today') {
+        if (typeof TodayView !== 'undefined') TodayView.refresh();
+        return;
+    }
     if (tab === 'main') {
         const content = document.getElementById('timeline-content');
         const sig = typeof getTimelineCacheSignature === 'function' ? getTimelineCacheSignature() : '';
@@ -565,7 +570,7 @@ function switchMainTab(tab){
     if (!panel) return;
     panel.hidden = false;
 
-    ['tab-home','tab-main','tab-table','tab-pkz','tab-pair','tab-costs','tab-rms','tab-sales','tab-creative','tab-reports','tab-data','tab-stats'].forEach(id=>{
+    ['tab-today','tab-home','tab-main','tab-table','tab-pkz','tab-pair','tab-costs','tab-rms','tab-sales','tab-creative','tab-reports','tab-data','tab-stats'].forEach(id=>{
         const b = document.getElementById(id);
         if (!b) return;
         b.classList.remove('tab-active');
@@ -590,6 +595,7 @@ function switchMainTab(tab){
         else if (tab === 'reports' && typeof createReportsView === 'function') createReportsView(panel);
         else if (tab === 'home' && typeof NetworkMap !== 'undefined') NetworkMap.createView(panel);
         else if (tab === 'stats') createStatsView(panel);
+        else if (tab === 'today' && typeof createTodayView === 'function') createTodayView(panel);
         else createMainTimelineView(panel);
         tabPanelsBuilt[tab] = true;
     } else {
@@ -704,7 +710,11 @@ async function loadSharedSideData() {
 // Стартовая вкладка выбирается заранее, чтобы не рисовать сначала одну вкладку, а сразу за ней другую.
 async function startAppAfterLogin() {
     await loadSharedSideData();
-    const startTab = typeof ProfileAuth !== 'undefined' && ProfileAuth.canAccessTab('home') ? 'home' : null;
+    // Старт — страница «Сегодня» (главное за день); карта «Сеть» открывается из меню.
+    // В классическом оформлении старт как раньше (карта «Сеть», если включена).
+    const newLook = typeof AppShell === 'undefined' || AppShell.layout() === 'new';
+    const startTab = typeof ProfileAuth === 'undefined' ? null
+        : (newLook && ProfileAuth.canAccessTab('today') ? 'today' : (ProfileAuth.canAccessTab('home') ? 'home' : null));
     if (typeof SessionStore !== 'undefined') {
         await SessionStore.initOnStartup({ startTab });
     } else {

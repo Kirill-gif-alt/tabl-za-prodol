@@ -75,6 +75,20 @@ window.ThemeSettings = (function () {
     const ALL_FIELDS = Object.values(FIELD_GROUPS).flat();
 
     const PRESETS = {
+        // «Офис» — светлая спокойная тема по умолчанию (редизайн «Светлый офис»).
+        office: {
+            name: 'Офис (светлая)',
+            mainOpen: '#24324a', mainOpenText: '#ffffff', mainLow: '#fff7ed', mainLowText: '#9a3412',
+            mainFull: '#ecfdf5', mainFullText: '#047857', mainClosed: '#fef2f2', mainClosedText: '#991b1b',
+            mainFlew: '#f1f1ee', mainFlewText: '#6b7280',
+            primary: '#1f2328', navBg: '#1f2328', accent: '#2563eb', bg: '#f7f7f5', surface: '#ffffff',
+            border: '#e7e7e3', text: '#1f2328', textMuted: '#6b7280',
+            tableHead: '#2b2f36', tableRowEven: '#f4f4f1', tableRowOdd: '#ffffff',
+            pairOutHead: '#2f4a6d', pairInHead: '#2d6a4f', pairOutBg: '#f3f6fa', pairInBg: '#f2f8f4',
+            dataOut: '#f3f6fa', dataIn: '#f2f8f4', flewBg: '#ececea', dataCardHead: '#fafaf9',
+            rmsHead: '#2b2f36', rmsRowEven: '#f6f6f3',
+            smHead: '#2b2f36', smKeep: '#F7DC6F', smAttn: '#F5B7B1', smDown: '#8E1B2F', smUp: '#7DCEA0', smFlew: '#e5e5e2'
+        },
         krasavia: {
             name: 'Стандартный',
             mainOpen: '#012A4A', mainOpenText: '#ffffff', mainLow: '#fff7ed', mainLowText: '#9a3412',
@@ -129,7 +143,7 @@ window.ThemeSettings = (function () {
         }
     };
 
-    const DEFAULTS = { ...PRESETS.krasavia };
+    const DEFAULTS = { ...PRESETS.office };
 
     const MAIN_BORDER_MAP = {
         mainOpen: '--main-chip-open-border',
@@ -144,10 +158,18 @@ window.ThemeSettings = (function () {
         return STORAGE_PREFIX + id;
     }
 
+    // Палитра по умолчанию — под оформление: новое — «Офис», классическое — прежняя «Стандартная».
+    function defaultsNow() {
+        const classic = typeof AppShell !== 'undefined' && AppShell.layout() === 'classic';
+        const p = { ...(classic ? PRESETS.krasavia : PRESETS.office) };
+        delete p.name;
+        return p;
+    }
+
     function load() {
         try {
             const raw = localStorage.getItem(getStorageKey());
-            if (!raw) return { ...DEFAULTS };
+            if (!raw) return defaultsNow();
             const saved = JSON.parse(raw);
             const theme = { ...DEFAULTS, ...saved };
             const oldDown = String(saved.smDown || '').replace('#', '').toUpperCase();
@@ -157,7 +179,7 @@ window.ThemeSettings = (function () {
             }
             return theme;
         } catch {
-            return { ...DEFAULTS };
+            return defaultsNow();
         }
     }
 
@@ -227,7 +249,21 @@ window.ThemeSettings = (function () {
             const hex = t[key] || DEFAULTS[key];
             if (hex) root.style.setProperty(cssVar, hexLuminance(hex) < 0.45 ? '#ffffff' : '#1c2833');
         });
+        if (typeof AppShell !== 'undefined') AppShell.syncTheme();
         if (doRefresh) refreshViews();
+    }
+
+    // Быстрое переключение темы (кнопка в левом меню): свои цвета отметок УП сохраняются.
+    function setPreset(id) {
+        const p = PRESETS[id];
+        if (!p) return;
+        const cur = load();
+        const next = { ...p };
+        ['smKeep', 'smAttn', 'smDown', 'smUp'].forEach(k => { if (cur[k]) next[k] = cur[k]; });
+        delete next.name;
+        save(next);
+        apply(next, true);
+        if (typeof refreshCurrentView === 'function') refreshCurrentView();
     }
 
     function refreshViews() {
@@ -274,7 +310,18 @@ window.ThemeSettings = (function () {
             </div>
         `).join('');
 
+        const lay = typeof AppShell !== 'undefined' ? AppShell.layout() : 'classic';
         container.innerHTML = `
+            <div class="ui-layout-pick" role="radiogroup" aria-label="Оформление">
+                <button type="button" class="ui-layout-opt${lay === 'new' ? ' on' : ''}" data-ui-layout="new" role="radio" aria-checked="${lay === 'new'}">
+                    <span class="ui-layout-thumb ui-layout-thumb-new"><i></i><b></b></span>
+                    <span><strong>Новое оформление</strong><em>Меню слева по разделам, страница «Сегодня», светлая или тёмная тема</em></span>
+                </button>
+                <button type="button" class="ui-layout-opt${lay === 'classic' ? ' on' : ''}" data-ui-layout="classic" role="radio" aria-checked="${lay === 'classic'}">
+                    <span class="ui-layout-thumb ui-layout-thumb-classic"><i></i><b></b></span>
+                    <span><strong>Классическое</strong><em>Тёмная шапка и вкладки сверху — как было раньше</em></span>
+                </button>
+            </div>
             <div class="theme-presets">
                 ${Object.entries(PRESETS).map(([id, p]) => `
                     <button type="button" class="theme-preset-btn" data-preset="${id}">${p.name}</button>
@@ -382,6 +429,17 @@ window.ThemeSettings = (function () {
 
     function bindFormEvents(container) {
         container.addEventListener('click', (e) => {
+            const layBtn = e.target.closest('[data-ui-layout]');
+            if (layBtn && typeof AppShell !== 'undefined') {
+                AppShell.setLayout(layBtn.dataset.uiLayout, true);
+                container.querySelectorAll('[data-ui-layout]').forEach(b => {
+                    const on = b === layBtn;
+                    b.classList.toggle('on', on);
+                    b.setAttribute('aria-checked', String(on));
+                });
+                updateInputsFromTheme(container, load());
+                return;
+            }
             const presetBtn = e.target.closest('.theme-preset-btn');
             if (presetBtn) {
                 const preset = PRESETS[presetBtn.dataset.preset];
@@ -670,5 +728,5 @@ window.ThemeSettings = (function () {
         });
     }
 
-    return { init, load, save, apply, reset, openModal, closeModal, DEFAULTS, PRESETS };
+    return { init, load, save, apply, reset, openModal, closeModal, setPreset, DEFAULTS, PRESETS };
 })();
