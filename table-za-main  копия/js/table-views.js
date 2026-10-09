@@ -689,7 +689,20 @@ function bindTableRowDelegation(cont) {
         }
     };
 
-    // Одинарный клик — выделение ячеек; детализация — по двойному клику
+    // Одинарный клик — выделение ячеек и карточка рейса (если показана кнопкой ▤); детализация — по двойному клику.
+    // В «Экономической таблице» клик по ячейке «туда» или «обратно» показывает в карточке именно этот рейс.
+    cont.addEventListener('click', (e) => {
+        if (typeof FlightCard === 'undefined' || !FlightCard.isOpen || !FlightCard.isOpen()) return;
+        if (e.target.closest('input, button, a, select, textarea, .table-cols-toggle-btn')) return;
+        const cell = e.target.closest('[data-flight-code][data-date]');
+        if (cell && !cell.classList.contains('pair-leg-empty') && cell.dataset.flightCode) {
+            FlightCard.maybeOpen(cell.dataset.flightCode, cell.dataset.date);
+            return;
+        }
+        const row = e.target.closest('tr[data-date][data-flight-base]');
+        if (row) FlightCard.maybeOpen(row.dataset.flightCode || row.dataset.flightBase, row.dataset.date);
+    });
+
     cont.addEventListener('dblclick', (e) => {
         if (e.target.closest('.table-cols-toggle-btn')) return;
         if (e.target.tagName === 'A' || e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;

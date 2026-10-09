@@ -623,5 +623,4 @@ function processData() {
         if (typeof dataEpoch === 'number') dataEpoch++;
         updateHeaderStatus();
     }
-    if (typeof publishRmsWidgetSnapshot === 'function') publishRmsWidgetSnapshot();
 }

@@ -713,6 +713,7 @@ window.ReportsView = (function () {
         if (typeof currentFlight !== 'undefined') currentFlight = base;
         if (typeof lastSelectedDate !== 'undefined') lastSelectedDate = date;
         switchMainTab(tab);
+        if (typeof FlightCard !== 'undefined' && date) FlightCard.maybeOpen(base, date);
     }
 
     async function exportChecks() {

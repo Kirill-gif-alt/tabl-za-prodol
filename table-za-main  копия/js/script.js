@@ -406,7 +406,6 @@ function rebuildSalesAggregatesFromDetails() {
     if (typeof invalidateMetricsCache === 'function') invalidateMetricsCache();
     if (typeof updateHeaderWithLastUpdate === 'function') updateHeaderWithLastUpdate();
     if (typeof updateHeaderStatus === 'function') updateHeaderStatus();
-    if (typeof publishRmsWidgetSnapshot === 'function') publishRmsWidgetSnapshot();
     return hasSales;
 }
 

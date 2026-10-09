@@ -9,7 +9,7 @@ window.SharedStorage = (function () {
     const SHARED_DIR = 'shared';
     const ALLOWED_FILES = new Set([
         'profiles.json', 'snapshot.json', 'activity.json', 'flight-comments.json',
-        'subsidy-overrides.json', 'pkz-nav.json', 'sales-management.json', 'rms-widget.json',
+        'subsidy-overrides.json', 'pkz-nav.json', 'sales-management.json',
         'creative-layouts.json', 'subsidy-fares.json', 'subsidy-ref.json'
     ]);
 

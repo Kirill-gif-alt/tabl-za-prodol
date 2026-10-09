@@ -755,7 +755,8 @@ window.CreativeView = (function () {
                 const v = r.values[key];
                 return `<td class="${cellClass(key, v)}">${esc(formatValue(key, v))}</td>`;
             }).join('');
-            return `<tr class="${cls}">${cells}</tr>`;
+            const card = r.ctx ? ` data-cr-code="${attr(r.ctx.code)}" data-cr-date="${attr(r.ctx.date)}"` : '';
+            return `<tr class="${cls}"${card}>${cells}</tr>`;
         });
         if (!rowHtml.length) {
             if (typeof TableVirtual !== 'undefined') TableVirtual.destroyHandle(wrap);
@@ -1097,6 +1098,11 @@ window.CreativeView = (function () {
     function bind(root) {
         root.addEventListener('click', (event) => {
             const t = event.target;
+            // Строка-вылет (без группировки): карточка рейса, если она показана кнопкой ▤.
+            const crRow = t.closest('tr[data-cr-code][data-cr-date]');
+            if (crRow && typeof FlightCard !== 'undefined' && FlightCard.isOpen && FlightCard.isOpen()) {
+                FlightCard.maybeOpen(crRow.dataset.crCode, crRow.dataset.crDate);
+            }
             const closeBtn = t.closest('[data-cr-close]');
             if (closeBtn) {
                 if (closeBtn.dataset.crClose === 'panel') { panelOpen = false; renderPanel(); }

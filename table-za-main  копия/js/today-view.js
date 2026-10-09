@@ -1,12 +1,12 @@
 // «Сегодня» — стартовая страница: главное за день одним экраном.
 //  • строка-вывод: сколько ждёт решения, ошибок тарифов, пропусков справочника;
 //  • три ключевые цифры: загрузка вылетов на 7 дней, продано сегодня, вылетов на 7 дней;
-//  • полоса дней (14 дней): загрузка и число решений по каждому дню; клик — вылеты этого дня;
-//  • таблица: «Ждут решения» / «Ошибки тарифов» / «Вылеты дня»;
-//  • справа — выбранный рейс: цифры, вывод, график продаж против нормы и плана, отметка за сегодня.
+//  • полоса дней (сегодня и столько дней вперёд, сколько выбрано в «Вперёд на»): загрузка и число решений;
+//    клик — вылеты этого дня;
+//  • таблица: «Ждут решения» / «Ошибки тарифов» / «Вылеты дня»; клик по строке — карточка рейса
+//    (если она показана кнопкой ▤), «Открыть» — рейс в «Управлении продажами» или «Динамике продаж».
 // Считает лениво и только при открытии страницы; подсказки — те же, что в УП и сводке (SalesAdvice).
 window.TodayView = (function () {
-    const DAYS = 14;
     let tab = 'advice';         // advice | errors | day
     let pickDay = '';           // выбранный день полосы (ДД.ММ.ГГГГ)
     let selected = null;        // { code, date }
@@ -152,7 +152,8 @@ window.TodayView = (function () {
         const byDay = new Map();
         pend.forEach(a => byDay.set(a.date, (byDay.get(a.date) || 0) + 1));
         const cells = [];
-        for (let i = 0; i < DAYS; i++) {
+        const days = aheadDays() + 1;
+        for (let i = 0; i < days; i++) {
             const date = shift(today(), i);
             const deps = departuresOn(date);
             const sold = deps.reduce((s, d) => s + d.sold, 0);
@@ -201,104 +202,59 @@ window.TodayView = (function () {
                 <td>${loadCell(sold, seats)}</td>
                 <td class="td-nowrap">${esc(ref)}</td>
                 <td>${extraCell != null ? extraCell : (adv && adv.status ? `<span class="td-pill td-pill-${adv.status}">${LABEL[adv.status]}</span>` : '<span class="td-pill">в норме</span>')}</td>
+                <td class="td-go-cell">${openable() ? '<button type="button" class="td-go" data-td-go title="Открыть рейс в «Управлении продажами» (если он там есть) или в «Динамике продаж»">Открыть</button>' : ''}</td>
             </tr>`;
+    }
+
+    function depMinutes(row) {
+        const t = typeof getDepTime === 'function' ? getDepTime(row) : (row && row[11]);
+        return typeof timeToMinutes === 'function' && t ? timeToMinutes(t) : 9999;
+    }
+
+    function byDepTime(a, b) {
+        return depMinutes(a.row) - depMinutes(b.row) || (parseInt(a.code.slice(3), 10) || 0) - (parseInt(b.code.slice(3), 10) || 0);
+    }
+
+    function openable() {
+        return canTab('sales') || canTab('table');
+    }
+
+    function inSalesList(code, date) {
+        return salesDepartures().has(code + '|' + date);
+    }
+
+    function openFlight(code, date) {
+        if (canTab('sales') && inSalesList(code, date) && typeof openSalesManagementFor === 'function') {
+            openSalesManagementFor(code, date);
+            return;
+        }
+        if (!canTab('table')) return;
+        if (typeof currentFlight !== 'undefined') currentFlight = getBaseFlight(code);
+        if (typeof lastSelectedDate !== 'undefined') lastSelectedDate = date;
+        switchMainTab('table');
+        if (typeof FlightCard !== 'undefined') FlightCard.maybeOpen(code, date);
     }
 
     function tableHtml(pend, errs) {
         let rows = '';
         let empty = '';
-        let head = '<th>Рейс</th><th>Маршрут</th><th>Вылет</th><th>Загрузка</th><th>Обычно / план</th><th>Подсказка</th>';
+        let head = '<th>Рейс</th><th>Маршрут</th><th>Вылет</th><th>Загрузка</th><th>Обычно / план</th><th>Подсказка</th><th></th>';
         if (tab === 'advice') {
             const order = { down: 0, attn: 1, up: 2 };
             const list = pend.slice().sort((a, b) => order[a.status] - order[b.status] || a.dtd - b.dtd);
             rows = list.slice(0, 200).map(a => rowHtml({ code: a.code, date: a.date, adv: a })).join('');
             empty = canTab('sales') ? `Все вылеты на ${aheadDays()} дн. в норме или уже отмечены сегодня.` : 'Нет доступа к «Управлению продажами».';
         } else if (tab === 'errors') {
-            head = '<th>Рейс</th><th>Маршрут</th><th>Вылет</th><th>Загрузка</th><th>Обычно / план</th><th>Ошибка</th>';
+            head = '<th>Рейс</th><th>Маршрут</th><th>Вылет</th><th>Загрузка</th><th>Обычно / план</th><th>Ошибка</th><th></th>';
             rows = errs.map(e => rowHtml({ code: e.code, date: e.date }, `<span class="td-err">${esc(e.items.map(i => i.title).join(', '))}</span>`)).join('');
             empty = 'Ошибок тарифов нет.';
         } else {
             const date = pickDay || today();
-            rows = departuresOn(date).map(d => rowHtml(d)).join('');
+            rows = departuresOn(date).sort(byDepTime).map(d => rowHtml(d)).join('');
             empty = `На ${date} вылетов нет.`;
         }
         return `<div class="td-table-wrap">${rows ? `<table class="td-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>` : `<p class="td-empty">${esc(empty)}</p>`}</div>`;
     }
-
-    // ---------- справа: выбранный рейс ----------
-
-    // График без библиотек: продано (сплошная), норма (серая), план (пунктир), в одной шкале.
-    function chartSvg(series) {
-        const W = 320;
-        const H = 150;
-        const lines = [series.thisData, series.refData, series.expectedData].filter(Boolean);
-        const max = Math.max(1, ...lines.flat().filter(v => v != null));
-        const n = series.dtds.length;
-        const x = (i) => (n <= 1 ? 0 : (i / (n - 1)) * (W - 8) + 4);
-        const y = (v) => H - 6 - (v / max) * (H - 16);
-        const path = (vals) => {
-            let d = '';
-            vals.forEach((v, i) => { if (v == null) return; d += (d ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1); });
-            return d;
-        };
-        const sold = path(series.thisData);
-        return `<svg class="td-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Продажи против нормы и плана">
-            ${[0.25, 0.5, 0.75].map(f => `<line x1="0" x2="${W}" y1="${(H - 6 - f * (H - 16)).toFixed(1)}" y2="${(H - 6 - f * (H - 16)).toFixed(1)}" class="td-grid"/>`).join('')}
-            ${sold ? `<path d="${sold} L${x(n - 1).toFixed(1)} ${H - 6} L${x(0).toFixed(1)} ${H - 6} Z" class="td-area"/>` : ''}
-            ${series.refData ? `<path d="${path(series.refData)}" class="td-line-ref"/>` : ''}
-            ${series.expectedData ? `<path d="${path(series.expectedData)}" class="td-line-exp"/>` : ''}
-            ${sold ? `<path d="${sold}" class="td-line-sold"/>` : ''}
-        </svg>
-        <div class="td-legend"><span class="td-lg-sold">продано</span>${series.refData ? `<span class="td-lg-ref">${esc(series.refLabel || 'норма')}</span>` : ''}${series.expectedData ? '<span class="td-lg-exp">план</span>' : ''}<span class="td-muted">${series.dtds.length ? `за ${series.dtds[0]} дн. до вылета → сегодня` : ''}</span></div>`;
-    }
-
-    function inspectorHtml() {
-        if (!selected) {
-            return `<div class="td-insp-empty"><div class="td-insp-ico">✈</div><p>Выберите рейс в таблице — здесь будут его продажи, вывод и отметка на сегодня.</p></div>`;
-        }
-        const { code, date } = selected;
-        const r = rowFor(code, date);
-        if (!r) return '<p class="td-empty">Нет данных по этому вылету.</p>';
-        const base = getBaseFlight(code);
-        const seats = getSeatsOnSale(r);
-        const sold = getSoldFromRow(r);
-        const ac = typeof getAircraftType === 'function' ? getAircraftType(r[4]) : '';
-        const dtd = daysUntil(date);
-        const list = typeof getFlightSalesList === 'function' ? getFlightSalesList(date, code) : [];
-        const paid = list.filter(s => Number(s.fare) > 0);
-        const avg = paid.length ? paid.reduce((s, x) => s + Number(x.fare), 0) / paid.length : null;
-        let series = null;
-        try { series = buildFlightDtdBookingSeries(base, date, code, 30, r[4]); } catch (e) { series = null; }
-        const refVal = series && series.refData ? series.refData[series.refData.length - 1] : null;
-        const expVal = series && series.expectedData ? series.expectedData[series.expectedData.length - 1] : null;
-        const adv = typeof SalesAdvice !== 'undefined' ? SalesAdvice.forDeparture(code, date, aheadDays()) : null;
-        const modeKey = typeof FlightChecks !== 'undefined' && FlightChecks.modeFor ? FlightChecks.modeFor(code, date, r) : null;
-        const mode = modeKey === 'subsidy' ? { label: 'субсидия' } : modeKey === 'commercial' ? { label: 'коммерция' } : null;
-        const advText = adv && adv.status
-            ? `<div class="td-say td-say-${adv.status}">${esc(adv.text)}. Подсказка: <strong>${esc(LABEL[adv.status])}</strong>.</div>` : '';
-        const links = [
-            canTab('table') ? '<button type="button" class="td-link" data-td-open="table">Динамика продаж</button>' : '',
-            canTab('pair') ? '<button type="button" class="td-link" data-td-open="pair">Экономика</button>' : '',
-            canTab('pkz') ? '<button type="button" class="td-link" data-td-open="pkz">ПКЗ</button>' : '',
-            canTab('sales') ? '<button type="button" class="td-link" data-td-open="sales">В УП</button>' : ''
-        ].join('');
-        return `
-            <div class="td-crumb">Выбранный рейс</div>
-            <h2 class="td-insp-title">${esc(code)} · ${esc(date)}</h2>
-            <div class="td-insp-sub">${esc(getFlightDirection(code))} · ${esc(ac)} · ${dtd == null ? '' : dtd === 0 ? 'сегодня' : dtd < 0 ? 'улетел' : 'через ' + dtd + ' дн.'}${mode && mode.label ? ' · ' + esc(mode.label) : ''}</div>
-            <div class="td-kv">
-                <div><span>Продано</span><b>${fmt(sold)} из ${fmt(seats)}</b></div>
-                <div><span>Средний тариф</span><b>${avg != null ? fmt(avg) + ' ₽' : '—'}</b></div>
-                <div><span>Обычно к этому дню</span><b class="${refVal != null && sold < refVal ? 'td-neg' : ''}">${refVal != null ? fmt(refVal) : '—'}</b></div>
-                <div><span>По плану</span><b class="${expVal != null && sold < expVal ? 'td-neg' : ''}">${expVal != null ? fmt(expVal) : '—'}</b></div>
-            </div>
-            ${series ? chartSvg(series) : ''}
-            ${advText}
-            ${typeof PriceMarks !== 'undefined' ? `<div class="td-marks">${PriceMarks.buttonsHtml(code, date)}</div>` : ''}
-            <div class="td-links">${links}</div>`;
-    }
-
-    // ---------- сборка ----------
 
     function render() {
         const root = document.getElementById('td-page');
@@ -312,17 +268,12 @@ window.TodayView = (function () {
         const errs = fareErrors();
         const gaps = typeof ReferenceView !== 'undefined' && ReferenceView.completenessCount ? ReferenceView.completenessCount() : 0;
         const k = kpis();
-        if (!selected && tab === 'advice' && pend.length) {
-            const order = { down: 0, attn: 1, up: 2 };
-            const first = pend.slice().sort((a, b) => order[a.status] - order[b.status] || a.dtd - b.dtd)[0];
-            selected = { code: first.code, date: first.date };
-        }
         const dt = parseLocalDate(today());
         const longDate = dt ? dt.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : today();
         const tabs = [
             canTab('sales') ? { id: 'advice', label: `Ждут решения · ${pend.length}` } : null,
             typeof FlightChecks !== 'undefined' && FlightChecks.enabled() ? { id: 'errors', label: `Ошибки тарифов · ${errs.length}` } : null,
-            { id: 'day', label: `Вылеты ${pickDay && pickDay !== today() ? pickDay.slice(0, 5) : 'сегодня'}` }
+            { id: 'day', label: `Вылеты ${pickDay && pickDay !== today() ? pickDay.slice(0, 5) : 'сегодня'} · ${departuresOn(pickDay || today()).length}` }
         ].filter(Boolean);
         if (!tabs.some(t => t.id === tab)) tab = tabs[0].id;
         root.innerHTML = `
@@ -341,13 +292,10 @@ window.TodayView = (function () {
                             <select data-td-ahead>${AHEAD_OPTIONS.map(n => `<option value="${n}"${n === aheadDays() ? ' selected' : ''}>${n} дн.</option>`).join('')}</select></label>` : ''}</div>
                     ${tableHtml(pend, errs)}
                 </section>
-                <aside class="td-insp" id="td-insp">${inspectorHtml()}</aside>
             </div>`;
     }
 
-    function renderInspector() {
-        const box = document.getElementById('td-insp');
-        if (box) box.innerHTML = inspectorHtml();
+    function markSelectedRow() {
         document.querySelectorAll('#td-page .td-row').forEach(tr => {
             tr.classList.toggle('td-row-on', !!(selected && tr.dataset.tdCode === selected.code && tr.dataset.tdDate === selected.date));
         });
@@ -365,21 +313,13 @@ window.TodayView = (function () {
             switchMainTab('reports');
             return;
         }
-        const op = t.closest('[data-td-open]');
-        if (op && selected) {
-            const to = op.dataset.tdOpen;
-            if (to === 'sales' && typeof openSalesManagementFor === 'function') { openSalesManagementFor(selected.code, selected.date); return; }
-            if (typeof currentFlight !== 'undefined') currentFlight = getBaseFlight(selected.code);
-            if (typeof lastSelectedDate !== 'undefined') lastSelectedDate = selected.date;
-            switchMainTab(to);
-            return;
-        }
         const row = t.closest('[data-td-code]');
-        if (row && !t.closest('button')) {
-            selected = { code: row.dataset.tdCode, date: row.dataset.tdDate };
-            renderInspector();
-            if (typeof FlightCard !== 'undefined' && FlightCard.isOpen && FlightCard.isOpen()) FlightCard.maybeOpen(selected.code, selected.date);
-        }
+        if (!row) return;
+        selected = { code: row.dataset.tdCode, date: row.dataset.tdDate };
+        markSelectedRow();
+        if (t.closest('[data-td-go]')) { openFlight(selected.code, selected.date); return; }
+        if (t.closest('button')) return;
+        if (typeof FlightCard !== 'undefined' && FlightCard.isOpen && FlightCard.isOpen()) FlightCard.maybeOpen(selected.code, selected.date);
     }
 
     function create(panel) {
