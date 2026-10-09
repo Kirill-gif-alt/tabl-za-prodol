@@ -247,6 +247,39 @@ let dataLoadStatus = { availability: false, closed: false, sales: false, expecte
 let tableFlightSearchQuery = '';
 let salesChartPeriodDays = 30;
 
+// Липкие шапки таблиц из нескольких строк: каждая нижняя строка прилипает ровно под верхней —
+// по реальной высоте строк (она зависит от переносов и масштаба), а не по числу из стилей.
+// Пересчёт при прокрутке, раз за кадр и только если высоты изменились.
+(function () {
+    const done = new WeakMap();
+    function fixHead(thead) {
+        const rows = thead.rows;
+        if (!rows || rows.length < 2) return;
+        const base = rows[0].offsetTop;
+        const tops = [];
+        for (let i = 0; i < rows.length; i++) tops.push(rows[i].offsetTop - base);
+        const sig = tops.join(',');
+        if (done.get(thead) === sig) return;
+        done.set(thead, sig);
+        for (let i = 1; i < rows.length; i++) {
+            for (const th of rows[i].cells) th.style.top = tops[i] + 'px';
+        }
+    }
+    let raf = 0;
+    const pending = new Set();
+    document.addEventListener('scroll', (e) => {
+        const el = e.target && e.target.nodeType === 1 ? e.target : document.documentElement;
+        pending.add(el);
+        if (raf) return;
+        raf = requestAnimationFrame(() => {
+            raf = 0;
+            pending.forEach(c => c.querySelectorAll('thead').forEach(fixHead));
+            pending.clear();
+        });
+    }, true);
+    window.fixStickyTableHeads = (root) => (root || document).querySelectorAll('thead').forEach(fixHead);
+})();
+
 function updateHeaderStatus() {
     const statusBar = document.getElementById('data-status-bar');
     const kpiBar = document.getElementById('header-kpi');

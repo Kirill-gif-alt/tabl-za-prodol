@@ -7564,7 +7564,11 @@ html[data-theme="dark"] .cr-pop { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
     border: 1px solid var(--border);
     border-radius: 14px;
     background: var(--surface);
-    overflow-x: auto;
+    /* clip, а не auto: прокручивающийся контейнер ломает липкую шапку таблицы. */
+    overflow-x: clip;
+}
+@media (max-width: 900px) {
+    .td-table-wrap { overflow-x: auto; }
 }
 
 .td-go-cell {
@@ -8001,3 +8005,39 @@ html[data-theme="dark"] .rp-table tr.rp-total > td { background: #1e293b; }
 .dr-bar-neg { background: #dc2626; }
 html[data-theme="dark"] .dr-kind-down, html[data-theme="dark"] .dr-verdict-neg { color: #f87171; }
 html[data-theme="dark"] .dr-kind-up, html[data-theme="dark"] .dr-verdict-pos { color: #34d399; }
+
+/* ========== Шапки всех таблиц — один вид ==========
+   Динамика, Экономика, Загрузка рейсов, RMS, ПКЗ, Управление продажами, Творческая, Отчёты, Сегодня:
+   один шрифт, заглавные, одинаковые отступы и нижняя линия, без «парящей» тени. Цвета не меняются.
+   Нижние строки шапки (вторая, третья) прилипают ровно под верхней — отступ ставит script.js по
+   реальной высоте строки, поэтому шапка не «съезжает» при прокрутке. */
+table.data-table thead th,
+table.sm-table thead th,
+table.cr-table thead tr:first-child th,
+table.rp-table thead th,
+table.td-table thead th {
+    font-size: 0.66rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    line-height: 1.25;
+    padding: 10px 10px;
+    vertical-align: middle;
+    box-shadow: none;
+    border-bottom: 2px solid #011f38;
+}
+table.sm-table thead th,
+table.cr-table thead tr:first-child th { padding: 9px 8px; }
+/* Строки сумм в шапке — числа, не подписи: обычный регистр. */
+table.data-table thead tr.table-sales-sum-row th,
+table.cr-table thead tr.cr-totals th {
+    text-transform: none;
+    letter-spacing: 0;
+    box-shadow: none;
+}
+/* Сегодняшний столбец в «Управлении продажами» — та же жёлтая черта снизу. */
+table.sm-table thead th.sm-check-today { box-shadow: inset 0 -3px 0 #fde68a; }
+/* Разделитель под шапкой — линия, а не тень: шапка стоит, строки уходят под неё. */
+table.data-table thead,
+table.rp-table thead,
+table.td-table thead { box-shadow: none; }
