@@ -6096,7 +6096,7 @@ html[data-theme="dark"] textarea {
     display: flex;
     flex-direction: column;
     gap: 10px;
-    max-width: 1100px;
+    max-width: 1400px;
 }
 
 .rp-card {
@@ -7705,22 +7705,75 @@ html[data-theme="dark"] .rms-row-warn:hover { background: #3a3016 !important; }
 
 /* ---------- прогноз, безубыточность, группы (flight-insights.js) ---------- */
 .fc-insights {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin: 8px 0 4px;
-    padding: 8px 10px;
+    margin: 8px 0 6px;
     border: 1px solid var(--border);
     border-radius: 10px;
     background: var(--surface);
     font-size: 0.8rem;
     line-height: 1.35;
+    overflow: hidden;
 }
-
-.fc-in-line { color: var(--text); }
-.fc-in-up { color: #047857; }
-.fc-in-down { color: #b91c1c; }
-.fc-in-group { color: #6d28d9; }
+.fc-ins-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+    padding: 7px 10px;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.fc-ins-head:hover { background: var(--hover-bg, rgba(0, 0, 0, 0.04)); }
+.fc-ins-caret { width: 10px; color: var(--text-muted); }
+.fc-ins-title { font-weight: 700; margin-right: 4px; }
+.fc-ins-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.fc-ins-chip {
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    background: var(--muted-bg, #f1f5f9);
+    color: var(--text);
+    white-space: nowrap;
+}
+.fc-ins-up { background: rgba(4, 120, 87, 0.12); color: #047857; }
+.fc-ins-down { background: rgba(185, 28, 28, 0.1); color: #b91c1c; }
+.fc-ins-group { background: rgba(109, 40, 217, 0.1); color: #6d28d9; }
+.fc-ins-body { padding: 0 10px 10px; display: flex; flex-direction: column; gap: 8px; }
+.fc-it-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; }
+.fc-it {
+    padding: 7px 9px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    border-left-width: 3px;
+    background: var(--bg);
+}
+.fc-it-up { border-left-color: #059669; }
+.fc-it-down { border-left-color: #dc2626; }
+.fc-it-plain { border-left-color: var(--accent, #2563eb); }
+.fc-it-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted); }
+.fc-it-value { font-size: 1.2rem; font-weight: 700; margin: 2px 0 1px; color: var(--text); white-space: nowrap; }
+.fc-it-up .fc-it-value { color: #047857; }
+.fc-it-down .fc-it-value { color: #b91c1c; }
+.fc-it-of { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); }
+.fc-it-sub { font-size: 0.75rem; color: var(--text); }
+.fc-it-note { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; }
+.fc-advice { padding: 6px 9px; border-radius: 8px; font-weight: 600; }
+.fc-advice-up { background: rgba(4, 120, 87, 0.1); color: #047857; }
+.fc-advice-down { background: rgba(185, 28, 28, 0.08); color: #b91c1c; }
+.fc-groups { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 6px 9px; border-radius: 8px; background: rgba(109, 40, 217, 0.07); }
+.fc-groups-title { font-weight: 700; color: #6d28d9; }
+.fc-grp-item { padding: 0 7px; border-radius: 999px; background: var(--surface); border: 1px solid rgba(109, 40, 217, 0.25); font-size: 0.72rem; }
+.fc-groups .fc-it-note { width: 100%; }
+html[data-theme="dark"] .fc-ins-up, html[data-theme="dark"] .fc-advice-up,
+html[data-theme="dark"] .fc-it-up .fc-it-value { color: #34d399; }
+html[data-theme="dark"] .fc-ins-down, html[data-theme="dark"] .fc-advice-down,
+html[data-theme="dark"] .fc-it-down .fc-it-value { color: #f87171; }
+html[data-theme="dark"] .fc-ins-group, html[data-theme="dark"] .fc-groups-title { color: #a78bfa; }
 .fc-cal { color: #b45309; font-weight: 600; }
 
 .grp-badge {
@@ -7821,3 +7874,130 @@ html[data-theme="dark"] .cal-type-school { background: #172554; color: #93c5fd; 
 
 .ref-warn { color: #b45309; }
 .ref-hint { font-size: 0.78rem; margin: 6px 0; }
+
+/* ---------- сверка продаж и загрузки ---------- */
+.rc-row-big td { background: color-mix(in srgb, #fee2e2 45%, transparent); }
+.rc-more { color: #b45309; font-weight: 700; }
+.ref-check-inline { display: inline-flex; align-items: center; gap: 6px; }
+
+/* доп. номера рейса — чипы */
+.ref-extras-field { display: flex; flex-direction: column; gap: 3px; font-size: 0.75rem; color: var(--text-muted); grid-column: span 2; }
+.ref-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ref-chip-list { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.ref-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 8px; border-radius: 999px; background: #e0e7ff; color: #1e3a8a; font-weight: 700; font-size: 0.78rem; }
+.ref-chip button { border: none; background: none; color: inherit; cursor: pointer; font-size: 0.75rem; padding: 0 2px; }
+.ref-chip-input { width: 110px; }
+html[data-theme="dark"] .ref-chip { background: #1e293b; color: #c7d2fe; }
+
+
+/* ========== Единый вид таблиц ==========
+   Таблицы «Отчётов» (проверка, справочник, сверка, решения, итоги) и «Сегодня» — как основные таблицы
+   сайта (RMS, «Динамика», «Экономика»): тёмная шапка заглавными, строки с разделителями без сетки,
+   одинаковые отступы, подсветка строки при наведении. Цвета — те же переменные темы. */
+.rp-table,
+.td-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.8rem;
+}
+.rp-table th,
+.rp-table td,
+.td-table th,
+.td-table td {
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 7px 10px;
+}
+.rp-table thead th,
+.td-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--table-head-bg, #012A4A);
+    color: #fff;
+    font-size: 0.66rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    line-height: 1.25;
+    padding: 9px 10px;
+    border-bottom: 2px solid #011f38;
+    vertical-align: middle;
+}
+.td-table thead th { text-align: left; }
+.rp-table thead th:first-child,
+.td-table thead th:first-child { border-top-left-radius: 8px; }
+.rp-table thead th:last-child,
+.td-table thead th:last-child { border-top-right-radius: 8px; }
+.rp-table tbody tr:nth-child(even) > td { background-color: color-mix(in srgb, var(--table-row-even, #f1f5f9) 35%, var(--surface)); }
+.rp-table tbody tr:hover > td,
+.td-table tbody tr:hover > td { background-color: var(--hover-bg, #eef2f7); }
+.rp-table tbody tr:last-child > td { border-bottom: 0; }
+.rp-table tr.rp-total > td { background: #e2e8f0; font-weight: 700; border-top: 2px solid var(--border); }
+.rp-table td:first-child { font-weight: 600; }
+/* Таблица без шапки (справочник: пропуски) — рамка вокруг, как у карточки. */
+.rp-table:not(:has(thead)) { border: 1px solid var(--border); border-radius: 8px; }
+.rp-scroll {
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--surface);
+}
+.rp-scroll > .rp-table:not(:has(thead)) { border: 0; }
+.dr-sum .rp-table,
+.rp-preview .rp-table { border: 1px solid var(--border); border-radius: 9px; }
+.rp-open.filter-btn {
+    padding: 2px 8px;
+    font-weight: 700;
+    font-size: 0.78rem;
+}
+.rc-row-big > td { background-color: color-mix(in srgb, #dc2626 5%, var(--surface)) !important; }
+.rc-row-big:hover > td { background-color: color-mix(in srgb, #dc2626 9%, var(--surface)) !important; }
+html[data-theme="dark"] .rp-table tr.rp-total > td { background: #1e293b; }
+
+/* ---------- журнал решений: оформление ---------- */
+.dr-card .rp-card-head { margin-bottom: 4px; }
+.dr-help { margin: 4px 0 10px; font-size: 0.8rem; color: var(--text-muted); }
+.dr-help summary { cursor: pointer; color: var(--accent, #2563eb); font-weight: 600; width: max-content; }
+.dr-help p { margin: 6px 0 0; line-height: 1.45; }
+.dr-toolbar { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; margin: 6px 0 12px; }
+.dr-seg { display: inline-flex; align-items: center; gap: 4px; }
+.dr-seg-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-right: 4px;
+}
+.dr-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.dr-kpi {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent, #2563eb);
+    border-radius: 9px;
+    background: var(--surface);
+}
+.dr-kpi-down { border-left-color: #dc2626; }
+.dr-kpi-up { border-left-color: #059669; }
+.dr-kpi-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.dr-kpi-value { font-size: 1.45rem; font-weight: 800; color: var(--text); line-height: 1.2; margin: 2px 0; }
+.dr-kpi-sub { font-size: 0.75rem; color: var(--text-muted); }
+.dr-list-title { font-weight: 700; font-size: 0.9rem; margin: 4px 0 6px; }
+.dr-usual { font-size: 0.7rem; font-weight: 400; color: var(--text-muted); white-space: nowrap; }
+.dr-table td { vertical-align: middle; }
+.dr-table td .dr-usual { display: block; }
+.dr-kind { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
+.dr-kind-down { background: rgba(220, 38, 38, 0.1); color: #b91c1c; }
+.dr-kind-up { background: rgba(5, 150, 105, 0.12); color: #047857; }
+.dr-verdict { display: inline-block; padding: 2px 9px; border-radius: 6px; font-size: 0.76rem; font-weight: 600; }
+.dr-verdict-pos { background: rgba(5, 150, 105, 0.1); color: #047857; }
+.dr-verdict-neg { background: rgba(220, 38, 38, 0.08); color: #b91c1c; }
+.dr-verdict-wait, .dr-verdict-none { color: var(--text-muted); background: var(--muted-bg, #f1f5f9); }
+.dr-share-cell { white-space: nowrap; }
+.dr-bar { display: inline-block; width: 56px; height: 6px; border-radius: 3px; background: var(--muted-bg, #e2e8f0); margin-right: 6px; vertical-align: middle; overflow: hidden; }
+.dr-bar-fill { display: block; height: 100%; }
+.dr-bar-pos { background: #059669; }
+.dr-bar-neg { background: #dc2626; }
+html[data-theme="dark"] .dr-kind-down, html[data-theme="dark"] .dr-verdict-neg { color: #f87171; }
+html[data-theme="dark"] .dr-kind-up, html[data-theme="dark"] .dr-verdict-pos { color: #34d399; }

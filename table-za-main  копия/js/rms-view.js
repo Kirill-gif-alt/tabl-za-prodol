@@ -170,7 +170,7 @@ function renderRmsWatchlist() {
             <tr class="rms-row ${zebra} ${alertCls}" data-rms-base="${escAttr(f.base)}" data-rms-date="${escAttr(f.date)}" data-rms-orig="${escAttr(flightCode)}" data-pm-row="1" tabindex="0">
                 <td class="rms-col-alert">${f.alertLevel >= 2 ? `<span class="rms-alert-badge rms-alert-badge-${f.alertLevel}">${f.alertLevel >= 3 ? 'КРИТ' : '!'}</span>` : ''}</td>
                 <td class="rms-col-flight">
-                    <div class="rms-flight-code">${escHtml(flightCode)}${routeTypeLabel ? `<span class="rms-route-badge ${routeTypeCls}">${escHtml(routeTypeLabel)}</span>` : ''}${grp ? `<span class="grp-badge" title="Групповые брони: ${grp} бил. в заказах от ${FlightInsights.GROUP_MIN} билетов">Г ${grp}</span>` : ''}</div>
+                    <div class="rms-flight-code">${escHtml(flightCode)}${routeTypeLabel ? `<span class="rms-route-badge ${routeTypeCls}">${escHtml(routeTypeLabel)}</span>` : ''}${grp ? `<span class="grp-badge" title="В группах ${grp} чел. (заказы от ${FlightInsights.GROUP_MIN} билетов)">Г ${grp}</span>` : ''}</div>
                     <div class="rms-flight-name">${escHtml(flightDir)}</div>
                     ${showRoute ? `<div class="rms-flight-route">${escHtml(formatRouteDisplay(f.route))}</div>` : ''}
                 </td>
