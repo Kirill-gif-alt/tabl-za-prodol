@@ -1547,7 +1547,7 @@ function renderSalesGrid() {
             return `<td class="sm-cell${cls}" data-edit="${canCell ? '1' : '0'}" data-flight="${salesAttr(dep.code)}" data-dep="${salesAttr(dep.date)}" data-check="${salesAttr(check)}" title="${salesAttr(title)}">${salesCellInner(list)}</td>`;
         }).join('');
         const rowClass = dep.flown ? 'sm-row-flew' : (salesNearDeparture(dep.date, today) ? 'sm-row-near' : '');
-        return `<tr class="${rowClass}">
+        return `<tr class="${rowClass}" data-card-flight="${salesAttr(dep.code)}" data-card-date="${salesAttr(dep.date)}">
             <td class="sm-freeze sm-c0">${salesEsc(dep.date)}</td>
             <td class="sm-freeze sm-c1">${salesEsc(dep.code)}</td>
             <td class="sm-freeze sm-c2">${salesEsc(dep.weekday)}</td>
@@ -1790,8 +1790,19 @@ function createSalesManagementView(panel) {
     });
     document.getElementById('sm-grid')?.addEventListener('click', (event) => {
         const td = event.target.closest('.sm-cell');
-        if (!td) return;
-        openSalesPopover(td);
+        if (td) {
+            openSalesPopover(td);
+            // Клик по отметке тоже показывает рейс в карточке (если она открыта кнопкой ▤).
+            if (typeof FlightCard !== 'undefined') FlightCard.maybeOpen(td.dataset.flight, td.dataset.dep);
+            return;
+        }
+        // Клик по дате / номеру / маршруту вылета — карточка рейса.
+        const row = event.target.closest('tr[data-card-flight]');
+        if (row && event.target.closest('.sm-freeze') && typeof FlightCard !== 'undefined') {
+            FlightCard.maybeOpen(row.dataset.cardFlight, row.dataset.cardDate);
+            row.closest('tbody')?.querySelectorAll('tr.sm-row-picked').forEach(tr => tr.classList.remove('sm-row-picked'));
+            row.classList.add('sm-row-picked');
+        }
     });
     document.getElementById('sm-grid')?.addEventListener('scroll', () => closeSalesPopover(), { passive: true });
     document.getElementById('sm-today')?.addEventListener('click', () => {

@@ -491,7 +491,8 @@ window.ReportsView = (function () {
         Object.keys(typeof groupedData !== 'undefined' && groupedData ? groupedData : {}).forEach(base => {
             (groupedData[base] || []).forEach(r => { if (r && r[0]) set.add(cleanFlight(r[0])); });
         });
-        return [...set]
+        // Только базовые номера: доп. рейсы (KV-301, KV-355…) идут под своим базовым.
+        return [...new Set([...set].map(c => (typeof getBaseFlight === 'function' && /^KV-\d+$/.test(c) ? getBaseFlight(c) : c)))]
             .filter(c => /^KV-\d+$/.test(c) && typeof getFlightRouteType === 'function' && getFlightRouteType(c) === 'interregional')
             .filter(c => !neverSubsidized(c))
             .sort((a, b) => (parseInt(a.slice(3), 10) || 0) - (parseInt(b.slice(3), 10) || 0));
@@ -518,14 +519,12 @@ window.ReportsView = (function () {
             return `
             <tr class="${excl ? 'rp-ref-excluded' : ''}">
                 <td class="rp-left"><strong>${esc(e.flights.join(', '))}</strong><div class="rp-sub-line">${esc(e.flights.map(directionOf).join(' · '))}</div></td>
-                <td class="rp-left">${excl ? '<span class="rp-ref-mode-excl">Не считать субсидированным</span>' : 'Предельный тариф'}</td>
                 <td>${excl ? '—' : esc(e.fareCode || '—')}</td>
-                <td>${excl ? '—' : fmt(e.adult) + ' ₽'}</td>
+                <td>${excl ? '<span class="rp-ref-mode-excl" title="Старая запись: рейс исключён из субсидированных. Новые такие не создаются — даты субсидии задаются в «Периодах субсидии».">исключён (старая запись)</span>' : '<strong>' + fmt(e.adult) + ' ₽</strong>'}</td>
                 <td>${excl ? '—' : (e.child != null ? fmt(e.child) + ' ₽' : '<span class="rp-muted">как взрослый</span>')}</td>
-                <td>${esc(e.from || e.to ? `${e.from || '…'} – ${e.to || '…'}` : 'всегда')}</td>
                 <td class="rp-left">${esc(e.note || '')}</td>
                 <td class="rp-left rp-muted">${esc(e.by || '')}${e.updatedAt && e.by !== 'по умолчанию' ? '<br>' + esc(new Date(e.updatedAt).toLocaleString('ru-RU')) : ''}</td>
-                ${can ? `<td><button type="button" class="filter-btn rp-open" data-ref-edit="${esc(e.id)}">Изменить</button> <button type="button" class="filter-btn rp-open rp-danger" data-ref-delete="${esc(e.id)}">Удалить</button></td>` : ''}
+                ${can ? `<td>${excl ? '' : `<button type="button" class="filter-btn rp-open" data-ref-edit="${esc(e.id)}">Изменить</button> `}<button type="button" class="filter-btn rp-open rp-danger" data-ref-delete="${esc(e.id)}">Удалить</button></td>` : ''}
             </tr>`;
         }).join('');
         const editing = refEditId ? entries.find(e => e.id === refEditId) : null;
@@ -539,22 +538,15 @@ window.ReportsView = (function () {
             <optgroup label="Остальные межрегиональные">${codes.filter(c => !subsidizedNow.has(c)).map(option).join('')}</optgroup>`;
         const other = pick ? pairOf(pick) : '';
         const pairOn = editing ? (editing.flights.length > 1) : true;
-        const exclMode = !!(editing && editing.mode === 'exclude');
         const form = can ? `
             <div class="rp-ref-form" id="rp-ref-form">
                 <div class="rp-ref-form-title">${editing ? 'Изменить запись' : 'Новая запись'}</div>
                 <div class="rp-ref-grid">
-                    <label>Тип записи<select id="rp-ref-mode" class="cr-input">
-                        <option value="limit"${exclMode ? '' : ' selected'}>Предельный тариф</option>
-                        <option value="exclude"${exclMode ? ' selected' : ''}>Не считать субсидированным</option>
-                    </select></label>
                     <label>Рейс<select id="rp-ref-flight" class="cr-input">${options}</select></label>
                     <label class="rp-check rp-ref-pair"><input type="checkbox" id="rp-ref-pair"${pairOn ? ' checked' : ''}${other ? '' : ' disabled'}> и обратный <strong id="rp-ref-pair-code">${esc(other || '—')}</strong></label>
-                    <label class="rp-ref-limit"${exclMode ? ' hidden' : ''}>Код тарифа<input id="rp-ref-code" class="cr-input" maxlength="30" placeholder="напр. USCOW" value="${esc(editing ? editing.fareCode : '')}"></label>
-                    <label class="rp-ref-limit"${exclMode ? ' hidden' : ''}>Предельный тариф, ₽<input id="rp-ref-adult" class="cr-input" type="number" min="0" step="1" value="${esc(editing && editing.adult != null ? editing.adult : '')}"></label>
-                    <label class="rp-ref-limit"${exclMode ? ' hidden' : ''}>Детский предел, ₽<input id="rp-ref-child" class="cr-input" type="number" min="0" step="1" placeholder="как взрослый" value="${esc(editing && editing.child != null ? editing.child : '')}"></label>
-                    <label>Действует с<input id="rp-ref-from" class="cr-input" type="date" value="${esc(editing ? isoOf(editing.from) : '')}"></label>
-                    <label>по<input id="rp-ref-to" class="cr-input" type="date" value="${esc(editing ? isoOf(editing.to) : '')}"></label>
+                    <label class="rp-ref-limit">Код тарифа<input id="rp-ref-code" class="cr-input" maxlength="30" placeholder="напр. USCOW" value="${esc(editing ? editing.fareCode : '')}"></label>
+                    <label class="rp-ref-limit">Предельный тариф, ₽<input id="rp-ref-adult" class="cr-input" type="number" min="0" step="1" value="${esc(editing && editing.adult != null ? editing.adult : '')}"></label>
+                    <label class="rp-ref-limit">Детский предел, ₽<input id="rp-ref-child" class="cr-input" type="number" min="0" step="1" placeholder="как взрослый" value="${esc(editing && editing.child != null ? editing.child : '')}"></label>
                     <label class="rp-ref-note">Комментарий<input id="rp-ref-note" class="cr-input" maxlength="200" value="${esc(editing ? editing.note : '')}"></label>
                 </div>
                 <div class="rp-ref-actions">
@@ -602,13 +594,13 @@ window.ReportsView = (function () {
             <section class="rp-card rp-refs" id="rp-refs">
                 <div class="rp-card-head"><h3 class="rp-card-title">Тарифы субсидии</h3></div>
                 <p class="rp-card-text">Предельный тариф на субсидированном рейсе: билет дороже предела — ошибка, дешевле — можно, в том числе детские. Детский предел необязателен: если он не задан, детский билет сравнивается со взрослым пределом. Сравнивается оплаченная сумма билета.</p>
-                <p class="rp-card-text">Запись «Не считать субсидированным» убирает рейс из перечня субсидированных: он не проверяется и не попадает в ошибки.</p>
+                <p class="rp-card-text">Периода у тарифа нет: проверка идёт только в субсидированные даты из раздела «Периоды субсидии». Рейсы — только базовые номера: доп. рейсы (KV-301, KV-355…) проверяются по тарифу своего базового рейса.</p>
                 ${missingHtml}
                 ${suggestHtml}
                 ${entries.length ? `
                 <div class="rp-scroll">
                     <table class="rp-table rp-refs-table">
-                        <thead><tr><th>Рейсы</th><th>Тип</th><th>Код тарифа</th><th>Предел</th><th>Детский предел</th><th>Действует</th><th>Комментарий</th><th>Изменил</th>${can ? '<th></th>' : ''}</tr></thead>
+                        <thead><tr><th>Рейсы</th><th>Код тарифа</th><th>Предел</th><th>Детский предел</th><th>Комментарий</th><th>Изменил</th>${can ? '<th></th>' : ''}</tr></thead>
                         <tbody>${rows}</tbody>
                     </table>
                 </div>` : '<p class="rp-note">Справочник пуст.</p>'}
@@ -645,8 +637,6 @@ window.ReportsView = (function () {
         refPrefill = x.flights[0];
         renderBody();
         const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-        set('rp-ref-mode', 'limit');
-        syncModeFields();
         const pair = document.getElementById('rp-ref-pair');
         if (pair) pair.checked = x.flights.length > 1;
         set('rp-ref-code', x.fareCode || '');
@@ -654,11 +644,6 @@ window.ReportsView = (function () {
         set('rp-ref-note', suggestionNote(x));
         const adult = document.getElementById('rp-ref-adult');
         if (adult) { adult.scrollIntoView({ behavior: 'smooth', block: 'center' }); adult.focus(); }
-    }
-
-    function syncModeFields() {
-        const mode = (document.getElementById('rp-ref-mode') || {}).value;
-        document.querySelectorAll('#rp-ref-form .rp-ref-limit').forEach(el => { el.hidden = mode === 'exclude'; });
     }
 
     function syncPairLabel() {
@@ -680,7 +665,7 @@ window.ReportsView = (function () {
         const flights = [code];
         const other = pairOf(code);
         if (pairBox && pairBox.checked && other) flights.push(other);
-        const mode = val('rp-ref-mode') === 'exclude' ? 'exclude' : 'limit';
+        const mode = 'limit';
         const res = await FareRefs.upsert({
             id: refEditId || undefined,
             mode,
@@ -688,8 +673,6 @@ window.ReportsView = (function () {
             fareCode: val('rp-ref-code'),
             adult: val('rp-ref-adult'),
             child: val('rp-ref-child'),
-            from: ruOf(val('rp-ref-from')),
-            to: ruOf(val('rp-ref-to')),
             note: val('rp-ref-note')
         });
         if (!res.ok) {
@@ -893,7 +876,6 @@ window.ReportsView = (function () {
         page.addEventListener('change', (event) => {
             if (typeof ReferenceView !== 'undefined' && ReferenceView.handleChange(event.target, renderBody)) return;
             if (event.target.id === 'rp-ref-flight') { syncPairLabel(); return; }
-            if (event.target.id === 'rp-ref-mode') { syncModeFields(); return; }
             if (event.target.id !== 'rp-checks-future') return;
             checksFutureOnly = event.target.checked;
             renderBody();

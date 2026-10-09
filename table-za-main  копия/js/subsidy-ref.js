@@ -9,7 +9,7 @@ window.SubsidyRef = (function () {
     const FILE = 'subsidy-ref.json';
     const LOCAL_KEY = 'krasavia_subsidy_ref_v1';
 
-    let cache = { version: 1, updatedAt: null, periods: {}, amounts: {} };
+    let cache = { version: 1, updatedAt: null, periods: {}, amounts: {}, pkz: {} };
     let rev = 0;
     let loaded = false;
 
@@ -73,11 +73,34 @@ window.SubsidyRef = (function () {
         const to = cleanText(e.to, 60);
         const ac = cleanText(e.ac, 30);
         if (!amountKey(from, to, ac)) return null;
-        return { from, to, ac, subsidy: num(e.subsidy), costSub: num(e.costSub), costCom: num(e.costCom), at, by: cleanText(e.by, 60) };
+        // Себестоимость одна (раньше было две — «при субсидии» и «коммерческая»: берём любую заданную).
+        const cost = num(e.cost) != null ? num(e.cost) : (num(e.costCom) != null ? num(e.costCom) : num(e.costSub));
+        return { from, to, ac, subsidy: num(e.subsidy), cost, at, by: cleanText(e.by, 60) };
+    }
+
+    // Направление «в одну сторону»: «Красноярск — Абакан» ≠ «Абакан — Красноярск».
+    function dirKey(label) {
+        const parts = String(label || '').split(/\s*[—–→]\s*|\s+-\s+/).map(cityKey).filter(Boolean);
+        return parts.length >= 2 ? parts.join('>') : '';
+    }
+
+    // ПКЗ из NAV: правило «период + тип ВС + направление → кг», применяется ко всем подходящим вылетам.
+    function normPkz(e) {
+        if (!e || typeof e !== 'object') return null;
+        const at = String(e.at || '');
+        if (e.deleted) return { deleted: true, at, by: cleanText(e.by, 60) };
+        const from = cleanDate(e.from);
+        const to = cleanDate(e.to);
+        const direction = cleanText(e.direction, 80);
+        const ac = cleanText(e.ac, 30);
+        const value = num(e.value);
+        if (!from || !to || !dirKey(direction) || value == null) return null;
+        const swap = typeof compareDateStr === 'function' && compareDateStr(from, to) > 0;
+        return { from: swap ? to : from, to: swap ? from : to, direction, ac, value, at, by: cleanText(e.by, 60) };
     }
 
     function normStore(data) {
-        const out = { version: 1, updatedAt: data && data.updatedAt ? String(data.updatedAt) : null, periods: {}, amounts: {} };
+        const out = { version: 1, updatedAt: data && data.updatedAt ? String(data.updatedAt) : null, periods: {}, amounts: {}, pkz: {} };
         if (!data || typeof data !== 'object') return out;
         Object.keys(data.periods || {}).forEach(k => {
             if (!/^\d{1,5}$/.test(k)) return;
@@ -89,6 +112,11 @@ window.SubsidyRef = (function () {
             if (!e) return;
             const key = e.deleted ? k : amountKey(e.from, e.to, e.ac);
             if (key) out.amounts[key] = e;
+        });
+        Object.keys(data.pkz || {}).forEach(k => {
+            if (!/^[a-z0-9]{4,24}$/i.test(k)) return;
+            const e = normPkz(data.pkz[k]);
+            if (e) out.pkz[k] = e;
         });
         return out;
     }
@@ -106,7 +134,8 @@ window.SubsidyRef = (function () {
             version: 1,
             updatedAt: [a.updatedAt, b.updatedAt].filter(Boolean).sort().pop() || null,
             periods: mergeMaps(a.periods, b.periods),
-            amounts: mergeMaps(a.amounts, b.amounts)
+            amounts: mergeMaps(a.amounts, b.amounts),
+            pkz: mergeMaps(a.pkz, b.pkz)
         };
     }
 
@@ -124,6 +153,7 @@ window.SubsidyRef = (function () {
         if (typeof invalidateMetricsCache === 'function') invalidateMetricsCache();
         if (typeof PerfCache !== 'undefined' && PerfCache.reset) PerfCache.reset();
         if (typeof tableHtmlCache !== 'undefined') tableHtmlCache = { sig: '', html: '' };
+        pkzMemo = new Map();
     }
 
     async function load() {
@@ -132,10 +162,10 @@ window.SubsidyRef = (function () {
             const r = await SharedStorage.readJsonFileStrict(FILE).catch(() => ({ ok: false }));
             if (r.ok && r.data) remote = normStore(r.data);
         }
-        const before = JSON.stringify([cache.periods, cache.amounts]);
+        const before = JSON.stringify([cache.periods, cache.amounts, cache.pkz]);
         cache = mergeStores(remote || normStore(null), readLocal());
         loaded = true;
-        if (JSON.stringify([cache.periods, cache.amounts]) !== before) {
+        if (JSON.stringify([cache.periods, cache.amounts, cache.pkz]) !== before) {
             rev++;
             saveLocal();
         }
@@ -178,8 +208,73 @@ window.SubsidyRef = (function () {
     function canEdit() { return has('edit_subsidy_ref'); }
     function canView() { return canEdit() || has('view_subsidy_ref'); }
 
+    // Справочник ведётся по базовому номеру: доп. рейс KV-301 = KV-101.
     function flightNum(code) {
-        return parseInt(String(code || '').replace(/[^0-9]/g, ''), 10) || 0;
+        let c = String(code || '');
+        if (/^\d+$/.test(c)) c = 'KV-' + c;
+        if (typeof getBaseFlight === 'function' && /^KV-\d+$/.test(c)) c = getBaseFlight(c);
+        return parseInt(c.replace(/[^0-9]/g, ''), 10) || 0;
+    }
+
+    function canEditPkz() { return has('edit_pkz_nav'); }
+    function canViewPkz() { return canEditPkz() || has('view_pkz_nav'); }
+
+    function newId() {
+        const b = new Uint8Array(6);
+        try { crypto.getRandomValues(b); } catch (e) { for (let i = 0; i < 6; i++) b[i] = Math.floor(Math.random() * 256); }
+        return 'p' + Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+    }
+
+    async function setPkzRule(entry, id) {
+        if (!canEditPkz()) return { ok: false, error: 'Нет права менять ПКЗ из NAV' };
+        const e = normPkz({ ...entry, at: new Date().toISOString(), by: author() });
+        if (!e) return { ok: false, error: 'Укажите период (обе даты), направление и ПКЗ в кг' };
+        const key = id && /^[a-z0-9]{4,24}$/i.test(id) ? id : newId();
+        return apply(s => { s.pkz[key] = e; });
+    }
+
+    async function removePkzRule(id) {
+        if (!canEditPkz()) return { ok: false, error: 'Нет права менять ПКЗ из NAV' };
+        const at = new Date().toISOString();
+        return apply(s => { s.pkz[id] = { deleted: true, at, by: author() }; });
+    }
+
+    function activePkz() {
+        const out = {};
+        Object.keys(cache.pkz || {}).forEach(k => { if (!cache.pkz[k].deleted) out[k] = cache.pkz[k]; });
+        return out;
+    }
+
+    // ПКЗ из NAV для вылета: правило, где дата в периоде, направление рейса совпадает (в эту сторону),
+    // тип ВС совпадает (или в правиле «любой»). Несколько подходят — точнее по типу ВС, потом более позднее начало.
+    let pkzMemo = new Map();
+    function pkzFor(date, flightCode, acRaw) {
+        const rules = activePkz();
+        const ids = Object.keys(rules);
+        if (!ids.length || !date || !flightCode) return null;
+        const memoKey = date + '|' + flightCode + '|' + (acRaw || '');
+        if (pkzMemo.has(memoKey)) return pkzMemo.get(memoKey);
+        const base = typeof getBaseFlight === 'function' ? getBaseFlight(flightCode) : flightCode;
+        const dir = dirKey(typeof getFlightDirection === 'function' ? getFlightDirection(base) : '');
+        const ak = acRaw ? acKey(typeof getAircraftType === 'function' ? getAircraftType(acRaw) : acRaw) : '';
+        let best = null;
+        ids.forEach(id => {
+            const r = rules[id];
+            if (!dir || dirKey(r.direction) !== dir) return;
+            if (typeof compareDateStr === 'function' && (compareDateStr(date, r.from) < 0 || compareDateStr(date, r.to) > 0)) return;
+            const rk = r.ac ? acKey(r.ac) : '';
+            if (rk && rk !== ak) return;
+            const score = (rk ? 2 : 1);
+            if (!best || score > best.score
+                || (score === best.score && typeof compareDateStr === 'function' && compareDateStr(r.from, best.r.from) > 0)
+                || (score === best.score && r.from === best.r.from && String(r.at) > String(best.r.at))) {
+                best = { r, score };
+            }
+        });
+        const v = best ? best.r.value : null;
+        if (pkzMemo.size > 20000) pkzMemo.clear();
+        pkzMemo.set(memoKey, v);
+        return v;
     }
 
     // Периоды коммерции для рейсов (номера или коды). ranges: [{from,to}] в ДД.ММ.ГГГГ.
@@ -205,7 +300,7 @@ window.SubsidyRef = (function () {
         if (!canEdit()) return { ok: false, error: 'Нет права менять справочник' };
         const e = normAmount({ ...entry, at: new Date().toISOString(), by: author() });
         if (!e) return { ok: false, error: 'Укажите оба города (разные) и тип ВС' };
-        if (e.subsidy == null && e.costSub == null && e.costCom == null) return { ok: false, error: 'Укажите хотя бы одну сумму' };
+        if (e.subsidy == null && e.cost == null) return { ok: false, error: 'Укажите субсидию или себестоимость' };
         const key = amountKey(e.from, e.to, e.ac);
         return apply(s => {
             if (oldKey && oldKey !== key && s.amounts[oldKey]) s.amounts[oldKey] = { deleted: true, at: e.at, by: e.by };
@@ -233,22 +328,21 @@ window.SubsidyRef = (function () {
         let nA = 0;
         const res = await apply(s => {
             Object.keys(src.periodsByNum || {}).forEach(n => {
-                const cur = s.periods[n];
+                // Строка доп. рейса (KV-305) идёт под базовым номером, если у базового своей строки нет.
+                const b = String(flightNum(n));
+                if (b !== String(n) && src.periodsByNum[b]) return;
+                const cur = s.periods[b];
                 if (cur && !cur.deleted && !overwrite) return;
-                s.periods[n] = { ranges: normRanges(src.periodsByNum[n]), at, by };
+                s.periods[b] = { ranges: normRanges(src.periodsByNum[n]), at, by };
                 nP++;
             });
             const grouped = {};
             (src.costRows || []).forEach(r => {
                 const key = amountKey(r.from, r.to, r.ac);
                 if (!key) return;
-                const g = grouped[key] || (grouped[key] = { from: r.from, to: r.to, ac: r.ac, subsidy: null, costSub: null, costCom: null });
-                if (r.flag === 'да') {
-                    g.costSub = r.costPair;
-                    if (r.subsidyAmt) g.subsidy = r.subsidyAmt;
-                } else {
-                    g.costCom = r.costPair;
-                }
+                const g = grouped[key] || (grouped[key] = { from: r.from, to: r.to, ac: r.ac, subsidy: null, cost: null });
+                if (r.flag === 'да' && r.subsidyAmt) g.subsidy = r.subsidyAmt;
+                if (r.costPair != null && (g.cost == null || r.flag === 'нет')) g.cost = r.costPair;
             });
             Object.keys(grouped).forEach(key => {
                 const cur = s.amounts[key];
@@ -279,6 +373,13 @@ window.SubsidyRef = (function () {
         setAmount,
         removeAmount,
         importFromFiles,
+        setPkzRule,
+        removePkzRule,
+        pkzRules: activePkz,
+        pkzFor,
+        dirKey,
+        canViewPkz,
+        canEditPkz,
         periods: activePeriods,
         amounts: activeAmounts,
         amountKey,

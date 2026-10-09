@@ -234,9 +234,14 @@ window.FlightChecks = (function () {
         const codes = new Set();
         candidates().forEach(c => {
             const ev = evaluate(c);
-            if (ev.subsidized && !ev.hasRef && stateOf(c) !== 'Улетел') codes.add(c.code);
+            if (ev.subsidized && !ev.hasRef && stateOf(c) !== 'Улетел') codes.add(baseCode(c.code));
         });
         return [...codes].sort((a, b) => (parseInt(a.slice(3), 10) || 0) - (parseInt(b.slice(3), 10) || 0));
+    }
+
+    // Справочники ведутся по базовому номеру: доп. рейс KV-301 = KV-101.
+    function baseCode(code) {
+        return typeof getBaseFlight === 'function' ? getBaseFlight(code) : code;
     }
 
     function pairCode(code) {
@@ -260,11 +265,12 @@ window.FlightChecks = (function () {
         if (!missing.size) return [];
         const stats = new Map();
         candidates().forEach(c => {
-            if (!missing.has(c.code)) return;
+            const bc = baseCode(c.code);
+            if (!missing.has(bc)) return;
             const ev = evaluate(c);
             if (!ev.subsidized || ev.hasRef) return;
-            let st = stats.get(c.code);
-            if (!st) stats.set(c.code, st = { amounts: new Map(), total: 0, dates: new Set() });
+            let st = stats.get(bc);
+            if (!st) stats.set(bc, st = { amounts: new Map(), total: 0, dates: new Set() });
             st.dates.add(c.date);
             c.sales.forEach(sale => {
                 if (isChild(sale) || isInfant(sale)) return;

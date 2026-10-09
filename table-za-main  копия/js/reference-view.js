@@ -7,10 +7,9 @@ window.ReferenceView = (function () {
 
     let periodEdit = null;   // { flights: [..], ranges: [{from,to}] } — открытая форма периодов
     let amountEdit = null;   // запись суммы в форме ({} — новая)
-    let navEdit = null;      // { date, flight, value } — запись ПКЗ в форме
+    let navEdit = null;      // правило ПКЗ в форме ({ id, from, to, direction, ac, value })
     let amountFilter = '';
-    let navMonth = '';
-    let navFlight = '';
+    let navFlight = '';      // фильтр по направлению
 
     function esc(v) {
         return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -55,7 +54,7 @@ window.ReferenceView = (function () {
         { id: 'fares', label: 'Тарифы субсидии', view: () => typeof FareRefs !== 'undefined' && FareRefs.canView() },
         { id: 'periods', label: 'Периоды субсидии', view: () => typeof SubsidyRef !== 'undefined' && SubsidyRef.canView() },
         { id: 'amounts', label: 'Суммы субсидии и себестоимость', view: () => typeof SubsidyRef !== 'undefined' && SubsidyRef.canView() },
-        { id: 'nav', label: 'ПКЗ из NAV', view: () => has('view_pkz_nav') || has('edit_pkz_nav') }
+        { id: 'nav', label: 'ПКЗ из NAV', view: () => typeof SubsidyRef !== 'undefined' && SubsidyRef.canViewPkz() }
     ];
 
     function visibleSections() {
@@ -92,7 +91,9 @@ window.ReferenceView = (function () {
         const file = typeof RouteCosts !== 'undefined' && RouteCosts.fileData ? RouteCosts.fileData().periodsByNum : {};
         Object.keys(file || {}).forEach(n => set.add('KV-' + n));
         Object.keys(typeof SubsidyRef !== 'undefined' ? SubsidyRef.periods() : {}).forEach(n => set.add('KV-' + n));
-        return [...set].filter(c => {
+        // Только базовые номера: доп. рейс (KV-301, KV-355…) — тот же рейс, у него свои периоды не ведутся.
+        const bases = new Set([...set].map(c => (/^KV-\d+$/.test(c) && typeof getBaseFlight === 'function' ? getBaseFlight(c) : c)));
+        return [...bases].filter(c => {
             if (!/^KV-\d+$/.test(c)) return false;
             const n = flightNum(c);
             if (file && file[n]) return true;
@@ -245,8 +246,7 @@ window.ReferenceView = (function () {
                 <td class="rp-left"><strong>${esc(e.from)} — ${esc(e.to)}</strong></td>
                 <td>${esc(e.acLabel)}</td>
                 <td>${e.subsidy ? `<strong>${fmtK(e.subsidy)}</strong><div class="rp-sub-line">≈ ${esc(fmtRub(e.subsidy / 2 * 1000))} на рейс</div>` : '—'}</td>
-                <td>${fmtK(e.costSub)}</td>
-                <td>${fmtK(e.costCom)}</td>
+                <td>${fmtK(e.cost)}${e.cost != null ? `<div class="rp-sub-line">≈ ${esc(fmtRub(e.cost / 2 * 1000))} на рейс</div>` : ''}</td>
                 <td>${sourceBadge(e.source)}</td>
                 ${can ? `<td class="rp-nowrap">
                     <button type="button" class="filter-btn rp-open" data-refa-edit="${esc(e.key)}">Изменить</button>
@@ -266,8 +266,7 @@ window.ReferenceView = (function () {
                     <label>Город 2<input id="ref-a-to" class="cr-input" list="ref-cities" maxlength="60" value="${esc(ae.to || '')}"></label>
                     <label>Тип ВС<select id="ref-a-ac" class="cr-input">${acs.map(a => `<option${a === (ae.acLabel || ae.ac) ? ' selected' : ''}>${esc(a)}</option>`).join('')}</select></label>
                     <label>Субсидия, тыс. ₽<input id="ref-a-sub" class="cr-input" type="number" min="0" step="0.001" value="${esc(ae.subsidy != null ? ae.subsidy : '')}"></label>
-                    <label>Себестоимость при субсидии, тыс. ₽<input id="ref-a-csub" class="cr-input" type="number" min="0" step="0.001" value="${esc(ae.costSub != null ? ae.costSub : '')}"></label>
-                    <label>Себестоимость коммерческая, тыс. ₽<input id="ref-a-ccom" class="cr-input" type="number" min="0" step="0.001" value="${esc(ae.costCom != null ? ae.costCom : '')}"></label>
+                    <label>Себестоимость, тыс. ₽<input id="ref-a-cost" class="cr-input" type="number" min="0" step="0.001" value="${esc(ae.cost != null ? ae.cost : '')}"></label>
                 </div>
                 <div class="rp-ref-actions">
                     <button type="button" class="btn-primary rp-btn" data-refa-save>Сохранить</button>
@@ -280,51 +279,80 @@ window.ReferenceView = (function () {
                 <div class="rp-card-head"><h3 class="rp-card-title">Суммы субсидии и себестоимость по маршрутам</h3>
                     ${can && !ae ? '<button type="button" class="btn-primary rp-btn" data-refa-new>Добавить маршрут</button>' : ''}</div>
                 <p class="rp-card-text">Как в файле «Расходы»: суммы в <strong>тыс. ₽ за пару рейсов туда-обратно</strong> (на один рейс — половина).
-                    Субсидия действует в даты вне периодов коммерции. Себестоимость при субсидии и коммерческая — для экономической таблицы и расчёта расходов.
+                    Субсидия действует в даты вне периодов коммерции. Себестоимость одна на маршрут и тип ВС — для экономической таблицы и расчёта расходов.
                     Пустое поле — значение берётся из файла.</p>
                 ${importHtml()}
                 ${form}
                 <div class="ref-toolbar"><input type="search" class="cr-input" id="ref-a-filter" placeholder="Поиск: город или тип ВС" value="${esc(amountFilter)}"></div>
                 ${rows ? `<div class="rp-scroll"><table class="rp-table rp-refs-table">
-                    <thead><tr><th>Маршрут</th><th>Тип ВС</th><th>Субсидия</th><th>Себест. при субсидии</th><th>Себест. коммерч.</th><th>Откуда</th>${can ? '<th></th>' : ''}</tr></thead>
+                    <thead><tr><th>Маршрут</th><th>Тип ВС</th><th>Субсидия</th><th>Себестоимость</th><th>Откуда</th>${can ? '<th></th>' : ''}</tr></thead>
                     <tbody>${rows}</tbody></table></div>` : `<p class="rp-note">${q ? 'Ничего не найдено.' : 'Нет данных: загрузите файл «Расходы» или добавьте маршрут.'}</p>`}
             </section>`;
     }
 
-    // ---------- ПКЗ из NAV ----------
+    // ---------- ПКЗ из NAV: правила «период + тип ВС + направление» ----------
 
-    function monthNow() {
-        const d = new Date();
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    function dataRows() {
+        const out = [];
+        Object.keys(typeof groupedData !== 'undefined' && groupedData ? groupedData : {}).forEach(base => {
+            (groupedData[base] || []).forEach(r => { if (r && r[0]) out.push(r); });
+        });
+        return out;
     }
 
-    function allFlightCodes() {
+    // Направления в одну сторону — по базовым рейсам из данных и из уже заведённых правил.
+    function directionOptions() {
         const set = new Set();
-        Object.keys(typeof groupedData !== 'undefined' && groupedData ? groupedData : {}).forEach(base => {
-            (groupedData[base] || []).forEach(r => { if (r && r[0] && typeof cleanFlight === 'function') set.add(cleanFlight(r[0])); });
+        dataRows().forEach(r => {
+            const code = typeof cleanFlight === 'function' ? cleanFlight(r[0]) : r[0];
+            const base = typeof getBaseFlight === 'function' ? getBaseFlight(code) : code;
+            const d = directionOf(base);
+            if (d && d !== base) set.add(d);
         });
-        return [...set].filter(c => /^KV-\d+$/.test(c)).sort((a, b) => flightNum(a) - flightNum(b));
+        Object.values(SubsidyRef.pkzRules()).forEach(r => set.add(r.direction));
+        return [...set].sort((a, b) => a.localeCompare(b, 'ru'));
+    }
+
+    function acOptions() {
+        const set = new Set();
+        dataRows().forEach(r => {
+            const ac = typeof getAircraftType === 'function' ? getAircraftType(r[4]) : r[4];
+            if (ac && ac !== '-') set.add(ac);
+        });
+        Object.values(SubsidyRef.pkzRules()).forEach(r => { if (r.ac) set.add(r.ac); });
+        return [...set].sort((a, b) => a.localeCompare(b, 'ru'));
+    }
+
+    // Сколько вылетов в загруженных данных получат это правило (с учётом более точных правил).
+    function pkzMatches(id) {
+        let n = 0;
+        dataRows().forEach(r => {
+            const code = typeof cleanFlight === 'function' ? cleanFlight(r[0]) : r[0];
+            const rule = SubsidyRef.pkzRules()[id];
+            if (!rule || typeof compareDateStr !== 'function') return;
+            if (compareDateStr(r[1], rule.from) < 0 || compareDateStr(r[1], rule.to) > 0) return;
+            if (SubsidyRef.pkzFor(r[1], code, r[4]) === rule.value) n++;
+        });
+        return n;
     }
 
     function navHtml() {
-        const can = has('edit_pkz_nav');
-        const month = navMonth || monthNow();
-        const [y, m] = month.split('-');
-        const all = typeof SharedOverrides !== 'undefined' && SharedOverrides.listPkzNav ? SharedOverrides.listPkzNav() : [];
-        const list = all
-            .filter(e => e.date.slice(3) === `${m}.${y}`)
-            .filter(e => !navFlight || e.flight === navFlight)
-            .sort((a, b) => (typeof compareDateStr === 'function' ? compareDateStr(a.date, b.date) : 0) || flightNum(a.flight) - flightNum(b.flight));
-        const total = list.reduce((s, e) => s + (Number(e.value) || 0), 0);
-        const codes = allFlightCodes();
-        all.forEach(e => { if (!codes.includes(e.flight)) codes.push(e.flight); });
+        const can = SubsidyRef.canEditPkz();
+        const rules = SubsidyRef.pkzRules();
+        const dirs = directionOptions();
+        const acs = acOptions();
+        const list = Object.keys(rules).map(id => ({ id, ...rules[id] }))
+            .filter(r => !navFlight || r.direction === navFlight)
+            .sort((a, b) => a.direction.localeCompare(b.direction, 'ru') || (typeof compareDateStr === 'function' ? compareDateStr(a.from, b.from) : 0));
         const ne = navEdit;
         const form = can && ne ? `
             <div class="rp-ref-form" id="ref-nav-form">
-                <div class="rp-ref-form-title">${ne.date ? 'Изменить ПКЗ' : 'Новое значение ПКЗ'}</div>
+                <div class="rp-ref-form-title">${ne.id ? 'Изменить правило' : 'Новое правило ПКЗ'}</div>
                 <div class="rp-ref-grid">
-                    <label>Дата вылета<input id="ref-n-date" class="cr-input" type="date" value="${esc(isoOf(ne.date))}"></label>
-                    <label>Рейс<select id="ref-n-flight" class="cr-input">${codes.map(c => `<option${c === ne.flight ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
+                    <label>Период с<input id="ref-n-from" class="cr-input" type="date" value="${esc(isoOf(ne.from))}"></label>
+                    <label>по<input id="ref-n-to" class="cr-input" type="date" value="${esc(isoOf(ne.to))}"></label>
+                    <label>Направление (в одну сторону)<select id="ref-n-dir" class="cr-input">${dirs.map(d => `<option${d === ne.direction ? ' selected' : ''}>${esc(d)}</option>`).join('')}</select></label>
+                    <label>Тип ВС<select id="ref-n-ac" class="cr-input"><option value="">любой</option>${acs.map(a => `<option${a === ne.ac ? ' selected' : ''}>${esc(a)}</option>`).join('')}</select></label>
                     <label>ПКЗ из NAV, кг<input id="ref-n-value" class="cr-input" type="number" min="0" step="1" value="${esc(ne.value != null ? ne.value : '')}"></label>
                 </div>
                 <div class="rp-ref-actions">
@@ -333,31 +361,36 @@ window.ReferenceView = (function () {
                     <span class="rp-ref-error" id="ref-n-error" role="alert"></span>
                 </div>
             </div>` : '';
-        const rows = list.map(e => `
+        const rows = list.map(r => `
             <tr>
-                <td>${esc(e.date)}</td>
-                <td><strong>${esc(e.flight)}</strong><div class="rp-sub-line">${esc(directionOf(e.flight))}</div></td>
-                <td><strong>${esc(Number(e.value).toLocaleString('ru-RU'))}</strong> кг</td>
-                <td class="rp-left rp-muted">${esc(e.by || '')}${e.at ? '<br>' + esc(when(e.at)) : ''}</td>
+                <td class="rp-nowrap">${esc(r.from)} – ${esc(r.to)}</td>
+                <td class="rp-left"><strong>${esc(r.direction)}</strong></td>
+                <td>${r.ac ? esc(r.ac) : '<span class="rp-muted">любой</span>'}</td>
+                <td><strong>${esc(Number(r.value).toLocaleString('ru-RU'))}</strong> кг</td>
+                <td>${pkzMatches(r.id)}</td>
+                <td class="rp-left rp-muted">${esc(r.by || '')}${r.at ? '<br>' + esc(when(r.at)) : ''}</td>
                 ${can ? `<td class="rp-nowrap">
-                    <button type="button" class="filter-btn rp-open" data-refn-edit="${esc(e.date + '|' + e.flight)}">Изменить</button>
-                    <button type="button" class="filter-btn rp-open rp-danger" data-refn-del="${esc(e.date + '|' + e.flight)}">Удалить</button>
+                    <button type="button" class="filter-btn rp-open" data-refn-edit="${esc(r.id)}">Изменить</button>
+                    <button type="button" class="filter-btn rp-open" data-refn-copy="${esc(r.id)}" title="Новое правило на основе этого">Копия</button>
+                    <button type="button" class="filter-btn rp-open rp-danger" data-refn-del="${esc(r.id)}">Удалить</button>
                 </td>` : ''}
             </tr>`).join('');
         return `
             <section class="rp-card">
                 <div class="rp-card-head"><h3 class="rp-card-title">ПКЗ из NAV</h3>
-                    ${can && !ne ? '<button type="button" class="btn-primary rp-btn" data-refn-new>Добавить</button>' : ''}</div>
-                <p class="rp-card-text">Платная коммерческая загрузка по данным NAV, кг на вылет. Те же значения, что в столбце «ПКЗ из NAV» на вкладке «ПКЗ».</p>
+                    ${can && !ne ? '<button type="button" class="btn-primary rp-btn" data-refn-new>Добавить правило</button>' : ''}</div>
+                <p class="rp-card-text">Правило: <strong>период + направление в одну сторону + тип ВС → ПКЗ, кг</strong>. Значение само подставляется во все
+                    вылеты, которые подходят (вкладка «ПКЗ», «Творческая», карточки). Обратное направление — отдельное правило.
+                    Если подходят несколько — берётся правило с конкретным типом ВС, затем с более поздним началом периода.
+                    Ручное значение, введённое в таблице «ПКЗ» для конкретного вылета, важнее правила.</p>
                 ${form}
                 <div class="ref-toolbar">
-                    <label>Месяц <input type="month" class="cr-input" id="ref-n-month" value="${esc(month)}"></label>
-                    <label>Рейс <select class="cr-input" id="ref-n-filter"><option value="">все</option>${codes.map(c => `<option${c === navFlight ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
-                    <span class="rp-muted">Записей: ${list.length}${list.length ? ` · всего ${esc(total.toLocaleString('ru-RU'))} кг` : ''}</span>
+                    <label>Направление <select class="cr-input" id="ref-n-filter"><option value="">все</option>${dirs.map(d => `<option${d === navFlight ? ' selected' : ''}>${esc(d)}</option>`).join('')}</select></label>
+                    <span class="rp-muted">Правил: ${list.length}</span>
                 </div>
                 ${rows ? `<div class="rp-scroll"><table class="rp-table rp-refs-table">
-                    <thead><tr><th>Дата</th><th>Рейс</th><th>ПКЗ</th><th>Изменил</th>${can ? '<th></th>' : ''}</tr></thead>
-                    <tbody>${rows}</tbody></table></div>` : '<p class="rp-note">За этот месяц значений нет.</p>'}
+                    <thead><tr><th>Период</th><th>Направление</th><th>Тип ВС</th><th>ПКЗ</th><th>Вылетов</th><th>Изменил</th>${can ? '<th></th>' : ''}</tr></thead>
+                    <tbody>${rows}</tbody></table></div>` : '<p class="rp-note">Правил пока нет.</p>'}
             </section>`;
     }
 
@@ -492,7 +525,7 @@ window.ReferenceView = (function () {
         if (d.refaCancel != null) { amountEdit = null; rerender(); return true; }
         if (d.refaSave != null) {
             const val = (id) => document.getElementById(id)?.value ?? '';
-            const entry = { from: val('ref-a-from'), to: val('ref-a-to'), ac: val('ref-a-ac'), subsidy: val('ref-a-sub'), costSub: val('ref-a-csub'), costCom: val('ref-a-ccom') };
+            const entry = { from: val('ref-a-from'), to: val('ref-a-to'), ac: val('ref-a-ac'), subsidy: val('ref-a-sub'), cost: val('ref-a-cost') };
             run(btn, () => SubsidyRef.setAmount(entry, amountEdit && amountEdit.key), 'ref-a-error', () => {
                 amountEdit = null;
                 toast('Маршрут сохранён');
@@ -507,41 +540,34 @@ window.ReferenceView = (function () {
             return true;
         }
         // ПКЗ из NAV
-        if (d.refnNew != null) { navEdit = { date: '', flight: navFlight || '', value: null }; rerender(); return true; }
-        if (d.refnEdit) {
-            const [date, flight] = d.refnEdit.split('|');
-            navEdit = { date, flight, value: SharedOverrides.getPkzNav(date, flight) };
+        if (d.refnNew != null) { navEdit = { from: '', to: '', direction: navFlight || '', ac: '', value: null }; rerender(); return true; }
+        if (d.refnEdit || d.refnCopy) {
+            const id = d.refnEdit || d.refnCopy;
+            const r = SubsidyRef.pkzRules()[id];
+            if (!r) return true;
+            navEdit = { ...r, id: d.refnEdit ? id : '' };
             rerender();
             document.getElementById('ref-nav-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
             return true;
         }
         if (d.refnCancel != null) { navEdit = null; rerender(); return true; }
         if (d.refnSave != null) {
-            const date = ruOf(document.getElementById('ref-n-date')?.value || '');
-            const flight = document.getElementById('ref-n-flight')?.value || '';
-            const value = document.getElementById('ref-n-value')?.value ?? '';
-            if (!date || !flight) { showError('ref-n-error', 'Укажите дату и рейс'); return true; }
-            if (value === '' || !(Number(value) >= 0)) { showError('ref-n-error', 'Укажите ПКЗ в кг'); return true; }
-            run(btn, async () => {
-                // Сменили дату или рейс — старое значение убираем.
-                if (navEdit && navEdit.date && (navEdit.date !== date || navEdit.flight !== flight)) {
-                    await SharedOverrides.setPkzNav(navEdit.date, navEdit.flight, '');
-                }
-                const ok = await SharedOverrides.setPkzNav(date, flight, value);
-                return ok ? { ok: true } : { ok: false, error: 'Нет права менять ПКЗ' };
-            }, 'ref-n-error', () => {
+            const val = (id) => document.getElementById(id)?.value ?? '';
+            const entry = { from: ruOf(val('ref-n-from')), to: ruOf(val('ref-n-to')), direction: val('ref-n-dir'), ac: val('ref-n-ac'), value: val('ref-n-value') };
+            if (!entry.from || !entry.to) { showError('ref-n-error', 'Укажите период: обе даты'); return true; }
+            if (entry.value === '' || !(Number(entry.value) >= 0)) { showError('ref-n-error', 'Укажите ПКЗ в кг'); return true; }
+            run(btn, () => SubsidyRef.setPkzRule(entry, navEdit && navEdit.id), 'ref-n-error', () => {
                 navEdit = null;
-                navMonth = isoOf(date).slice(0, 7);
-                toast('ПКЗ сохранено');
+                toast('Правило ПКЗ сохранено');
                 refreshAll();
                 rerender();
             });
             return true;
         }
         if (d.refnDel) {
-            const [date, flight] = d.refnDel.split('|');
-            if (!window.confirm(`Удалить ПКЗ ${flight} за ${date}?`)) return true;
-            run(btn, async () => ({ ok: await SharedOverrides.setPkzNav(date, flight, '') }), null, () => { refreshAll(); rerender(); });
+            const r = SubsidyRef.pkzRules()[d.refnDel];
+            if (!r || !window.confirm(`Удалить правило ПКЗ ${r.direction}, ${r.from} – ${r.to}?`)) return true;
+            run(btn, () => SubsidyRef.removePkzRule(d.refnDel), null, () => { refreshAll(); rerender(); });
             return true;
         }
         return false;
@@ -557,7 +583,6 @@ window.ReferenceView = (function () {
             rerender();
             return true;
         }
-        if (target.id === 'ref-n-month') { navMonth = target.value || ''; rerender(); return true; }
         if (target.id === 'ref-n-filter') { navFlight = target.value || ''; rerender(); return true; }
         return false;
     }

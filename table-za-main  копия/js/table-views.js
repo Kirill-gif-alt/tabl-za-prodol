@@ -810,10 +810,22 @@ function createPkzView(c) {
 /** ПКЗ из NAV — ручной ввод (позже из файла), key: date|flight */
 const PKZ_NAV_STORE_KEY = 'krasavia_pkz_nav_v1';
 
+let pkzNavMapCache = { raw: null, map: {} };
+
 function getPkzNavMap() {
     try {
         const raw = localStorage.getItem(PKZ_NAV_STORE_KEY);
         if (!raw) return {};
+        if (raw === pkzNavMapCache.raw) return pkzNavMapCache.map;
+        pkzNavMapCache = { raw, map: parsePkzNavMap(raw) };
+        return pkzNavMapCache.map;
+    } catch {
+        return {};
+    }
+}
+
+function parsePkzNavMap(raw) {
+    try {
         const o = JSON.parse(raw);
         if (o && o.values && typeof o.values === 'object') {
             const flat = {};
@@ -834,15 +846,28 @@ function pkzNavKey(dateStr, flightCode) {
     return `${dateStr}|${cleanFlight(flightCode || '')}`;
 }
 
-function getPkzNavValue(dateStr, flightCode) {
+// Строка вылета (для типа ВС), если вызывающий её не передал.
+function findFlightRowForPkz(dateStr, flightCode) {
+    const code = cleanFlight(flightCode || '');
+    const base = typeof getBaseFlight === 'function' ? getBaseFlight(code) : code;
+    const rows = (typeof groupedData !== 'undefined' && groupedData && groupedData[base]) || [];
+    return rows.find(r => r && r[1] === dateStr && cleanFlight(r[0]) === code) || rows.find(r => r && r[1] === dateStr) || null;
+}
+
+// ПКЗ из NAV: ручное значение для вылета (таблица «ПКЗ») → правило справочника (период + направление + тип ВС).
+function getPkzNavValue(dateStr, flightCode, row) {
     if (typeof SharedOverrides !== 'undefined') {
         const v = SharedOverrides.getPkzNav(dateStr, flightCode);
         if (v !== null && v !== undefined) return v;
     }
     const v = getPkzNavMap()[pkzNavKey(dateStr, flightCode)];
-    if (v === null || v === undefined || v === '') return null;
-    const n = Number(v);
-    return isNaN(n) ? null : n;
+    if (v !== null && v !== undefined && v !== '' && !isNaN(Number(v))) return Number(v);
+    if (typeof SubsidyRef !== 'undefined' && SubsidyRef.pkzFor) {
+        const r = row || findFlightRowForPkz(dateStr, flightCode);
+        const rv = SubsidyRef.pkzFor(dateStr, cleanFlight(flightCode || ''), r ? r[4] : '');
+        if (rv != null) return rv;
+    }
+    return null;
 }
 
 function setPkzNavValue(dateStr, flightCode, value) {

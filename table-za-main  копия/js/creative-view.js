@@ -111,7 +111,7 @@ window.CreativeView = (function () {
 
     function navOf(c) {
         if (typeof getPkzNavValue !== 'function') return null;
-        const v = getPkzNavValue(c.date, c.code);
+        const v = getPkzNavValue(c.date, c.code, c.row);
         return v == null || isNaN(v) ? null : Number(v);
     }
 
