@@ -24,6 +24,7 @@ window.ActivityLog = (function () {
     };
 
     const TAB_LABELS = {
+        today: 'Сегодня',
         home: 'Сеть',
         main: 'Графический план',
         table: 'Динамика продаж',

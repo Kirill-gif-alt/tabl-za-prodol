@@ -1,10 +1,11 @@
 // Порядок вкладок в верхней панели — per profile
 window.TabOrder = (function () {
     const STORAGE_PREFIX = 'krasavia_tab_order_';
-    const DEFAULT_ORDER = ['home', 'main', 'table', 'pkz', 'pair', 'costs', 'data', 'rms', 'sales', 'creative', 'reports', 'stats'];
+    const DEFAULT_ORDER = ['today', 'home', 'main', 'table', 'pkz', 'pair', 'costs', 'data', 'rms', 'sales', 'creative', 'reports', 'stats'];
 
     // как на верхней панели (index.html)
     const LABELS = {
+        today: 'Сегодня',
         home: 'Сеть',
         main: 'Графический план',
         table: 'Динамика продаж',
@@ -59,6 +60,8 @@ window.TabOrder = (function () {
     }
 
     function apply() {
+        // Левое меню по разделам: порядок применяется внутри групп.
+        if (typeof AppShell !== 'undefined' && document.querySelector('.side-nav')) { AppShell.place(); return; }
         const nav = document.querySelector('.tab-nav');
         if (!nav) return;
         const order = load();
