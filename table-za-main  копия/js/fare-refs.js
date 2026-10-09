@@ -179,23 +179,35 @@ window.FareRefs = (function () {
         if (!n) {
             return { ok: false, error: entry && entry.mode === 'exclude' ? 'Укажите рейс' : 'Укажите рейс и предельный тариф больше 0' };
         }
-        // Один предел на рейс: другие записи этих же рейсов заменяются новой.
-        const res = await apply((entries, deleted) => {
-            const now = new Date().toISOString();
-            for (let i = entries.length - 1; i >= 0; i--) {
-                const e = entries[i];
-                if (e.id !== n.id && e.flights.some(f => n.flights.indexOf(f) !== -1)) {
-                    const rest = e.flights.filter(f => n.flights.indexOf(f) === -1);
-                    if (rest.length) entries[i] = { ...e, flights: rest, updatedAt: now };
-                    else { entries.splice(i, 1); deleted[e.id] = now; }
-                }
-            }
-            const i = entries.findIndex(e => e.id === n.id);
-            if (i === -1) entries.push(n);
-            else entries[i] = n;
-            delete deleted[n.id];
-        });
+        const res = await apply((entries, deleted) => putOne(entries, deleted, n));
         return res.ok ? { ok: true, shared: res.shared, entry: n } : res;
+    }
+
+    // Один предел на рейс: другие записи этих же рейсов заменяются новой.
+    function putOne(entries, deleted, n) {
+        const now = new Date().toISOString();
+        for (let i = entries.length - 1; i >= 0; i--) {
+            const e = entries[i];
+            if (e.id !== n.id && e.flights.some(f => n.flights.indexOf(f) !== -1)) {
+                const rest = e.flights.filter(f => n.flights.indexOf(f) === -1);
+                if (rest.length) entries[i] = { ...e, flights: rest, updatedAt: now };
+                else { entries.splice(i, 1); deleted[e.id] = now; }
+            }
+        }
+        const i = entries.findIndex(e => e.id === n.id);
+        if (i === -1) entries.push(n);
+        else entries[i] = n;
+        delete deleted[n.id];
+    }
+
+    // Загрузка из Excel: много записей одной записью файла.
+    async function upsertMany(list) {
+        if (!canEdit()) return { ok: false, error: 'Нет права менять тарифы' };
+        const now = new Date().toISOString();
+        const ready = (list || []).map(e => normalizeEntry({ ...e, mode: 'limit', updatedAt: now, by: authorName() })).filter(Boolean);
+        if (!ready.length) return { ok: true, count: 0 };
+        const res = await apply((entries, deleted) => ready.forEach(n => putOne(entries, deleted, n)));
+        return res.ok ? { ok: true, shared: res.shared, count: ready.length } : res;
     }
 
     async function remove(id) {
@@ -240,6 +252,7 @@ window.FareRefs = (function () {
     }
 
     return {
+        upsertMany,
         canView,
         load,
         list,

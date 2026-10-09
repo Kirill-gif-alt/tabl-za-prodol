@@ -481,6 +481,9 @@ window.RouteCosts = (function () {
             : 0;
         return {
             unitCost,
+            from: cities[0] || '',
+            to: cities[1] || '',
+            ac,
             subsidyAmt: pairFromFile,
             subsidyOneWay,
             subsidized: !commercial,

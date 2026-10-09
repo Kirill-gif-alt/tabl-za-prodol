@@ -281,6 +281,8 @@ function updateHeaderStatus() {
         }
         const checkChip = typeof FlightChecks !== 'undefined' ? FlightChecks.headerChip() : null;
         if (checkChip) kpiBar.append(checkChip);
+        const morningChip = typeof MorningSummary !== 'undefined' ? MorningSummary.headerChip() : null;
+        if (morningChip) kpiBar.append(morningChip);
         kpiBar.classList.toggle('hidden', !kpiBar.childElementCount);
     }
 }
@@ -713,6 +715,7 @@ async function startAppAfterLogin() {
         await SalesSync.initAfterLogin();
     }
     if (typeof SalesArchive !== 'undefined') SalesArchive.scheduleAfterStart();
+    if (typeof MorningSummary !== 'undefined') MorningSummary.afterStart().catch(e => console.warn('MorningSummary', e));
 }
 
 window.onload=()=>{

@@ -305,6 +305,16 @@ function collectSameWeekdayCohort(baseFlight, flyDateStr, flightCode) {
     return dates;
 }
 
+// Загрузка (файл «загрузка таб») точнее файла продаж: в продажах бывают незакрытые возвраты и обмены.
+// Кривую продаж масштабируем так, чтобы она кончалась на загрузке; форма (когда покупали) остаётся.
+function anchorCurveToLoad(curve, load) {
+    if (!curve || !(load > 0) || !(curve.total > 0) || curve.total === load) return curve;
+    const k = load / curve.total;
+    const onHand = Object.create(null);
+    Object.keys(curve.onHand).forEach(t => { onHand[t] = Math.round(curve.onHand[t] * k); });
+    return { onHand, maxDtd: curve.maxDtd, total: load, salesTotal: curve.total, anchored: true };
+}
+
 // Кривая продаж вылета: из текущего файла продаж, а если вылет уже выпал из него — из архива.
 function departureCurve(dateStr, code) {
     if (getFlightSalesList(dateStr, code).length) return buildOnHandByDtd(dateStr, code);
@@ -314,7 +324,7 @@ function departureCurve(dateStr, code) {
 
 // Норма по когорте на каждом дне до вылета: среднее, разброс и число вылетов.
 function weekdayNormSeries(cohort, dtds, targetSeats) {
-    const curves = cohort.filter(c => c.seats > 0).map(c => ({ ...c, curve: departureCurve(c.date, c.code) }));
+    const curves = cohort.filter(c => c.seats > 0).map(c => ({ ...c, curve: anchorCurveToLoad(departureCurve(c.date, c.code), c.load) }));
     const avgSeats = curves.length ? curves.reduce((a, c) => a + c.seats, 0) / curves.length : 0;
     const scale = targetSeats > 0 ? targetSeats : avgSeats;
     const points = dtds.map(t => {
@@ -355,7 +365,9 @@ function weekdayRuPrep(dowShort) {
 
 function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period, aircraftCode) {
     const code = cleanFlight(flightCode || baseFlight);
-    const thisCurve = buildOnHandByDtd(flyDateStr, code);
+    const ownRow = typeof getFlightRowForDate === 'function' ? getFlightRowForDate(baseFlight, flyDateStr, code) : null;
+    const ownLoad = ownRow ? (typeof getSoldFromRow === 'function' ? getSoldFromRow(ownRow) : (parseInt(ownRow[6], 10) || 0)) : 0;
+    const thisCurve = anchorCurveToLoad(buildOnHandByDtd(flyDateStr, code), ownLoad);
     const asOf = typeof getDaysUntil === 'function' ? getDaysUntil(flyDateStr) : null;
     // Ось кончается на последнем дне, за который есть продажи (дата среза), а не на дате компьютера.
     const axisMin = Math.max(asOf === null ? 0 : Math.max(0, asOf), observedFromDtd(flyDateStr));
@@ -382,7 +394,8 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
     const dowName = typeof getDayOfWeek === 'function' ? getDayOfWeek(flyDateStr) : '';
 
     if (swlyHasSales) {
-        const swlyCurve = departureCurve(swlyDate, code);
+        const swlyRow = typeof getFlightRowForDate === 'function' ? getFlightRowForDate(baseFlight, swlyDate, code) : null;
+        const swlyCurve = anchorCurveToLoad(departureCurve(swlyDate, code), swlyRow ? (parseInt(swlyRow[6], 10) || 0) : 0);
         refData = dtds.map(t => {
             if (swlyCurve.onHand[t] != null) return swlyCurve.onHand[t];
             if (t > swlyCurve.maxDtd) return null;
@@ -458,7 +471,9 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
     const head = `Продано ${nowVal} · за ${axisMin} дн. до вылета`;
     const verdict = [head].concat(lines.map(l => `${l.label} ${l.value} — ${diffText(l.d)}`)).join('\n');
     const esc = typeof escHtml === 'function' ? escHtml : String;
-    const verdictHtml = `<div class="vd-head"><strong>Продано ${nowVal}</strong> <span class="vd-muted">· за ${axisMin} дн. до вылета</span></div>`
+    const anchorNote = thisCurve.anchored
+        ? ` title="По загрузке. В файле продаж ${thisCurve.salesTotal} — разница из-за возвратов или обменов, которых нет в файле продаж"` : '';
+    const verdictHtml = `<div class="vd-head"${anchorNote}><strong>Продано ${nowVal}</strong> <span class="vd-muted">· за ${axisMin} дн. до вылета${thisCurve.anchored ? ` · по загрузке (в продажах ${thisCurve.salesTotal})` : ''}</span></div>`
         + lines.map(l => `<div class="vd-line" title="${esc(l.title)}">${esc(l.label)} <strong>${l.value}</strong> — <span class="${diffCls(l.d)}">${diffText(l.d)}</span></div>`).join('');
     const verdictCls = mainDelta == null || mainDelta === 0 ? 'booking-curve-verdict-neutral'
         : (mainDelta > 0 ? 'booking-curve-verdict-up' : 'booking-curve-verdict-down');

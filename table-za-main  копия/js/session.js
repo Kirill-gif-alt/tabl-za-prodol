@@ -374,7 +374,12 @@ window.SessionStore = (function () {
         }
         allData = snap.allData || [];
         salesMap = snap.salesMap || {};
-        const rawDetails = snap.salesDetails || {};
+        // Младенцы без места (…/IN00) — не проданные места; в старых снимках они ещё есть.
+        const rawDetails = {};
+        Object.keys(snap.salesDetails || {}).forEach(k => {
+            const list = (snap.salesDetails[k] || []).filter(x => !/\/(IN|ID)\d/i.test(String(x && x.basicFareStr || '')));
+            if (list.length) rawDetails[k] = list;
+        });
         const canSeePii = typeof ProfileAuth === 'undefined'
             || (ProfileAuth.hasPermission('sales_detail') && ProfileAuth.hasPermission('load_data'));
         salesDetails = canSeePii
