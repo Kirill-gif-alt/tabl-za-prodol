@@ -439,7 +439,7 @@ window.ReportsView = (function () {
                 <td>${fmt(i.count)}</td>
                 <td class="rp-left">${esc(i.detail)}</td>
                 <td>${esc(i.subsidySource)}</td>
-                <td>${canOpen ? `<button type="button" class="filter-btn rp-open" data-open-base="${esc(i.base)}" data-open-date="${esc(i.date)}">Открыть</button>` : ''}</td>
+                <td>${canOpen ? `<button type="button" class="filter-btn rp-open" data-open-base="${esc(i.base)}" data-open-code="${esc(i.code)}" data-open-date="${esc(i.date)}">Открыть</button>` : ''}</td>
             </tr>`).join('');
         const summary = all.length
             ? `Рейсов с ошибкой: <strong>${fmt(flightsAll.size)}</strong>, из них до вылета: <strong>${fmt(flightsFuture.size)}</strong>. Ошибок всего: ${fmt(all.length)}.`
@@ -707,13 +707,13 @@ window.ReportsView = (function () {
         if (typeof ActivityLog !== 'undefined') ActivityLog.log('fare_refs', msg);
     }
 
-    function openFlight(base, date) {
+    function openFlight(base, date, code) {
         const tab = canTab('pair') ? 'pair' : (canTab('table') ? 'table' : '');
         if (!tab || typeof switchMainTab !== 'function') return;
         if (typeof currentFlight !== 'undefined') currentFlight = base;
         if (typeof lastSelectedDate !== 'undefined') lastSelectedDate = date;
         switchMainTab(tab);
-        if (typeof FlightCard !== 'undefined' && date) FlightCard.maybeOpen(base, date);
+        if (typeof FlightCard !== 'undefined' && date) FlightCard.maybeOpen(code || base, date);
     }
 
     async function exportChecks() {
@@ -895,7 +895,7 @@ window.ReportsView = (function () {
                 return;
             }
             if (btn.dataset.openBase) {
-                openFlight(btn.dataset.openBase, btn.dataset.openDate);
+                openFlight(btn.dataset.openBase, btn.dataset.openDate, btn.dataset.openCode);
                 return;
             }
             if (btn.dataset.refEdit) {

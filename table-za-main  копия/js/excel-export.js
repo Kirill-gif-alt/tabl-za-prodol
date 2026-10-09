@@ -549,11 +549,12 @@ function excelAnnounceSaved(saved, fallback) {
 }
 
 async function excelWriteBook(sheetName, bodyRows, filename, options) {
+    // Сначала папка: разрешение на неё браузер даёт только сразу после клика, а библиотека может грузиться секунды.
+    const folder = await excelPrepareFolder(options && options.kind);
     if (!(await loadPlainXlsx())) {
         if (typeof showToast === 'function') showToast('Библиотека Excel не загружена', 'error');
         return;
     }
-    const folder = await excelPrepareFolder(options && options.kind);
     if (typeof showToast === 'function') showToast('Готовлю Excel…');
     const styled = await loadStyledXlsx();
     const lib = styled || XLSX;
@@ -921,11 +922,11 @@ function exportDataBoardToExcel() {
 }
 
 async function exportDataBoardWorkbook(pairs, todayStart) {
+    const folder = await excelPrepareFolder('data');
     if (!(await loadPlainXlsx())) {
         showToast('Библиотека Excel не загружена', 'error');
         return;
     }
-    const folder = await excelPrepareFolder('data');
     if (typeof showToast === 'function') showToast('Готовлю Excel…');
     const styled = await loadStyledXlsx();
     const lib = styled || XLSX;
@@ -1010,11 +1011,15 @@ function excelSafeWorkbook(wb) {
 async function exportTableToExcel(tableElement, filename = 'КРАСАВИА_экспорт.xlsx', kind) {
     if (typeof ProfileAuth !== 'undefined' && !ProfileAuth.guardPermission('export_excel', 'Экспорт недоступен для вашего профиля')) return;
     if (typeof ActivityLog !== 'undefined') ActivityLog.log('export', filename);
-    if (!tableElement || !(await loadPlainXlsx())) {
-        showToast('Нет данных для экспорта или библиотека Excel не загружена', 'error');
+    if (!tableElement) {
+        showToast('Нет данных для экспорта', 'error');
         return;
     }
     const folder = await excelPrepareFolder(kind || 'table');
+    if (!(await loadPlainXlsx())) {
+        showToast('Библиотека Excel не загружена', 'error');
+        return;
+    }
     try {
         if (typeof showToast === 'function') showToast('Готовлю Excel…');
         const parsed = readHtmlTableForExcel(tableElement);

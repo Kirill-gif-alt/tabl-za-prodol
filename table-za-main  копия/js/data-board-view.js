@@ -587,7 +587,7 @@ function renderDataBoard() {
         // HTML для повторной вставки снимаем, когда браузер свободен: сериализация тысяч строк заметна.
         dataBoardRenderCache = { sig, html: '', stats: statsText };
         const keep = () => {
-            if (gen === dataBoardRenderGen && dataBoardRenderCache.sig === sig) dataBoardRenderCache.html = track.innerHTML;
+            if (dataBoardRenderCache.sig === sig && track.dataset.renderSig === sig) dataBoardRenderCache.html = track.innerHTML;
         };
         if (typeof requestIdleCallback === 'function') requestIdleCallback(keep, { timeout: 5000 });
         else setTimeout(keep, 1500);
