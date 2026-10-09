@@ -50,13 +50,17 @@ window.ActivityLog = (function () {
         return typeof Security !== 'undefined' ? Security.escapeHtml(s) : String(s || '');
     }
 
+    let tsFormat = null;
     function formatTs(iso) {
         if (!iso) return '—';
         try {
-            return new Date(iso).toLocaleString('ru-RU', {
-                day: '2-digit', month: '2-digit', year: 'numeric',
-                hour: '2-digit', minute: '2-digit', second: '2-digit'
-            });
+            if (!tsFormat) {
+                tsFormat = new Intl.DateTimeFormat('ru-RU', {
+                    day: '2-digit', month: '2-digit', year: 'numeric',
+                    hour: '2-digit', minute: '2-digit', second: '2-digit'
+                });
+            }
+            return tsFormat.format(new Date(iso));
         } catch {
             return iso;
         }

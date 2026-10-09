@@ -575,14 +575,22 @@ function renderDataBoard() {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const pairs = getDataRoutePairs(todayStart);
-    const CHUNK = 16;
+    // Сначала столько маршрутов, сколько видно на экране, остальные — следующими кадрами.
+    const FIRST_CHUNK = 4;
+    const CHUNK = 12;
     _dataBoardRowAcc = 0;
     track.innerHTML = '';
     track.dataset.renderSig = '';
 
     const finish = (statsText) => {
         if (gen !== dataBoardRenderGen) return;
-        dataBoardRenderCache = { sig, html: track.innerHTML, stats: statsText };
+        // HTML для повторной вставки снимаем, когда браузер свободен: сериализация тысяч строк заметна.
+        dataBoardRenderCache = { sig, html: '', stats: statsText };
+        const keep = () => {
+            if (gen === dataBoardRenderGen && dataBoardRenderCache.sig === sig) dataBoardRenderCache.html = track.innerHTML;
+        };
+        if (typeof requestIdleCallback === 'function') requestIdleCallback(keep, { timeout: 5000 });
+        else setTimeout(keep, 1500);
         track.dataset.renderSig = sig;
         track.classList.remove('data-board-loading');
         if (stats) stats.textContent = statsText;
@@ -599,11 +607,12 @@ function renderDataBoard() {
             finish('0 маршрутов');
             return;
         }
-        const slice = pairs.slice(start, start + CHUNK);
+        const end = start + (start === 0 ? FIRST_CHUNK : CHUNK);
+        const slice = pairs.slice(start, end);
         const html = slice.map(pair => buildDataRouteCardHtml(pair, todayStart)).filter(Boolean).join('');
         if (html) track.insertAdjacentHTML('beforeend', html);
-        if (start + CHUNK < pairs.length) {
-            requestAnimationFrame(() => paintChunk(start + CHUNK));
+        if (end < pairs.length) {
+            requestAnimationFrame(() => paintChunk(end));
             return;
         }
         finish(`${pairs.length} маршрутов · ${_dataBoardRowAcc} дат`);

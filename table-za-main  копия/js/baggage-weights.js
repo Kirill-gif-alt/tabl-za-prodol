@@ -736,7 +736,9 @@ function findBaggageWeightsFile(files) {
 }
 
 async function loadBaggageWeightsFile(fh) {
-    if (!fh || typeof XLSX === 'undefined') return;
+    if (!fh) return;
+    const XLSX = await loadPlainXlsx();
+    if (!XLSX) return;
     try {
         const file = typeof toFile === 'function' ? await toFile(fh) : fh;
         const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });

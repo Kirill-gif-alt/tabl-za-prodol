@@ -43,8 +43,11 @@ function excelExportStamp() {
     return date ? `${date} ${hh}:${mm}` : `${hh}:${mm}`;
 }
 
-function loadStyledXlsx() {
-    if (window.XLSXStyle) return Promise.resolve(window.XLSXStyle);
+async function loadStyledXlsx() {
+    if (window.XLSXStyle) return window.XLSXStyle;
+    // Сначала обычная библиотека: цветная грузится поверх и возвращает window.XLSX на место.
+    await loadPlainXlsx();
+    if (window.XLSXStyle) return window.XLSXStyle;
     return new Promise(resolve => {
         const plain = window.XLSX;
         const script = document.createElement('script');
@@ -546,7 +549,7 @@ function excelAnnounceSaved(saved, fallback) {
 }
 
 async function excelWriteBook(sheetName, bodyRows, filename, options) {
-    if (typeof XLSX === 'undefined') {
+    if (!(await loadPlainXlsx())) {
         if (typeof showToast === 'function') showToast('Библиотека Excel не загружена', 'error');
         return;
     }
@@ -904,10 +907,6 @@ function buildDataBoardWorksheet(lib, pairs, todayStart) {
 function exportDataBoardToExcel() {
     if (typeof ProfileAuth !== 'undefined' && !ProfileAuth.guardPermission('export_excel', 'Экспорт недоступен для вашего профиля')) return;
     if (typeof ActivityLog !== 'undefined') ActivityLog.log('export', 'Данные');
-    if (typeof XLSX === 'undefined') {
-        showToast('Библиотека XLSX не загружена', 'error');
-        return;
-    }
     if (typeof groupedData === 'undefined' || !Object.keys(groupedData).length) {
         showToast('Нет данных для экспорта', 'error');
         return;
@@ -922,6 +921,10 @@ function exportDataBoardToExcel() {
 }
 
 async function exportDataBoardWorkbook(pairs, todayStart) {
+    if (!(await loadPlainXlsx())) {
+        showToast('Библиотека Excel не загружена', 'error');
+        return;
+    }
     const folder = await excelPrepareFolder('data');
     if (typeof showToast === 'function') showToast('Готовлю Excel…');
     const styled = await loadStyledXlsx();
@@ -942,10 +945,6 @@ async function exportDataBoardWorkbook(pairs, todayStart) {
 function exportRmsToExcel() {
     if (typeof ProfileAuth !== 'undefined' && !ProfileAuth.guardPermission('export_excel', 'Экспорт недоступен для вашего профиля')) return;
     if (typeof ActivityLog !== 'undefined') ActivityLog.log('export', 'RMS');
-    if (typeof XLSX === 'undefined') {
-        showToast('Библиотека XLSX не загружена', 'error');
-        return;
-    }
     const flights = getRmsFilteredFlights();
 
     if (!flights.length) {
@@ -1011,7 +1010,7 @@ function excelSafeWorkbook(wb) {
 async function exportTableToExcel(tableElement, filename = 'КРАСАВИА_экспорт.xlsx', kind) {
     if (typeof ProfileAuth !== 'undefined' && !ProfileAuth.guardPermission('export_excel', 'Экспорт недоступен для вашего профиля')) return;
     if (typeof ActivityLog !== 'undefined') ActivityLog.log('export', filename);
-    if (!tableElement || typeof XLSX === 'undefined') {
+    if (!tableElement || !(await loadPlainXlsx())) {
         showToast('Нет данных для экспорта или библиотека Excel не загружена', 'error');
         return;
     }

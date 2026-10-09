@@ -39,6 +39,30 @@ function isValidCalendarDate(y, m0, d) {
     return dt.getFullYear() === y && dt.getMonth() === m0 && dt.getDate() === d;
 }
 
+// Библиотека Excel (SheetJS, 0,9 МБ) грузится при первом чтении или выгрузке Excel,
+// а не при каждом открытии сайта: разбор такого скрипта на слабом ПК занимает секунды.
+let plainXlsxJob = null;
+function loadPlainXlsx() {
+    if (window.XLSXPlain) return Promise.resolve(window.XLSXPlain);
+    if (plainXlsxJob) return plainXlsxJob;
+    plainXlsxJob = new Promise(resolve => {
+        const prev = window.XLSX;
+        const script = document.createElement('script');
+        script.src = 'js/vendor/xlsx.full.min.js';
+        script.onload = () => {
+            window.XLSXPlain = window.XLSX;
+            resolve(window.XLSXPlain || null);
+        };
+        script.onerror = () => {
+            if (prev) window.XLSX = prev;
+            plainXlsxJob = null;
+            resolve(null);
+        };
+        document.head.appendChild(script);
+    });
+    return plainXlsxJob;
+}
+
 function parseLocalDate(dateStr) {
     if (typeof PerfCache !== 'undefined') return PerfCache.parseLocalDateMemo(dateStr);
     if (!dateStr) return null;
@@ -360,6 +384,10 @@ function getTodayYesterday(){
 }
 
 function daysBetweenDates(fromStr, toStartDate) {
+    if (typeof PerfCache !== 'undefined') {
+        const ts = PerfCache.dateTsMemo(fromStr);
+        return ts === null || !toStartDate ? null : Math.round((toStartDate - ts) / 86400000);
+    }
     const d = parseLocalDate(fromStr);
     if (!d || !toStartDate) return null;
     d.setHours(0, 0, 0, 0);

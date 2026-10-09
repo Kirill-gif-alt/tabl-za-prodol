@@ -83,6 +83,18 @@ window.PerfCache = (function () {
         return cloneMemoDate(dt);
     }
 
+    // Время даты «ДД.ММ.ГГГГ» (полночь) числом — без копии Date, для частых сравнений; null — не дата.
+    function dateTsMemo(dateStr) {
+        if (!dateStr) return null;
+        const key = String(dateStr);
+        let d = localDateCache.get(key);
+        if (d === undefined) {
+            parseLocalDateMemo(key);
+            d = localDateCache.get(key);
+        }
+        return d instanceof Date ? d.getTime() : null;
+    }
+
     function getDayOfWeekMemo(dateStr, daysRu) {
         if (!dateStr) return '';
         if (dayOfWeekCache.has(dateStr)) return dayOfWeekCache.get(dateStr);
@@ -170,7 +182,7 @@ window.PerfCache = (function () {
             salesTodayKpi.sales++;
             salesTodayKpi.revenue += adj || 0;
         }
-        const ts = parseLocalDateMemo(dealDate)?.getTime() || 0;
+        const ts = dateTsMemo(dealDate) || 0;
         if (ts >= st.lastDealTs) {
             st.lastDealTs = ts;
             st.lastFare = nf || 0;
@@ -197,6 +209,7 @@ window.PerfCache = (function () {
         cleanFlightMemo,
         getBaseFlightMemo,
         parseLocalDateMemo,
+        dateTsMemo,
         getDayOfWeekMemo,
         getDaysUntilMemo,
         getWeekNumberMemo,

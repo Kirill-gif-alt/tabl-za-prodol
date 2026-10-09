@@ -33,9 +33,21 @@ function getMetricsStorageKey(row) {
     return `${row[1]}|${cleanFlight(row[0])}`;
 }
 
+// Подпись зовётся на каждую строку таблиц: размеры объектов пересчитываем, только когда сменились
+// сами объекты или эпоха данных (любая загрузка/правка вызывает invalidateMetricsCache → dataEpoch++).
+let metricsSigMemo = null;
 function getMetricsCacheSignature() {
-    const weightsCount = typeof baggageWeightsData !== 'undefined' ? Object.keys(baggageWeightsData).length : 0;
-    return `${dataEpoch}|${allData?.length || 0}|${closedFlights.size}|${Object.keys(salesMap || {}).length}|${weightsCount}|${getTodayDate()}`;
+    const weights = typeof baggageWeightsData !== 'undefined' ? baggageWeightsData : null;
+    const today = getTodayDate();
+    const m = metricsSigMemo;
+    if (m && m.epoch === dataEpoch && m.all === allData && m.allLen === (allData?.length || 0) && m.sales === salesMap
+        && m.weights === weights && m.closed === closedFlights && m.closedSize === closedFlights.size && m.today === today) {
+        return m.sig;
+    }
+    const weightsCount = weights ? Object.keys(weights).length : 0;
+    const sig = `${dataEpoch}|${allData?.length || 0}|${closedFlights.size}|${Object.keys(salesMap || {}).length}|${weightsCount}|${today}`;
+    metricsSigMemo = { epoch: dataEpoch, all: allData, allLen: allData?.length || 0, sales: salesMap, weights, closed: closedFlights, closedSize: closedFlights.size, today, sig };
+    return sig;
 }
 
 function buildMetricsCache() {

@@ -142,6 +142,8 @@ let dataSearchTimer = null;
 let dataBoardRenderCache = { sig: '', html: '', stats: '' };
 let dataBoardRenderGen = 0;
 
+// Класс оформления вкладки (прокрутка, раскладка) — на её панели. Общий контейнер свой класс не меняет:
+// смена display у контейнера заставляла браузер заново раскладывать все открытые вкладки.
 const TAB_HOST_CLASSES = {
     today: 'content-area content-today',
     main: 'content-area',
@@ -255,6 +257,19 @@ function updateHeaderStatus() {
         statusBar.textContent = ready ? '✓' : '';
     }
     if (window.ingestQuiet) return;
+    // Счётчики шапки (KPI, проверка рейсов, сводка) считаются один раз на серию вызовов:
+    // при входе и загрузке шапку просят обновить несколько раз подряд.
+    if (headerKpiTimer) return;
+    headerKpiTimer = setTimeout(() => {
+        headerKpiTimer = 0;
+        if (!window.ingestQuiet) renderHeaderKpi();
+    }, 120);
+}
+
+let headerKpiTimer = 0;
+
+function renderHeaderKpi() {
+    const kpiBar = document.getElementById('header-kpi');
     if (kpiBar && Object.keys(groupedData).length) {
         const featureOn = (key) => typeof ProfileAuth === 'undefined' || typeof ProfileAuth.featureOn !== 'function' || ProfileAuth.featureOn(key);
         const k = getGlobalKPIs();
@@ -341,6 +356,16 @@ function rebuildSalesAggregatesFromDetails() {
     const nextMap = {};
 
     if (typeof PerfCache !== 'undefined') PerfCache.resetSalesStats();
+    // Дат продаж немного (сотни), билетов — десятки тысяч: «сколько дней назад» считаем один раз на дату.
+    const agoByDeal = new Map();
+    const daysAgoOf = (deal) => {
+        let v = agoByDeal.get(deal);
+        if (v === undefined) {
+            v = daysBetweenDates(deal, todayStart);
+            agoByDeal.set(deal, v);
+        }
+        return v;
+    };
 
     Object.keys(details).forEach(k => {
         const list = details[k];
@@ -355,7 +380,7 @@ function rebuildSalesAggregatesFromDetails() {
             else if (deal === dates.yesterday) bucket.yesterday++;
             else if (deal === dates.day2) bucket.day2++;
 
-            const daysAgo = daysBetweenDates(deal, todayStart);
+            const daysAgo = daysAgoOf(deal);
             if (daysAgo !== null && daysAgo >= 0) {
                 if (daysAgo < 7) bucket.d7++;
                 if (daysAgo < 14) bucket.d14++;
@@ -419,7 +444,9 @@ function switchToTableFlightBySearch(query) {
 function updateHeaderWithLastUpdate(){
     const el=document.getElementById('last-update-text');
     if(!el||!lastSalesUpdate)return;
-    el.textContent=lastSalesUpdate.toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    // Вручную, без toLocaleString: создание форматтера при входе стоило ~0,1 с на слабом ПК.
+    const d=lastSalesUpdate, p2=n=>String(n).padStart(2,'0');
+    el.textContent=`${p2(d.getDate())}.${p2(d.getMonth()+1)}.${d.getFullYear()}, ${p2(d.getHours())}:${p2(d.getMinutes())}`;
     document.getElementById('last-update-info').classList.remove('hidden');
 }
 
@@ -429,7 +456,8 @@ function ensureTabPanel(tab) {
     if (!tabPanels[tab]) {
         const panel = document.createElement('div');
         panel.id = 'tab-panel-' + tab;
-        panel.className = 'tab-panel';
+        const extra = (TAB_HOST_CLASSES[tab] || '').replace('content-area', '').trim();
+        panel.className = 'tab-panel' + (extra ? ' ' + extra : '');
         panel.hidden = true;
         host.appendChild(panel);
         tabPanels[tab] = panel;
@@ -563,11 +591,9 @@ function switchMainTab(tab){
     const host = document.getElementById('main-content-inner');
     if (!host) return;
 
-    host.className = TAB_HOST_CLASSES[tab] || 'content-area';
-    Object.values(tabPanels).forEach(p => { p.hidden = true; });
-
     const panel = ensureTabPanel(tab);
     if (!panel) return;
+    Object.values(tabPanels).forEach(p => { if (p !== panel && !p.hidden) p.hidden = true; });
     panel.hidden = false;
 
     ['tab-today','tab-home','tab-main','tab-table','tab-pkz','tab-pair','tab-costs','tab-rms','tab-sales','tab-creative','tab-reports','tab-data','tab-stats'].forEach(id=>{
@@ -710,11 +736,7 @@ async function loadSharedSideData() {
 // Стартовая вкладка выбирается заранее, чтобы не рисовать сначала одну вкладку, а сразу за ней другую.
 async function startAppAfterLogin() {
     await loadSharedSideData();
-    // Старт — страница «Сегодня» (главное за день); карта «Сеть» открывается из меню.
-    // В классическом оформлении старт как раньше (карта «Сеть», если включена).
-    const newLook = typeof AppShell === 'undefined' || AppShell.layout() === 'new';
-    const startTab = typeof ProfileAuth === 'undefined' ? null
-        : (newLook && ProfileAuth.canAccessTab('today') ? 'today' : (ProfileAuth.canAccessTab('home') ? 'home' : null));
+    const startTab = typeof ProfileAuth !== 'undefined' && ProfileAuth.canAccessTab('home') ? 'home' : null;
     if (typeof SessionStore !== 'undefined') {
         await SessionStore.initOnStartup({ startTab });
     } else {
