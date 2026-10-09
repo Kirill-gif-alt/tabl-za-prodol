@@ -1,12 +1,12 @@
 // Подсказка ценового решения по вылету (для «Управления продажами» и утренней сводки).
-// Только вылеты в ближайшие 20 дней. Сравнивает продано сейчас с нормой («обычно к этому дню»)
+// Только вылеты в ближайшие 15 дней (на «Сегодня» окно выбирается). Сравнивает продано сейчас с нормой («обычно к этому дню»)
 // и с планом (файл ожидаемой загрузки) — те же цифры, что в выводе карточки и детализации:
 //   отстаёт от всех доступных ориентиров на порог и больше  → ▼ снизить;
 //   опережает все ориентиры на порог и больше             → ▲ повысить;
 //   от одного отстаёт, другой опережает на порог           → ! внимание.
 // Порог — 10% кресел, но не меньше 3 билетов. Решение всегда принимает человек: это только подсветка.
 window.SalesAdvice = (function () {
-    const DAYS_AHEAD = 20;
+    const DAYS_AHEAD = 15;
     let memo = new Map();
     let memoSig = '';
 
@@ -21,10 +21,11 @@ window.SalesAdvice = (function () {
         return typeof getDaysUntil === 'function' ? getDaysUntil(date) : null;
     }
 
-    function inWindow(date) {
+    // maxDays — своё окно (вкладка «Сегодня»); по умолчанию DAYS_AHEAD (УП и утренняя сводка).
+    function inWindow(date, maxDays) {
         const d = daysUntil(date);
         // С завтрашнего дня: в день вылета менять цену уже поздно.
-        return d != null && d >= 1 && d <= DAYS_AHEAD;
+        return d != null && d >= 1 && d <= (maxDays || DAYS_AHEAD);
     }
 
     function compute(code, date) {
@@ -55,9 +56,9 @@ window.SalesAdvice = (function () {
         return { code, date, base, status, sold, refs, threshold: T, dtd, text, seats };
     }
 
-    // Подсказка для вылета или null (нет данных / вне 20 дней / не о чем подсказывать).
-    function forDeparture(code, date) {
-        if (!code || !date || !inWindow(date)) return null;
+    // Подсказка для вылета или null (нет данных / вне окна / не о чем подсказывать).
+    function forDeparture(code, date, maxDays) {
+        if (!code || !date || !inWindow(date, maxDays)) return null;
         const s = sig();
         if (s !== memoSig) { memo = new Map(); memoSig = s; }
         const key = code + '|' + date;
@@ -71,13 +72,13 @@ window.SalesAdvice = (function () {
     const LABEL = { down: '▼ снизить', up: '▲ повысить', attn: '! внимание' };
     const STATUS = { down: 'down', up: 'up', attn: 'attn' };
 
-    // Все вылеты в окне 20 дней (по загруженным данным): [{ code, date, base }].
-    function departuresAhead() {
+    // Все вылеты в окне (по загруженным данным): [{ code, date, base }].
+    function departuresAhead(maxDays) {
         const out = [];
         const seen = new Set();
         Object.keys(typeof groupedData !== 'undefined' && groupedData ? groupedData : {}).forEach(base => {
             (groupedData[base] || []).forEach(r => {
-                if (!r || !r[0] || !r[1] || !inWindow(r[1])) return;
+                if (!r || !r[0] || !r[1] || !inWindow(r[1], maxDays)) return;
                 const code = typeof cleanFlight === 'function' ? cleanFlight(r[0]) : r[0];
                 const k = code + '|' + r[1];
                 if (seen.has(k)) return;
@@ -90,11 +91,11 @@ window.SalesAdvice = (function () {
 
     // Подсказки по всем вылетам окна (для сводки). Считается порциями, чтобы не подвешивать страницу.
     // only — набор «рейс|дата»: считать только эти вылеты (например, из «Управления продажами»).
-    async function scanAll(only, onProgress) {
-        const list = departuresAhead().filter(d => !only || only.has(d.code + '|' + d.date));
+    async function scanAll(only, onProgress, maxDays) {
+        const list = departuresAhead(maxDays).filter(d => !only || only.has(d.code + '|' + d.date));
         const out = [];
         for (let i = 0; i < list.length; i++) {
-            const a = forDeparture(list[i].code, list[i].date);
+            const a = forDeparture(list[i].code, list[i].date, maxDays);
             if (a && a.status) out.push(a);
             if (i % 25 === 24) {
                 if (onProgress) onProgress(i + 1, list.length);

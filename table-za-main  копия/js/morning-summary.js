@@ -1,6 +1,6 @@
 // Утренняя сводка: что требует внимания сегодня. Открывается сама один раз в день (на профиль),
 // потом — по значку «☀ N» в шапке. Считается после старта в фоне, порциями (не тормозит вход).
-//  • ждут решения: вылеты из «Управления продажами» на 20 дней с подсказкой (▼ / ! / ▲) и без отметки за сегодня;
+//  • ждут решения: вылеты из «Управления продажами» на 15 дней с подсказкой (▼ / ! / ▲) и без отметки за сегодня;
 //  • ошибки тарифов: рейсы до вылета с ошибкой проверки;
 //  • пропуски справочника (только тем, кто видит справочник).
 window.MorningSummary = (function () {
@@ -23,6 +23,10 @@ window.MorningSummary = (function () {
 
     function canTab(t) {
         return typeof ProfileAuth === 'undefined' || ProfileAuth.canAccessTab(t);
+    }
+
+    function aheadDays() {
+        return typeof SalesAdvice !== 'undefined' ? SalesAdvice.DAYS_AHEAD : 15;
     }
 
     function today() {
@@ -118,7 +122,7 @@ window.MorningSummary = (function () {
         const chip = document.createElement('span');
         chip.className = 'header-kpi-morning';
         chip.textContent = '☀ ' + n;
-        chip.title = `Сводка: ${n} вылет(ов) на 20 дней ждут решения сегодня. Нажмите, чтобы открыть.`;
+        chip.title = `Сводка: ${n} вылет(ов) на ${aheadDays()} дней ждут решения сегодня. Нажмите, чтобы открыть.`;
         chip.addEventListener('click', open);
         return chip;
     }
@@ -151,10 +155,10 @@ window.MorningSummary = (function () {
                 ${typeof SubsidyRef !== 'undefined' && SubsidyRef.canView() ? `<button type="button" class="ms-tile ms-tile-btn" data-ms-open="refs"><div class="ms-tile-n${gaps ? ' ms-warn' : ''}">${gaps}</div><div class="ms-tile-l">пропусков в справочнике<br><span class="ms-muted">открыть проверку →</span></div></button>` : ''}
             </div>
             ${adviceAllowed() ? (list.length ? `
-                <p class="ms-note">Вылеты из «Управления продажами» на ${typeof SalesAdvice !== 'undefined' ? SalesAdvice.DAYS_AHEAD : 20} дней, где продажи заметно расходятся с нормой и планом, а отметки за сегодня ещё нет. Нажмите строку — карточка рейса, «В УП» — поставить отметку.</p>
+                <p class="ms-note">Вылеты из «Управления продажами» на ${aheadDays()} дней, где продажи заметно расходятся с нормой и планом, а отметки за сегодня ещё нет. Нажмите строку — карточка рейса, «В УП» — поставить отметку.</p>
                 <div class="ms-scroll"><table class="ms-table"><tbody>${rows}</tbody></table></div>
                 ${list.length > shown.length ? `<p class="ms-note">Показаны первые ${shown.length} из ${list.length}.</p>` : ''}`
-                : '<p class="ms-note ms-ok">По вылетам на 20 дней всё в норме или уже отмечено сегодня.</p>') : ''}`;
+                : '<p class="ms-note ms-ok">По вылетам на ' + aheadDays() + ' дней всё в норме или уже отмечено сегодня.</p>') : ''}`;
     }
 
     function ensureModal() {

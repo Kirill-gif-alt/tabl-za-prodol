@@ -13,6 +13,21 @@ window.TodayView = (function () {
     let advice = [];
     let adviceSig = '';
     let building = null;
+    // Сколько дней вперёд смотреть «Ждут решения» — выбирает сам пользователь, запоминается на профиль.
+    const AHEAD_OPTIONS = [3, 5, 7, 10, 15, 20, 30];
+    const AHEAD_KEY = 'krasavia_today_ahead_';
+    function aheadKey() {
+        const p = typeof ProfileAuth !== 'undefined' && ProfileAuth.getCurrentProfile ? ProfileAuth.getCurrentProfile() : null;
+        return AHEAD_KEY + (p ? p.id : 'guest');
+    }
+    function aheadDays() {
+        let v = 0;
+        try { v = parseInt(localStorage.getItem(aheadKey()), 10); } catch (e) { /* ignore */ }
+        return AHEAD_OPTIONS.includes(v) ? v : (typeof SalesAdvice !== 'undefined' ? SalesAdvice.DAYS_AHEAD : 15);
+    }
+    function setAheadDays(v) {
+        try { localStorage.setItem(aheadKey(), String(v)); } catch (e) { /* ignore */ }
+    }
 
     function esc(v) {
         return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -67,16 +82,17 @@ window.TodayView = (function () {
     }
 
     function sig() {
-        return [typeof dataEpoch === 'number' ? dataEpoch : 0, today(), typeof allData !== 'undefined' && allData ? allData.length : 0].join('|');
+        return [typeof dataEpoch === 'number' ? dataEpoch : 0, today(), typeof allData !== 'undefined' && allData ? allData.length : 0, aheadDays()].join('|');
     }
 
     async function buildAdvice() {
         if (!canTab('sales') || typeof SalesAdvice === 'undefined') { advice = []; return; }
         const s = sig();
         if (adviceSig === s) return;
-        if (building) return building;
+        // Идёт расчёт для другого окна дней — дождаться и пересчитать под нынешний выбор.
+        if (building) return building.then(() => buildAdvice());
         building = (async () => {
-            advice = await SalesAdvice.scanAll(salesDepartures());
+            advice = await SalesAdvice.scanAll(salesDepartures(), null, aheadDays());
             adviceSig = s;
         })().finally(() => { building = null; });
         return building;
@@ -124,7 +140,7 @@ window.TodayView = (function () {
 
     function leadText(p, errs, gaps) {
         const parts = [];
-        if (canTab('sales')) parts.push(p ? `${p} вылет(ов) ждут решения` : 'все вылеты на 20 дней в норме или уже отмечены');
+        if (canTab('sales')) parts.push(p ? `${p} вылет(ов) ждут решения` : `все вылеты на ${aheadDays()} дн. в норме или уже отмечены`);
         if (typeof FlightChecks !== 'undefined' && FlightChecks.enabled()) parts.push(errs ? `${errs} рейс(ов) с ошибкой тарифа` : 'ошибок тарифов нет');
         if (gaps) parts.push(`в справочнике ${gaps} пропуск(ов)`);
         return parts.length ? parts.join(', ') + '.' : '';
@@ -174,7 +190,7 @@ window.TodayView = (function () {
         const sold = r && typeof getSoldFromRow === 'function' ? getSoldFromRow(r) : 0;
         const ac = r && typeof getAircraftType === 'function' ? getAircraftType(r[4]) : '';
         const dtd = daysUntil(item.date);
-        const adv = item.adv !== undefined ? item.adv : (typeof SalesAdvice !== 'undefined' ? SalesAdvice.forDeparture(item.code, item.date) : null);
+        const adv = item.adv !== undefined ? item.adv : (typeof SalesAdvice !== 'undefined' ? SalesAdvice.forDeparture(item.code, item.date, aheadDays()) : null);
         const ref = adv && adv.refs ? adv.refs.map(x => x.value).join(' / ') : '—';
         const on = selected && selected.code === item.code && selected.date === item.date;
         return `
@@ -196,7 +212,7 @@ window.TodayView = (function () {
             const order = { down: 0, attn: 1, up: 2 };
             const list = pend.slice().sort((a, b) => order[a.status] - order[b.status] || a.dtd - b.dtd);
             rows = list.slice(0, 200).map(a => rowHtml({ code: a.code, date: a.date, adv: a })).join('');
-            empty = canTab('sales') ? 'Все вылеты на 20 дней в норме или уже отмечены сегодня.' : 'Нет доступа к «Управлению продажами».';
+            empty = canTab('sales') ? `Все вылеты на ${aheadDays()} дн. в норме или уже отмечены сегодня.` : 'Нет доступа к «Управлению продажами».';
         } else if (tab === 'errors') {
             head = '<th>Рейс</th><th>Маршрут</th><th>Вылет</th><th>Загрузка</th><th>Обычно / план</th><th>Ошибка</th>';
             rows = errs.map(e => rowHtml({ code: e.code, date: e.date }, `<span class="td-err">${esc(e.items.map(i => i.title).join(', '))}</span>`)).join('');
@@ -255,7 +271,7 @@ window.TodayView = (function () {
         try { series = buildFlightDtdBookingSeries(base, date, code, 30, r[4]); } catch (e) { series = null; }
         const refVal = series && series.refData ? series.refData[series.refData.length - 1] : null;
         const expVal = series && series.expectedData ? series.expectedData[series.expectedData.length - 1] : null;
-        const adv = typeof SalesAdvice !== 'undefined' ? SalesAdvice.forDeparture(code, date) : null;
+        const adv = typeof SalesAdvice !== 'undefined' ? SalesAdvice.forDeparture(code, date, aheadDays()) : null;
         const modeKey = typeof FlightChecks !== 'undefined' && FlightChecks.modeFor ? FlightChecks.modeFor(code, date, r) : null;
         const mode = modeKey === 'subsidy' ? { label: 'субсидия' } : modeKey === 'commercial' ? { label: 'коммерция' } : null;
         const advText = adv && adv.status
@@ -320,7 +336,9 @@ window.TodayView = (function () {
                         <div class="td-stat"><span>Вылетов за 7 дней</span><b>${fmt(k.n)}</b><em>${esc(shift(today(), 0).slice(0, 5))} – ${esc(shift(today(), 6).slice(0, 5))}</em></div>
                     </div>
                     ${dayStripHtml(pend)}
-                    <div class="td-tabs" role="tablist">${tabs.map(t => `<button type="button" role="tab" class="td-tab${t.id === tab ? ' td-tab-on' : ''}" data-td-tab="${t.id}">${esc(t.label)}</button>`).join('')}</div>
+                    <div class="td-tabs" role="tablist">${tabs.map(t => `<button type="button" role="tab" class="td-tab${t.id === tab ? ' td-tab-on' : ''}" data-td-tab="${t.id}">${esc(t.label)}</button>`).join('')}
+                        ${canTab('sales') ? `<label class="td-ahead" title="За сколько дней вперёд искать вылеты, где стоит повысить или снизить тариф">Вперёд на
+                            <select data-td-ahead>${AHEAD_OPTIONS.map(n => `<option value="${n}"${n === aheadDays() ? ' selected' : ''}>${n} дн.</option>`).join('')}</select></label>` : ''}</div>
                     ${tableHtml(pend, errs)}
                 </section>
                 <aside class="td-insp" id="td-insp">${inspectorHtml()}</aside>
@@ -366,7 +384,17 @@ window.TodayView = (function () {
 
     function create(panel) {
         panel.innerHTML = '<div class="td-page" id="td-page"></div>';
-        panel.querySelector('#td-page').addEventListener('click', onClick);
+        const page = panel.querySelector('#td-page');
+        page.addEventListener('click', onClick);
+        page.addEventListener('change', (e) => {
+            const sel = e.target.closest('[data-td-ahead]');
+            if (!sel) return;
+            setAheadDays(parseInt(sel.value, 10));
+            tab = 'advice';
+            selected = null;
+            render();
+            buildAdvice().then(render).catch(err => console.warn('TodayView', err));
+        });
         render();
         buildAdvice().then(render).catch(e => console.warn('TodayView', e));
     }
