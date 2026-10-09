@@ -285,7 +285,7 @@ window.FlightCard = (function () {
         try { return localStorage.getItem(INSIGHTS_KEY) === '1'; } catch (e) { return false; }
     }
 
-    // Прогноз, безубыточность и группы — плитками; блок сворачивается (по умолчанию свёрнут, видна одна строка-итог).
+    // Прогноз к вылету и группы — плиткой; блок сворачивается (по умолчанию свёрнут, видна одна строка-итог).
     function insightsHtml(code, date) {
         if (typeof FlightInsights === 'undefined') return '';
         const FI = FlightInsights;
@@ -310,40 +310,6 @@ window.FlightCard = (function () {
             else if (f.soldOutDtd != null) advice = `<div class="fc-advice fc-advice-up">▲ ${f.soldOutDtd === 0 ? 'Распродастся к дню вылета' : `Распродастся примерно за ${f.soldOutDtd} дн. до вылета`} — можно поднимать тариф</div>`;
             else if (f.lf < 60) advice = '<div class="fc-advice fc-advice-down">▼ Не доберёт загрузку — стоит снижать тариф или продвигать</div>';
         }
-        const e = FI.economics(code, date);
-        if (e) {
-            if (e.fare == null) {
-                tiles.push(`<div class="fc-it fc-it-plain">
-                    <div class="fc-it-label">Безубыточность</div>
-                    <div class="fc-it-value">—</div>
-                    <div class="fc-it-note">себестоимость ${esc(FI.rub(e.cost))}${e.subsidy ? `, субсидия ${esc(FI.rub(e.subsidy))}` : ''}; нет продаж для среднего тарифа</div>
-                </div>`);
-            } else {
-                const fareNote = e.fareSource === 'route' ? 'средний по рейсу' : 'средний тариф';
-                tiles.push(`<div class="fc-it fc-it-${e.belowCost ? 'down' : 'plain'}">
-                    <div class="fc-it-label">Безубыточность</div>
-                    <div class="fc-it-value">${e.breakeven === 0 ? '0' : e.breakeven} <span class="fc-it-of">пасс.</span></div>
-                    <div class="fc-it-sub">${e.breakeven === 0 ? 'субсидия покрывает себестоимость' : (e.belowCost ? `больше ${e.seats} кресел — при этом тарифе не окупается` : `из ${e.seats} кресел`)}</div>
-                    <div class="fc-it-note">${esc(fareNote)} ${esc(FI.rubFull(e.fare))}</div>
-                </div>`);
-                if (e.finResult != null) {
-                    const neg = e.finResult < 0;
-                    const parts = [];
-                    if (neg && !e.belowCost) {
-                        if (e.need) parts.push(`+${e.need} ${FI.plural(e.need, 'билет', 'билета', 'билетов')}`);
-                        if (e.needFare != null && e.needFare > 0) parts.push(`тариф +${FI.rubFull(e.needFare)}`);
-                    }
-                    const res = `${neg ? '−' : '+'}${FI.rub(Math.abs(e.finResult))}`;
-                    tiles.push(`<div class="fc-it fc-it-${neg ? 'down' : 'up'}">
-                        <div class="fc-it-label">Прогноз результата</div>
-                        <div class="fc-it-value">${esc(res)}</div>
-                        <div class="fc-it-sub">${neg ? 'рейс в минусе' : 'рейс в плюсе'}</div>
-                        ${parts.length ? `<div class="fc-it-note">в ноль: ${esc(parts.join(' или '))}</div>` : ''}
-                    </div>`);
-                    summary.push(`<span class="fc-ins-chip fc-ins-${neg ? 'down' : 'up'}">итог ${esc(res)}</span>`);
-                }
-            }
-        }
         const g = FI.groupsFor(code, date);
         let groups = '';
         if (g.length) {
@@ -356,9 +322,9 @@ window.FlightCard = (function () {
         if (!tiles.length && !groups) return '';
         const open = insightsOpen();
         return `<div class="fc-insights${open ? ' fc-ins-open' : ''}">
-            <button type="button" class="fc-ins-head" data-fc="insights" aria-expanded="${open}" title="${open ? 'Свернуть' : 'Показать прогноз и экономику'}">
+            <button type="button" class="fc-ins-head" data-fc="insights" aria-expanded="${open}" title="${open ? 'Свернуть' : 'Показать прогноз'}">
                 <span class="fc-ins-caret">${open ? '▾' : '▸'}</span>
-                <span class="fc-ins-title">Прогноз и экономика</span>
+                <span class="fc-ins-title">Прогноз к вылету</span>
                 <span class="fc-ins-chips">${summary.join('')}</span>
             </button>
             ${open ? `<div class="fc-ins-body">
