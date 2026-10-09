@@ -528,8 +528,8 @@ window.ProfileAuth = (function () {
     }
 
     function canAccessTab(tab) {
-        // «Сегодня» — стартовая страница для всех; что на ней видно, решают права на остальные вкладки.
-        if (tab === 'today') return !!currentProfile;
+        // «Сегодня» — стартовая страница нового оформления, для всех; что на ней видно, решают права на остальные вкладки.
+        if (tab === 'today') return !!currentProfile && (typeof AppShell === 'undefined' || AppShell.layout() === 'new');
         if (tab === 'home') return resolveShowHomeMap(currentProfile);
         if (tab === 'stats') return !!(currentProfile?.isAdmin);
         const perm = TAB_PERM[tab];

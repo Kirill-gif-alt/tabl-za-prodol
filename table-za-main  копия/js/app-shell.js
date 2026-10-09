@@ -34,14 +34,21 @@ window.AppShell = (function () {
 
     let built = false;
 
+    // По умолчанию — классическое оформление; новое только если профиль сам выбрал его в «⚙ Настройках».
     function layout() {
         try {
             const pid = currentProfileId();
-            const v = (pid && localStorage.getItem(LAYOUT_KEY + '_' + pid)) || localStorage.getItem(LAYOUT_KEY);
-            return v === 'classic' ? 'classic' : 'new';
+            const v = pid ? localStorage.getItem(LAYOUT_KEY + '_' + pid) : localStorage.getItem(LAYOUT_KEY);
+            return v === 'new' ? 'new' : 'classic';
         } catch (e) {
-            return 'new';
+            return 'classic';
         }
+    }
+
+    // Страница «Сегодня» — часть нового оформления; в классическом её вкладки нет, как раньше.
+    function syncTodayTab() {
+        const btn = document.getElementById('tab-today');
+        if (btn) btn.style.display = layout() === 'new' ? '' : 'none';
     }
 
     function currentProfileId() {
@@ -59,6 +66,11 @@ window.AppShell = (function () {
         } catch (e) { /* ignore */ }
         if (v === 'new') build();
         else teardown();
+        syncTodayTab();
+        if (v === 'classic' && typeof currentTab !== 'undefined' && currentTab === 'today' && typeof switchMainTab === 'function') {
+            const first = typeof ProfileAuth !== 'undefined' ? ProfileAuth.getFirstAllowedTab() : null;
+            if (first) switchMainTab(first);
+        }
         if (withTheme && typeof ThemeSettings !== 'undefined' && ThemeSettings.setPreset) {
             ThemeSettings.setPreset(v === 'new' ? 'office' : 'krasavia');
         }
@@ -67,6 +79,7 @@ window.AppShell = (function () {
 
     // После входа: оформление того профиля, который вошёл.
     function applyForProfile() {
+        syncTodayTab();
         const want = layout();
         if (want === 'new' && !built) build();
         else if (want === 'classic' && built) teardown();
@@ -233,5 +246,5 @@ window.AppShell = (function () {
 })();
 
 // Меню строится сразу: кнопки вкладок уже есть в разметке (скрипты подключены в конце страницы).
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => AppShell.build());
-else AppShell.build();
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => AppShell.applyForProfile());
+else AppShell.applyForProfile();
