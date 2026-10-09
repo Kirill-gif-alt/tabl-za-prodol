@@ -246,8 +246,9 @@ window.RouteCosts = (function () {
             const base = { from: e.from, to: e.to, ac: e.ac, fromKey: cityKey(e.from), toKey: cityKey(e.to), acK: acKey(e.ac), fromRef: true };
             const fDa = fileByKey[key + '|да'];
             const fNet = fileByKey[key + '|нет'];
-            rows.push({ ...base, scepka: '', flag: 'да', costPair: e.costSub != null ? e.costSub : (fDa ? fDa.costPair : null), subsidyAmt: e.subsidy != null ? e.subsidy : (fDa ? fDa.subsidyAmt : 0) });
-            rows.push({ ...base, scepka: '', flag: 'нет', costPair: e.costCom != null ? e.costCom : (fNet ? fNet.costPair : null), subsidyAmt: 0 });
+            // Себестоимость одна — и в субсидированные, и в коммерческие даты.
+            rows.push({ ...base, scepka: '', flag: 'да', costPair: e.cost != null ? e.cost : (fDa ? fDa.costPair : (fNet ? fNet.costPair : null)), subsidyAmt: e.subsidy != null ? e.subsidy : (fDa ? fDa.subsidyAmt : 0) });
+            rows.push({ ...base, scepka: '', flag: 'нет', costPair: e.cost != null ? e.cost : (fNet ? fNet.costPair : (fDa ? fDa.costPair : null)), subsidyAmt: 0 });
         });
         costRows = rows;
         rebuildCostIndex();
@@ -306,12 +307,12 @@ window.RouteCosts = (function () {
         const map = {};
         costRows.forEach(r => {
             const key = routePairKey(r.fromKey, r.toKey, r.acK);
-            const e = map[key] || (map[key] = { key, from: r.from, to: r.to, ac: r.ac, acLabel: acDisplay(r.acK, r.ac), subsidy: null, costSub: null, costCom: null, source: refAmounts[key] ? 'ref' : 'file' });
+            const e = map[key] || (map[key] = { key, from: r.from, to: r.to, ac: r.ac, acLabel: acDisplay(r.acK, r.ac), subsidy: null, cost: null, source: refAmounts[key] ? 'ref' : 'file' });
             if (r.flag === 'да') {
-                e.costSub = r.costPair;
+                if (e.cost == null) e.cost = r.costPair;
                 e.subsidy = r.subsidyAmt || null;
             } else {
-                e.costCom = r.costPair;
+                if (r.costPair != null) e.cost = r.costPair;
             }
         });
         return Object.values(map).sort((a, b) => (a.from + a.to).localeCompare(b.from + b.to, 'ru') || a.acLabel.localeCompare(b.acLabel, 'ru'));
@@ -332,16 +333,15 @@ window.RouteCosts = (function () {
         return parseInt(String(code).replace(/[^0-9]/g, ''), 10) || 0;
     }
 
-    /** Только своя строка в «Период субсидии». 105 ≠ 106. */
+    /** Периоды рейса по базовому номеру (доп. KV-305 = KV-105). 105 ≠ 106. */
     function periodsForFlight(flightCode) {
         const n = flightNum(flightCode);
-        // В справочнике пустой список — «коммерции нет», это тоже ответ (к базовому рейсу не идём).
-        if (n && periodsByNum[n] && (periodsByNum[n].length || refPeriods[n])) return periodsByNum[n];
-        // доп. 305 и т.п. — если своего номера в таблице нет
-        if (typeof getBaseFlight === 'function') {
-            const b = flightNum(getBaseFlight(flightCode));
-            if (b && b !== n && periodsByNum[b] && periodsByNum[b].length) return periodsByNum[b];
-        }
+        const b = typeof getBaseFlight === 'function' ? flightNum(getBaseFlight(flightCode)) : n;
+        // Справочник: пустой список — «коммерции нет», это тоже ответ.
+        if (b && refPeriods[b]) return periodsByNum[b] || [];
+        if (b && periodsByNum[b] && periodsByNum[b].length) return periodsByNum[b];
+        // Старый файл мог содержать строку под номером доп. рейса — берём её, если у базового нет.
+        if (n && n !== b && periodsByNum[n] && periodsByNum[n].length) return periodsByNum[n];
         return [];
     }
 

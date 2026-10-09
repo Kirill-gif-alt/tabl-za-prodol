@@ -7132,3 +7132,16 @@ html[data-theme="dark"] .cr-pop { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
 .cr-pop .cr-cond .cr-cond-value[hidden] + .cr-mini {
     grid-column: 3;
 }
+
+/* Управление продажами: строка вылета открывает карточку рейса */
+#sm-grid tr[data-card-flight] td.sm-freeze {
+    cursor: pointer;
+}
+
+#sm-grid tr[data-card-flight] td.sm-freeze:hover {
+    text-decoration: underline;
+}
+
+#sm-grid tr.sm-row-picked td.sm-freeze {
+    box-shadow: inset 0 -2px 0 #2563eb;
+}

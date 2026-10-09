@@ -16,8 +16,10 @@ window.FareRefs = (function () {
     let rev = 0;
     let sawRemote = false;
 
+    // Только базовый номер: доп. рейс (KV-301, KV-355…) — тот же рейс под другим номером.
     function cleanCode(v) {
-        const code = typeof cleanFlight === 'function' ? cleanFlight(v) : String(v || '').trim();
+        let code = typeof cleanFlight === 'function' ? cleanFlight(v) : String(v || '').trim();
+        if (typeof getBaseFlight === 'function' && /^KV-\d{1,6}$/.test(code)) code = getBaseFlight(code);
         return /^KV-\d{1,6}$/.test(code) ? code : '';
     }
 
@@ -63,8 +65,9 @@ window.FareRefs = (function () {
             fareCode: mode === 'limit' ? cleanText(e.fareCode, 30).toUpperCase() : '',
             adult,
             child: mode === 'limit' ? cleanMoney(e.child) : null,
-            from: cleanDate(e.from),
-            to: cleanDate(e.to),
+            // Периодов у тарифа нет: даты субсидии берутся из «Периодов субсидии».
+            from: '',
+            to: '',
             note: cleanText(e.note, 200),
             updatedAt: String(e.updatedAt || ''),
             by: cleanText(e.by, 80)
@@ -176,10 +179,17 @@ window.FareRefs = (function () {
         if (!n) {
             return { ok: false, error: entry && entry.mode === 'exclude' ? 'Укажите рейс' : 'Укажите рейс и предельный тариф больше 0' };
         }
-        if (n.from && n.to && typeof compareDateStr === 'function' && compareDateStr(n.from, n.to) > 0) {
-            return { ok: false, error: 'Дата «с» позже даты «по»' };
-        }
+        // Один предел на рейс: другие записи этих же рейсов заменяются новой.
         const res = await apply((entries, deleted) => {
+            const now = new Date().toISOString();
+            for (let i = entries.length - 1; i >= 0; i--) {
+                const e = entries[i];
+                if (e.id !== n.id && e.flights.some(f => n.flights.indexOf(f) !== -1)) {
+                    const rest = e.flights.filter(f => n.flights.indexOf(f) === -1);
+                    if (rest.length) entries[i] = { ...e, flights: rest, updatedAt: now };
+                    else { entries.splice(i, 1); deleted[e.id] = now; }
+                }
+            }
             const i = entries.findIndex(e => e.id === n.id);
             if (i === -1) entries.push(n);
             else entries[i] = n;
@@ -197,24 +207,15 @@ window.FareRefs = (function () {
         });
     }
 
-    function dateIn(entry, date) {
-        if (typeof compareDateStr !== 'function') return true;
-        if (entry.from && compareDateStr(date, entry.from) < 0) return false;
-        if (entry.to && compareDateStr(date, entry.to) > 0) return false;
-        return true;
-    }
-
-    // Запись для рейса на дату. Если подходят несколько — берётся с самым поздним началом действия.
+    // Запись для рейса (по базовому номеру). Даты не смотрятся: проверка и так идёт только по
+    // субсидированным датам из «Периодов субсидии». Если записей несколько — самая свежая.
     function find(code, date, mode) {
         const fl = cleanCode(code);
-        if (!fl || !date) return null;
+        if (!fl) return null;
         let best = null;
         store().entries.forEach(e => {
-            if (e.mode !== mode || e.flights.indexOf(fl) === -1 || !dateIn(e, date)) return;
-            if (!best) { best = e; return; }
-            const a = e.from || '';
-            const b = best.from || '';
-            if (a && (!b || (typeof compareDateStr === 'function' && compareDateStr(a, b) > 0))) best = e;
+            if (e.mode !== mode || e.flights.indexOf(fl) === -1) return;
+            if (!best || String(e.updatedAt || '') > String(best.updatedAt || '')) best = e;
         });
         return best;
     }
