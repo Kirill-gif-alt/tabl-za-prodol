@@ -110,6 +110,8 @@ window.FlightRegistry = (function () {
     function regroup() {
         if (typeof processData === 'function' && typeof allData !== 'undefined' && allData && allData.length) {
             processData();
+            if (typeof SalesReconcile !== 'undefined' && typeof salesDetails !== 'undefined' && SalesReconcile.run(salesDetails)
+                && typeof rebuildSalesAggregatesFromDetails === 'function') rebuildSalesAggregatesFromDetails();
             if (typeof invalidateMetricsCache === 'function') invalidateMetricsCache();
             if (typeof invalidateTabPanelState === 'function') invalidateTabPanelState();
         }

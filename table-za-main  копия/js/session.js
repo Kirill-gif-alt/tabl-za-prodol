@@ -403,6 +403,8 @@ window.SessionStore = (function () {
         CACHED_TODAY = null;
         CACHED_YESTERDAY = null;
         processData();
+        // Сверка продаж с загрузкой (перенос, доп. номер) — до пересчёта агрегатов ниже.
+        if (typeof SalesReconcile !== 'undefined') SalesReconcile.run(salesDetails);
         rememberBaseline();
         // Пересчёт продаж «сегодня/вчера/7/14/30» по актуальной дате (не по дате снимка)
         if (typeof rebuildSalesAggregatesFromDetails === 'function') {

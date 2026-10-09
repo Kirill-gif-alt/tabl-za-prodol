@@ -203,7 +203,7 @@ window.TodayView = (function () {
         const grp = typeof FlightInsights !== 'undefined' ? FlightInsights.groupSeats(item.code, item.date) : 0;
         return `
             <tr class="td-row${on ? ' td-row-on' : ''}" data-td-code="${esc(item.code)}" data-td-date="${esc(item.date)}">
-                <td><strong>${esc(item.code)}</strong>${grp ? `<span class="grp-badge" title="Групповые брони: ${grp} бил.">Г ${grp}</span>` : ''}</td>
+                <td><strong>${esc(item.code)}</strong>${grp ? `<span class="grp-badge" title="В группах ${grp} чел.">Г ${grp}</span>` : ''}</td>
                 <td>${esc(typeof getFlightDirection === 'function' ? getFlightDirection(item.code) : '')}<div class="td-muted">${esc(ac)}</div></td>
                 <td class="td-nowrap">${esc(item.date.slice(0, 5))}<div class="td-muted">${dtd == null ? '' : dtd === 0 ? 'сегодня' : dtd + ' дн.'}</div></td>
                 <td>${loadCell(sold, seats)}</td>

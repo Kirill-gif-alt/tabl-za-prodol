@@ -436,6 +436,37 @@ window.ReferenceView = (function () {
         return out;
     }
 
+    // Доп. номера — сколько угодно: номер в поле и Enter (или «+»), лишний — крестиком.
+    function extrasEditor(side, list) {
+        const id = side === 'out' ? 'ref-f-extras' : 'ref-f-bextras';
+        return `<div class="ref-chips" data-extras-side="${side}">
+            <span class="ref-chip-list" id="${id}-chips">${chipsHtml(side, list)}</span>
+            <input id="${id}-new" class="cr-input ref-chip-input" type="text" inputmode="numeric" placeholder="номер, Enter">
+            <button type="button" class="filter-btn rp-open" data-reff-add="${side}" title="Добавить доп. номер">+ добавить</button>
+            <input type="hidden" id="${id}" value="${esc(list.join(','))}">
+        </div>`;
+    }
+
+    function chipsHtml(side, list) {
+        return list.map(c => `<span class="ref-chip">${esc(c)}<button type="button" data-reff-rm="${side}|${esc(c)}" title="Убрать" aria-label="Убрать ${esc(c)}">✕</button></span>`).join('')
+            || '<span class="rp-muted">нет</span>';
+    }
+
+    function extrasChange(side, add, remove) {
+        const id = side === 'out' ? 'ref-f-extras' : 'ref-f-bextras';
+        const hidden = document.getElementById(id);
+        if (!hidden) return;
+        let list = FlightRegistry.codes(hidden.value);
+        if (add) FlightRegistry.codes(add).forEach(c => { if (!list.includes(c)) list.push(c); });
+        if (remove) list = list.filter(c => c !== remove);
+        hidden.value = list.join(',');
+        if (flEdit) flEdit[side === 'out' ? 'extras' : 'backExtras'] = list.slice();
+        const chips = document.getElementById(id + '-chips');
+        if (chips) chips.innerHTML = chipsHtml(side, list);
+        const input = document.getElementById(id + '-new');
+        if (input && add) { input.value = ''; input.focus(); }
+    }
+
     function warnText(list) {
         return `Города «${esc(list.join('», «'))}» нет в списках краевых и межрегиональных — выберите тип рейса, иначе он будет «не классифицирован».`;
     }
@@ -462,8 +493,8 @@ window.ReferenceView = (function () {
                     <label>Откуда<input id="ref-f-from" class="cr-input" type="text" list="ref-f-cities" value="${esc(fe.from || '')}" placeholder="Красноярск"></label>
                     <label>Куда<input id="ref-f-to" class="cr-input" type="text" list="ref-f-cities" value="${esc(fe.to || '')}" placeholder="город"></label>
                     <label>Номер обратно<input id="ref-f-back" class="cr-input" type="text" inputmode="numeric" placeholder="пусто — без обратного" value="${esc(fe.back ? fe.back.replace('KV-', '') : '')}"></label>
-                    <label>Доп. номера туда<input id="ref-f-extras" class="cr-input" type="text" placeholder="например, 331, 431" value="${esc((fe.extras || []).map(x => x.replace('KV-', '')).join(', '))}"></label>
-                    <label>Доп. номера обратно<input id="ref-f-bextras" class="cr-input" type="text" placeholder="например, 332" value="${esc((fe.backExtras || []).map(x => x.replace('KV-', '')).join(', '))}"></label>
+                    <div class="ref-extras-field"><span>Доп. номера туда</span>${extrasEditor('out', fe.extras || [])}</div>
+                    <div class="ref-extras-field"><span>Доп. номера обратно</span>${extrasEditor('back', fe.backExtras || [])}</div>
                     <label>Тип рейса<select id="ref-f-type" class="cr-input">${Object.keys(FlightRegistry.TYPES).map(t => `<option value="${t}"${t === (fe.type || 'auto') ? ' selected' : ''}>${esc(FlightRegistry.TYPES[t])}</option>`).join('')}</select></label>
                 </div>
                 <p class="rp-note ref-warn" id="ref-f-warn"${warn.length ? '' : ' hidden'}>${warn.length ? warnText(warn) : ''}</p>
@@ -1065,13 +1096,25 @@ window.ReferenceView = (function () {
             else {
                 const b = FlightRegistry.builtinPairs().find(x => x.code === c);
                 const cities = typeof parseDirectionCities === 'function' && b ? parseDirectionCities(b.direction) : [];
-                flEdit = { id: '', code: c, from: cities[0] || '', to: cities[1] || '', back: b ? b.back : '', extras: [], backExtras: [], type: 'auto' };
+                const back = b ? b.back : '';
+                flEdit = { id: '', code: c, from: cities[0] || '', to: cities[1] || '', back, extras: extrasOf(c), backExtras: back ? extrasOf(back) : [], type: 'auto' };
             }
             rerender();
             document.getElementById('ref-flight-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
             return true;
         }
         if (d.reffCancel != null) { flEdit = null; rerender(); return true; }
+        if (d.reffAdd) {
+            const side = d.reffAdd;
+            const input = document.getElementById((side === 'out' ? 'ref-f-extras' : 'ref-f-bextras') + '-new');
+            extrasChange(side, input ? input.value : '', null);
+            return true;
+        }
+        if (d.reffRm) {
+            const [side, c] = d.reffRm.split('|');
+            extrasChange(side, null, c);
+            return true;
+        }
         if (d.reffSave != null) {
             const val = (id) => document.getElementById(id)?.value ?? '';
             const entry = { code: val('ref-f-code'), from: val('ref-f-from'), to: val('ref-f-to'), back: val('ref-f-back'), extras: FlightRegistry.codes(val('ref-f-extras')), backExtras: FlightRegistry.codes(val('ref-f-bextras')), type: val('ref-f-type') };
@@ -1176,6 +1219,11 @@ window.ReferenceView = (function () {
         }
         if (target.id === 'ref-n-filter') { navFlight = target.value || ''; rerender(); return true; }
         if (target.id === 'ref-c-year') { calYear = target.value || calYear; rerender(); return true; }
+        if ((target.id === 'ref-f-extras-new' || target.id === 'ref-f-bextras-new') && flEdit) {
+            // Enter или уход из поля — номер добавляется в список.
+            if (target.value.trim()) extrasChange(target.id === 'ref-f-extras-new' ? 'out' : 'back', target.value, null);
+            return true;
+        }
         if (target.id === 'ref-f-code' && flEdit) {
             // Номер туда ввели — обратный подставляем сам, если его не трогали.
             const back = document.getElementById('ref-f-back');

@@ -171,6 +171,10 @@ async function processDataFromSources(avail, closed, sales, exp, weights, childr
     if (sales) {
         setLoadingMessage('Загрузка продаж...');
         await loadSalesFile(sales);
+        // Билеты перенесённых рейсов и доп. номеров — к вылету, на котором люди летят (sales-reconcile.js).
+        if (typeof SalesReconcile !== 'undefined' && SalesReconcile.run(salesDetails) && typeof rebuildSalesAggregatesFromDetails === 'function') {
+            rebuildSalesAggregatesFromDetails();
+        }
     }
 
     const secondaryLoads = [];

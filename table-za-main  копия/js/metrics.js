@@ -23,6 +23,8 @@ function invalidateMetricsCache() {
     if (typeof tableHtmlCache !== 'undefined') {
         try { tableHtmlCache = { sig: '', html: '' }; } catch (_) { /* ignore */ }
     }
+    // Данные поменялись — шапка тоже (обновление отложенное и одно на серию вызовов).
+    if (typeof updateHeaderStatus === 'function') updateHeaderStatus();
 }
 
 function getMetricsStorageKey(row) {

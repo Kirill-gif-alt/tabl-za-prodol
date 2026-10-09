@@ -270,38 +270,53 @@ let headerKpiTimer = 0;
 
 function renderHeaderKpi() {
     const kpiBar = document.getElementById('header-kpi');
-    if (kpiBar && Object.keys(groupedData).length) {
-        const featureOn = (key) => typeof ProfileAuth === 'undefined' || typeof ProfileAuth.featureOn !== 'function' || ProfileAuth.featureOn(key);
-        const k = getGlobalKPIs();
-        const salesReady = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(dataLoadStatus && dataLoadStatus.sales);
-        const sales = Number(k.todaySales) || 0;
-        const revK = Math.round((Number(k.todayRevenue) || 0) / 1000);
-        const alerts = Number(k.alertCount) || 0;
-        const canRms = typeof ProfileAuth === 'undefined' || ProfileAuth.canAccessTab('rms');
-        kpiBar.replaceChildren();
-        const item = (strong, rest) => {
-            const wrap = document.createElement('span');
-            wrap.className = 'header-kpi-item';
-            const b = document.createElement('strong');
-            b.textContent = String(strong);
-            wrap.append(b, document.createTextNode(' ' + rest));
-            return wrap;
-        };
-        if (featureOn('header_kpi')) kpiBar.append(item(salesReady ? sales : '—', 'продаж'), item(salesReady ? (revK + 'к') : '—', '₽'));
-        if (alerts && featureOn('rms_header_alerts')) {
+    if (!kpiBar || !Object.keys(groupedData || {}).length) return;
+    // Сначала собираем всё, потом одной заменой: если какой-то счётчик упадёт с ошибкой,
+    // в шапке остаётся прежнее, а не пустое место.
+    const items = [];
+    const safe = (fn) => { try { const el = fn(); if (el) items.push(el); } catch (e) { console.warn('header kpi', e); } };
+    const featureOn = (key) => typeof ProfileAuth === 'undefined' || typeof ProfileAuth.featureOn !== 'function' || ProfileAuth.featureOn(key);
+    let k;
+    try { k = getGlobalKPIs(); } catch (e) { console.warn('header kpi', e); return; }
+    const salesReady = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(dataLoadStatus && dataLoadStatus.sales);
+    const sales = Number(k.todaySales) || 0;
+    const revK = Math.round((Number(k.todayRevenue) || 0) / 1000);
+    const alerts = Number(k.alertCount) || 0;
+    const canRms = typeof ProfileAuth === 'undefined' || ProfileAuth.canAccessTab('rms');
+    const item = (strong, rest) => {
+        const wrap = document.createElement('span');
+        wrap.className = 'header-kpi-item';
+        const b = document.createElement('strong');
+        b.textContent = String(strong);
+        wrap.append(b, document.createTextNode(' ' + rest));
+        return wrap;
+    };
+    if (featureOn('header_kpi')) {
+        items.push(item(salesReady ? sales : '—', 'продаж'), item(salesReady ? (revK + 'к') : '—', '₽'));
+    }
+    if (alerts && featureOn('rms_header_alerts')) {
+        safe(() => {
             const al = document.createElement('span');
             al.className = 'header-kpi-alert';
             al.textContent = '⚠ ' + alerts;
             if (canRms) al.addEventListener('click', () => switchMainTab('rms'));
-            kpiBar.append(al);
-        }
-        const checkChip = typeof FlightChecks !== 'undefined' ? FlightChecks.headerChip() : null;
-        if (checkChip) kpiBar.append(checkChip);
-        const morningChip = typeof MorningSummary !== 'undefined' ? MorningSummary.headerChip() : null;
-        if (morningChip) kpiBar.append(morningChip);
-        kpiBar.classList.toggle('hidden', !kpiBar.childElementCount);
+            return al;
+        });
     }
+    if (typeof FlightChecks !== 'undefined') safe(() => FlightChecks.headerChip());
+    if (typeof MorningSummary !== 'undefined') safe(() => MorningSummary.headerChip());
+    kpiBar.replaceChildren(...items);
+    kpiBar.classList.toggle('hidden', !items.length);
+    updateHeaderWithLastUpdate();
 }
+
+// Вернулись на вкладку браузера (или прошла полночь) — счётчики шапки на сегодня.
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && typeof updateHeaderStatus === 'function') updateHeaderStatus();
+});
+setInterval(() => {
+    if (!document.hidden && typeof updateHeaderStatus === 'function') updateHeaderStatus();
+}, 5 * 60 * 1000);
 
 function savePinnedFlights() {
     try {

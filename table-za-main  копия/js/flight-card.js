@@ -279,21 +279,94 @@ window.FlightCard = (function () {
     }
 
     // Прогноз к вылету, безубыточность, группы (flight-insights.js).
+    const INSIGHTS_KEY = 'fc_insights_open';
+
+    function insightsOpen() {
+        try { return localStorage.getItem(INSIGHTS_KEY) === '1'; } catch (e) { return false; }
+    }
+
+    // Прогноз, безубыточность и группы — плитками; блок сворачивается (по умолчанию свёрнут, видна одна строка-итог).
     function insightsHtml(code, date) {
         if (typeof FlightInsights === 'undefined') return '';
-        const lines = [];
-        const f = FlightInsights.forecast(code, date);
-        const ft = FlightInsights.forecastText(f);
-        if (ft) {
-            const cls = f.soldOutDtd != null && f.load < f.seats ? 'fc-in-up' : (f.lf < 60 ? 'fc-in-down' : '');
-            lines.push(`<div class="fc-in-line ${cls}">${esc(ft)}</div>`);
+        const FI = FlightInsights;
+        const tiles = [];
+        const summary = [];
+        let advice = '';
+        const f = FI.forecast(code, date);
+        if (f && f.source !== 'flown') {
+            const range = f.lo != null && f.hi != null && f.lo !== f.hi ? `разброс ${f.lo}–${f.hi}` : '';
+            const src = f.source === 'history'
+                ? `по ${f.n} ${FI.plural(f.n, 'прошлому вылету', 'прошлым вылетам', 'прошлым вылетам')} в этот день недели`
+                : 'по файлу ожидаемой загрузки';
+            const tone = f.lf >= 90 ? 'up' : (f.lf < 60 ? 'down' : '');
+            tiles.push(`<div class="fc-it fc-it-${tone || 'plain'}">
+                <div class="fc-it-label">Прогноз к вылету</div>
+                <div class="fc-it-value">${f.final} <span class="fc-it-of">из ${f.seats}</span></div>
+                <div class="fc-it-sub"><strong>${f.lf}%</strong>${range ? ' · ' + esc(range) : ''}</div>
+                <div class="fc-it-note">${esc(src)}</div>
+            </div>`);
+            summary.push(`<span class="fc-ins-chip fc-ins-${tone || 'plain'}">прогноз ${f.final}/${f.seats} · ${f.lf}%</span>`);
+            if (f.load >= f.seats) advice = '<div class="fc-advice fc-advice-up">✓ Уже распродан</div>';
+            else if (f.soldOutDtd != null) advice = `<div class="fc-advice fc-advice-up">▲ ${f.soldOutDtd === 0 ? 'Распродастся к дню вылета' : `Распродастся примерно за ${f.soldOutDtd} дн. до вылета`} — можно поднимать тариф</div>`;
+            else if (f.lf < 60) advice = '<div class="fc-advice fc-advice-down">▼ Не доберёт загрузку — стоит снижать тариф или продвигать</div>';
         }
-        const e = FlightInsights.economics(code, date);
-        const et = FlightInsights.economicsText(e);
-        if (et) lines.push(`<div class="fc-in-line ${e && e.finResult != null ? (e.finResult < 0 ? 'fc-in-down' : 'fc-in-up') : ''}">${esc(et)}</div>`);
-        const gt = FlightInsights.groupsText(code, date);
-        if (gt) lines.push(`<div class="fc-in-line fc-in-group">${esc(gt)}</div>`);
-        return lines.length ? `<div class="fc-insights">${lines.join('')}</div>` : '';
+        const e = FI.economics(code, date);
+        if (e) {
+            if (e.fare == null) {
+                tiles.push(`<div class="fc-it fc-it-plain">
+                    <div class="fc-it-label">Безубыточность</div>
+                    <div class="fc-it-value">—</div>
+                    <div class="fc-it-note">себестоимость ${esc(FI.rub(e.cost))}${e.subsidy ? `, субсидия ${esc(FI.rub(e.subsidy))}` : ''}; нет продаж для среднего тарифа</div>
+                </div>`);
+            } else {
+                const fareNote = e.fareSource === 'route' ? 'средний по рейсу' : 'средний тариф';
+                tiles.push(`<div class="fc-it fc-it-${e.belowCost ? 'down' : 'plain'}">
+                    <div class="fc-it-label">Безубыточность</div>
+                    <div class="fc-it-value">${e.breakeven === 0 ? '0' : e.breakeven} <span class="fc-it-of">пасс.</span></div>
+                    <div class="fc-it-sub">${e.breakeven === 0 ? 'субсидия покрывает себестоимость' : (e.belowCost ? `больше ${e.seats} кресел — при этом тарифе не окупается` : `из ${e.seats} кресел`)}</div>
+                    <div class="fc-it-note">${esc(fareNote)} ${esc(FI.rubFull(e.fare))}</div>
+                </div>`);
+                if (e.finResult != null) {
+                    const neg = e.finResult < 0;
+                    const parts = [];
+                    if (neg && !e.belowCost) {
+                        if (e.need) parts.push(`+${e.need} ${FI.plural(e.need, 'билет', 'билета', 'билетов')}`);
+                        if (e.needFare != null && e.needFare > 0) parts.push(`тариф +${FI.rubFull(e.needFare)}`);
+                    }
+                    const res = `${neg ? '−' : '+'}${FI.rub(Math.abs(e.finResult))}`;
+                    tiles.push(`<div class="fc-it fc-it-${neg ? 'down' : 'up'}">
+                        <div class="fc-it-label">Прогноз результата</div>
+                        <div class="fc-it-value">${esc(res)}</div>
+                        <div class="fc-it-sub">${neg ? 'рейс в минусе' : 'рейс в плюсе'}</div>
+                        ${parts.length ? `<div class="fc-it-note">в ноль: ${esc(parts.join(' или '))}</div>` : ''}
+                    </div>`);
+                    summary.push(`<span class="fc-ins-chip fc-ins-${neg ? 'down' : 'up'}">итог ${esc(res)}</span>`);
+                }
+            }
+        }
+        const g = FI.groupsFor(code, date);
+        let groups = '';
+        if (g.length) {
+            const total = g.reduce((a, x) => a + x.n, 0);
+            const pnrOk = typeof ProfileAuth === 'undefined' || (ProfileAuth.hasPermission('sales_detail') && ProfileAuth.hasPermission('load_data'));
+            const items = g.map(x => `<span class="fc-grp-item"><strong>${x.n}</strong> ${FI.plural(x.n, 'человек', 'человека', 'человек')}${x.dealDate ? ' · от ' + esc(String(x.dealDate).slice(0, 5)) : ''}${x.pnr && pnrOk ? ' · ' + esc(x.pnr) : ''}</span>`).join('');
+            groups = `<div class="fc-groups"><span class="fc-groups-title">${g.length === 1 ? 'Группа' : `Группы (${g.length})`}</span>${items}</div>`;
+            summary.push(`<span class="fc-ins-chip fc-ins-group">${g.length === 1 ? 'группа' : 'группы'} ${total} чел.</span>`);
+        }
+        if (!tiles.length && !groups) return '';
+        const open = insightsOpen();
+        return `<div class="fc-insights${open ? ' fc-ins-open' : ''}">
+            <button type="button" class="fc-ins-head" data-fc="insights" aria-expanded="${open}" title="${open ? 'Свернуть' : 'Показать прогноз и экономику'}">
+                <span class="fc-ins-caret">${open ? '▾' : '▸'}</span>
+                <span class="fc-ins-title">Прогноз и экономика</span>
+                <span class="fc-ins-chips">${summary.join('')}</span>
+            </button>
+            ${open ? `<div class="fc-ins-body">
+                ${tiles.length ? `<div class="fc-it-grid">${tiles.join('')}</div>` : ''}
+                ${advice}
+                ${groups}
+            </div>` : ''}
+        </div>`;
     }
 
     function render() {
@@ -456,6 +529,10 @@ window.FlightCard = (function () {
         else if (a === 'pair') swapPair();
         else if (a === 'window') setMode('window');
         else if (a === 'dock') setMode('page');
+        else if (a === 'insights') {
+            try { localStorage.setItem(INSIGHTS_KEY, insightsOpen() ? '0' : '1'); } catch (err) { /* ignore */ }
+            render();
+        }
     }
 
     function onKey(e) {

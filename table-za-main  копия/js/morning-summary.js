@@ -116,7 +116,9 @@ window.MorningSummary = (function () {
     }
 
     function headerChip() {
-        if (!enabled() || builtFor !== sig()) return null;
+        if (!enabled() || !builtFor) return null;
+        // Данные поменялись — пересчитать в фоне (по окончании шапка обновится), а пока показать прежнее.
+        if (builtFor !== sig() && hasData()) build().catch(() => {});
         const n = pending().length;
         if (!n) return null;
         const chip = document.createElement('span');

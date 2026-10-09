@@ -3,7 +3,7 @@
 //    соседние недели, без праздников — см. calendar-events.js) от этого дня до вылета; разброс — между ними;
 //    когда рейс распродастся;
 //  • точка безубыточности и прогноз финрезультата: себестоимость − субсидия против среднего тарифа;
-//  • групповые брони: заказ (PNR) от 5 билетов — скачок на графике и риск массового возврата.
+//  • групповые брони: заказ (PNR) от 5 билетов: сколько человек и когда куплено.
 // Всё считается лениво — только для показанных рейсов — и кэшируется до новых данных.
 window.FlightInsights = (function () {
     const GROUP_MIN = 5;              // билетов в одном заказе — это группа
@@ -317,9 +317,9 @@ window.FlightInsights = (function () {
         if (!g.length) return '';
         const total = g.reduce((a, x) => a + x.n, 0);
         const pnrOk = typeof ProfileAuth === 'undefined' || (ProfileAuth.hasPermission('sales_detail') && ProfileAuth.hasPermission('load_data'));
-        const items = g.slice(0, 3).map(x => `${x.n} бил.${x.dealDate ? ' от ' + String(x.dealDate).slice(0, 5) : ''}${x.pnr && pnrOk ? ' (' + x.pnr + ')' : ''}`).join(', ');
-        return `Группы: ${total} ${plural(total, 'билет', 'билета', 'билетов')} — ${items}. Скачок на графике — это группа; возможен массовый возврат.`;
+        const items = g.slice(0, 3).map(x => `${x.n} ${plural(x.n, 'человек', 'человека', 'человек')}${x.dealDate ? ' от ' + String(x.dealDate).slice(0, 5) : ''}${x.pnr && pnrOk ? ' (' + x.pnr + ')' : ''}`).join(', ');
+        return g.length === 1 ? `Группа: ${items}` : `Группы (${g.length}): ${items}${g.length > 3 ? ' и др.' : ''} — всего ${total} ${plural(total, 'человек', 'человека', 'человек')}`;
     }
 
-    return { forecast, economics, groupsFor, groupSeats, annotateGroups, forecastShort, forecastText, economicsText, groupsText, canEconomy, GROUP_MIN };
+    return { forecast, economics, groupsFor, groupSeats, annotateGroups, forecastShort, forecastText, economicsText, groupsText, canEconomy, GROUP_MIN, rub, rubFull, plural };
 })();

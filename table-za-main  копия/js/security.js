@@ -158,7 +158,8 @@ window.Security = (function () {
                 basicFareStr: s.basicFareStr,
                 flyDate: s.flyDate,
                 grp: s.grp,
-                grpId: s.grpId
+                grpId: s.grpId,
+                moved: s.moved
             }));
         });
         return out;
