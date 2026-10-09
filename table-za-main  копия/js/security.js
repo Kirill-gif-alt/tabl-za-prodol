@@ -156,7 +156,9 @@ window.Security = (function () {
                 fare: s.fare,
                 adjustedFare: s.adjustedFare,
                 basicFareStr: s.basicFareStr,
-                flyDate: s.flyDate
+                flyDate: s.flyDate,
+                grp: s.grp,
+                grpId: s.grpId
             }));
         });
         return out;

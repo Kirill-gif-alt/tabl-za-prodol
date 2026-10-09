@@ -811,6 +811,7 @@ window.ReportsView = (function () {
             const miss = canRefs() && hasData() && checksOn && typeof FlightChecks !== 'undefined' ? FlightChecks.missingRefs().length : 0;
             list.push({ id: 'refs', label: 'Справочник', badge: miss ? miss + ' без предела' : '', warn: !!miss });
         }
+        if (typeof DecisionsReport !== 'undefined' && DecisionsReport.canView()) list.push({ id: 'decisions', label: 'Решения', badge: '' });
         list.push({ id: 'export', label: 'Выгрузки в Excel', badge: '' });
         return list;
     }
@@ -824,6 +825,7 @@ window.ReportsView = (function () {
         let content = '';
         if (subtab === 'checks') content = checksHtml();
         else if (subtab === 'refs') content = typeof ReferenceView !== 'undefined' ? ReferenceView.html(refsHtml) : refsHtml();
+        else if (subtab === 'decisions') content = DecisionsReport.html();
         else {
             content = `<div class="rp-export-grid">${[
                 card('rp-data', 'Загрузка рейсов',
@@ -867,7 +869,7 @@ window.ReportsView = (function () {
                 <div class="table-page-hero">
                     <div class="table-page-hero-main">
                         <h2 class="rms-hero-title">Отчёты</h2>
-                        <span class="table-page-hint">Проверка рейсов, справочник (тарифы, периоды и суммы субсидии, ПКЗ из NAV) и выгрузки в Excel</span>
+                        <span class="table-page-hint">Проверка рейсов, справочник (тарифы, периоды и суммы субсидии, ПКЗ из NAV, календарь), журнал решений и выгрузки в Excel</span>
                     </div>
                 </div>
                 <div class="table-page-body rp-body" id="rp-body"></div>
@@ -876,6 +878,7 @@ window.ReportsView = (function () {
         const page = panel.querySelector('#rp-page');
         page.addEventListener('change', (event) => {
             if (typeof ReferenceView !== 'undefined' && ReferenceView.handleChange(event.target, renderBody)) return;
+            if (typeof DecisionsReport !== 'undefined' && DecisionsReport.handleChange(event.target, renderBody)) return;
             if (event.target.id === 'rp-ref-flight') { syncPairLabel(); return; }
             if (event.target.id !== 'rp-checks-future') return;
             checksFutureOnly = event.target.checked;

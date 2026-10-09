@@ -380,6 +380,8 @@ window.SessionStore = (function () {
             const list = (snap.salesDetails[k] || []).filter(x => !/\/(IN|ID)\d/i.test(String(x && x.basicFareStr || '')));
             if (list.length) rawDetails[k] = list;
         });
+        // Размер заказа считается по PNR до того, как PNR скроется у тех, кому он не положен.
+        if (typeof FlightInsights !== 'undefined') FlightInsights.annotateGroups(rawDetails);
         const canSeePii = typeof ProfileAuth === 'undefined'
             || (ProfileAuth.hasPermission('sales_detail') && ProfileAuth.hasPermission('load_data'));
         salesDetails = canSeePii

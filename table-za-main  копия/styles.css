@@ -7702,3 +7702,122 @@ html[data-theme="dark"] .rms-row-crit { background: #2a1519 !important; }
 html[data-theme="dark"] .rms-row-warn { background: #2a2312 !important; }
 html[data-theme="dark"] .rms-row-crit:hover { background: #3a1a20 !important; }
 html[data-theme="dark"] .rms-row-warn:hover { background: #3a3016 !important; }
+
+/* ---------- прогноз, безубыточность, группы (flight-insights.js) ---------- */
+.fc-insights {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 8px 0 4px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    font-size: 0.8rem;
+    line-height: 1.35;
+}
+
+.fc-in-line { color: var(--text); }
+.fc-in-up { color: #047857; }
+.fc-in-down { color: #b91c1c; }
+.fc-in-group { color: #6d28d9; }
+.fc-cal { color: #b45309; font-weight: 600; }
+
+.grp-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: #ede9fe;
+    color: #6d28d9;
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1.5;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.rms-col-fc { white-space: nowrap; }
+.rms-fc-up, .td-fc-up { color: #047857; }
+.rms-fc-down, .td-fc-down { color: #b91c1c; }
+
+/* ---------- календарь событий ---------- */
+.cal-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-right: 4px;
+    border-radius: 50%;
+    vertical-align: middle;
+    background: #f59e0b;
+}
+
+.cal-dot-holiday { background: #dc2626; }
+.cal-dot-school { background: #2563eb; }
+.cal-dot-event { background: #f59e0b; }
+
+.cal-type {
+    display: inline-block;
+    padding: 0 6px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.cal-type-holiday { background: #fee2e2; color: #991b1b; }
+.cal-type-school { background: #dbeafe; color: #1e40af; }
+
+.rp-ref-grid label.ref-check {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+}
+
+/* ---------- журнал решений ---------- */
+.dr-sums {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 16px;
+    margin: 10px 0 14px;
+    align-items: start;
+}
+
+.dr-sum {
+    min-width: 0;
+    overflow-x: auto;
+}
+
+.dr-sum-table {
+    width: 100%;
+    table-layout: auto;
+}
+
+.dr-sum-table td, .dr-sum-table th {
+    white-space: nowrap;
+}
+
+.dr-sum-table td:first-child {
+    white-space: normal;
+    min-width: 140px;
+}
+
+.dr-sum-title {
+    font-weight: 700;
+    font-size: 0.85rem;
+    margin-bottom: 4px;
+}
+
+.dr-table td, .dr-table th { white-space: nowrap; }
+.dr-table td.rp-left { white-space: normal; }
+.dr-pos { color: #047857; font-weight: 700; }
+.dr-neg { color: #b91c1c; font-weight: 700; }
+
+html[data-theme="dark"] .grp-badge { background: #2e1065; color: #ddd6fe; }
+html[data-theme="dark"] .cal-type { background: #3a2c0a; color: #fde68a; }
+html[data-theme="dark"] .cal-type-holiday { background: #3b1219; color: #fda4af; }
+html[data-theme="dark"] .cal-type-school { background: #172554; color: #93c5fd; }
+
+.ref-warn { color: #b45309; }
+.ref-hint { font-size: 0.78rem; margin: 6px 0; }

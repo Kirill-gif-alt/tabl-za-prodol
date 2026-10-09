@@ -105,6 +105,20 @@ window.CreativeView = (function () {
         return econ && econ.unitCost != null ? econ.unitCost : null;
     }
 
+    // Прогноз к вылету и безубыточность (flight-insights.js): на рейс — один раз, на первом участке.
+    function forecastOf(c) {
+        if (!c.attach || typeof FlightInsights === 'undefined') return null;
+        return lazy(c, 'fc', () => {
+            const f = FlightInsights.forecast(c.code, c.date);
+            return f && f.source !== 'flown' ? f : null;
+        });
+    }
+
+    function econInsightOf(c) {
+        if (!c.attach || typeof FlightInsights === 'undefined' || !groupAllowed('sales')) return null;
+        return lazy(c, 'ei', () => FlightInsights.economics(c.code, c.date));
+    }
+
     function pkzOf(c) {
         return lazy(c, 'pkz', () => (typeof getPkzFlightDetails === 'function' ? getPkzFlightDetails(c.row, c.code, { showSales: false }) : null));
     }
@@ -176,14 +190,19 @@ window.CreativeView = (function () {
         { key: 'lastFare', group: 'sales', label: 'Последний тариф', type: 'rub', agg: 'avg', get: c => { const a = salesAgg(c); return a && a.last ? a.last : null; } },
         { key: 'revenue', group: 'sales', label: 'Выручка', type: 'rub', agg: 'sum', get: c => revenueOf(c) },
 
-        { key: 'expected', group: 'rms', label: 'Прогноз загрузки', type: 'num', agg: 'sum', get: c => { const m = metricsOf(c); return m ? m.evR : null; } },
-        { key: 'delta', group: 'rms', label: 'Отклонение от прогноза', type: 'num', agg: 'sum', get: c => { const m = metricsOf(c); return m ? m.delta : null; } },
+        { key: 'expected', group: 'rms', label: 'Ожидаемая загрузка (файл)', type: 'num', agg: 'sum', get: c => { const m = metricsOf(c); return m ? m.evR : null; } },
+        { key: 'delta', group: 'rms', label: 'Отклонение от ожидаемой', type: 'num', agg: 'sum', get: c => { const m = metricsOf(c); return m ? m.delta : null; } },
+        { key: 'fcPax', group: 'rms', label: 'Прогноз к вылету, пасс.', type: 'num', agg: 'sum', get: c => { const f = forecastOf(c); return f ? f.final : null; } },
+        { key: 'fcLf', group: 'rms', label: 'Прогноз ЗПК к вылету, %', type: 'pct', agg: 'ratio', num: 'fcPax', den: 'seats', scale: 100, get: c => { const f = forecastOf(c); return f ? f.lf : null; } },
+        { key: 'groups', group: 'sales', label: 'Групповые брони, бил.', type: 'num', agg: 'sum', get: c => (c.attach && typeof FlightInsights !== 'undefined' ? FlightInsights.groupSeats(c.code, c.date) || null : null) },
         { key: 'alert', group: 'rms', label: 'Сигнал RMS', type: 'text', agg: 'text', get: c => { const m = metricsOf(c); return m ? (ALERT_LABELS[m.alertLevel] || '') : ''; } },
         { key: 'alertReason', group: 'rms', label: 'Причина сигнала', type: 'text', agg: 'text', get: c => { const m = metricsOf(c); return m ? (m.alertReason || '') : ''; } },
 
         { key: 'cost', group: 'econ', label: 'Себестоимость', type: 'rub', agg: 'sum', get: c => costOf(c) },
         { key: 'subsidy', group: 'econ', label: 'Субсидия', type: 'rub', agg: 'sum', get: c => subsidyOf(c) },
         { key: 'subsidized', group: 'econ', label: 'Субсидируемый', type: 'text', agg: 'text', get: c => { const e = econOf(c); return e ? (e.subsidized ? 'Да' : 'Нет') : ''; } },
+        { key: 'breakeven', group: 'econ', label: 'Безубыточность, пасс.', type: 'num', agg: 'sum', get: c => { const e = econInsightOf(c); return e ? e.breakeven : null; } },
+        { key: 'fcFin', group: 'econ', label: 'Прогноз фин. результата', type: 'rub', agg: 'sum', get: c => { const e = econInsightOf(c); return e ? e.finResult : null; } },
         { key: 'fin', group: 'econ', label: 'Фин. результат', type: 'rub', agg: 'sum', get: c => { if (!groupAllowed('sales')) return null; /* в фин. результате выручка — без права на продажи не показываем */ const cost = costOf(c); const sub = subsidyOf(c); const rev = revenueOf(c); if (cost == null && sub == null && rev == null) return null; return (rev || 0) - (cost || 0) + (sub || 0); } },
 
         { key: 'adults', group: 'pkz', label: 'Взрослых', type: 'num', agg: 'sum', get: c => { const p = pkzOf(c); return p ? p.adults : null; } },

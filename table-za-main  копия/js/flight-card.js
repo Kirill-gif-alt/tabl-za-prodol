@@ -278,6 +278,24 @@ window.FlightCard = (function () {
             <p class="fc-empty">Выберите рейс на Графплане, в RMS или «Загрузке рейсов».</p>`;
     }
 
+    // Прогноз к вылету, безубыточность, группы (flight-insights.js).
+    function insightsHtml(code, date) {
+        if (typeof FlightInsights === 'undefined') return '';
+        const lines = [];
+        const f = FlightInsights.forecast(code, date);
+        const ft = FlightInsights.forecastText(f);
+        if (ft) {
+            const cls = f.soldOutDtd != null && f.load < f.seats ? 'fc-in-up' : (f.lf < 60 ? 'fc-in-down' : '');
+            lines.push(`<div class="fc-in-line ${cls}">${esc(ft)}</div>`);
+        }
+        const e = FlightInsights.economics(code, date);
+        const et = FlightInsights.economicsText(e);
+        if (et) lines.push(`<div class="fc-in-line ${e && e.finResult != null ? (e.finResult < 0 ? 'fc-in-down' : 'fc-in-up') : ''}">${esc(et)}</div>`);
+        const gt = FlightInsights.groupsText(code, date);
+        if (gt) lines.push(`<div class="fc-in-line fc-in-group">${esc(gt)}</div>`);
+        return lines.length ? `<div class="fc-insights">${lines.join('')}</div>` : '';
+    }
+
     function render() {
         const panel = ensurePanel();
         if (!state) return;
@@ -304,13 +322,14 @@ window.FlightCard = (function () {
         const links = [['table', 'Динамика продаж'], ['pair', 'Экономика'], ['pkz', 'ПКЗ']]
             .filter(([t]) => canTab(t))
             .map(([t, l]) => `<button type="button" class="filter-btn" data-fc-tab="${t}">${l}</button>`).join('');
+        const calName = typeof CalendarEvents !== 'undefined' ? CalendarEvents.label(date) : '';
         const altNumber = code !== base ? ` <span class="fc-alt" title="В эту дату рейс ${attr(base)} летит под номером ${attr(code)}">вместо ${esc(base)}</span>` : '';
 
         panel.innerHTML = `
             <div class="fc-head">
                 <div class="fc-title-wrap">
                     <div class="fc-title">${esc(code)}${altNumber} <span class="fc-dir">${esc(getFlightDirection(code))}</span></div>
-                    <div class="fc-sub">${esc(getDayOfWeek(date))} ${esc(date)} · ${esc(getAircraftType(row[4]))}${dtdTxt ? ' · ' + esc(dtdTxt) : ''}${status ? ' · ' + esc(status) : ''} ${modeMark}</div>
+                    <div class="fc-sub">${esc(getDayOfWeek(date))} ${esc(date)} · ${esc(getAircraftType(row[4]))}${dtdTxt ? ' · ' + esc(dtdTxt) : ''}${status ? ' · ' + esc(status) : ''}${calName ? ` · <span class="fc-cal">${esc(calName)}</span>` : ''} ${modeMark}</div>
                 </div>
                 <div class="fc-nav">
                     <button type="button" class="fc-nav-btn" data-fc="prev" ${idx > 0 ? '' : 'disabled'} title="Предыдущая дата (←)">←</button>
@@ -329,6 +348,7 @@ window.FlightCard = (function () {
                 ${tile('Pickup 1–2 дн.', m && m.pickup != null && salesReady ? String(m.pickup) : '—', '')}
                 ${tile('Ср. тариф', m && m.avg && salesReady ? esc(formatRub(m.avg)) : '—', '')}
             </div>
+            ${insightsHtml(code, date)}
             <div class="fc-verdict" data-fc-part="verdict"></div>
             <div class="fc-chart-wrap"><canvas data-fc-part="chart"></canvas></div>
             ${typeof PriceMarks !== 'undefined' ? PriceMarks.buttonsHtml(code, date) : ''}
@@ -352,16 +372,7 @@ window.FlightCard = (function () {
         }];
         if (c.refData) datasets.push({ label: c.refLabel || 'Норма', data: c.refData, borderColor: '#64748b', borderDash: [5, 4], fill: false, pointRadius: 0, borderWidth: 2, spanGaps: true });
         if (c.expectedData) datasets.push({ label: 'Ожидаемая', data: c.expectedData, borderColor: '#d97706', borderDash: [6, 4], fill: false, pointRadius: 0, borderWidth: 2, spanGaps: true });
-        // Загрузка по ежедневным срезам архива (с возвратами и бронями без билета).
-        const slices = typeof SalesArchive !== 'undefined' ? SalesArchive.slicesFor(date, code) : [];
         const fly = parseLocalDate(date);
-        if (slices.length) {
-            const pts = c.dtds.map(t => {
-                const hit = slices.find(s => { const d = parseLocalDate(s.day); return d && fly && Math.round((fly - d) / 86400000) === t; });
-                return hit ? hit.sold : null;
-            });
-            if (pts.some(v => v != null)) datasets.push({ label: 'Загрузка по срезам', data: pts, borderColor: '#0d9488', backgroundColor: '#0d9488', showLine: false, pointRadius: 3, pointStyle: 'rectRot' });
-        }
         chart = new Chart(canvas, {
             type: 'line',
             data: { labels: c.dtds.map(t => t + 'д'), datasets },
@@ -394,10 +405,6 @@ window.FlightCard = (function () {
         if (mode === 'window' && !popupAlive()) saveMode('page');
         applyLayout();
         render();
-        const want = state;
-        if (typeof SalesArchive !== 'undefined' && SalesArchive.ensureSlices) {
-            SalesArchive.ensureSlices().then(() => { if (state === want && isShown()) render(); }).catch(() => {});
-        }
     }
 
     function close() {

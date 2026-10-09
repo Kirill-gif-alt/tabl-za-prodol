@@ -728,6 +728,8 @@ async function loadSharedSideData() {
     if (typeof SharedOverrides !== 'undefined') run('SharedOverrides.load', () => SharedOverrides.load());
     if (typeof FareRefs !== 'undefined') run('FareRefs.load', () => FareRefs.load());
     if (typeof SubsidyRef !== 'undefined') run('SubsidyRef.load', () => SubsidyRef.load());
+    if (typeof CalendarEvents !== 'undefined') run('CalendarEvents.load', () => CalendarEvents.load());
+    if (typeof FlightRegistry !== 'undefined') run('FlightRegistry.load', () => FlightRegistry.load());
     await Promise.all(jobs);
 }
 

@@ -208,6 +208,12 @@ function isInterregionalCity(city) {
 }
 
 function getFlightRouteType(flightCode) {
+    // Тип, заданный в справочнике рейсов (новый город, которого нет в списках выше).
+    const own = window.FLIGHT_TYPE_OVERRIDES;
+    if (own) {
+        const key = resolveDirectionFlightCode(flightCode);
+        if (own[key]) return own[key];
+    }
     const cities = getCitiesFromFlight(flightCode);
     if (!cities.length) return 'unknown';
 

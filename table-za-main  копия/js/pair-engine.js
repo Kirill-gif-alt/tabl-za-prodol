@@ -2,6 +2,9 @@
 // Globals on purpose: no bundler; onclick and other files call by name.
 
 function getFlightPair(base) {
+    // Пара из справочника рейсов (обратный номер не по правилу «нечётный + 1»).
+    const own = window.FLIGHT_PAIR_OVERRIDES && window.FLIGHT_PAIR_OVERRIDES[base];
+    if (own) return { outbound: own.outbound, inbound: own.inbound };
     const n = parseInt(String(base || '').replace('KV-', ''), 10) || 0;
     if (!n) return { outbound: base, inbound: null };
     const outboundN = n % 2 === 1 ? n : n - 1;

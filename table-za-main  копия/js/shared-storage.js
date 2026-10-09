@@ -10,7 +10,7 @@ window.SharedStorage = (function () {
     const ALLOWED_FILES = new Set([
         'profiles.json', 'snapshot.json', 'activity.json', 'flight-comments.json',
         'subsidy-overrides.json', 'pkz-nav.json', 'sales-management.json',
-        'creative-layouts.json', 'subsidy-fares.json', 'subsidy-ref.json'
+        'creative-layouts.json', 'subsidy-fares.json', 'subsidy-ref.json', 'calendar.json', 'flights.json'
     ]);
 
     // Резервные копии перед перезаписью — та же политика, что в scripts/local-server.py.
@@ -23,6 +23,8 @@ window.SharedStorage = (function () {
         'subsidy-overrides.json': { every: 600, keep: 30 },
         'subsidy-fares.json': { every: 600, keep: 30 },
         'subsidy-ref.json': { every: 600, keep: 30 },
+        'calendar.json': { every: 600, keep: 30 },
+        'flights.json': { every: 600, keep: 30 },
         'pkz-nav.json': { every: 600, keep: 30 },
         'flight-comments.json': { every: 3600, keep: 24 },
         'creative-layouts.json': { every: 3600, keep: 20 }
@@ -163,8 +165,8 @@ window.SharedStorage = (function () {
         return data;
     }
 
-    // Архив продаж: shared/history/curves-ГГГГ-ММ.json и slices-ГГГГ-ММ.json (см. sales-archive.js).
-    const HISTORY_FILE_RE = /^history\/(curves|slices)-\d{4}-\d{2}\.json$/;
+    // Архив продаж: shared/history/curves-ГГГГ-ММ.json (см. sales-archive.js).
+    const HISTORY_FILE_RE = /^history\/curves-\d{4}-\d{2}\.json$/;
     // Отметки «Управления продажами»: у каждого автора свой файл за месяц — никто не перезаписывает чужое.
     const MARKS_FILE_RE = /^sales-marks\/\d{4}-\d{2}\/[a-z0-9_]{1,40}\.json$/;
     const MARKS_DIR_RE = /^sales-marks\/\d{4}-\d{2}$/;

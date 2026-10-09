@@ -555,6 +555,8 @@ function loadSalesFile(fh) {
             }
         }
 
+        // Размер заказа (PNR) у каждого билета — для «групповых броней»; сам PNR дальше не нужен.
+        if (typeof FlightInsights !== 'undefined') FlightInsights.annotateGroups(salesDetails);
         dataLoadStatus.sales = loaded > 0;
         tableHtmlCache = { sig: '', html: '' };
         if (!window.ingestQuiet) {

@@ -230,9 +230,16 @@ let salesCutoffCache = { ref: null, sig: '', time: 0 };
 // Дата среза продаж: последний день, за который есть сделки (не дата на часах компьютера).
 function salesDataCutoffTime() {
     const ref = typeof salesDetails !== 'undefined' ? salesDetails : null;
-    // Объект продаж заполняется постепенно (при загрузке CSV) — поэтому в ключе и число рейсов, и время файла.
+    // Зовётся тысячи раз (на каждый вылет когорты): быстрый ключ — эпоха данных; число рейсов в объекте продаж
+    // (он заполняется постепенно при загрузке CSV) пересчитываем, только когда сменилась эпоха.
+    const epoch = typeof dataEpoch === 'number' ? dataEpoch : 0;
+    if (salesCutoffCache.ref === ref && salesCutoffCache.epoch === epoch && salesCutoffCache.time
+        && !(typeof window !== 'undefined' && window.ingestQuiet)) return salesCutoffCache.time;
     const sig = `${Object.keys(ref || {}).length}|${typeof lastSalesUpdate !== 'undefined' && lastSalesUpdate ? new Date(lastSalesUpdate).getTime() : 0}|${typeof window !== 'undefined' && window.ingestQuiet ? 1 : 0}`;
-    if (salesCutoffCache.ref === ref && salesCutoffCache.sig === sig && salesCutoffCache.time) return salesCutoffCache.time;
+    if (salesCutoffCache.ref === ref && salesCutoffCache.sig === sig && salesCutoffCache.time) {
+        salesCutoffCache.epoch = epoch;
+        return salesCutoffCache.time;
+    }
     let max = 0;
     Object.keys(ref || {}).forEach(k => {
         const list = ref[k] || [];
@@ -244,7 +251,7 @@ function salesDataCutoffTime() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const time = max && max < today.getTime() ? max : today.getTime();
-    salesCutoffCache = { ref, sig, time };
+    salesCutoffCache = { ref, sig, time, epoch };
     return time;
 }
 
@@ -302,7 +309,8 @@ function collectSameWeekdayCohort(baseFlight, flyDateStr, flightCode) {
             });
         });
     }
-    return dates;
+    // Праздники и каникулы не смешиваются с обычными днями (календарь событий в «Справочнике»).
+    return typeof CalendarEvents !== 'undefined' ? CalendarEvents.filterCohort(dates, flyDateStr) : dates;
 }
 
 // Загрузка (файл «загрузка таб») точнее файла продаж: в продажах бывают незакрытые возвраты и обмены.
