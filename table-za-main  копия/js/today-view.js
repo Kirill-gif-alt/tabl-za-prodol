@@ -101,7 +101,9 @@ window.TodayView = (function () {
     function pending() {
         const t = today();
         const inSales = salesDepartures();
+        const days = aheadDays();
         return advice.filter(a => inSales.has(a.code + '|' + a.date)
+            && (typeof SalesAdvice === 'undefined' || SalesAdvice.inWindow(a.date, days))
             && !(typeof SalesManagement !== 'undefined' && SalesManagement.getMarks(a.code, a.date, t).length));
     }
 
@@ -202,7 +204,7 @@ window.TodayView = (function () {
                 <td>${loadCell(sold, seats)}</td>
                 <td class="td-nowrap">${esc(ref)}</td>
                 <td>${extraCell != null ? extraCell : (adv && adv.status ? `<span class="td-pill td-pill-${adv.status}">${LABEL[adv.status]}</span>` : '<span class="td-pill">в норме</span>')}</td>
-                <td class="td-go-cell">${openable() ? '<button type="button" class="td-go" data-td-go title="Открыть рейс в «Управлении продажами» (если он там есть) или в «Динамике продаж»">Открыть</button>' : ''}</td>
+                <td class="td-go-cell">${openable(item.code, item.date) ? '<button type="button" class="td-go" data-td-go title="Открыть рейс в «Управлении продажами» (если он там есть) или в «Динамике продаж»">Открыть</button>' : ''}</td>
             </tr>`;
     }
 
@@ -215,8 +217,8 @@ window.TodayView = (function () {
         return depMinutes(a.row) - depMinutes(b.row) || (parseInt(a.code.slice(3), 10) || 0) - (parseInt(b.code.slice(3), 10) || 0);
     }
 
-    function openable() {
-        return canTab('sales') || canTab('table');
+    function openable(code, date) {
+        return canTab('table') || (canTab('sales') && inSalesList(code, date));
     }
 
     function inSalesList(code, date) {

@@ -2199,11 +2199,11 @@ async function exportSalesManagementExcel() {
         if (typeof showToast === 'function') showToast('Вкладка недоступна для вашего профиля', 'error');
         return;
     }
+    const folder = typeof excelPrepareFolder === 'function' ? await excelPrepareFolder('sales') : null;
     if (!(await loadPlainXlsx())) {
         if (typeof showToast === 'function') showToast('Библиотека Excel не загружена', 'error');
         return;
     }
-    const folder = typeof excelPrepareFolder === 'function' ? await excelPrepareFolder('sales') : null;
     await SalesManagement.flush();
     const flights = SalesManagement.listFlights();
     if (!flights.length) {
