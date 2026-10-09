@@ -233,6 +233,38 @@ window.SubsidyRef = (function () {
         return apply(s => { s.pkz[key] = e; });
     }
 
+    // Загрузка из Excel: всё одной записью файла. Каждый раздел — только с правом на него.
+    //  periods: { '101': [{from,to}] } — периоды рейса заменяются целиком;
+    //  amounts: [{from,to,ac,subsidy,cost}]; pkz: [{from,to,direction,ac,value}] — совпавшее правило обновляется.
+    async function applyImport(data) {
+        const at = new Date().toISOString();
+        const by = author();
+        const counts = { periods: 0, amounts: 0, pkz: 0 };
+        const periods = canEdit() ? data.periods || {} : {};
+        const amounts = canEdit() ? (data.amounts || []).map(e => normAmount({ ...e, at, by })).filter(Boolean) : [];
+        const pkz = canEditPkz() ? (data.pkz || []).map(e => normPkz({ ...e, at, by })).filter(Boolean) : [];
+        if (!Object.keys(periods).length && !amounts.length && !pkz.length) return { ok: true, counts };
+        const res = await apply(s => {
+            Object.keys(periods).forEach(n => {
+                const b = String(flightNum(n));
+                if (b === '0') return;
+                s.periods[b] = { ranges: normRanges(periods[n]), at, by };
+                counts.periods++;
+            });
+            amounts.forEach(e => { s.amounts[amountKey(e.from, e.to, e.ac)] = e; counts.amounts++; });
+            pkz.forEach(e => {
+                const same = Object.keys(s.pkz).find(id => {
+                    const r = s.pkz[id];
+                    return !r.deleted && r.from === e.from && r.to === e.to && dirKey(r.direction) === dirKey(e.direction)
+                        && (r.ac ? acKey(r.ac) : '') === (e.ac ? acKey(e.ac) : '');
+                });
+                s.pkz[same || newId()] = e;
+                counts.pkz++;
+            });
+        });
+        return res.ok ? { ok: true, counts } : res;
+    }
+
     async function removePkzRule(id) {
         if (!canEditPkz()) return { ok: false, error: 'Нет права менять ПКЗ из NAV' };
         const at = new Date().toISOString();
@@ -374,6 +406,7 @@ window.SubsidyRef = (function () {
         removeAmount,
         importFromFiles,
         setPkzRule,
+        applyImport,
         removePkzRule,
         pkzRules: activePkz,
         pkzFor,

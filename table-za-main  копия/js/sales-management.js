@@ -1240,11 +1240,19 @@ function salesCellInner(list) {
 }
 
 function paintSalesCellList(td, list) {
-    td.classList.remove('sm-st-keep', 'sm-st-attn', 'sm-st-down', 'sm-st-up', 'sm-multi');
+    td.classList.remove('sm-st-keep', 'sm-st-attn', 'sm-st-down', 'sm-st-up', 'sm-multi', 'sm-suggest', 'sm-suggest-up', 'sm-suggest-down', 'sm-suggest-attn');
     if (list.length === 1) td.classList.add('sm-st-' + list[0].status);
     else if (list.length > 1) td.classList.add('sm-multi');
     td.innerHTML = salesCellInner(list);
     td.title = list.length ? salesEntriesTitle(list) : (td.dataset.edit === '1' ? 'Не проверен — нажмите, чтобы отметить' : 'Не проверен');
+    if (!list.length && salesCheckIsToday(td.dataset.check) && typeof SalesAdvice !== 'undefined') {
+        const adv = SalesAdvice.forDeparture(td.dataset.flight, td.dataset.dep);
+        if (adv && adv.status) {
+            td.classList.add('sm-suggest', 'sm-suggest-' + adv.status);
+            td.title = `Подсказка: ${SalesAdvice.LABEL[adv.status]}. ${adv.text}`;
+            td.innerHTML = `<span class="sm-suggest-mark">${salesEsc(SalesAdvice.LABEL[adv.status].split(' ')[0])}?</span>`;
+        }
+    }
 }
 
 function repaintSalesCell(flight, dep, check) {
@@ -1316,6 +1324,13 @@ function openSalesPopover(td) {
     pop.dataset.check = check;
     const title = document.getElementById('sm-pop-title');
     if (title) title.textContent = `${flight} · вылет ${dep} · проверка ${check}`;
+    const adviceBox = document.getElementById('sm-pop-advice');
+    if (adviceBox) {
+        const adv = typeof SalesAdvice !== 'undefined' && salesCheckIsToday(check) ? SalesAdvice.forDeparture(flight, dep) : null;
+        adviceBox.hidden = !(adv && adv.status);
+        adviceBox.className = 'sm-pop-advice' + (adv && adv.status ? ' sm-suggest-' + adv.status : '');
+        adviceBox.textContent = adv && adv.status ? `Подсказка: ${SalesAdvice.LABEL[adv.status]}. ${adv.text}` : '';
+    }
     pop.querySelectorAll('[data-status]').forEach(btn => {
         btn.classList.toggle('sm-status-on', !!(mark && btn.dataset.status === mark.status));
     });
@@ -1372,6 +1387,7 @@ function applySalesPopover(closeAfter) {
         else localStorage.removeItem(SALES_SIG_KEY);
     } catch { /* ignore */ }
     repaintSalesCell(flight, dep, check);
+    if (typeof updateHeaderStatus === 'function') updateHeaderStatus(); // счётчик «☀» в шапке
     const clearBtn = document.getElementById('sm-pop-clear');
     if (clearBtn) clearBtn.hidden = false;
     if (closeAfter) closeSalesPopover();
@@ -1385,6 +1401,7 @@ function ensureSalesPopover() {
     pop.hidden = true;
     pop.innerHTML = `
         <div class="sm-pop-title" id="sm-pop-title"></div>
+        <div class="sm-pop-advice" id="sm-pop-advice" hidden></div>
         <div class="sm-pop-statuses">
             <button type="button" class="sm-status-btn sm-st-keep" data-status="keep">Проверено без изменений</button>
             <button type="button" class="sm-status-btn sm-st-attn" data-status="attn">! Обратить внимание</button>
@@ -1419,6 +1436,7 @@ function ensureSalesPopover() {
             const author = authorInput && authorInput.dataset.touched === '1' ? (authorInput.value || '') : '';
             SalesManagement.clearMark(flight, dep, check, author);
             repaintSalesCell(flight, dep, check);
+            if (typeof updateHeaderStatus === 'function') updateHeaderStatus();
             closeSalesPopover();
             return;
         }
@@ -1452,6 +1470,19 @@ function salesQueryEscape(value) {
     const text = String(value ?? '');
     if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(text);
     return text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+// Открыть «Управление продажами» на рейсе (из сводки): выбрать рейс и показать вылет в карточке.
+function openSalesManagementFor(code, date) {
+    const base = typeof SalesManagement.baseCode === 'function' ? SalesManagement.baseCode(code) : code;
+    salesFlightPick = base || code;
+    salesSnapToToday = true;
+    if (typeof switchMainTab === 'function') switchMainTab('sales');
+    if (document.getElementById('sm-flight-list')) {
+        renderSalesFlightList();
+        renderSalesGrid();
+    }
+    if (typeof FlightCard !== 'undefined' && date) FlightCard.maybeOpen(code, date);
 }
 
 function ensureSalesPick(all) {
@@ -1540,11 +1571,21 @@ function renderSalesGrid() {
         const cells = flight.checks.map(check => {
             const list = SalesManagement.getMarks(dep.code, dep.date, check);
             const canCell = editable && !dep.flown && salesCheckIsToday(check);
-            const cls = list.length === 1 ? ` sm-st-${list[0].status}` : (list.length > 1 ? ' sm-multi' : '');
-            const title = list.length
+            let cls = list.length === 1 ? ` sm-st-${list[0].status}` : (list.length > 1 ? ' sm-multi' : '');
+            let title = list.length
                 ? salesEntriesTitle(list)
                 : (canCell ? 'Не проверен — нажмите, чтобы отметить' : (dep.flown ? 'Рейс уже выполнен' : 'Отметить можно только сегодня'));
-            return `<td class="sm-cell${cls}" data-edit="${canCell ? '1' : '0'}" data-flight="${salesAttr(dep.code)}" data-dep="${salesAttr(dep.date)}" data-check="${salesAttr(check)}" title="${salesAttr(title)}">${salesCellInner(list)}</td>`;
+            // Пустая ячейка «сегодня» у вылета в ближайшие 20 дней — подсказка решения (только подсветка).
+            let inner = salesCellInner(list);
+            if (!list.length && !dep.flown && salesCheckIsToday(check) && typeof SalesAdvice !== 'undefined') {
+                const adv = SalesAdvice.forDeparture(dep.code, dep.date);
+                if (adv && adv.status) {
+                    cls += ` sm-suggest sm-suggest-${adv.status}`;
+                    title = `Подсказка: ${SalesAdvice.LABEL[adv.status]}. ${adv.text}`;
+                    inner = `<span class="sm-suggest-mark">${salesEsc(SalesAdvice.LABEL[adv.status].split(' ')[0])}?</span>`;
+                }
+            }
+            return `<td class="sm-cell${cls}" data-edit="${canCell ? '1' : '0'}" data-flight="${salesAttr(dep.code)}" data-dep="${salesAttr(dep.date)}" data-check="${salesAttr(check)}" title="${salesAttr(title)}">${inner}</td>`;
         }).join('');
         const rowClass = dep.flown ? 'sm-row-flew' : (salesNearDeparture(dep.date, today) ? 'sm-row-near' : '');
         return `<tr class="${rowClass}" data-card-flight="${salesAttr(dep.code)}" data-card-date="${salesAttr(dep.date)}">

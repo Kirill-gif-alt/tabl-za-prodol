@@ -217,6 +217,7 @@ async function processDataFromSources(avail, closed, sales, exp, weights, childr
         ActivityLog.log('data_load', `Рейсов: ${flightCount}`);
     }
     showToast('Данные успешно загружены');
+    if (typeof MorningSummary !== 'undefined') MorningSummary.build().catch(() => {});
     } catch (e) {
         // Данные уже сброшены — возвращаем последний сохранённый снимок, чтобы не остаться с пустыми таблицами.
         window.ingestQuiet = false;
@@ -499,6 +500,9 @@ function loadSalesFile(fh) {
             const row = parseCSVLine(line);
             if (row.length < 17) continue;
             if ((row[8] || '').toUpperCase() !== 'ETICKET') continue;
+            // Младенец без места (тариф …/IN00, …/ID00) — не место в самолёте: в загрузке его нет,
+            // поэтому и в продажах не считаем (иначе «продано 25» при загрузке 22).
+            if (/\/(IN|ID)\d/i.test(row[13] || '')) continue;
 
             const dedupKey = `${row[2] || ''}|${row[8] || ''}|${row[12] || ''}|${row[3] || ''}`.toUpperCase();
             if (seen.has(dedupKey)) continue;

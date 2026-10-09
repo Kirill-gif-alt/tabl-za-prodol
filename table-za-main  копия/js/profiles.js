@@ -40,6 +40,7 @@ window.ProfileAuth = (function () {
         subsidy_mode: { label: 'Метки «С» (субсидия) / «К» (коммерция) у дат вылета на Графплане, в «Динамике продаж» и RMS', def: true },
         flight_card: { label: 'Карточка рейса: клик по рейсу на Графплане, в RMS и «Загрузке рейсов» открывает панель с графиком и отметкой', def: 'admin' },
         header_kpi: { label: 'Продажи и выручка за сегодня в шапке', def: true },
+        morning_summary: { label: 'Утренняя сводка при входе и значок «☀ N» в шапке: вылеты на 20 дней, ждущие решения, ошибки тарифов, пропуски справочника', def: 'admin' },
         rms_header_alerts: { label: 'Счётчик сигналов RMS «⚠» в шапке', def: true },
         live_flights: { label: 'Самолёты онлайн на карте «Сеть» (Flightradar)', def: true }
     };

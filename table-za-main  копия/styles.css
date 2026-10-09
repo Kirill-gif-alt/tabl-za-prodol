@@ -7145,3 +7145,186 @@ html[data-theme="dark"] .cr-pop { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
 #sm-grid tr.sm-row-picked td.sm-freeze {
     box-shadow: inset 0 -2px 0 #2563eb;
 }
+
+/* Управление продажами: подсказка решения в пустой ячейке «сегодня» */
+.sm-cell.sm-suggest {
+    outline: 2px dashed currentColor;
+    outline-offset: -4px;
+}
+
+.sm-suggest-down { color: #9f1239; background: #fff1f2; }
+.sm-suggest-up { color: #15803d; background: #f0fdf4; }
+.sm-suggest-attn { color: #c2410c; background: #fff7ed; }
+
+.sm-suggest-mark {
+    font-weight: 800;
+    font-size: 0.8rem;
+    opacity: 0.85;
+}
+
+.sm-pop-advice {
+    margin: 4px 0 8px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    font-size: 0.76rem;
+    line-height: 1.35;
+}
+
+.sm-pop-advice[hidden] {
+    display: none;
+}
+
+/* Справочник: проверка полноты */
+.ref-check-block {
+    margin: 12px 0 4px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border);
+}
+
+.ref-check-title {
+    font-weight: 700;
+    font-size: 0.86rem;
+}
+
+.ref-check-n,
+.ref-section-badge {
+    display: inline-block;
+    min-width: 18px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: #f59e0b;
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 18px;
+    text-align: center;
+}
+
+.ref-check-ok {
+    display: block;
+    padding: 10px 0;
+    font-size: 0.85rem;
+}
+
+/* Утренняя сводка */
+.header-kpi-morning {
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #fef3c7;
+    color: #92400e;
+    font-weight: 800;
+    font-size: 0.78rem;
+    cursor: pointer;
+}
+
+.header-kpi-morning:hover {
+    background: #fde68a;
+}
+
+.morning-panel {
+    width: min(980px, calc(100vw - 32px));
+}
+
+.ms-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.ms-tile {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+}
+
+.ms-tile-btn {
+    cursor: pointer;
+}
+
+.ms-tile-btn:hover {
+    border-color: #2563eb;
+}
+
+.ms-tile-n {
+    font-size: 1.7rem;
+    font-weight: 800;
+    min-width: 40px;
+}
+
+.ms-bad { color: #dc2626; }
+.ms-warn { color: #d97706; }
+
+.ms-tile-l {
+    font-size: 0.8rem;
+    line-height: 1.35;
+}
+
+.ms-muted {
+    color: var(--text-muted);
+    font-size: 0.74rem;
+}
+
+.ms-note {
+    margin: 6px 0;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+.ms-ok {
+    color: #047857;
+}
+
+.ms-scroll {
+    max-height: min(52vh, 520px);
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+
+.ms-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.78rem;
+}
+
+.ms-table td {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+
+.ms-row {
+    cursor: pointer;
+}
+
+.ms-row:hover td {
+    background: var(--muted-bg);
+}
+
+.ms-nowrap {
+    white-space: nowrap;
+}
+
+.ms-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.ref-excel {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+    margin: -4px 0 6px;
+}
