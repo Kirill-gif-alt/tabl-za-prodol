@@ -17,7 +17,7 @@ SHARED_DIR = os.path.join(ROOT, "shared")
 # Запись через сервер не зависит от разрешения браузера на папку, которое сбрасывается при перезапуске.
 SHARED_WRITABLE = {
     "profiles.json", "snapshot.json", "activity.json", "flight-comments.json",
-    "subsidy-overrides.json", "pkz-nav.json", "sales-management.json", "rms-widget.json",
+    "subsidy-overrides.json", "pkz-nav.json", "sales-management.json",
     "creative-layouts.json", "subsidy-fares.json", "subsidy-ref.json",
 }
 # Резервные копии перед перезаписью: shared/_history/<имя>/<имя>__ГГГГ-ММ-ДД_ЧЧ-ММ-СС.json.
