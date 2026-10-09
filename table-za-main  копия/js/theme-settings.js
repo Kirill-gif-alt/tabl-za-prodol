@@ -143,7 +143,7 @@ window.ThemeSettings = (function () {
         }
     };
 
-    const DEFAULTS = { ...PRESETS.office };
+    const DEFAULTS = { ...PRESETS.krasavia };
 
     const MAIN_BORDER_MAP = {
         mainOpen: '--main-chip-open-border',
