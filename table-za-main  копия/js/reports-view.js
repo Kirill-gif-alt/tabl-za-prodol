@@ -880,6 +880,17 @@ window.ReportsView = (function () {
         return list;
     }
 
+    // Иконки внутренних вкладок (контур, цвет — текущий цвет текста).
+    const ICON = (d) => `<svg class="rp-subtab-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+    const SUBTAB_ICON = {
+        checks: ICON('<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/>'),
+        refs: ICON('<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5z"/><path d="M4 19a2 2 0 0 1 2-2h13"/>'),
+        reconcile: ICON('<path d="M7 7h12l-3-3"/><path d="M17 17H5l3 3"/>'),
+        decisions: ICON('<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>'),
+        forecast: ICON('<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>'),
+        export: ICON('<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/>')
+    };
+
     function renderBody() {
         const body = document.getElementById('rp-body');
         if (!body) return;
@@ -909,7 +920,7 @@ window.ReportsView = (function () {
         body.innerHTML = `
             <nav class="rp-subtabs" role="tablist">${tabs.map(t => `
                 <button type="button" role="tab" class="rp-subtab${t.id === subtab ? ' rp-subtab-on' : ''}" data-rp-tab="${t.id}" aria-selected="${t.id === subtab}">
-                    ${esc(t.label)}${t.badge ? ` <span class="rp-subtab-badge${t.warn ? ' rp-subtab-badge-warn' : ''}">${esc(t.badge)}</span>` : ''}
+                    ${SUBTAB_ICON[t.id] || ''}<span class="rp-subtab-label">${esc(t.label)}</span>${t.badge ? ` <span class="rp-subtab-badge${t.warn ? ' rp-subtab-badge-warn' : ''}">${esc(t.badge)}</span>` : ''}
                 </button>`).join('')}
             </nav>
             <div class="rp-subtab-body">${content}</div>`;
@@ -935,7 +946,7 @@ window.ReportsView = (function () {
                 <div class="table-page-hero">
                     <div class="table-page-hero-main">
                         <h2 class="rms-hero-title">Отчёты</h2>
-                        <span class="table-page-hint">Проверка рейсов, справочник (тарифы, периоды и суммы субсидии, ПКЗ из NAV, календарь), журнал решений и выгрузки в Excel</span>
+                        <span class="table-page-hint">Проверки, справочник, сверка продаж, решения, прогноз и выгрузки в Excel</span>
                     </div>
                 </div>
                 <div class="table-page-body rp-body" id="rp-body"></div>
