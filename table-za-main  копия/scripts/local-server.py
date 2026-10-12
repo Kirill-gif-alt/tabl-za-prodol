@@ -42,6 +42,8 @@ ARCHIVE_RE = re.compile(r"^history/curves-\d{4}-\d{2}\.json$")
 # Отметки «Управления продажами»: свой файл у каждого автора (js/sales-management.js).
 MARKS_RE = re.compile(r"^sales-marks/\d{4}-\d{2}/[a-z0-9_]{1,40}\.json$")
 MARKS_DIR_RE = re.compile(r"^sales-marks/\d{4}-\d{2}$")
+# Журнал прогнозов загрузки (js/forecast-lab.js): shared/forecast-log/ГГГГ-ММ.json.
+FCLOG_RE = re.compile(r"^forecast-log/\d{4}-\d{2}\.json$")
 MAX_BODY = 64 * 1024 * 1024
 WRITE_LOCK = threading.Lock()
 ALLOWED_HOSTS = {"127.0.0.1:%d" % PORT, "localhost:%d" % PORT}
@@ -175,7 +177,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.close_connection = True
         if not self._same_origin():
             return self._send_json(403, {"error": "forbidden"})
-        if name not in SHARED_WRITABLE and not ARCHIVE_RE.match(name) and not MARKS_RE.match(name):
+        if name not in SHARED_WRITABLE and not ARCHIVE_RE.match(name) and not MARKS_RE.match(name) and not FCLOG_RE.match(name):
             return self._send_json(404, {"error": "not allowed"})
         if not self.headers.get("Content-Type", "").startswith("application/json"):
             return self._send_json(415, {"error": "json only"})

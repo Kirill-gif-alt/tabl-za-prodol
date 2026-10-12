@@ -797,6 +797,7 @@ async function startAppAfterLogin() {
     }
     if (typeof SalesArchive !== 'undefined') SalesArchive.scheduleAfterStart();
     if (typeof MorningSummary !== 'undefined') MorningSummary.afterStart().catch(e => console.warn('MorningSummary', e));
+    if (typeof ForecastLab !== 'undefined') ForecastLab.afterStart();
 }
 
 window.onload=()=>{

@@ -304,6 +304,10 @@ window.FlightCard = (function () {
                 <div class="fc-it-value">${f.final} <span class="fc-it-of">из ${f.seats}</span></div>
                 <div class="fc-it-sub"><strong>${f.lf}%</strong>${range ? ' · ' + esc(range) : ''}</div>
                 <div class="fc-it-note">${esc(src)}</div>
+                ${(() => {
+                    const ml = typeof ForecastLab !== 'undefined' ? ForecastLab.predict(code, date) : null;
+                    return ml ? `<div class="fc-it-ml" title="Видит только администратор. Способ выбран по точности на прошлых вылетах: за ${ml.h} дн. до вылета ошибается в среднем на ${String(ml.err).replace('.', ',')} пасс. (${ml.trainedOn} вылетов).">Самообучение: <strong>${ml.final} из ${ml.seats}</strong> · ${ml.lf}% <span>(${esc(ml.method)}, ±${String(ml.err).replace('.', ',')})</span></div>` : '';
+                })()}
             </div>`);
             summary.push(`<span class="fc-ins-chip fc-ins-${tone || 'plain'}">прогноз ${f.final}/${f.seats} · ${f.lf}%</span>`);
             if (f.load >= f.seats) advice = '<div class="fc-advice fc-advice-up">✓ Уже распродан</div>';
