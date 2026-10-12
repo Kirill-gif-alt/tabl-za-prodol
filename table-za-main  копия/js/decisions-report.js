@@ -1,8 +1,9 @@
 // «Отчёты» → «Решения»: журнал ценовых решений и их итог.
-// Каждая отметка «▼ Снижение» / «▲ Повышение» из «Управления продажами»: сколько билетов продали за 3 дня
-// до решения и за 3 дня после — в сравнении с тем, сколько обычно продаётся за те же дни (норма по дням
-// недели). Итог = (после − обычно) − (до − обычно), в билетах. Через месяц-два видно, где решения работают:
-// сводка по типу решения, по направлениям и по людям. Те же расчёты, что в карточке рейса (price-marks.js).
+// Каждая отметка «▼ Снижение» / «▲ Повышение» из «Управления продажами»: сколько билетов и по какому тарифу
+// продали за 3 дня до решения и за 3 дня после, и сколько обычно продаётся за те же дни (норма по дням недели).
+// Итог — в рублях: выручка после решения против той, что была бы без него (столько билетов, сколько продали бы
+// по старому тарифу, × старый тариф). Повышение с чуть меньшими продажами, но большим тарифом — не провал.
+// Сводка по типу решения, по направлениям и по людям. Те же расчёты, что в карточке рейса (price-marks.js).
 window.DecisionsReport = (function () {
     const PERIODS = [30, 60, 90];
     const KIND = { down: '▼ Снижение', up: '▲ Повышение', attn: '! Внимание' };
@@ -54,7 +55,8 @@ window.DecisionsReport = (function () {
                 code, base, dep: m.dep, check: m.check, status: m.status, author: m.author || '',
                 direction: typeof getFlightDirection === 'function' ? getFlightDirection(code) : '',
                 e,
-                done: !!(e && e.complete && e.effect != null)
+                done: !!(e && e.complete && e.effect != null),
+                money: e && e.complete && e.money ? e.money.delta : null
             });
         });
         out.sort((a, b) => (parseLocalDate(b.check) - parseLocalDate(a.check)) || String(a.code).localeCompare(String(b.code), 'ru', { numeric: true }));
@@ -74,18 +76,28 @@ window.DecisionsReport = (function () {
         return (n > 0 ? '+' : (n < 0 ? '−' : '')) + Math.abs(n);
     }
 
-    // «Сработало»: снижение — после него продаётся лучше обычного; повышение — продажи не просели
-    // против обычного (спрос выдержал более высокую цену).
+    // «Сработало» — по выручке (PriceMarks.judge); «рано судить» в долю не входит.
     function worked(r) {
-        return r.status === 'up' ? r.e.effect >= 0 : r.e.effect > 0;
+        return verdictOf(r).worked;
     }
 
-    // Сводка: решений, с итогом, «сработало», средний итог в билетах.
+    // Сводка: решений, с итогом, «сработало», средний итог в билетах и сумма в рублях к «без решения».
     function summarize(list) {
         const done = list.filter(r => r.done);
-        const good = done.filter(worked).length;
+        const judged = done.filter(r => worked(r) != null);
+        const good = judged.filter(r => worked(r) === true).length;
         const avg = done.length ? done.reduce((a, r) => a + r.e.effect, 0) / done.length : null;
-        return { n: list.length, done: done.length, good, share: done.length ? Math.round(good / done.length * 100) : null, avg: avg == null ? null : Math.round(avg * 10) / 10 };
+        // Рубли — только по решениям, о которых можно судить (как и «сработало»).
+        const withMoney = judged.filter(r => r.money != null);
+        const money = withMoney.length ? withMoney.reduce((a, r) => a + r.money, 0) : null;
+        const waiting = list.filter(r => !(r.e && r.e.complete)).length;
+        return { n: list.length, done: done.length, waiting, noNorm: list.length - done.length - waiting, judged: judged.length, good, share: judged.length ? Math.round(good / judged.length * 100) : null, avg: avg == null ? null : Math.round(avg * 10) / 10, money };
+    }
+
+    function rubSigned(v) {
+        if (v == null) return '—';
+        const t = typeof formatRub === 'function' ? formatRub(Math.abs(v)) : Math.round(Math.abs(v)).toLocaleString('ru-RU') + ' ₽';
+        return (v > 0 ? '+' : (v < 0 ? '−' : '')) + t;
     }
 
     function groupBy(list, keyFn) {
@@ -100,16 +112,7 @@ window.DecisionsReport = (function () {
 
     // Итог одной строки: вердикт для экрана и для Excel.
     function verdictOf(r) {
-        const e = r.e;
-        if (!e || !e.complete) return { cls: 'wait', text: 'ещё идут 3 дня', short: 'ждём' };
-        if (e.effect == null) return { cls: 'none', text: 'не с чем сравнить', short: '—' };
-        if (r.status === 'up') {
-            return e.effect >= 0
-                ? { cls: 'pos', text: `спрос выдержал повышение${e.effect ? ' (' + signed(e.effect) + ')' : ''}`, short: 'сработало' }
-                : { cls: 'neg', text: `продажи просели против обычного ${signed(e.effect)}`, short: 'не сработало' };
-        }
-        if (e.effect > 0) return { cls: 'pos', text: `продаётся лучше обычного ${signed(e.effect)}`, short: 'сработало' };
-        return { cls: 'neg', text: e.effect < 0 ? 'хуже обычного ' + signed(e.effect) : 'без изменений', short: 'не сработало' };
+        return PriceMarks.judge(r.e, r.status);
     }
 
     function shareBar(share) {
@@ -124,11 +127,11 @@ window.DecisionsReport = (function () {
                 <td class="rp-left"><strong>${esc(g.key)}</strong></td>
                 <td>${g.n}</td>
                 <td class="dr-share-cell">${shareBar(g.share)}</td>
-                <td>${g.avg == null ? '—' : `<span class="${g.avg > 0 ? 'dr-pos' : (g.avg < 0 ? 'dr-neg' : '')}">${signed(g.avg)}</span>`}</td>
+                <td class="rp-nowrap">${g.money == null ? '—' : `<span class="${g.money > 0 ? 'dr-pos' : (g.money < 0 ? 'dr-neg' : '')}">${rubSigned(g.money)}</span>`}</td>
             </tr>`).join('');
         return `<div class="dr-sum">
             <div class="dr-sum-title">${esc(title)}</div>
-            <table class="rp-table dr-sum-table"><thead><tr><th>${esc(keyLabel)}</th><th>Решений</th><th title="Из решений с итогом. Снижение — после него продаётся лучше обычного; повышение — продажи не просели">Сработало</th><th title="Средний итог: на сколько билетов после решения продавалось лучше (+) или хуже (−) обычного">Итог, бил.</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+            <table class="rp-table dr-sum-table"><thead><tr><th>${esc(keyLabel)}</th><th>Решений</th><th title="Из решений, по которым можно судить: выручка после решения не ниже, чем была бы без него">Сработало</th><th title="Сумма: на сколько рублей выручка после решений больше (+) или меньше (−), чем была бы без них (за 3 дня после каждого)">Итог, ₽</th></tr></thead><tbody>${rowsHtml}</tbody></table>
             ${groups.length > 10 ? `<div class="rp-muted">и ещё ${groups.length - 10} — полный список в Excel</div>` : ''}
         </div>`;
     }
@@ -160,11 +163,11 @@ window.DecisionsReport = (function () {
             </div>`;
         const avgTxt = (t) => (t.avg == null ? '—' : `<span class="${t.avg > 0 ? 'dr-pos' : (t.avg < 0 ? 'dr-neg' : '')}">${signed(t.avg)}</span>`);
         const kpis = `<div class="dr-kpis">
-            ${kpi('Решений', String(total.n), `с итогом ${total.done}${total.n - total.done ? ` · ждут ${total.n - total.done}` : ''}`)}
-            ${kpi('Сработало', total.share == null ? '—' : `<span class="${total.share >= 50 ? 'dr-pos' : 'dr-neg'}">${total.share}%</span>`, total.done ? `${total.good} из ${total.done}` : 'пока нет итогов')}
-            ${kpi('Средний итог', avgTxt(total), total.avg != null ? plural(Math.round(Math.abs(total.avg)) || 0, 'билет', 'билета', 'билетов') + ' к обычному' : '')}
-            ${!kindFilter ? kpi('▼ Снижения', String(down.n), down.share != null ? `сработало ${down.share}% · итог ${avgTxt(down)}` : '', 'dr-kpi-down') : ''}
-            ${!kindFilter ? kpi('▲ Повышения', String(up.n), up.share != null ? `сработало ${up.share}% · итог ${avgTxt(up)}` : '', 'dr-kpi-up') : ''}
+            ${kpi('Решений', String(total.n), [`с итогом ${total.done}`, total.waiting ? `ждут 3 дня: ${total.waiting}` : '', total.noNorm ? `не с чем сравнить: ${total.noNorm}` : ''].filter(Boolean).join(' · '))}
+            ${kpi('Сработало', total.share == null ? '—' : `<span class="${total.share >= 50 ? 'dr-pos' : 'dr-neg'}">${total.share}%</span>`, total.judged ? `${total.good} из ${total.judged}${total.done - total.judged ? ` · рано судить ${total.done - total.judged}` : ''}` : 'пока нет итогов')}
+            ${kpi('Выручка к «без решений»', total.money == null ? '—' : `<span class="${total.money > 0 ? 'dr-pos' : (total.money < 0 ? 'dr-neg' : '')}">${rubSigned(total.money)}</span>`, total.avg != null ? `билетов к обычному: ${avgTxt(total)} в среднем` : '')}
+            ${!kindFilter ? kpi('▼ Снижения', String(down.n), down.share != null ? `сработало ${down.share}% · ${rubSigned(down.money)}` : '', 'dr-kpi-down') : ''}
+            ${!kindFilter ? kpi('▲ Повышения', String(up.n), up.share != null ? `сработало ${up.share}% · ${rubSigned(up.money)}` : '', 'dr-kpi-up') : ''}
         </div>`;
         const body = list.map(r => {
             const e = r.e;
@@ -172,6 +175,8 @@ window.DecisionsReport = (function () {
             const usual = (x) => (x ? `<span class="dr-usual">обычно ${x.value}</span>` : '');
             const fare = e && e.before.avg != null && e.after.avg != null
                 ? `${Math.round(e.before.avg).toLocaleString('ru-RU')} → ${Math.round(e.after.avg).toLocaleString('ru-RU')} ₽` : '—';
+            const m = e && e.complete ? e.money : null;
+            const rev = m ? `${Math.round(m.r0).toLocaleString('ru-RU')} → ${Math.round(m.r1).toLocaleString('ru-RU')} ₽<div class="dr-usual">без решения → с решением</div>` : '—';
             return `
                 <tr>
                     <td class="rp-nowrap"><strong>${esc(r.check.slice(0, 5))}</strong><div class="dr-usual">${esc(r.author || '—')}</div></td>
@@ -181,6 +186,7 @@ window.DecisionsReport = (function () {
                     <td><strong>${e ? e.before.n : '—'}</strong>${e ? usual(e.normBefore) : ''}</td>
                     <td><strong>${e ? e.after.n : '—'}</strong>${e ? usual(e.normAfter) : ''}</td>
                     <td class="rp-nowrap">${fare}</td>
+                    <td class="rp-nowrap">${rev}</td>
                     <td class="rp-left"><span class="dr-verdict dr-verdict-${v.cls}">${esc(v.text)}</span></td>
                 </tr>`;
         }).join('');
@@ -195,16 +201,20 @@ window.DecisionsReport = (function () {
                     ${canExport() ? `<button type="button" class="btn-primary rp-btn" id="dr-export"${list.length ? '' : ' disabled'}>В Excel</button>` : ''}
                 </div>
                 <details class="dr-help"><summary>Как считается</summary>
-                    <p>Каждое «▼ Снижение» и «▲ Повышение» из «Управления продажами»: сколько билетов продали за 3 дня до решения и за 3 дня после,
-                    и сколько обычно продаётся за эти же дни до вылета (норма по дням недели). <strong>Итог</strong> — на сколько билетов после решения продавалось
-                    лучше или хуже обычного по сравнению с тем, что было до. <strong>Сработало</strong>: снижение — продажи пошли лучше обычного;
-                    повышение — продажи не просели (спрос выдержал цену). Видны отметки за месяцы, загруженные в «Управлении продажами».</p>
+                    <p>Каждое «▼ Снижение» и «▲ Повышение» из «Управления продажами» сравнивается по <strong>выручке</strong> за 3 дня после решения.</p>
+                    <p><strong>Без решения</strong> продали бы столько билетов, сколько обычно продаётся в эти дни (норма по дням недели), с поправкой на то,
+                    как рейс шёл до решения (отклонение от нормы — наполовину: за 3 дня оно часто случайное), — по старому тарифу. <strong>С решением</strong> — сколько продали на самом деле по новому тарифу.
+                    <strong>Итог</strong> = выручка с решением − выручка без решения.</p>
+                    <p>Поэтому повышение, после которого продали чуть меньше, но дороже, — не провал: например, 1 билет за 35 525 ₽ вместо ожидаемых
+                    2 по 20 175 ₽ — это −4 825 ₽, а не «продажи просели». Для повышения видно, со скольких билетов оно окупилось бы.
+                    Если билетов за оба окна меньше 4, вывод делать рано — такие решения в «Сработало» не считаются.
+                    Если после повышения рейс заполнился (от 95%), повышение места не стоило и считается сработавшим.</p>
                 </details>
                 ${toolbar}
                 ${kpis}
                 ${sums}
                 ${body ? `<div class="dr-list-title">Все решения <span class="rp-muted">· ${list.length}</span></div><div class="rp-scroll"><table class="rp-table dr-table">
-                    <thead><tr><th>Решение</th><th>Рейс</th><th>Вылет</th><th>Что</th><th title="Билетов за 3 дня до решения">До</th><th title="Билетов за 3 дня после решения">После</th><th>Ср. тариф до → после</th><th>Итог</th></tr></thead>
+                    <thead><tr><th>Решение</th><th>Рейс</th><th>Вылет</th><th>Что</th><th title="Билетов за 3 дня до решения">До</th><th title="Билетов за 3 дня после решения">После</th><th>Ср. тариф до → после</th><th title="За 3 дня после решения: сколько было бы без него (билетов, как обычно, по старому тарифу) и сколько вышло">Выручка</th><th>Итог</th></tr></thead>
                     <tbody>${body}</tbody></table></div>` : '<p class="rp-note">За период решений «снижение/повышение» нет.</p>'}
             </section>`;
     }
@@ -231,6 +241,9 @@ window.DecisionsReport = (function () {
                     fareBefore: e && e.before.avg != null ? Math.round(e.before.avg) : '',
                     fareAfter: e && e.after.avg != null ? Math.round(e.after.avg) : '',
                     effect: e && e.complete && e.effect != null ? e.effect : '',
+                    revBefore: e && e.complete && e.money ? e.money.r0 : '',
+                    revAfter: e && e.complete && e.money ? e.money.r1 : '',
+                    revDelta: e && e.complete && e.money ? e.money.delta : '',
                     verdict: v.short, text: v.text
                 };
             })
