@@ -6,6 +6,22 @@ window.ThemeSettings = (function () {
     let pendingTabOrder = null;
     let pendingTabNames = null;
 
+    // Меню настроек — по смыслу: оформление, работа, безопасность. Цвета отдельных вкладок — один пункт с выбором вкладки.
+    const NAV = [
+        { group: 'Оформление', items: [
+            { id: 'general', label: 'Тема и основные цвета', hint: 'Готовая тема или свои цвета шапки, кнопок, фона и текста. Сохраняется для вашего профиля.' },
+            { id: 'colors', label: 'Цвета вкладок', hint: 'Таблицы и плитки отдельной вкладки. Выберите вкладку — ниже её цвета.' }
+        ] },
+        { group: 'Работа', items: [
+            { id: 'tabs', label: 'Вкладки: названия и порядок', hint: 'Свои названия и порядок кнопок в шапке — только у вас.' },
+            { id: 'excel', label: 'Папки для Excel', hint: 'Куда сохранять выгрузки на этом компьютере.' },
+            { id: 'salesAdmin', label: 'Управление продажами', hint: 'Направления и диапазоны таблицы — для всех. Видит только администратор.', admin: true }
+        ] },
+        { group: 'Безопасность', items: [
+            { id: 'password', label: 'Пароль', hint: 'Смена своего пароля: нужен текущий, новый — от 8 символов.' }
+        ] }
+    ];
+
     const SECTIONS = [
         { id: 'general', label: 'Общее' },
         { id: 'main', label: 'Графический план' },
@@ -304,45 +320,65 @@ window.ThemeSettings = (function () {
             </label>`;
     }
 
+    function panelHead(id) {
+        let item = null;
+        NAV.forEach(g => g.items.forEach(it => { if (it.id === id) item = it; }));
+        return item ? `<div class="theme-panel-head"><h4 class="theme-panel-title">${item.label}</h4><p class="theme-panel-hint">${item.hint}</p></div>` : '';
+    }
+
     function buildFormOnce(container) {
         if (formBuilt && container.dataset.built) return;
         const t = load();
-        const colorSections = SECTIONS.filter(s => FIELD_GROUPS[s.id] && s.id !== 'general').map(s => `
-            <div class="theme-section-panel" data-section="${s.id}" hidden>
+        const colorTabs = SECTIONS.filter(s => FIELD_GROUPS[s.id] && s.id !== 'general');
+        const colorSub = colorTabs.map((s, i) => `
+            <div class="theme-color-sub" data-color-panel="${s.id}"${i === 0 ? '' : ' hidden'}>
                 <div class="theme-settings-grid ${s.id === 'main' ? 'theme-settings-grid-main' : ''}">
                     ${FIELD_GROUPS[s.id].map(f => fieldHtml(f, t)).join('')}
                 </div>
-                ${s.id === 'sales' ? '<div id="theme-sales-routes-wrap" class="theme-sales-routes" hidden></div><div id="theme-sales-ranges-wrap" class="theme-sales-routes" hidden></div>' : ''}
             </div>
         `).join('');
 
         container.innerHTML = `
-            <div class="theme-presets">
-                ${Object.entries(PRESETS).map(([id, p]) => `
-                    <button type="button" class="theme-preset-btn" data-preset="${id}">${p.name}</button>
-                `).join('')}
-            </div>
             <div class="theme-settings-layout">
                 <nav class="theme-section-nav">
-                    ${SECTIONS.map((s, i) => `
-                        <button type="button" class="theme-section-tab${i === 0 ? ' active' : ''}" data-section="${s.id}">${s.label}</button>
-                    `).join('')}
+                    ${NAV.map(g => `<div class="theme-nav-group"${g.items.every(it => it.admin) ? ' data-admin-only' : ''}>
+                        <div class="theme-nav-group-title">${g.group}</div>
+                        ${g.items.map(it => `<button type="button" class="theme-section-tab${it.id === 'general' ? ' active' : ''}" data-section="${it.id}"${it.admin ? ' data-admin-only' : ''}>${it.label}</button>`).join('')}
+                    </div>`).join('')}
                 </nav>
                 <div class="theme-section-panels">
                     <div class="theme-section-panel active" data-section="general">
+                        ${panelHead('general')}
+                        <div class="theme-presets">
+                            ${Object.entries(PRESETS).map(([id, p]) => `
+                                <button type="button" class="theme-preset-btn" data-preset="${id}">${p.name}</button>
+                            `).join('')}
+                        </div>
                         <div class="theme-settings-grid">${FIELD_GROUPS.general.map(f => fieldHtml(f, t)).join('')}</div>
                         <label id="theme-home-map-wrap" class="profile-home-flag" hidden>
                             <input type="checkbox" id="theme-show-home-map"> Показывать главную страницу (карта сети) при входе
                         </label>
                     </div>
-                    ${colorSections}
+                    <div class="theme-section-panel" data-section="colors" hidden>
+                        ${panelHead('colors')}
+                        <div class="theme-color-chips">${colorTabs.map((s, i) => `<button type="button" class="theme-color-chip${i === 0 ? ' active' : ''}" data-color-sub="${s.id}">${s.label}</button>`).join('')}</div>
+                        ${colorSub}
+                    </div>
                     <div class="theme-section-panel" data-section="tabs" hidden>
+                        ${panelHead('tabs')}
                         <div id="theme-tab-order-editor"></div>
                     </div>
                     <div class="theme-section-panel" data-section="excel" hidden>
+                        ${panelHead('excel')}
                         <div id="theme-excel-folders" class="theme-excel-folders"></div>
                     </div>
+                    <div class="theme-section-panel" data-section="salesAdmin" hidden>
+                        ${panelHead('salesAdmin')}
+                        <div id="theme-sales-routes-wrap" class="theme-sales-routes" hidden></div>
+                        <div id="theme-sales-ranges-wrap" class="theme-sales-routes" hidden></div>
+                    </div>
                     <div class="theme-section-panel" data-section="password" hidden>
+                        ${panelHead('password')}
                         <div class="theme-password-block">
                             <label class="theme-password-field"><span>Текущий пароль</span>
                                 <input type="password" id="settings-pwd-current" class="theme-password-input" autocomplete="current-password"></label>
@@ -438,6 +474,14 @@ window.ThemeSettings = (function () {
             const sectionTab = e.target.closest('.theme-section-tab');
             if (sectionTab) {
                 showSection(container, sectionTab.dataset.section);
+                return;
+            }
+
+            const colorChip = e.target.closest('[data-color-sub]');
+            if (colorChip) {
+                const id = colorChip.dataset.colorSub;
+                container.querySelectorAll('[data-color-sub]').forEach(b => b.classList.toggle('active', b === colorChip));
+                container.querySelectorAll('[data-color-panel]').forEach(p => { p.hidden = p.dataset.colorPanel !== id; });
                 return;
             }
 
@@ -663,6 +707,10 @@ window.ThemeSettings = (function () {
         }
         fillSalesRoutes(body, prof);
         fillSalesRanges(body, prof);
+        // Пункты «только для администратора» — в меню только у него.
+        const isAdmin = !!(prof && prof.isAdmin);
+        body.querySelectorAll('.theme-section-nav [data-admin-only]').forEach(el => { el.hidden = !isAdmin; });
+        if (!isAdmin && body.querySelector('.theme-section-panel[data-section="salesAdmin"].active')) showSection(body, 'general');
     }
 
     function openModal() {
