@@ -8261,8 +8261,10 @@ html[data-theme="dark"] .fs-lf-lo { color: #f87171; }
 /* ---------- Точность прогноза (js/forecast-lab.js) ---------- */
 .rp-table td.fl-best { background: color-mix(in srgb, #10b981 12%, var(--surface)) !important; font-weight: 700; }
 .fl-admin { font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--muted-bg, #f1f5f9); color: var(--text-muted); }
-.fc-it-ml { margin-top: 5px; padding-top: 5px; border-top: 1px dashed var(--border); font-size: 0.74rem; color: #6d28d9; }
-html[data-theme="dark"] .fc-it-ml { color: #a78bfa; }
+.fc-it-ml { margin-top: 5px; padding-top: 5px; border-top: 1px dashed var(--border); font-size: 0.76rem; color: var(--text); cursor: help; }
+.fc-it-ml-label { color: #6d28d9; font-weight: 600; }
+html[data-theme="dark"] .fc-it-ml-label { color: #a78bfa; }
+.fc-it-ml-range { color: var(--text-muted); }
 .fl-infl { display: grid; grid-template-columns: minmax(150px, 1fr) 2fr 44px; gap: 8px; align-items: center; padding: 4px 0; font-size: 0.8rem; }
 .fl-infl-label { color: var(--text); }
 .fl-infl-bar { height: 8px; border-radius: 4px; background: var(--muted-bg, #eef2f7); overflow: hidden; }
@@ -8346,5 +8348,3 @@ html[data-theme="dark"] .fl-warn-under { background: #3b1717; color: #fca5a5; }
 html[data-theme="dark"] .fl-warn-over { background: #3a2a0a; color: #fcd34d; }
 html[data-theme="dark"] .fl-warn-fast, html[data-theme="dark"] .fl-warn-slow { background: #1e2250; color: #c7d2fe; }
 .fl-warn-why { font-size: 0.76rem; min-width: 220px; white-space: normal; line-height: 1.35; }
-.fc-it-ml-team { margin-top: 3px; line-height: 1.35; }
-.fc-it-ml-team span { opacity: 0.75; }
