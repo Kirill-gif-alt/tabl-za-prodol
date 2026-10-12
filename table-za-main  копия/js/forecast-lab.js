@@ -81,6 +81,13 @@ window.ForecastLab = (function () {
     const EVAL_WEEKS = 12;          // проверка — на последних неделях
     const DONE_KEY = 'krasavia_fclog_done';
     const DAY = 86400000;
+    const NODES = [30, 21, 14, 10, 7, 5, 3, 1, 0];   // точки цепочки добора (0 — итог вылета)
+    const CHAIN_TAU = 28;           // давность звена: вес e^(−возраст/τ), τ = 28 дней
+    const CHAIN_K = 6;              // сжатие звена рейса к общему: (Σw·v + K·общее)/(Σw + K)
+    const CHAIN_K_DOW = 4;          // сжатие звена «рейс × день недели» к звену рейса
+    const COMMITTEE_ETA = 4;        // «резкость» весов комитета: w ∝ exp(−η·(L/L_min − 1))
+    const COMMITTEE_K = 8;          // сжатие ошибки способа на рейсе к ошибке на всех рейсах
+    const COMMITTEE_TRIM = 2;       // способ с ошибкой > 2× лучшего в комитет не входит
     const CONF_LEVEL = 0.8;         // интервал прогноза: 80% вылетов попадают внутрь (проверено на прошлых неделях)
     const CONF_MIN = 20;            // остатков в «банке», чтобы интервал показывался
 
@@ -398,6 +405,63 @@ window.ForecastLab = (function () {
         return { y: Math.max(o, Math.min(s, Math.round(o + lf * s))), n: use.length };
     }
 
+    // ---------- цепочка добора (advanced pickup, как в RMS авиакомпаний) ----------
+    // Добор от h дней до вылета — сумма «звеньев» между соседними точками 30→21→…→1→итог.
+    // Звено a→b берётся по всем вылетам, у которых точка b уже наступила к моменту T, — и по ещё не улетевшим:
+    // за 30 дней до вылета звено 30→21 известно по вылетам ближайших трёх недель, а не только по улетевшим месяц назад.
+    //   vₓ = (продано_b − продано_a)/s,   вес wₓ = e^(−(T − t_b)/τ)
+    //   ℓ_общ = Σw·v / Σw;   ℓ_рейс = (Σw·v + K·ℓ_общ)/(Σw + K);   ℓ_рейс×дн = (Σw·v + K₂·ℓ_рейс)/(Σw + K₂)
+    //   f̂ = clamp(o + s·Σ ℓ по звеньям от h до итога, o, s)
+    function chainAsOf(T) {
+        const C = context();
+        if (!C.chain) C.chain = new Map();
+        if (C.chain.has(T)) return C.chain.get(T);
+        const L = NODES.length - 1;
+        const mk = () => ({ sw: new Array(L).fill(0), w: new Array(L).fill(0) });
+        const res = { glob: mk(), route: Object.create(null), dow: Object.create(null) };
+        Object.keys(C.byBase).forEach(base => {
+            C.byBase[base].forEach(X => {
+                if (!(X.s > 0) || X.ts - NODES[0] * DAY > T) return;
+                const raw = rawOf(X);
+                if (!(raw.total > 0)) return;
+                const R = res.route[base] || (res.route[base] = mk());
+                const dk = base + '|' + new Date(X.ts).getDay();
+                const D = res.dow[dk] || (res.dow[dk] = mk());
+                for (let i = 0; i < L; i++) {
+                    const a = NODES[i];
+                    const b = NODES[i + 1];
+                    // Итог известен, когда вылет улетел (как и для обучения моделей); точка b — когда наступил день b.
+                    const tb = b === 0 ? X.ts + DAY : X.ts - b * DAY;
+                    if (tb > T) break;
+                    const v = ((b === 0 ? X.sold : at(raw, b)) - at(raw, a)) / X.s;
+                    const w = Math.exp(-(T - tb) / DAY / CHAIN_TAU);
+                    [res.glob, R, D].forEach(A => { A.sw[i] += w * v; A.w[i] += w; });
+                }
+            });
+        });
+        C.chain.set(T, res);
+        if (C.chain.size > 60) C.chain.delete(C.chain.keys().next().value);
+        return res;
+    }
+
+    // Прогноз по цепочке для вылета (base, дата ts) с продажами o за h дней; null — звеньев ещё нет.
+    function chainPredict(T, base, ts, h, o, s) {
+        const idx = NODES.indexOf(h);
+        if (idx < 0 || !(s > 0)) return null;
+        const ch = chainAsOf(T);
+        const R = ch.route[base];
+        const D = ch.dow[base + '|' + new Date(ts).getDay()];
+        let pick = 0;
+        if (!(ch.glob.w[idx] > 0)) return null;
+        for (let i = idx; i < NODES.length - 1; i++) {
+            if (!(ch.glob.w[i] > 0)) continue;   // звена ещё не видно ни по одному вылету — добора по нему не ждём (как «продано на сейчас»)
+            const g = ch.glob.sw[i] / ch.glob.w[i];
+            const r = R ? (R.sw[i] + CHAIN_K * g) / (R.w[i] + CHAIN_K) : g;
+            pick += D ? (D.sw[i] + CHAIN_K_DOW * r) / (D.w[i] + CHAIN_K_DOW) : r;
+        }
+        return Math.max(o, Math.min(s, Math.round(o + pick * s)));
+    }
+
     // ---------- календарь и рейс ----------
 
     let calMemo = new Map();
@@ -706,7 +770,7 @@ window.ForecastLab = (function () {
     }
 
     const METHOD_LABEL = {
-        ens: 'модель', gbm: 'модель (деревья)', lin: 'модель (линейная)', planOr: 'файл ожидаемой загрузки',
+        blend: 'комитет моделей', chain: 'цепочка добора', ens: 'модель', gbm: 'модель (деревья)', lin: 'модель (линейная)', planOr: 'файл ожидаемой загрузки',
         planPick: 'продано + добор по файлу', hist: 'по тем же дням недели', pool: 'средний добор всех рейсов', naive: 'продано на сейчас'
     };
 
@@ -727,11 +791,22 @@ window.ForecastLab = (function () {
         if (!r || !h) return null;
         const pick = ev.choice[h + '|' + segOf(r)] || ev.choice[h];
         if (!pick) return null;
-        let final = null;
-        if (pick.k === 'ens' || pick.k === 'gbm' || pick.k === 'lin') {
-            if (!models) return null;
-            final = predictAll(models, { base, date, ts: dep.ts, h, s: r.s, r })[pick.k];
-        } else final = simple(pick.k, r, r.s, ev.pool, h);
+        // Все способы на сейчас — для комитета и для показа, кто на этом рейсе весит больше.
+        const T = dep.ts - d * DAY;
+        const ml = models ? predictAll(models, { base, date, ts: dep.ts, h, s: r.s, r }) : null;
+        const one = (k) => {
+            if (k === 'ens' || k === 'gbm' || k === 'lin') return ml ? ml[k] : null;
+            if (k === 'chain') return chainPredict(T, base, dep.ts, h, r.o, r.s);
+            return simple(k, r, r.s, ev.pool, h);
+        };
+        const vals = {};
+        expertsFor(h).forEach(k => { const v = one(k); if (v != null) vals[k] = v; });
+        if (!Object.keys(vals).length) vals.naive = r.o;
+        const weights = committeeWeights(ev.committee, base, h, r, vals);
+        let final = pick.k === 'blend' ? committeeBlend(weights, vals, r.o, r.s) : one(pick.k);
+        if ((pick.k === 'ens' || pick.k === 'gbm' || pick.k === 'lin') && !models) return null;
+        const team = weights ? Object.keys(weights).sort((a, b) => weights[b] - weights[a])
+            .map(k => ({ k, label: METHOD_LABEL[k], w: Math.round(weights[k] * 100), v: vals[k] })).filter(x => x.w >= 1) : [];
         // Интервал 80%: [f̂ + q_lo·s, f̂ + q_hi·s], снизу 0 (неявки и возвраты бывают), сверху — кресла.
         let lo = null;
         let hi = null;
@@ -741,7 +816,7 @@ window.ForecastLab = (function () {
             hi = Math.max(final, Math.min(Math.max(r.s, r.o), Math.ceil(final + c.hi * r.s)));
         }
         if (final == null) final = r.o;
-        return { final, lo, hi, cover: lo != null ? Math.round(CONF_LEVEL * 100) : null, seats: r.s, lf: Math.round(final / r.s * 100), method: METHOD_LABEL[pick.k], err: Math.round(pick.v * 10) / 10, trainedOn: pick.n, h };
+        return { final, lo, hi, team, cover: lo != null ? Math.round(CONF_LEVEL * 100) : null, seats: r.s, lf: Math.round(final / r.s * 100), method: METHOD_LABEL[pick.k], err: Math.round(pick.v * 10) / 10, trainedOn: pick.n, h };
     }
 
     // ---------- запись журнала ----------
@@ -883,6 +958,71 @@ window.ForecastLab = (function () {
         try { localStorage.setItem(CHOICE_KEY, JSON.stringify(out)); } catch (e) { /* ignore */ }
     }
 
+    // ---------- комитет моделей ----------
+    // Все способы работают одновременно; вес каждого — по его честным ошибкам на этом рейсе (вылеты, улетевшие
+    // до момента прогноза), сжатым к ошибке на всех рейсах того же типа (горизонт 1–3 / 5–10 / 14–30 × сегмент):
+    //   L_общ,k = (Σ|eₖ| + K·L₀)/(n + K),   L_рейс,k = (Σ|eₖ| на рейсе + K·L_общ,k)/(n_рейс + K),   e = (f̂ − f)/s
+    //   wₖ ∝ exp(−η·(Lₖ/L_min − 1)),  способы с Lₖ > 2·L_min не входят;  f̂ = Σ wₖ·f̂ₖ / Σ wₖ
+    // Нет прогноза у какого-то способа (нет файла, мало данных) — его вес делят остальные: они «страхуют».
+    // Пока ошибок мало, веса почти равные (L₀ одинаковое для всех); с каждым улетевшим вылетом лучший на рейсе весит больше.
+    const EXPERTS = ['planPick', 'planOr', 'hist', 'pool', 'chain', 'lin', 'gbm', 'naive'];
+
+    function expertsFor(h) {
+        return h <= 3 ? EXPERTS : EXPERTS.filter(k => k !== 'naive');   // «ничего больше не продадут» — только у самого вылета
+    }
+
+    function committeeKey(h, r) {
+        return groupOf(h).id + '|' + segOf(r);
+    }
+
+    function committeeAdd(st, base, h, r, s, f, vals) {
+        const gk = committeeKey(h, r);
+        const G = st.g[gk] || (st.g[gk] = {});
+        const B = st.bg[base + '|' + gk] || (st.bg[base + '|' + gk] = {});
+        Object.keys(vals).forEach(k => {
+            const e = Math.abs(vals[k] - f) / s;
+            (G[k] || (G[k] = [0, 0]));
+            (B[k] || (B[k] = [0, 0]));
+            G[k][0] += e; G[k][1]++;
+            B[k][0] += e; B[k][1]++;
+        });
+    }
+
+    // Веса способов для вылета: { k: w }, сумма 1.
+    function committeeWeights(st, base, h, r, vals) {
+        const ks = Object.keys(vals);
+        if (!ks.length) return null;
+        const gk = committeeKey(h, r);
+        const G = (st && st.g[gk]) || {};
+        const B = (st && st.bg[base + '|' + gk]) || {};
+        const seen = ks.filter(k => G[k] && G[k][1] > 0);
+        const L0 = seen.length ? seen.reduce((a, k) => a + G[k][0] / G[k][1], 0) / seen.length : 0.1;
+        const L = {};
+        ks.forEach(k => {
+            const g = G[k] || [0, 0];
+            const b = B[k] || [0, 0];
+            const lg = (g[0] + COMMITTEE_K * L0) / (g[1] + COMMITTEE_K);
+            L[k] = (b[0] + COMMITTEE_K * lg) / (b[1] + COMMITTEE_K);
+        });
+        const lmin = Math.max(1e-4, Math.min(...ks.map(k => L[k])));
+        const w = {};
+        let sum = 0;
+        ks.forEach(k => {
+            if (L[k] > COMMITTEE_TRIM * lmin) return;
+            w[k] = Math.exp(-COMMITTEE_ETA * (L[k] / lmin - 1));
+            sum += w[k];
+        });
+        Object.keys(w).forEach(k => { w[k] /= sum; });
+        return w;
+    }
+
+    function committeeBlend(w, vals, o, s) {
+        if (!w) return null;
+        let v = 0;
+        Object.keys(w).forEach(k => { v += w[k] * vals[k]; });
+        return Math.max(o, Math.min(s, Math.round(v)));
+    }
+
     // Интервал прогноза (сплит-конформный, несимметричный). Для способа k, выбранного на горизонте h для сегмента,
     // «банк» честных остатков в долях кресел rᵢ = (fᵢ − f̂ₖᵢ)/sᵢ — только из проверки на прошлых неделях.
     // Границы — порядковые статистики: q_lo = r₍⌊(n+1)·0,1⌋₎, q_hi = r₍⌈(n+1)·0,9⌉₎ — гарантия покрытия ≥ 80% и при малом n.
@@ -946,8 +1086,36 @@ window.ForecastLab = (function () {
             if (m) list.forEach(x => pred.set(x, predictAll(m, x)));
             await pause();
         }
-        const kinds = ['naive', 'pool', 'plan', 'planOr', 'planPick', 'hist', 'lin', 'gbm', 'ens'];
-        const val = (k, x) => (k === 'lin' || k === 'gbm' || k === 'ens' ? (pred.has(x) ? pred.get(x)[k] : null) : simple(k, x.r, x.s, pools.get(x), x.h));
+        // Цепочка добора — на момент недели прогноза.
+        const cutOf = x => weekOf(x.ts - x.h * DAY);
+        const chainPred = new Map();
+        test.forEach(x => { const v = chainPredict(cutOf(x), x.base, x.ts, x.h, x.r.o, x.s); if (v != null) chainPred.set(x, v); });
+        const base0 = (k, x) => (k === 'lin' || k === 'gbm' || k === 'ens' ? (pred.has(x) ? pred.get(x)[k] : null)
+            : (k === 'chain' ? (chainPred.has(x) ? chainPred.get(x) : null) : simple(k, x.r, x.s, pools.get(x), x.h)));
+        const expertVals = x => {
+            const out = {};
+            expertsFor(x.h).forEach(k => { const v = base0(k, x); if (v != null) out[k] = v; });
+            if (!Object.keys(out).length) out.naive = x.r.o;   // последняя страховка — «продано на сейчас»
+            return out;
+        };
+        // Комитет: веса — только по вылетам, улетевшим до недели прогноза (по возрастанию недель).
+        const blendPred = new Map();
+        const committee = { g: {}, bg: {} };
+        let ptr = 0;
+        for (const cut of [...byCut.keys()].sort((a, b) => a - b)) {
+            while (ptr < test.length && test[ptr].ts + DAY <= cut) {
+                const y = test[ptr++];
+                committeeAdd(committee, y.base, y.h, y.r, y.s, y.f, expertVals(y));
+            }
+            byCut.get(cut).forEach(x => {
+                const vals = expertVals(x);
+                const v = committeeBlend(committeeWeights(committee, x.base, x.h, x.r, vals), vals, x.r.o, x.s);
+                if (v != null) blendPred.set(x, v);
+            });
+        }
+        while (ptr < test.length) { const y = test[ptr++]; committeeAdd(committee, y.base, y.h, y.r, y.s, y.f, expertVals(y)); }
+        const kinds = ['naive', 'pool', 'plan', 'planOr', 'planPick', 'hist', 'chain', 'lin', 'gbm', 'ens', 'blend'];
+        const val = (k, x) => (k === 'blend' ? (blendPred.has(x) ? blendPred.get(x) : null) : base0(k, x));
         const err = (k, x) => { const v = val(k, x); return v == null ? null : Math.abs(v - x.f); };
         const stat = (k, list) => {
             const c = { sum: 0, bias: 0, n: 0 };
@@ -969,7 +1137,7 @@ window.ForecastLab = (function () {
         const decide = (key, list) => {
             const withModel = list.filter(x => pred.has(x));
             const base = withModel.length >= MIN_CHOICE_SEG ? withModel : list;
-            const cands = (withModel.length >= MIN_CHOICE_SEG ? ['ens', 'gbm', 'lin'] : []).concat(['planOr', 'planPick', 'hist', 'pool', 'naive']);
+            const cands = (withModel.length >= MIN_CHOICE_SEG ? ['ens', 'gbm', 'lin'] : []).concat(['blend', 'chain', 'planOr', 'planPick', 'hist', 'pool', 'naive']);
             const scored = cands.map(k => {
                 const e = base.map(x => err(k, x)).filter(v => v != null);
                 return { k, n: e.length, v: e.length ? e.reduce((a, b) => a + b, 0) / e.length : Infinity };
@@ -1045,7 +1213,7 @@ window.ForecastLab = (function () {
         }
         const segCount = { plan: 0, hist: 0, none: 0 };
         test.forEach(x => { if (x.h === 7) segCount[segOf(x.r)]++; });
-        return { full, pool: poolOf(all), byH, byWeek, byBase, choice, conf, influence, segCount, samples: all.length, departures: new Set(all.map(x => x.key)).size, trained: !!full, anyModel };
+        return { full, pool: poolOf(all), committee, byH, byWeek, byBase, choice, conf, influence, segCount, samples: all.length, departures: new Set(all.map(x => x.key)).size, trained: !!full, anyModel };
     }
 
     // Один расчёт за раз; все, кто ждал, получают результат (и при ошибке). Устаревший расчёт не применяется.
