@@ -7,6 +7,7 @@ window.ProfileAuth = (function () {
     const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
     const PBKDF2_ITERATIONS = 120_000;
 
+    // Права профиля. label — коротко, hint — что именно даёт (видно в «Управлении профилями» под названием).
     const PERMISSIONS = {
         tab_today: { label: 'Сегодня', group: 'Вкладки' },
         tab_main: { label: 'Графический план', group: 'Вкладки' },
@@ -19,33 +20,52 @@ window.ProfileAuth = (function () {
         tab_sales: { label: 'Управление продажами', group: 'Вкладки' },
         tab_creative: { label: 'Творческая', group: 'Вкладки' },
         tab_reports: { label: 'Отчёты', group: 'Вкладки' },
-        load_data: { label: 'Загрузка данных', group: 'Данные' },
-        share_data: { label: 'Публикация данных для всех', group: 'Данные' },
-        export_excel: { label: 'Экспорт Excel', group: 'Данные' },
-        sales_detail: { label: 'Детализация продаж', group: 'Данные' },
-        edit_subsidy: { label: 'Правка субсидии', group: 'Данные' },
-        edit_sales_mgmt: { label: 'Изменение таблицы управления продажами', group: 'Данные' },
-        view_fare_refs: { label: 'Тарифы субсидии — видеть (без галочки раздел и суммы пределов скрыты)', group: 'Справочник' },
+        tab_stats: { label: 'Статистика', group: 'Вкладки', hint: 'журнал действий сотрудников' },
+        load_data: { label: 'Загрузка данных', group: 'Данные', hint: 'кнопка «Загрузить»: файлы загрузки рейсов и продаж' },
+        share_data: { label: 'Публикация данных для всех', group: 'Данные', hint: 'загруженные данные видят все; архив продаж, журнал прогноза, история продаж' },
+        export_excel: { label: 'Выгрузки в Excel', group: 'Данные' },
+        sales_detail: { label: 'Детализация продаж', group: 'Данные', hint: 'продажи рейса по дням, тарифы и брони' },
+        edit_subsidy: { label: 'Правка субсидии', group: 'Данные', hint: 'отметки субсидии в таблицах' },
+        edit_sales_mgmt: { label: 'Управление продажами — менять', group: 'Данные', hint: 'отметки решений ▲▼ и ячейки таблицы' },
+        view_fare_refs: { label: 'Тарифы субсидии — видеть', group: 'Справочник', hint: 'без права раздел и суммы пределов скрыты' },
         edit_fare_refs: { label: 'Тарифы субсидии — менять', group: 'Справочник' },
         view_subsidy_ref: { label: 'Периоды, суммы субсидии и себестоимость — видеть', group: 'Справочник' },
         edit_subsidy_ref: { label: 'Периоды, суммы субсидии и себестоимость — менять', group: 'Справочник' },
         view_pkz_nav: { label: 'ПКЗ из NAV — видеть', group: 'Справочник' },
-        edit_pkz_nav: { label: 'ПКЗ из NAV — менять (и в таблице ПКЗ)', group: 'Справочник' },
-        edit_flights: { label: 'Справочник рейсов — добавлять и менять рейсы (видят все)', group: 'Справочник' },
-        edit_calendar: { label: 'Календарь событий (праздники, каникулы) — менять; видят все', group: 'Справочник' },
+        edit_pkz_nav: { label: 'ПКЗ из NAV — менять', group: 'Справочник', hint: 'и в таблице ПКЗ' },
+        edit_flights: { label: 'Справочник рейсов — менять', group: 'Справочник', hint: 'видят все' },
+        edit_calendar: { label: 'Календарь событий — менять', group: 'Справочник', hint: 'праздники, каникулы; видят все' },
+        view_forecast: { label: 'Прогноз загрузки и предупреждения', group: 'Отчёты', hint: 'отчёт «Прогноз и предупреждения», строка «Модель» в карточке рейса' },
         manage_profiles: { label: 'Управление профилями', group: 'Админ' }
+    };
+
+    // Справочник в редакторе профиля — строкой «видеть / менять».
+    const REF_PAIRS = [
+        { label: 'Тарифы субсидии', view: 'view_fare_refs', edit: 'edit_fare_refs', hint: 'без «видеть» раздел и суммы пределов скрыты' },
+        { label: 'Периоды, суммы субсидии и себестоимость', view: 'view_subsidy_ref', edit: 'edit_subsidy_ref' },
+        { label: 'ПКЗ из NAV', view: 'view_pkz_nav', edit: 'edit_pkz_nav', hint: '«менять» — и в таблице ПКЗ' },
+        { label: 'Справочник рейсов', view: null, edit: 'edit_flights', hint: 'видят все' },
+        { label: 'Календарь событий', view: null, edit: 'edit_calendar', hint: 'праздники и каникулы; видят все' }
+    ];
+
+    // Шаблоны доступа: быстро отметить типичный набор прав (потом можно поправить).
+    const TEMPLATES = {
+        view: { label: 'Только просмотр', perms: ['tab_main', 'tab_table', 'tab_rms', 'tab_reports', 'export_excel'] },
+        sales: { label: 'Продажи', perms: ['tab_today', 'tab_main', 'tab_table', 'tab_rms', 'tab_sales', 'tab_reports', 'export_excel', 'sales_detail', 'edit_sales_mgmt'] },
+        econ: { label: 'Экономика', perms: ['tab_main', 'tab_table', 'tab_pkz', 'tab_pair', 'tab_costs', 'tab_reports', 'export_excel', 'view_fare_refs', 'view_subsidy_ref', 'view_pkz_nav'] },
+        all: { label: 'Всё, кроме профилей', perms: null }
     };
 
     // Функции, которые админ включает и выключает каждому профилю (и себе) в «Управлении профилями».
     // def — значение, пока админ ничего не менял. Хранятся в profile.features.
     const FEATURES = {
-        flight_checks: { label: 'Проверка рейсов (детский −50% и тариф выше субсидированного на субсидированных рейсах): «!», счётчик в шапке, раздел в «Отчётах»', def: true },
-        subsidy_mode: { label: 'Метки «С» (субсидия) / «К» (коммерция) у дат вылета на Графплане, в «Динамике продаж» и RMS', def: true },
-        flight_card: { label: 'Карточка рейса: клик по рейсу на Графплане, в RMS и «Загрузке рейсов» открывает панель с графиком и отметкой', def: 'admin' },
-        header_kpi: { label: 'Продажи и выручка за сегодня в шапке', def: true },
-        morning_summary: { label: 'Утренняя сводка при входе и значок «☀ N» в шапке: вылеты на 20 дней, ждущие решения, ошибки тарифов, пропуски справочника', def: 'admin' },
+        flight_checks: { label: 'Проверка рейсов', hint: 'детский −50% и тариф выше субсидированного: «!», счётчик в шапке, раздел в «Отчётах»', def: true },
+        subsidy_mode: { label: 'Метки «С» / «К» у дат вылета', hint: 'субсидия или коммерция — на Графплане, в «Динамике продаж» и RMS', def: true },
+        flight_card: { label: 'Карточка рейса', hint: 'клик по рейсу открывает панель с графиком, прогнозом и отметкой решения', def: 'admin' },
+        header_kpi: { label: 'Продажи за сегодня в шапке', hint: 'билеты и выручка', def: true },
+        morning_summary: { label: 'Утренняя сводка', hint: 'при входе и значок «☀ N»: вылеты на 20 дней, решения, ошибки тарифов, пропуски справочника', def: 'admin' },
         rms_header_alerts: { label: 'Счётчик сигналов RMS «⚠» в шапке', def: true },
-        live_flights: { label: 'Самолёты онлайн на карте «Сеть» (Flightradar)', def: true }
+        live_flights: { label: 'Самолёты онлайн', hint: 'на карте «Сеть» (Flightradar)', def: true }
     };
 
     function normalizeFeatures(src) {
@@ -451,33 +471,28 @@ window.ProfileAuth = (function () {
         return id;
     }
 
-    function buildPermGroupsHtml() {
-        const groups = {};
-        Object.entries(PERMISSIONS).forEach(([key, meta]) => {
-            if (meta.group === 'Админ') return;
-            if (!groups[meta.group]) groups[meta.group] = [];
-            groups[meta.group].push({ key, label: meta.label });
-        });
-        return groups;
+    // Права в редакторе профиля: вкладки — плитками, данные — переключателями, справочник — «видеть / менять».
+    // Каждое право — обычный checkbox с data-profile и data-perm: их читает сохранение и создание профиля.
+    function permInput(profileId, key, perms, prefix) {
+        return `<input type="checkbox" class="${prefix}profile-perm-cb" data-profile="${escAttr(profileId)}" data-perm="${key}" ${perms.includes(key) ? 'checked' : ''}>`;
     }
 
     function renderPermCheckboxes(profileId, permissions, prefix = '') {
-        const groups = buildPermGroupsHtml();
         const perms = permissions || [];
-        return Object.entries(groups).map(([group, items]) => `
-            <div class="profile-perm-group">
-                <div class="profile-perm-group-title">${group}</div>
-                <div class="profile-perm-grid">
-                    ${items.map(it => {
-                        const checked = perms.includes(it.key) ? 'checked' : '';
-                        return `<label class="profile-perm-item">
-                            <input type="checkbox" class="${prefix}profile-perm-cb" data-profile="${profileId}" data-perm="${it.key}" ${checked}>
-                            <span>${it.label}</span>
-                        </label>`;
-                    }).join('')}
-                </div>
-            </div>
-        `).join('');
+        const keysOf = (group) => Object.keys(PERMISSIONS).filter(k => PERMISSIONS[k].group === group);
+        const tabs = keysOf('Вкладки').map(k => `<label class="pa-chip">${permInput(profileId, k, perms, prefix)}<span>${PERMISSIONS[k].label}</span></label>`).join('');
+        const sw = (k) => switchRow(permInput(profileId, k, perms, prefix), PERMISSIONS[k].label, PERMISSIONS[k].hint || '');
+        const refs = REF_PAIRS.map(r => `<div class="pa-ref-row" data-pa-ref>
+                <span class="pa-switch-text"><span class="pa-switch-label">${r.label}</span>${r.hint ? `<span class="pa-switch-hint">${r.hint}</span>` : ''}</span>
+                <label class="pa-ref-opt${r.view ? '' : ' pa-ref-na'}">${r.view ? permInput(profileId, r.view, perms, prefix) + '<span>видеть</span>' : '<span>видят все</span>'}</label>
+                <label class="pa-ref-opt">${permInput(profileId, r.edit, perms, prefix)}<span>менять</span></label>
+            </div>`).join('');
+        return paCard('Шаблон доступа', 'отметит типичный набор прав — потом можно поправить',
+                `<div class="pa-templates">${Object.entries(TEMPLATES).map(([id, t]) => `<button type="button" class="pa-template" data-pa-template="${id}" data-pa-target="${escAttr(profileId)}">${t.label}</button>`).join('')}</div>`)
+            + paCard('Вкладки', 'какие вкладки видит сотрудник', `<div class="pa-chips">${tabs}</div>`)
+            + paCard('Данные и действия', '', `<div class="pa-switch-list">${keysOf('Данные').map(sw).join('')}</div>`)
+            + paCard('Справочник', '«менять» включает и «видеть»', `<div class="pa-ref-list">${refs}</div>`)
+            + paCard('Отчёты и прогноз', '', `<div class="pa-switch-list">${keysOf('Отчёты').map(sw).join('')}</div>`);
     }
 
     function hasPermission(perm) {
@@ -500,27 +515,29 @@ window.ProfileAuth = (function () {
         return !!profile.isAdmin;
     }
 
+    // Строка-переключатель: название, пояснение и сам переключатель (обычный checkbox — его читает сохранение).
+    function switchRow(inputHtml, label, hint) {
+        return `<label class="pa-switch-row">
+            <span class="pa-switch-text"><span class="pa-switch-label">${label}</span>${hint ? `<span class="pa-switch-hint">${hint}</span>` : ''}</span>
+            <span class="pa-switch">${inputHtml}<span class="pa-switch-ui" aria-hidden="true"></span></span>
+        </label>`;
+    }
+
     function featuresBlockHtml(profileId, profile) {
-        const rows = Object.entries(FEATURES).map(([key, meta]) => {
-            const on = resolveFeature(profile, key) ? 'checked' : '';
-            return `<label class="profile-perm-item">
-                <input type="checkbox" class="profile-feature-cb" data-profile-feature="${escAttr(profileId)}" data-feature="${key}" ${on}>
-                <span>${meta.label}</span>
-            </label>`;
-        }).join('');
-        // Карта и виджеты — прежние флаги профиля (те же классы, что читает сохранение), в общем списке.
+        const id = escAttr(profileId);
         const homeOn = resolveShowHomeMap(profile) ? 'checked' : '';
-        return `
-            <div class="profile-perm-group profile-features">
-                <div class="profile-perm-group-title">Функции</div>
-                <div class="profile-perm-grid">
-                    <label class="profile-perm-item">
-                        <input type="checkbox" class="profile-home-map-cb" data-home-map="${escAttr(profileId)}" ${homeOn}>
-                        <span>Главная страница (карта сети) при входе</span>
-                    </label>
-                    ${rows}
-                </div>
-            </div>`;
+        const rows = [switchRow(`<input type="checkbox" class="profile-home-map-cb" data-home-map="${id}" ${homeOn}>`, 'Главная страница при входе', 'карта сети')]
+            .concat(Object.entries(FEATURES).map(([key, meta]) => switchRow(
+                `<input type="checkbox" class="profile-feature-cb" data-profile-feature="${id}" data-feature="${key}" ${resolveFeature(profile, key) ? 'checked' : ''}>`,
+                meta.label, meta.hint || '')));
+        return paCard('Функции на экране', 'что показывается сотруднику в шапке и на вкладках', `<div class="pa-switch-list">${rows.join('')}</div>`);
+    }
+
+    function paCard(title, hint, body, extraCls) {
+        return `<section class="pa-card${extraCls ? ' ' + extraCls : ''}">
+            <div class="pa-card-head"><h5 class="pa-card-title">${title}</h5>${hint ? `<span class="pa-card-hint">${hint}</span>` : ''}</div>
+            ${body}
+        </section>`;
     }
 
     function readFeatureBoxes(profileId) {
@@ -533,7 +550,7 @@ window.ProfileAuth = (function () {
 
     function canAccessTab(tab) {
         if (tab === 'home') return resolveShowHomeMap(currentProfile);
-        if (tab === 'stats') return !!(currentProfile?.isAdmin);
+        if (tab === 'stats') return hasPermission('tab_stats');
         const perm = TAB_PERM[tab];
         if (!perm) return false;
         if (hasPermission(perm)) return true;
@@ -674,7 +691,7 @@ window.ProfileAuth = (function () {
         }
         const statsTab = document.getElementById('tab-stats');
         if (statsTab) {
-            statsTab.style.display = currentProfile?.isAdmin ? '' : 'none';
+            statsTab.style.display = canAccessTab('stats') ? '' : 'none';
         }
         const homeTab = document.getElementById('tab-home');
         if (homeTab) {
@@ -798,67 +815,110 @@ window.ProfileAuth = (function () {
         }
     }
 
+    let paSelected = 'admin';
+
+    function initialOf(name) {
+        return String(name || '?').trim().slice(0, 1).toUpperCase() || '?';
+    }
+
+    // «5 вкладок · 3 права» — для списка профилей.
+    function permSummary(p) {
+        if (p.isAdmin) return 'полный доступ';
+        const perms = p.permissions || [];
+        const tabs = perms.filter(k => PERMISSIONS[k] && PERMISSIONS[k].group === 'Вкладки').length;
+        const other = perms.filter(k => PERMISSIONS[k] && PERMISSIONS[k].group !== 'Вкладки').length;
+        const pl = (n, a, b, c) => { const m10 = n % 10; const m100 = n % 100; return m10 === 1 && m100 !== 11 ? a : (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? b : c); };
+        return `${tabs} ${pl(tabs, 'вкладка', 'вкладки', 'вкладок')} · ${other} ${pl(other, 'право', 'права', 'прав')}`;
+    }
+
+    function editorHtml(p) {
+        const isAdminProfile = p.id === 'admin';
+        const head = `<header class="pa-head">
+                <span class="pa-avatar pa-avatar-lg${p.isAdmin ? ' pa-avatar-admin' : ''}">${escAttr(initialOf(p.name))}</span>
+                <div class="pa-head-text">
+                    <h4 class="pa-head-name">${escAttr(p.name)}${p.isAdmin ? ' <span class="profile-admin-star">★ Админ</span>' : ''}</h4>
+                    <div class="pa-head-sub">ID: ${escAttr(p.id)} · <span data-pa-summary="${escAttr(p.id)}">${permSummary(p)}</span></div>
+                </div>
+                ${isAdminProfile ? '' : `<button type="button" class="profile-delete-btn" data-delete-profile="${escAttr(p.id)}">Удалить профиль</button>`}
+            </header>`;
+        const basics = paCard('Основное', '', `<div class="profile-admin-fields">
+                <label class="profile-field"><span>Имя (видно в шапке и в отметках решений)</span>
+                    <input type="text" class="profile-name-input" data-profile="${escAttr(p.id)}" value="${escAttr(p.name)}"></label>
+                <label class="profile-field"><span>Новый пароль — если нужно сбросить</span>
+                    <input type="password" class="profile-pass-input" data-profile="${escAttr(p.id)}" placeholder="оставьте пустым, чтобы не менять" autocomplete="new-password"></label>
+            </div>`);
+        const perms = isAdminProfile
+            ? paCard('Доступ', '', '<p class="profile-admin-note">Администратор видит всё, создаёт профили и меняет права других.</p>')
+            : renderPermCheckboxes(p.id, p.permissions);
+        return `<div class="pa-editor" data-pa-editor="${escAttr(p.id)}"${p.id === paSelected ? '' : ' hidden'}>${head}${basics}${perms}${featuresBlockHtml(p.id, p)}</div>`;
+    }
+
+    function newEditorHtml() {
+        const basics = paCard('Новый профиль', 'имя и пароль для входа', `<div class="profile-admin-fields">
+                <label class="profile-field"><span>Имя</span>
+                    <input type="text" id="profile-create-name" class="profile-create-input" placeholder="Например, Иванов И.И."></label>
+                <label class="profile-field"><span>Пароль (минимум ${minPasswordLenAdminReset()} символа)</span>
+                    <input type="password" id="profile-create-pass" class="profile-create-input" placeholder="Пароль" autocomplete="new-password"></label>
+            </div>`);
+        return `<div class="pa-editor pa-editor-new" data-pa-editor="__new__"${paSelected === '__new__' ? '' : ' hidden'}>
+            ${basics}
+            ${renderPermCheckboxes('__new__', ['tab_main', 'tab_sales'], 'profile-create-')}
+            ${featuresBlockHtml('__new__', { showHomeMap: false, showScreenWidgets: false })}
+            <div class="pa-create-bar">
+                <p id="profile-create-error" class="profile-create-error"></p>
+                <button type="button" id="profile-admin-create" class="btn-primary profile-create-btn">Создать профиль</button>
+            </div>
+        </div>`;
+    }
+
     function renderAdminPanel() {
         const body = document.getElementById('profile-admin-body');
         if (!body) return;
+        if (paSelected !== '__new__' && !profilesCache.some(p => p.id === paSelected)) paSelected = 'admin';
+        const list = profilesCache.map(p => `
+            <button type="button" class="pa-item${p.id === paSelected ? ' active' : ''}" data-pa-select="${escAttr(p.id)}" data-pa-name="${escAttr(String(p.name || '').toLowerCase())}">
+                <span class="pa-avatar${p.isAdmin ? ' pa-avatar-admin' : ''}">${escAttr(initialOf(p.name))}</span>
+                <span class="pa-item-text"><span class="pa-item-name">${escAttr(p.name)}</span><span class="pa-item-sub" data-pa-summary="${escAttr(p.id)}">${permSummary(p)}</span></span>
+            </button>`).join('');
+        document.getElementById('profile-admin-modal')?.classList.toggle('pa-creating', paSelected === '__new__');
+        body.innerHTML = `<div class="pa-layout">
+            <aside class="pa-side">
+                <button type="button" class="pa-new${paSelected === '__new__' ? ' active' : ''}" data-pa-select="__new__">＋ Новый профиль</button>
+                ${profilesCache.length > 6 ? '<input type="search" class="pa-search" placeholder="Найти профиль" aria-label="Найти профиль">' : ''}
+                <div class="pa-list">${list}</div>
+                <p class="pa-side-note">Изменения прав сохраняются кнопкой «Сохранить изменения» внизу — сразу для всех профилей.</p>
+            </aside>
+            <div class="pa-main">${newEditorHtml()}${profilesCache.map(editorHtml).join('')}</div>
+        </div>`;
+    }
 
-        const createSection = `
-            <div class="profile-create-card">
-                <div class="profile-create-head">
-                    <h4 class="profile-create-title">+ Новый профиль</h4>
-                </div>
-                <div class="profile-admin-fields">
-                    <label class="profile-field">
-                        <span>Имя профиля</span>
-                        <input type="text" id="profile-create-name" class="profile-create-input" placeholder="Имя">
-                    </label>
-                    <label class="profile-field">
-                        <span>Пароль</span>
-                        <input type="password" id="profile-create-pass" class="profile-create-input" placeholder="Пароль" autocomplete="new-password">
-                    </label>
-                </div>
-                <div class="profile-perms-wrap profile-create-perms">
-                    ${renderPermCheckboxes('__new__', ['tab_main', 'tab_sales'], 'profile-create-')}
-                    ${featuresBlockHtml('__new__', { showHomeMap: false, showScreenWidgets: false })}
-                </div>
-                <p id="profile-create-error" class="profile-create-error"></p>
-                <button type="button" id="profile-admin-create" class="profile-create-btn">Создать профиль</button>
-            </div>
-        `;
+    function selectProfileEditor(id) {
+        paSelected = id;
+        const body = document.getElementById('profile-admin-body');
+        if (!body) return;
+        body.querySelectorAll('[data-pa-editor]').forEach(el => { el.hidden = el.dataset.paEditor !== id; });
+        body.querySelectorAll('[data-pa-select]').forEach(el => el.classList.toggle('active', el.dataset.paSelect === id));
+        const main = body.querySelector('.pa-main');
+        if (main) main.scrollTop = 0;
+        document.getElementById('profile-admin-modal')?.classList.toggle('pa-creating', id === '__new__');
+        if (id === '__new__') setTimeout(() => document.getElementById('profile-create-name')?.focus(), 0);
+    }
 
-        const cardsHtml = profilesCache.map(p => {
-            const isAdminProfile = p.id === 'admin';
-            const permHtml = isAdminProfile ? '' : renderPermCheckboxes(p.id, p.permissions);
+    function applyTemplate(id, target) {
+        const t = TEMPLATES[id];
+        const editor = document.querySelector(`[data-pa-editor="${CSS.escape(target)}"]`);
+        if (!t || !editor) return;
+        const set = new Set(t.perms || Object.keys(PERMISSIONS).filter(k => k !== 'manage_profiles'));
+        editor.querySelectorAll('input[data-perm]').forEach(cb => { cb.checked = set.has(cb.dataset.perm); });
+        refreshSummary(target);
+    }
 
-            return `
-                <div class="profile-admin-card" data-profile-id="${p.id}">
-                    <div class="profile-admin-card-head">
-                        <div>
-                            <div class="profile-admin-card-title">${escAttr(p.name)}${p.isAdmin ? ' <span class="profile-admin-star">★ Админ</span>' : ''}</div>
-                            <div class="profile-admin-card-id">ID: ${p.id}</div>
-                        </div>
-                        ${isAdminProfile ? '' : `<button type="button" class="profile-delete-btn" data-delete-profile="${p.id}">Удалить</button>`}
-                    </div>
-                    <div class="profile-admin-fields">
-                        <label class="profile-field">
-                            <span>Отображаемое имя</span>
-                            <input type="text" class="profile-name-input" data-profile="${p.id}" value="${escAttr(p.name)}">
-                        </label>
-                        <label class="profile-field">
-                            <span>Новый пароль (сброс админом)</span>
-                            <input type="password" class="profile-pass-input" data-profile="${p.id}" placeholder="Новый пароль" autocomplete="new-password">
-                        </label>
-                    </div>
-                    <div class="profile-perms-wrap">${isAdminProfile
-                        ? `<p class="profile-admin-note">Администратор имеет полный доступ, может создавать профили и редактировать права других.</p>`
-                        : permHtml}
-                        ${featuresBlockHtml(p.id, p)}
-                    </div>
-                </div>
-            `;
-        }).join('');
-
-        body.innerHTML = createSection + cardsHtml;
+    function refreshSummary(id) {
+        const editor = document.querySelector(`[data-pa-editor="${CSS.escape(id)}"]`);
+        if (!editor || id === '__new__') return;
+        const perms = [...editor.querySelectorAll('input[data-perm]')].filter(cb => cb.checked).map(cb => cb.dataset.perm);
+        const text = permSummary({ permissions: perms });
+        document.querySelectorAll(`[data-pa-summary="${CSS.escape(id)}"]`).forEach(el => { el.textContent = text; });
     }
 
     async function createProfile(name, password, permissions, showHomeMap, showScreenWidgets, features) {
@@ -882,7 +942,9 @@ window.ProfileAuth = (function () {
             hashVer: cred.hashVer || 2,
             showHomeMap: !!showHomeMap,
             showScreenWidgets: !!showScreenWidgets,
-            features: normalizeFeatures(features)
+            features: normalizeFeatures(features),
+            // Разовая миграция «Управления продажами» к новому профилю не относится: иначе снятая вкладка вернётся при входе.
+            salesPermMigrated: true
         };
         profilesCache.push(profile);
         await saveProfiles(false);
@@ -926,6 +988,7 @@ window.ProfileAuth = (function () {
                 cb.checked = cb.dataset.perm === 'tab_main' || cb.dataset.perm === 'tab_sales';
             });
 
+            paSelected = result.profile.id;
             renderAdminPanel();
             if (typeof showToast === 'function') {
                 showToast(`Профиль «${result.profile.name}» создан`);
@@ -950,6 +1013,7 @@ window.ProfileAuth = (function () {
 
         try {
             profilesCache = profilesCache.filter(p => p.id !== profileId);
+            paSelected = 'admin';
             await saveProfiles(false);
             if (typeof ActivityLog !== 'undefined') {
                 await ActivityLog.log('profile_delete', profile.name, { profileId });
@@ -964,6 +1028,7 @@ window.ProfileAuth = (function () {
 
     function openAdminPanel() {
         if (!guardPermission('manage_profiles', 'Только администратор может управлять профилями')) return;
+        if (!profilesCache.some(p => p.id === paSelected)) paSelected = 'admin';
         renderAdminPanel();
         updateSharedStatus();
         document.getElementById('profile-admin-modal')?.classList.add('open');
@@ -1113,7 +1178,30 @@ window.ProfileAuth = (function () {
                 return;
             }
             const delBtn = e.target.closest('[data-delete-profile]');
-            if (delBtn) handleDeleteProfile(delBtn.dataset.deleteProfile);
+            if (delBtn) { handleDeleteProfile(delBtn.dataset.deleteProfile); return; }
+            const sel = e.target.closest('[data-pa-select]');
+            if (sel) { selectProfileEditor(sel.dataset.paSelect); return; }
+            const tpl = e.target.closest('[data-pa-template]');
+            if (tpl) applyTemplate(tpl.dataset.paTemplate, tpl.dataset.paTarget);
+        });
+        document.getElementById('profile-admin-body')?.addEventListener('change', (e) => {
+            const cb = e.target.closest('input[data-perm]');
+            if (!cb) return;
+            // Справочник: «менять» без «видеть» не бывает.
+            const row = cb.closest('[data-pa-ref]');
+            if (row) {
+                const boxes = row.querySelectorAll('input[data-perm]');
+                const view = boxes.length > 1 ? boxes[0] : null;
+                const edit = boxes[boxes.length - 1];
+                if (cb === edit && edit.checked && view) view.checked = true;
+                if (view && cb === view && !view.checked) edit.checked = false;
+            }
+            refreshSummary(cb.dataset.profile);
+        });
+        document.getElementById('profile-admin-body')?.addEventListener('input', (e) => {
+            if (!e.target.classList.contains('pa-search')) return;
+            const q = e.target.value.trim().toLowerCase();
+            document.querySelectorAll('#profile-admin-body .pa-item').forEach(el => { el.hidden = !!q && !el.dataset.paName.includes(q); });
         });
 
         await loadProfiles();
