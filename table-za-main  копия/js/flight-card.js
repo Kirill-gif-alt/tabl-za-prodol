@@ -311,7 +311,15 @@ window.FlightCard = (function () {
                 <div class="fc-it-note">${esc(src)}</div>
                 ${(() => {
                     const ml = insightsOpen() && typeof ForecastLab !== 'undefined' ? ForecastLab.predict(code, date) : null;
-                    return ml ? `<div class="fc-it-ml" title="Видит только администратор. Способ выбран по точности на прошлых вылетах: за ${ml.h} дн. до вылета ошибается в среднем на ${String(ml.err).replace('.', ',')} пасс. (${ml.trainedOn} вылетов).">Самообучение: <strong>${ml.final} из ${ml.seats}</strong> · ${ml.lf}%${ml.lo != null ? ` <span class="fc-it-ml-range" title="С вероятностью ${ml.cover}% итог будет в этих пределах (проверено на прошлых вылетах)">(${ml.lo}–${ml.hi}, ${ml.cover}%)</span>` : ''} <span>(${esc(ml.method)}, ±${String(ml.err).replace('.', ',')})</span>${ml.team && ml.team.length > 1 ? `<div class="fc-it-ml-team" title="Вес способа — по его ошибкам на этом рейсе и на похожих вылетах. Остальные страхуют, если у лучшего нет данных.">Комитет на этом рейсе: ${ml.team.slice(0, 4).map(t => `${esc(t.label)} ${t.w}% <span>(${t.v})</span>`).join(' · ')}</div>` : ''}</div>` : '';
+                    if (!ml) return '';
+                    // Одна строка по делу; как посчитано — во всплывающей подсказке.
+                    const err = String(ml.err).replace('.', ',');
+                    const tip = ['Прогноз модели (видит только администратор).',
+                        ml.lo != null ? `В 8 случаях из 10 итог будет от ${ml.lo} до ${ml.hi}.` : '',
+                        `Способ: ${ml.method}; за ${ml.h} дн. до вылета ошибается в среднем на ${err} пасс.`,
+                        ml.team && ml.team.length > 1 ? `Веса на этом рейсе: ${ml.team.slice(0, 4).map(t => `${t.label} ${t.w}%`).join(', ')}.` : ''
+                    ].filter(Boolean).join('\n');
+                    return `<div class="fc-it-ml" title="${attr(tip)}"><span class="fc-it-ml-label">Модель:</span> <strong>${ml.final} из ${ml.seats}</strong> · ${ml.lf}%${ml.lo != null ? ` <span class="fc-it-ml-range">от ${ml.lo} до ${ml.hi}</span>` : ''}</div>`;
                 })()}
             </div>`);
             summary.push(`<span class="fc-ins-chip fc-ins-${tone || 'plain'}">прогноз ${f.final}/${f.seats} · ${f.lf}%</span>`);
