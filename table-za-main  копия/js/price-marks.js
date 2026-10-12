@@ -97,7 +97,76 @@ window.PriceMarks = (function () {
         const nb = normPickup(base, code, flyDate, d + WINDOW, d + 1);
         const na = normPickup(base, code, flyDate, d, afterTo);
         const effect = complete && nb && na ? (after.n - na.value) - (before.n - nb.value) : null;
-        return { dtd: d, before, after, normBefore: nb, normAfter: na, complete, effect };
+        // Тариф «до»: средний за 3 дня до решения, а если тогда не продали ни одного — по всем более ранним продажам.
+        const fareBefore = before.avg != null ? before.avg : (archived ? null : windowStats(list, flyDate, 400, d + 1).avg);
+        const fareAfter = after.n ? after.avg : 0;
+        // Итог в рублях: выручка за 3 дня после решения против той, что была бы без него.
+        //   E = max(0, обычно_после + ½·(до − обычно_до)) — столько продали бы по старому тарифу: отклонение от нормы
+        //   до решения учитывается наполовину (окна по 3 дня шумные, отклонения обычно возвращаются к норме);
+        //   R0 = E × тариф_до,  R1 = после × тариф_после,  ΔR = R1 − R0.
+        let money = null;
+        if (complete && nb && na && fareBefore != null && fareAfter != null) {
+            const expected = Math.max(0, Math.round((na.value + (before.n - nb.value) / 2) * 10) / 10);
+            const r0 = expected * fareBefore;
+            const r1 = after.n * fareAfter;
+            money = {
+                expected,
+                r0: Math.round(r0),
+                r1: Math.round(r1),
+                delta: Math.round(r1 - r0),
+                fareBefore: Math.round(fareBefore),
+                fareAfter: after.n ? Math.round(fareAfter) : null,
+                // Повышение окупается, пока продано не меньше E × тариф_до / тариф_после.
+                breakEven: after.n && fareAfter > 0 ? Math.round(expected * fareBefore / fareAfter * 10) / 10 : null
+            };
+        }
+        // Улетевший вылет: заполнился ли он (тогда «недопроданные» после повышения места ушли позже, дороже).
+        let finalLf = null;
+        const fly = parseLocalDate(flyDate);
+        if (fly && fly.getTime() < Date.now() - 86400000 && typeof getFlightRowForDate === 'function') {
+            const row = getFlightRowForDate(base, flyDate, code);
+            const seats = row && typeof getSeatsOnSale === 'function' ? getSeatsOnSale(row) : 0;
+            const sold = row && typeof getSoldFromRow === 'function' ? getSoldFromRow(row) : 0;
+            if (seats > 0) finalLf = sold / seats;
+        }
+        return { dtd: d, before, after, normBefore: nb, normAfter: na, complete, effect, money, finalLf };
+    }
+
+    // Итог решения — один для карточки рейса и для журнала решений.
+    // worked: true / false, null — вывод делать рано (мало продаж) или не с чем сравнить.
+    function judge(e, status) {
+        if (!e || !e.complete) return { cls: 'wait', text: 'ещё идут 3 дня', short: 'ждём', worked: null };
+        if (e.effect == null) return { cls: 'none', text: 'не с чем сравнить', short: '—', worked: null };
+        const m = e.money;
+        const up = status === 'up';
+        if (up && e.finalLf != null && e.finalLf >= 0.95) {
+            return { cls: 'pos', text: `рейс заполнился (${Math.round(e.finalLf * 100)}%) — повышение не стоило мест`, short: 'сработало', worked: true };
+        }
+        if (!m) {
+            // Тарифов нет (вылет уже только в архиве) — по билетам, как раньше.
+            if (up) return e.effect >= 0 ? { cls: 'pos', text: 'спрос выдержал повышение', short: 'сработало', worked: true }
+                : { cls: 'neg', text: `билетов меньше обычного ${signedN(e.effect)}`, short: 'не сработало', worked: false };
+            return e.effect > 0 ? { cls: 'pos', text: `продаётся лучше обычного ${signedN(e.effect)}`, short: 'сработало', worked: true }
+                : { cls: 'neg', text: e.effect < 0 ? `хуже обычного ${signedN(e.effect)}` : 'без изменений', short: 'не сработало', worked: false };
+        }
+        const rubS = (v) => `${v > 0 ? '+' : (v < 0 ? '−' : '')}${rub(Math.abs(v))}`;
+        if (m.expected + e.after.n < 4) {
+            return { cls: 'none', text: `мало продаж для вывода (выручка ${rubS(m.delta)})`, short: 'рано судить', worked: null };
+        }
+        if (m.delta >= 0) {
+            return { cls: 'pos', text: `выручка ${rubS(m.delta)} к «без ${up ? 'повышения' : 'снижения'}»`, short: 'сработало', worked: true };
+        }
+        return { cls: 'neg', text: up && m.breakEven != null
+            ? `выручка ${rubS(m.delta)}: окупилось бы с ${fmtN(m.breakEven)} бил., продано ${e.after.n}`
+            : `выручка ${rubS(m.delta)} к «без ${up ? 'повышения' : 'снижения'}»`, short: 'не сработало', worked: false };
+    }
+
+    function signedN(n) {
+        return (n > 0 ? '+' : (n < 0 ? '−' : '')) + Math.abs(n);
+    }
+
+    function fmtN(v) {
+        return String(v).replace('.', ',');
     }
 
     function rub(v) {
@@ -120,7 +189,7 @@ window.PriceMarks = (function () {
     }
 
     // Понятное описание: сколько продали до и после решения, сколько обычно, и вывод.
-    function effectLines(e) {
+    function effectLines(e, status) {
         if (!e) return [];
         const usual = (x) => (x ? ` (обычно ${x.value})` : '');
         const lines = [`До решения: ${tickets(e.before.n)} за ${WINDOW} дня${usual(e.normBefore)} → после: ${tickets(e.after.n)}${usual(e.normAfter)}${e.complete ? '' : ' — дни ещё идут'}`];
@@ -131,15 +200,17 @@ window.PriceMarks = (function () {
         let verdict;
         if (!e.complete) verdict = 'Итог будет, когда пройдут 3 дня после решения';
         else if (e.effect == null) verdict = 'Сравнить не с чем: мало прошлых вылетов в этот день недели';
-        else if (e.effect > 0) verdict = `Итог: после решения продаётся лучше обычного — на ${tickets(e.effect)}`;
-        else if (e.effect < 0) verdict = `Итог: после решения продаётся хуже обычного — на ${tickets(-e.effect)}`;
-        else verdict = 'Итог: продаётся как обычно';
+        else if (e.money) {
+            const m = e.money;
+            lines.push(`Без решения: ~${fmtN(Math.round(m.expected * 10) / 10)} бил. × ${rub(m.fareBefore)} = ${rub(m.r0)} · с решением: ${tickets(e.after.n)}${m.fareAfter != null ? ' × ' + rub(m.fareAfter) : ''} = ${rub(m.r1)}`);
+            verdict = 'Итог: ' + judge(e, status).text;
+        } else verdict = 'Итог: ' + judge(e, status).text;
         lines.push(verdict);
         return lines;
     }
 
-    function effectText(e) {
-        return effectLines(e).join(' · ');
+    function effectText(e, status) {
+        return effectLines(e, status).join(' · ');
     }
 
     // Блок «Ценовые решения» под графиками.
@@ -149,8 +220,9 @@ window.PriceMarks = (function () {
         const esc = typeof escHtml === 'function' ? escHtml : String;
         const rows = list.map(m => {
             const e = m.status === 'attn' ? null : effectFor(base, code, flyDate, m);
-            const cls = e && e.complete && e.effect != null ? (e.effect > 0 ? 'pm-eff-up' : (e.effect < 0 ? 'pm-eff-down' : '')) : '';
-            const lines = effectLines(e);
+            const j = e ? judge(e, m.status) : null;
+            const cls = j ? (j.worked === true ? 'pm-eff-up' : (j.worked === false ? 'pm-eff-down' : '')) : '';
+            const lines = effectLines(e, m.status);
             return `<li class="pm-item">
                 <div class="pm-item-head"><span class="pm-glyph pm-${m.status}">${GLYPH[m.status]}</span>
                 <strong>${esc(statusLabel(m.status))}</strong> ${esc(m.check.slice(0, 5))}${m.author ? ' · ' + esc(m.author) : ''}</div>
@@ -330,5 +402,5 @@ window.PriceMarks = (function () {
         setToday(chip.dataset.pmCode, chip.dataset.pmDate, st);
     });
 
-    return { decisions, todayMark, effectFor, effectText, decisionsHtml, chartItems, chipHtml, buttonsHtml, setToday, canMark, GLYPH };
+    return { decisions, todayMark, effectFor, judge, effectText, decisionsHtml, chartItems, chipHtml, buttonsHtml, setToday, canMark, GLYPH };
 })();
