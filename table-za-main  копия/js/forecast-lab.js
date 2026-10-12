@@ -984,12 +984,15 @@ window.ForecastLab = (function () {
         let lo = null;
         let hi = null;
         const c = ev.conf && ev.conf[h + '|' + segOf(r)];
-        if (final != null && c && c.k === usedK) {
+        // Интервал — только если проверялся тот же расчёт, что идёт вживую: комитет и модели на горизонте,
+        // где модели проверить было не на чем, вживую устроены иначе, чем в проверке.
+        const sameAsEval = ['planOr', 'planPick', 'hist', 'naive'].includes(usedK) || !(ev.byH[h] && ev.byH[h].simpleOnly);
+        if (final != null && c && c.k === usedK && sameAsEval) {
             lo = Math.min(final, Math.max(0, Math.floor(final + c.lo * r.s)));
             hi = Math.max(final, Math.min(Math.max(r.s, r.o), Math.ceil(final + c.hi * r.s)));
         }
         if (final == null) final = r.o;
-        const hiRaw = c && c.k === usedK ? Math.ceil(final + c.hi * r.s) : null;   // без ограничения креслами — спрос сверх ёмкости
+        const hiRaw = lo != null ? Math.ceil(final + c.hi * r.s) : null;   // без ограничения креслами — спрос сверх ёмкости
         return { final, lo, hi, hiRaw, sold: r.o, d, plan: r.p, team, cover: lo != null ? Math.round(CONF_LEVEL * 100) : null, seats: r.s, lf: Math.round(final / r.s * 100), method: METHOD_LABEL[usedK], err: Math.round(pick.v * 10) / 10, trainedOn: pick.n, h };
     }
 
@@ -1174,11 +1177,14 @@ window.ForecastLab = (function () {
         const B = (st && st.bg[base + '|' + gk]) || {};
         const seen = ks.filter(k => G[k] && G[k][1] > 0);
         const L0 = seen.length ? seen.reduce((a, k) => a + G[k][0] / G[k][1], 0) / seen.length : 0.1;
+        // Способ без единой проверенной ошибки в этой группе — с осторожной ошибкой (как у худшего из проверенных),
+        // а не со средней: иначе непроверенные способы голосовали бы наравне с проверенными.
+        const Lworst = seen.length ? Math.max(...seen.map(k => G[k][0] / G[k][1])) : 0.1;
         const L = {};
         ks.forEach(k => {
             const g = G[k] || [0, 0];
             const b = B[k] || [0, 0];
-            const lg = (g[0] + COMMITTEE_K * L0) / (g[1] + COMMITTEE_K);
+            const lg = g[1] > 0 ? (g[0] + COMMITTEE_K * L0) / (g[1] + COMMITTEE_K) : Lworst;
             L[k] = (b[0] + COMMITTEE_K * lg) / (b[1] + COMMITTEE_K);
         });
         const lmin = Math.max(1e-4, Math.min(...ks.map(k => L[k])));
@@ -1483,11 +1489,11 @@ window.ForecastLab = (function () {
             const pl = simple('plan', x.r, x.s);
             const pick = choice[7 + '|' + segOf(x.r)] || choice[7];
             const md = pick ? (val(pick.k, x) != null ? val(pick.k, x) : x.r.o) : null;
-            if (pl != null) { W.plan[0] += Math.abs(pl - x.f); W.plan[1]++; }
-            if (md != null) { W.best[0] += Math.abs(md - x.f); W.best[1]++; }
+            // Файл и «что берём» — на одних и тех же вылетах (где файл есть), иначе сравнение нечестное.
+            if (pl != null && md != null) { W.plan[0] += Math.abs(pl - x.f); W.plan[1]++; W.best[0] += Math.abs(md - x.f); W.best[1]++; }
             byWeek.set(w, W);
             const R = byBase.get(x.base) || { plan: [0, 0], model: [0, 0] };
-            if (pl != null) { R.plan[0] += Math.abs(pl - x.f); R.plan[1]++; }
+            if (pl != null && md != null) { R.plan[0] += Math.abs(pl - x.f); R.plan[1]++; }
             if (md != null) { R.model[0] += Math.abs(md - x.f); R.model[1]++; }
             byBase.set(x.base, R);
         });
@@ -1556,7 +1562,7 @@ window.ForecastLab = (function () {
             if (D.ts - d * DAY > T || dep.ts - D.ts > 56 * DAY || D.ts > dep.ts + 56 * DAY) return;
             vals.push(D.deps.reduce((a, X) => a + at(rawOf(X), d), 0) / D.s);
         });
-        if (vals.length < 3) return null;
+        if (vals.length < 6) return null;   // по 3–5 вылетам разброс случайный — «необычный темп» был бы у каждого пятого
         const m = vals.reduce((a, b) => a + b, 0) / vals.length;
         const sd = Math.sqrt(vals.reduce((a, b) => a + (b - m) * (b - m), 0) / (vals.length - 1));
         return { m, sd, n: vals.length };

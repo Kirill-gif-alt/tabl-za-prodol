@@ -59,7 +59,7 @@ window.PriceMarks = (function () {
             const v = s.adjustedFare || s.fare || 0;
             if (v > 0) { sum += v; paid++; }
         });
-        return { n, avg: paid ? Math.round(sum / paid) : null };
+        return { n, sum, avg: paid ? Math.round(sum / paid) : null };
     }
 
     // Норма продаж за окно дней до вылета [dtdTo..dtdFrom] на кресла этого вылета.
@@ -67,8 +67,11 @@ window.PriceMarks = (function () {
         if (typeof collectSameWeekdayCohort !== 'function' || typeof weekdayNormSeries !== 'function') return null;
         const row = typeof getFlightRowForDate === 'function' ? getFlightRowForDate(base, flyDate, code) : null;
         const seats = row && typeof getSeatsOnSale === 'function' ? getSeatsOnSale(row) : 0;
+        // Оба дня окна — у одних и тех же вылетов: только те, у кого и конец окна уже наступил
+        // (иначе разность двух средних по разным наборам вылетов врёт).
         const cohort = collectSameWeekdayCohort(base, flyDate, code)
-            .filter(c => c.dayGap <= (typeof WEEKDAY_NORM_WINDOW_DAYS === 'number' ? WEEKDAY_NORM_WINDOW_DAYS : 56));
+            .filter(c => c.dayGap <= (typeof WEEKDAY_NORM_WINDOW_DAYS === 'number' ? WEEKDAY_NORM_WINDOW_DAYS : 56))
+            .filter(c => !(c.observedFrom > Math.max(0, dtdTo)));
         const pts = weekdayNormSeries(cohort, [dtdFrom + 1, Math.max(0, dtdTo)], seats).points;
         if (!pts[0] || !pts[1] || pts[0].value == null || pts[1].value == null) return null;
         return { value: Math.max(0, pts[1].value - pts[0].value), n: Math.min(pts[0].n, pts[1].n) };
@@ -107,14 +110,16 @@ window.PriceMarks = (function () {
         //   R0 = E × тариф_до,  R1 = после × тариф_после,  ΔR = R1 − R0.
         let money = null;
         if (complete && nb && na && fareBefore != null && fareAfter != null) {
-            let expected = Math.max(0, Math.round((na.value + (before.n - nb.value) / 2) * 10) / 10);
+            const raw = Math.max(0, Math.round((na.value + (before.n - nb.value) / 2) * 10) / 10);
+            let expected = raw;
             // Цена против спроса: после повышения билетов не может стать больше, чем было бы без него, а после снижения — меньше.
             if (mark.status === 'up') expected = Math.max(expected, after.n);
             if (mark.status === 'down') expected = Math.min(expected, after.n);
             const r0 = expected * fareBefore;
-            const r1 = after.n * fareAfter;
+            const r1 = after.sum != null ? after.sum : after.n * fareAfter;   // фактическая сумма (билеты с нулевым тарифом не завышают)
             money = {
                 expected,
+                rawExpected: raw,
                 r0: Math.round(r0),
                 r1: Math.round(r1),
                 delta: Math.round(r1 - r0),
@@ -154,7 +159,8 @@ window.PriceMarks = (function () {
                 : { cls: 'neg', text: e.effect < 0 ? `хуже обычного ${signedN(e.effect)}` : 'без изменений', short: 'не сработало', worked: false };
         }
         const rubS = (v) => `${v > 0 ? '+' : (v < 0 ? '−' : '')}${rub(Math.abs(v))}`;
-        if (m.expected + e.after.n < 4) {
+        // «Рано судить» — по оценке до поправки «не меньше / не больше»: иначе провалившееся снижение пряталось бы здесь.
+        if ((m.rawExpected != null ? m.rawExpected : m.expected) + e.after.n < 4) {
             return { cls: 'none', text: `мало продаж для вывода (выручка ${rubS(m.delta)})`, short: 'рано судить', worked: null };
         }
         if (m.delta >= 0) {
