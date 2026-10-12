@@ -204,11 +204,10 @@ window.PriceMarks = (function () {
         let verdict;
         if (!e.complete) verdict = 'Итог будет, когда пройдут 3 дня после решения';
         else if (e.effect == null) verdict = 'Сравнить не с чем: мало прошлых вылетов в этот день недели';
-        else if (e.money) {
-            const m = e.money;
-            lines.push(`Без решения: ~${fmtN(Math.round(m.expected * 10) / 10)} бил. × ${rub(m.fareBefore)} = ${rub(m.r0)} · с решением: ${tickets(e.after.n)}${m.fareAfter != null ? ' × ' + rub(m.fareAfter) : ''} = ${rub(m.r1)}`);
-            verdict = 'Итог: ' + judge(e, status).text;
-        } else verdict = 'Итог: ' + judge(e, status).text;
+        // В карточке — по билетам (рубли — в отчёте «Решения»).
+        else if (e.effect > 0) verdict = `Итог: после решения продаётся лучше обычного — на ${tickets(e.effect)}`;
+        else if (e.effect < 0) verdict = `Итог: после решения продаётся хуже обычного — на ${tickets(-e.effect)}`;
+        else verdict = 'Итог: продаётся как обычно';
         lines.push(verdict);
         return lines;
     }
@@ -224,8 +223,7 @@ window.PriceMarks = (function () {
         const esc = typeof escHtml === 'function' ? escHtml : String;
         const rows = list.map(m => {
             const e = m.status === 'attn' ? null : effectFor(base, code, flyDate, m);
-            const j = e ? judge(e, m.status) : null;
-            const cls = j ? (j.worked === true ? 'pm-eff-up' : (j.worked === false ? 'pm-eff-down' : '')) : '';
+            const cls = e && e.complete && e.effect != null ? (e.effect > 0 ? 'pm-eff-up' : (e.effect < 0 ? 'pm-eff-down' : '')) : '';
             const lines = effectLines(e, m.status);
             return `<li class="pm-item">
                 <div class="pm-item-head"><span class="pm-glyph pm-${m.status}">${GLYPH[m.status]}</span>
