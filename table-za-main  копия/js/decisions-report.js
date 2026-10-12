@@ -43,8 +43,16 @@ window.DecisionsReport = (function () {
         const s = sig();
         if (memo.sig === s && memo.rows) return memo.rows;
         const out = [];
+        // Одно решение, отмеченное двумя людьми, — одна строка (иначе его билеты и рубли посчитаются дважды).
+        const seen = new Map();
         SalesManagement.allMarks().forEach(m => {
             if (m.status !== 'down' && m.status !== 'up') return;
+            const dk = [m.flight, m.dep, m.check, m.status].join('|');
+            if (seen.has(dk)) {
+                const r0 = seen.get(dk);
+                if (m.author && !r0.author.split(' / ').includes(m.author)) r0.author = r0.author ? r0.author + ' / ' + m.author : m.author;
+                return;
+            }
             const ago = daysAgo(m.check);
             if (ago == null || ago < 0 || ago > period) return;
             const code = m.flight;
@@ -58,6 +66,7 @@ window.DecisionsReport = (function () {
                 done: !!(e && e.complete && e.effect != null),
                 money: e && e.complete && e.money ? e.money.delta : null
             });
+            seen.set(dk, out[out.length - 1]);
         });
         out.sort((a, b) => (parseLocalDate(b.check) - parseLocalDate(a.check)) || String(a.code).localeCompare(String(b.code), 'ru', { numeric: true }));
         memo = { sig: s, rows: out };
