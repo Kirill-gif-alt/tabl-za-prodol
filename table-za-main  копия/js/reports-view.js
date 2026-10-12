@@ -781,10 +781,11 @@ window.ReportsView = (function () {
         const s = sheetWriter(lib);
         const sec = style(SECTION, 'FFFFFF', true, 'left');
         const pct = (v) => (v == null ? '' : v + '%');
-        const block = (r, title, groups, keyLabel) => {
+        const block = (r, title, groups, keyLabel, noMoney) => {
             s.title(r++, title, 8, sec);
-            return s.table(r, [keyLabel, 'Решений', 'С итогом', 'Можно судить', 'Сработало', 'Сработало, %', 'Средний итог, бил.', 'Выручка к «без решений», ₽'],
-                groups.map(g => ({ cells: [g.key, g.n, g.done, g.judged, g.good, pct(g.share), g.avg == null ? '' : (g.avg > 0 ? '+' : '') + String(g.avg).replace('.', ','), g.money == null ? '' : g.money] }))) + 1;
+            const head = [keyLabel, 'Решений', 'С итогом', 'Можно судить', 'Сработало', 'Сработало, %', 'Средний итог, бил.'].concat(noMoney ? [] : ['Выручка к «без решений», ₽']);
+            return s.table(r, head,
+                groups.map(g => ({ cells: [g.key, g.n, g.done, g.judged, g.good, pct(g.share), g.avg == null ? '' : (g.avg > 0 ? '+' : '') + String(g.avg).replace('.', ',')].concat(noMoney ? [] : [g.money == null ? '' : g.money]) }))) + 1;
         };
         let r = 0;
         s.title(r++, head, 8, style('FFFFFF', NAVY, true, 'left'));
@@ -793,7 +794,7 @@ window.ReportsView = (function () {
         r = block(r, 'Итого', [{ key: 'Все решения', ...t }], 'Решения');
         r = block(r, 'По типу решения', d.byKind, 'Решение');
         r = block(r, 'По направлениям', d.byDir, 'Направление');
-        block(r, 'По людям', d.byAuthor, 'Кто');
+        block(r, 'По людям', d.byAuthor, 'Кто', true);
         const wsS = s.finish([34, 10, 10, 13, 11, 13, 17, 24], 0);
         const wb = lib.utils.book_new();
         lib.utils.book_append_sheet(wb, wsJ, 'Журнал');

@@ -120,18 +120,18 @@ window.DecisionsReport = (function () {
         return `<span class="dr-bar" title="Сработало ${share}%"><span class="dr-bar-fill ${share >= 50 ? 'dr-bar-pos' : 'dr-bar-neg'}" style="width:${Math.max(0, Math.min(100, share))}%"></span></span><span class="${share >= 50 ? 'dr-pos' : 'dr-neg'}">${share}%</span>`;
     }
 
-    function summaryTable(title, groups, keyLabel) {
+    function summaryTable(title, groups, keyLabel, noMoney) {
         if (!groups.length) return '';
         const rowsHtml = groups.slice(0, 10).map(g => `
             <tr>
                 <td class="rp-left"><strong>${esc(g.key)}</strong></td>
                 <td>${g.n}</td>
                 <td class="dr-share-cell">${shareBar(g.share)}</td>
-                <td class="rp-nowrap">${g.money == null ? '—' : `<span class="${g.money > 0 ? 'dr-pos' : (g.money < 0 ? 'dr-neg' : '')}">${rubSigned(g.money)}</span>`}</td>
+                ${noMoney ? '' : `<td class="rp-nowrap">${g.money == null ? '—' : `<span class="${g.money > 0 ? 'dr-pos' : (g.money < 0 ? 'dr-neg' : '')}">${rubSigned(g.money)}</span>`}</td>`}
             </tr>`).join('');
         return `<div class="dr-sum">
             <div class="dr-sum-title">${esc(title)}</div>
-            <table class="rp-table dr-sum-table"><thead><tr><th>${esc(keyLabel)}</th><th>Решений</th><th title="Из решений, по которым можно судить: выручка после решения не ниже, чем была бы без него">Сработало</th><th title="Сумма: на сколько рублей выручка после решений больше (+) или меньше (−), чем была бы без них (за 3 дня после каждого)">Итог, ₽</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+            <table class="rp-table dr-sum-table"><thead><tr><th>${esc(keyLabel)}</th><th>Решений</th><th title="Из решений, по которым можно судить: выручка после решения не ниже, чем была бы без него">Сработало</th>${noMoney ? '' : '<th title="Сумма: на сколько рублей выручка после решений больше (+) или меньше (−), чем была бы без них (за 3 дня после каждого)">Итог, ₽</th>'}</tr></thead><tbody>${rowsHtml}</tbody></table>
             ${groups.length > 10 ? `<div class="rp-muted">и ещё ${groups.length - 10} — полный список в Excel</div>` : ''}
         </div>`;
     }
@@ -192,7 +192,7 @@ window.DecisionsReport = (function () {
         }).join('');
         const sums = list.length ? `<div class="dr-sums">
             ${summaryTable('По направлениям', groupBy(list, r => r.direction || r.code), 'Направление')}
-            ${summaryTable('По людям', groupBy(list, r => r.author || '—'), 'Кто')}
+            ${summaryTable('По людям', groupBy(list, r => r.author || '—'), 'Кто', true)}
         </div>` : '';
         return `
             <section class="rp-card dr-card">
