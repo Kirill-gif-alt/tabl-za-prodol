@@ -4,6 +4,9 @@
 //   (sales-report.js) и «год назад», когда вылет уже пропал из файла продаж.
 // Пишет только тот, кто публикует данные (право share_data), в фоне и не чаще раза на новые данные.
 // Читаются файлы тоже в фоне после входа: несколько сотен КБ, старт не задерживают. Без ФИО и PNR.
+// • История продаж (SalesHistory.csv из Export-SalesHistory.ps1): улетевшие вылеты за прошлые месяцы и годы,
+//   уже сведённые по вылетам, без персональных данных. Загружает администратор — кривые попадают в тот же архив
+//   (h: 1 — из истории; se: 1 — кресла оценены по нынешнему ВС рейса; r — возвращено; g — в группах; k — корпоративных).
 window.SalesArchive = (function () {
     const MONTHS_BACK = 3;           // норма берёт вылеты ±8 недель — хватает трёх месяцев
     const MAX_DTD = 365;
@@ -52,7 +55,7 @@ window.SalesArchive = (function () {
         if (!e || typeof e !== 'object' || !Array.isArray(e.c)) return null;
         const c = e.c.slice(0, MAX_DTD + 1).map(v => Math.max(0, parseInt(v, 10) || 0));
         const t = c.reduce((a, b) => a + b, 0);
-        return {
+        const out = {
             c,
             t,
             s: Math.max(0, parseInt(e.s, 10) || 0),
@@ -60,6 +63,8 @@ window.SalesArchive = (function () {
             sold: Math.max(0, parseInt(e.sold, 10) || 0),
             rev: Math.max(0, Math.round(Number(e.rev) || 0))
         };
+        ['h', 'se', 'r', 'g', 'k'].forEach(f => { const v = parseInt(e[f], 10); if (v > 0) out[f] = v; });
+        return out;
     }
 
     // Загрузить последние месяцы (и те же месяцы год назад — для «год назад, тот же день недели»).
@@ -75,6 +80,37 @@ window.SalesArchive = (function () {
             refreshOpenReport();
         });
         return loading;
+    }
+
+    // Догрузить несколько месяцев (для прогноза: обучение и «год назад»). Промис — когда все прочитаны.
+    function ensureMonths(months) {
+        const need = (months || []).filter(m => m && !loadedMonths.has(m));
+        if (!need.length) return Promise.resolve(false);
+        return Promise.all(need.map(m => readMonth(m).catch(() => null))).then(() => { rev++; return true; });
+    }
+
+    // Все улетевшие вылеты архива (для модели прогноза): [{ date, code, e }].
+    function entries() {
+        return Object.keys(curves).map(k => {
+            const i = k.lastIndexOf('|');
+            return { date: k.slice(0, i), code: k.slice(i + 1), e: curves[k] };
+        });
+    }
+
+    function stats() {
+        let n = 0;
+        let h = 0;
+        let from = null;
+        let to = null;
+        Object.keys(curves).forEach(k => {
+            const d = parseLocalDate(k.slice(0, k.lastIndexOf('|')));
+            if (!d) return;
+            n++;
+            if (curves[k].h) h++;
+            if (!from || d < from) from = d;
+            if (!to || d > to) to = d;
+        });
+        return { n, h, from, to, months: loadedMonths.size };
     }
 
     // Догрузить конкретный месяц (например, дату год назад) и перерисовать открытую детализацию.
@@ -108,16 +144,27 @@ window.SalesArchive = (function () {
         return { onHand, maxDtd, total: run };
     }
 
-    // Улетевшие вылеты рейса из архива (для нормы по дням недели).
+    // Улетевшие вылеты рейса из архива (для нормы по дням недели). Индекс по рейсу — пересобирается после чтения архива:
+    // с историей за год вызовов тысячи, а записей — десятки тысяч.
+    let index = { rev: -1, map: null };
+
     function departuresFor(code) {
-        const out = [];
-        const suffix = '|' + code;
-        Object.keys(curves).forEach(k => {
-            if (!k.endsWith(suffix)) return;
-            const e = curves[k];
-            out.push({ date: k.slice(0, k.length - suffix.length), code, seats: e.s, aircraft: e.ac, sold: e.sold, total: e.t });
-        });
-        return out;
+        if (index.rev !== rev || !index.map) {
+            const map = new Map();
+            Object.keys(curves).forEach(k => {
+                const i = k.lastIndexOf('|');
+                const c = k.slice(i + 1);
+                const e = curves[k];
+                (map.get(c) || map.set(c, []).get(c)).push({ date: k.slice(0, i), code: c, seats: e.s, aircraft: e.ac, sold: e.sold, total: e.t });
+            });
+            index = { rev, map };
+        }
+        return (index.map.get(code) || []).slice();
+    }
+
+    // Запись архива по вылету (кресла, итог, признаки истории) или null.
+    function entryFor(dateStr, code) {
+        return curves[`${dateStr}|${code}`] || null;
     }
 
     // ---------- запись ----------
@@ -188,6 +235,20 @@ window.SalesArchive = (function () {
             });
             out.flights = flights;
         }
+        if (kind === 'import') {
+            // История: новые вылеты добавляются; вылет, записанный по живым данным (настоящие кресла и ВС), не трогаем —
+            // только дописываем к нему возвраты/группы/корпоративных. Повторная загрузка истории заменяет прежнюю.
+            const flights = remote && remote.flights && typeof remote.flights === 'object' ? { ...remote.flights } : {};
+            Object.keys(additions).forEach(k => {
+                const prev = flights[k] && normalizeCurve(flights[k]);
+                const next = additions[k];
+                if (!prev || prev.h) { flights[k] = next; changed = true; return; }
+                const extra = {};
+                ['r', 'g', 'k'].forEach(f => { if (next[f] && prev[f] == null) extra[f] = next[f]; });
+                if (Object.keys(extra).length) { flights[k] = { ...flights[k], ...extra }; changed = true; }
+            });
+            out.flights = flights;
+        }
         if (!changed) return true;
         return SharedStorage.writeJsonFile(file, out);
     }
@@ -246,9 +307,98 @@ window.SalesArchive = (function () {
         whenIdle(() => capture().catch(e => console.warn('SalesArchive.capture', e)), 30000);
     }
 
+    // ---------- загрузка истории (SalesHistory.csv) ----------
+
+    function typicalOf(code) {
+        const C = {};
+        const A = {};
+        const base = typeof getBaseFlight === 'function' ? getBaseFlight(code) : code;
+        (groupedData && groupedData[base] || []).forEach(row => {
+            if (cleanFlight(row[0]) !== code && base !== code) return;
+            const s = typeof getSeatsOnSale === 'function' ? getSeatsOnSale(row) : 0;
+            if (s > 0) C[s] = (C[s] || 0) + 1;
+            const ac = typeof getAircraftType === 'function' ? getAircraftType(row[4]) : '';
+            if (ac) A[ac] = (A[ac] || 0) + 1;
+        });
+        const top = (o) => Object.keys(o).sort((a, b) => o[b] - o[a])[0];
+        return { s: parseInt(top(C), 10) || 0, ac: top(A) || '' };
+    }
+
+    function parseCurve(str, maxDtd) {
+        const c = [];
+        String(str || '').trim().split(/\s+/).forEach(p => {
+            const m = /^(-?\d+):(\d+)$/.exec(p);
+            if (!m) return;
+            const t = parseInt(m[1], 10);
+            if (t < 0 || t > maxDtd) return;
+            c[t] = (c[t] || 0) + parseInt(m[2], 10);
+        });
+        for (let i = 0; i < c.length; i++) if (!c[i]) c[i] = 0;
+        return c;
+    }
+
+    // Разобрать файл истории и дописать архив. Возвращает { ok, flights, months, skipped, estimated, from, to, error }.
+    async function importHistory(text) {
+        if (typeof SharedStorage === 'undefined') return { ok: false, error: 'нет общей папки' };
+        const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/);
+        const head = (lines[0] || '').split(',').map(x => x.trim().toUpperCase());
+        const col = (n) => head.indexOf(n);
+        const need = ['REIS', 'FLYDATE', 'TICKETS', 'CURVE'];
+        if (need.some(n => col(n) < 0)) return { ok: false, error: 'это не файл истории продаж (нужны столбцы REIS, FLYDATE, TICKETS, CURVE)' };
+        if (!(await SharedStorage.canWrite())) return { ok: false, error: 'нет доступа на запись в общую папку' };
+        const today = parseLocalDate(todayStr());
+        const byMonth = {};
+        const typical = {};
+        let flights = 0;
+        let skipped = 0;
+        let estimated = 0;
+        let from = null;
+        let to = null;
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i];
+            if (!line || !line.trim()) continue;
+            const r = line.split(',');
+            const code = cleanFlight(r[col('REIS')] || '');
+            const date = String(r[col('FLYDATE')] || '').trim();
+            const d = parseLocalDate(date);
+            const sold = parseInt(r[col('TICKETS')], 10) || 0;
+            if (!code || !d || (today && d >= today) || sold <= 0) { skipped++; continue; }
+            const c = parseCurve(r[col('CURVE')], MAX_DTD);
+            if (!c.length) { skipped++; continue; }
+            if (!typical[code]) typical[code] = typicalOf(code);
+            const ty = typical[code];
+            const e = { c, s: Math.max(ty.s, sold), ac: ty.ac, sold, rev: Math.round(Number(r[col('REVENUE')]) || 0), h: 1 };
+            e.se = 1;   // кресел прошлых вылетов в истории продаж нет — оценка по нынешнему ВС рейса
+            ['REFUNDED', 'GROUP', 'CORP'].forEach((n, j) => { const v = parseInt(r[col(n)], 10); if (v > 0) e[['r', 'g', 'k'][j]] = v; });
+            estimated++;
+            const m = monthOf(date);
+            (byMonth[m] || (byMonth[m] = {}))[`${date}|${code}`] = e;
+            flights++;
+            if (!from || d < from) from = d;
+            if (!to || d > to) to = d;
+            if (i % 3000 === 0) await new Promise(res => setTimeout(res, 0));
+        }
+        if (!flights) return { ok: false, error: 'в файле нет улетевших вылетов' };
+        let ok = true;
+        const months = Object.keys(byMonth).sort();
+        for (const m of months) {
+            ok = (await mergeAndWrite(`history/curves-${m}.json`, 'import', byMonth[m])) && ok;
+            loadedMonths.delete(m);
+            await readMonth(m).catch(() => null);
+        }
+        rev++;
+        if (typeof ActivityLog !== 'undefined') ActivityLog.log('import', `История продаж: ${flights} вылетов`);
+        return { ok, flights, months: months.length, skipped, estimated, from, to };
+    }
+
     return {
         ensureLoaded,
         ensureMonth,
+        ensureMonths,
+        entries,
+        entryFor,
+        stats,
+        importHistory,
         curveFor,
         departuresFor,
         capture,
