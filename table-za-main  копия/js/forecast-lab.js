@@ -29,6 +29,10 @@ window.ForecastLab = (function () {
     const PICK_DAYS = 28;           // добор вылетов рейса за 4 недели
     const MONTHS_BACK = 6;
     const VERSION = 2;              // формат журнала; файл новее — не перезаписываем
+    const BACKFILL_V = 2;           // правила восстановления; старее — пересчитываются
+    const MIN_CHOICE_SEG = 30;      // записей в сегменте (есть файл / есть история / нет ничего), чтобы выбирать для него отдельно
+    const SWITCH_T = 1.0;           // смена выбранного способа — только при заметно меньшей ошибке (t-статистика разницы)
+    const CHOICE_KEY = 'krasavia_fc_choice';
     const TRAIN_MAX = 6000;         // обучение — на последних записях (быстрее, свежее)
     const EVAL_WEEKS = 12;          // проверка — на последних неделях
     const DONE_KEY = 'krasavia_fclog_done';
@@ -130,7 +134,7 @@ window.ForecastLab = (function () {
             if (!HORIZONS.includes(Number(h))) return;
             const r = e.h[h];
             if (!r || typeof r !== 'object' || num(r.o) == null) return;
-            out.h[h] = { d: num(r.d), o: num(r.o), p: num(r.p), q: num(r.q), y: num(r.y), n: num(r.n), m: num(r.m), b: r.b ? 1 : 0, s: num(r.s), x: normX(r.x) };
+            out.h[h] = { d: num(r.d), o: num(r.o), p: num(r.p), q: num(r.q), y: num(r.y), n: num(r.n), m: num(r.m), b: r.b ? 1 : 0, bv: num(r.bv) || 0, s: num(r.s), x: normX(r.x) };
         });
         return out;
     }
@@ -146,7 +150,8 @@ window.ForecastLab = (function () {
         Object.keys(e.h).forEach(h => {
             const a = cur.h[h];
             const b = e.h[h];
-            if (!a || (a.b && !b.b) || (a.b && b.b && !a.x && b.x)) { cur.h[h] = b; changed = true; }
+            // Живая запись важнее восстановленной; восстановленная по новым правилам — важнее старой.
+            if (!a || (a.b && !b.b) || (a.b && b.b && (b.bv || 0) > (a.bv || 0))) { cur.h[h] = b; changed = true; }
         });
         return changed;
     }
@@ -169,7 +174,11 @@ window.ForecastLab = (function () {
         Object.keys(log).forEach(k => {
             const e = log[k];
             if (e.f == null) return;
-            Object.keys(e.h).forEach(h => { n++; sum += e.f * 7 + e.h[h].o * 3 + (e.h[h].x ? 1 : 0); });
+            Object.keys(e.h).forEach(h => {
+                const r = e.h[h];
+                n++;
+                sum += e.f * 7 + r.o * 3 + (r.x ? 1 : 0) + (r.p || 0) * 11 + (r.q || 0) * 13 + (r.y || 0) * 17 + (r.d || 0) * 19 + (r.b ? 23 : 0);
+            });
         });
         const cal = typeof CalendarEvents !== 'undefined' && CalendarEvents.revision ? CalendarEvents.revision() : 0;
         return `${n}|${sum}|${cal}`;
@@ -243,39 +252,104 @@ window.ForecastLab = (function () {
         return d > curve.maxDtd ? 0 : curve.total;
     }
 
-    // Сколько было продано на вылете X к моменту T. live — момент «сейчас»: берём загрузку из файла.
+    // Сколько было продано на вылете X к моменту T. live — момент среза данных: берём загрузку из файла.
     function soldAt(X, T, live) {
-        if (X.ts <= T) return X.sold;
-        if (live) return X.sold;
+        if (X.ts <= T || live) return X.sold;
         // Только то, что было в продажах к этому дню, — без подсказки итогом вылета.
         return at(rawOf(X), Math.round((X.ts - T) / DAY));
     }
 
-    // Признаки соседей для вылета dep на момент T (h — дней до вылета): [темп 7 дн., соседние даты, добор рейса, обратный, есть обратный].
+    // Даты рейса: два вылета в один день (основной и доп. номер) — одна дата, кресла и продажи складываются.
+    function datesOf(base) {
+        const C = context();
+        if (!C.dates) C.dates = Object.create(null);
+        if (C.dates[base]) return C.dates[base];
+        const m = new Map();
+        (C.byBase[base] || []).forEach(dep => {
+            const D = m.get(dep.date) || { date: dep.date, ts: dep.ts, deps: [], s: 0, sold: 0, flown: dep.flown };
+            D.deps.push(dep);
+            D.s += dep.s || 0;
+            D.sold += dep.sold || 0;
+            m.set(dep.date, D);
+        });
+        const list = [...m.values()].sort((a, b) => a.ts - b.ts);
+        C.dates[base] = list;
+        return list;
+    }
+
+    function dateSoldAt(D, T, live) {
+        return D.deps.reduce((a, X) => a + soldAt(X, T, live), 0);
+    }
+
+    // Добор вылета-даты от h дней до вылета (в долях кресел), по кривой, приведённой к загрузке.
+    function datePick(D, h) {
+        if (!(D.s > 0) || !(D.sold > 0)) return null;
+        const atH = D.deps.reduce((a, X) => a + at(anchOf(X), h), 0);
+        return Math.max(0, (D.sold - atH) / D.s);
+    }
+
+    // Признаки соседей на момент T (h — дней до вылета): [темп 7 дн., соседние даты, добор рейса за 4 недели, обратный, есть обратный].
+    // T — начало дня прогноза: для живой записи — день среза данных, для восстановленной — день за h до вылета.
     function neighborFeatures(dep, h, T, live, o) {
         const C = context();
         const s = dep.s || 1;
         const raw = rawOf(dep);
         const v7 = Math.max(0, (at(raw, h) - at(raw, h + 7)) / s);
-        const list = C.byBase[dep.base] || [];
         let nbSum = 0;
         let nbN = 0;
         let pkSum = 0;
         let pkN = 0;
-        list.forEach(X => {
-            if (X === dep || !(X.s > 0)) return;
-            const gap = Math.abs(X.ts - dep.ts) / DAY;
-            if (gap <= NB_DAYS) { nbSum += soldAt(X, T, live) / X.s; nbN++; }
-            if (X.ts < T && T - X.ts <= PICK_DAYS * DAY && X.sold > 0) {
-                pkSum += Math.max(0, (X.sold - at(anchOf(X), h)) / X.s);
-                pkN++;
+        datesOf(dep.base).forEach(D => {
+            if (D.date === dep.date || !(D.s > 0)) return;
+            if (Math.abs(D.ts - dep.ts) / DAY <= NB_DAYS) { nbSum += dateSoldAt(D, T, live) / D.s; nbN++; }
+            if (D.ts < T && T - D.ts <= PICK_DAYS * DAY) {
+                const pk = datePick(D, h);
+                if (pk != null) { pkSum += pk; pkN++; }
             }
         });
         const pair = typeof getFlightPair === 'function' ? getFlightPair(dep.base) : null;
         const other = pair ? (pair.outbound === dep.base ? pair.inbound : pair.outbound) : '';
-        const R = other ? C.byKey[dep.date + '|' + other] : null;
-        const rv = R && R.s > 0 ? soldAt(R, T, live) / R.s : 0;
+        const R = other ? datesOf(other).find(D => D.date === dep.date) : null;
+        const rv = R && R.s > 0 ? dateSoldAt(R, T, live) / R.s : 0;
         return [v7, nbN ? nbSum / nbN : o / s, pkN ? pkSum / pkN : 0, rv, R && R.s > 0 ? 1 : 0];
+    }
+
+    // Прогноз «по тем же дням недели» на момент T — одна функция и для журнала задним числом, и для сегодняшних записей:
+    // те же дни недели этого рейса, улетевшие до T (±8 недель, без смешения праздников с обычными днями;
+    // мало — любые улетевшие в этот день недели), включая вылеты из архива продаж.
+    function histAsOf(dep, h, T, o) {
+        const dow = new Date(dep.ts).getDay();
+        const seen = new Set();
+        const items = [];
+        datesOf(dep.base).forEach(D => {
+            if (D.ts >= T || new Date(D.ts).getDay() !== dow) return;
+            const pk = datePick(D, h);
+            if (pk == null) return;
+            seen.add(D.date);
+            items.push({ date: D.date, ts: D.ts, pick: pk });
+        });
+        if (typeof SalesArchive !== 'undefined' && SalesArchive.departuresFor) {
+            SalesArchive.departuresFor(dep.base).forEach(a => {
+                if (seen.has(a.date) || !(a.seats > 0) || !(a.sold > 0)) return;
+                const d = parseLocalDate(a.date);
+                if (!d || d.getTime() >= T || d.getDay() !== dow) return;
+                const C = context();
+                if (!C.arch) C.arch = Object.create(null);
+                const ak = a.date + '|' + dep.base;
+                if (!(ak in C.arch)) C.arch[ak] = anchorCurveToLoad(departureCurve(a.date, dep.base), a.sold) || null;
+                const curve = C.arch[ak];
+                if (!curve) return;
+                items.push({ date: a.date, ts: d.getTime(), pick: Math.max(0, (a.sold - at(curve, h)) / a.seats) });
+            });
+        }
+        if (items.length < 2) return { y: null, n: 0 };
+        const near = items.filter(c => dep.ts - c.ts <= 56 * DAY);
+        let use = near.length >= 2 ? near : items;
+        if (typeof CalendarEvents !== 'undefined' && CalendarEvents.filterCohort) use = CalendarEvents.filterCohort(use, dep.date) || use;
+        if (use.length < 2) return { y: null, n: 0 };
+        const lf = use.reduce((a, c) => a + c.pick, 0) / use.length;
+        const s = dep.s || 1;
+        return { y: Math.max(o, Math.min(s, Math.round(o + lf * s))), n: use.length };
     }
 
     // ---------- календарь и рейс ----------
@@ -384,7 +458,8 @@ window.ForecastLab = (function () {
 
     // ---------- решающие деревья (градиентный бустинг) ----------
 
-    // Обучение отдаёт управление браузеру каждые несколько деревьев — интерфейс не подвисает.
+    // Потери Хьюбера: большие ошибки (группы, отмены) не тянут деревья — ближе к средней ошибке в пассажирах.
+    // Обучение отдаёт управление браузеру примерно каждые 25 мс — интерфейс не подвисает.
     async function gbmTrain(X, y) {
         const n = X.length;
         const k = X[0].length;
@@ -395,17 +470,21 @@ window.ForecastLab = (function () {
             for (let q = 1; q < GBM.bins; q++) set.add(vals[Math.floor(q * (n - 1) / GBM.bins)]);
             cuts.push([...set].sort((a, b) => a - b));
         }
-        const base = y.reduce((a, b) => a + b, 0) / n;
+        const sortedY = y.slice().sort((a, b) => a - b);
+        const base = sortedY[Math.floor(n / 2)];   // медиана
+        const absDev = y.map(v => Math.abs(v - base)).sort((a, b) => a - b);
+        const delta = Math.max(0.02, absDev[Math.floor(0.9 * (n - 1))]);
         const pred = new Array(n).fill(base);
         const trees = [];
         const gain = new Array(k).fill(0);
         const all = Array.from({ length: n }, (_, i) => i);
+        let last = Date.now();
         for (let t = 0; t < GBM.rounds; t++) {
-            const res = y.map((v, i) => v - pred[i]);
+            const res = y.map((v, i) => Math.max(-delta, Math.min(delta, v - pred[i])));
             const tree = grow(X, res, all, 0, cuts, gain);
             trees.push(tree);
             for (let i = 0; i < n; i++) pred[i] += GBM.rate * treeValue(tree, X[i]);
-            if (t % 6 === 5) await pause();
+            if (Date.now() - last > 25) { await pause(); last = Date.now(); }
         }
         return { base, trees, gain };
     }
@@ -480,11 +559,20 @@ window.ForecastLab = (function () {
                 out.push({ key, base: e.b, date, ts: d.getTime(), h: Number(h), s, r, f: e.f });
             });
         });
-        return out.sort((a, b) => a.ts - b.ts || a.h - b.h);
+        return out.sort((a, b) => a.ts - b.ts || a.h - b.h || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
     }
 
     function target(x) {
         return (x.f - x.r.o) / x.s;
+    }
+
+    // Средний добор (доля кресел) на каждом горизонте по набору — для вылетов без файла и без истории.
+    function poolOf(list) {
+        const acc = {};
+        list.forEach(x => { const a = acc[x.h] || (acc[x.h] = { sum: 0, n: 0 }); a.sum += target(x); a.n++; });
+        const out = {};
+        Object.keys(acc).forEach(h => { if (acc[h].n >= 10) out[h] = acc[h].sum / acc[h].n; });
+        return out;
     }
 
     async function train(list) {
@@ -498,14 +586,16 @@ window.ForecastLab = (function () {
             list.forEach((x, i) => { if (x.h === h) ids.push(i); });
             if (ids.length >= MIN_TRAIN_H) res.lin[h] = ridge(ids.map(i => X[i]), ids.map(i => y[i]));
         });
+        // Поправка по рейсу — своя для близких, средних и дальних горизонтов, сжата к нулю при малом числе вылетов.
         const acc = {};
         list.forEach((x, i) => {
             const p = (linPredict(res.lin[x.h] || res.linAll, X[i]) + gbmPredict(res.gbm, X[i])) / 2;
-            const a = acc[x.base] || (acc[x.base] = { sum: 0, n: 0 });
+            const key = x.base + '|' + groupOf(x.h).id;
+            const a = acc[key] || (acc[key] = { sum: 0, n: 0 });
             a.sum += y[i] - p;
             a.n++;
         });
-        Object.keys(acc).forEach(b => { res.route[b] = (acc[b].sum / acc[b].n) * (acc[b].n / (acc[b].n + ROUTE_K)); });
+        Object.keys(acc).forEach(k => { res.route[k] = (acc[k].sum / acc[k].n) * (acc[k].n / (acc[k].n + ROUTE_K)); });
         return res;
     }
 
@@ -513,7 +603,7 @@ window.ForecastLab = (function () {
     function predictAll(m, smp) {
         if (!m) return null;
         const x = features(smp);
-        const corr = m.route[smp.base] || 0;
+        const corr = m.route[smp.base + '|' + groupOf(smp.h).id] || 0;
         const o = smp.r.o / smp.s;
         const clamp = (lf) => Math.max(smp.r.o, Math.min(smp.s, Math.round((o + lf) * smp.s)));
         const l = linPredict(m.lin[smp.h] || m.linAll, x);
@@ -521,17 +611,25 @@ window.ForecastLab = (function () {
         return { lin: clamp(l + corr), gbm: clamp(g + corr), ens: clamp((l + g) / 2 + corr) };
     }
 
-    // Простые способы — с теми же подстановками, что и в карточке: нет данных — берётся следующий.
-    function simple(k, r, s) {
+    // Простые способы. pool — средний добор всех рейсов на этом горизонте (по вылетам, улетевшим к моменту прогноза).
+    function simple(k, r, s, pool, h) {
         const pp = r.p != null && r.q != null ? Math.max(r.o, Math.min(s, Math.round(r.o + r.p - r.q))) : null;
+        const pl = pool && pool[h] != null ? Math.max(r.o, Math.min(s, Math.round(r.o + pool[h] * s))) : null;
         if (k === 'naive') return r.o;
-        if (k === 'planPick') return pp != null ? pp : r.o;
-        if (k === 'hist') return r.y != null ? r.y : (pp != null ? pp : r.o);
+        if (k === 'pool') return pl;
+        if (k === 'planPick') return pp;
         if (k === 'plan') return r.p != null ? Math.min(s, r.p) : null;
-        // Итог по файлу, а где файла нет — по тем же дням недели или продано на сейчас.
-        if (k === 'planOr') return r.p != null ? Math.max(r.o, Math.min(s, r.p)) : (r.y != null ? r.y : r.o);
+        if (k === 'planOr') return r.p != null ? Math.max(r.o, Math.min(s, r.p)) : null;
+        if (k === 'hist') return r.y;
         return null;
     }
+
+    // Сегмент вылета: от него зависит, какие способы вообще есть.
+    function segOf(r) {
+        return r.p != null ? 'plan' : (r.y != null ? 'hist' : 'none');
+    }
+
+    const SEG_LABEL = { plan: 'есть файл ожидаемой', hist: 'есть история дней недели', none: 'нет ни файла, ни истории' };
 
     // ---------- что известно о вылете сейчас ----------
 
@@ -554,24 +652,25 @@ window.ForecastLab = (function () {
         const wk = getWeekForExpectedLoad(dep.date);
         const p = getExpectedLoad(cap, dep.base, 0, wk);
         const q = getExpectedLoad(cap, dep.base, d, wk);
-        let y = null;
-        let n = null;
-        if (typeof FlightInsights !== 'undefined') {
-            const f = FlightInsights.forecast(dep.rowCode, dep.date);
-            if (f && f.source === 'history') { y = f.final; n = f.n; }
-        }
         const o = dep.sold;
-        const x = neighborFeatures(dep, d, context().now, true, o).map(v => Math.round(v * 1000) / 1000);
-        return { d, o, p: num(p), q: num(q), y: num(y), n, m: null, b: 0, s, x };
+        const T = dep.ts - d * DAY;   // день среза данных
+        const hy = histAsOf(dep, d, T, o);
+        const x = neighborFeatures(dep, d, T, true, o).map(v => Math.round(v * 1000) / 1000);
+        return { d, o, p: num(p), q: num(q), y: hy.y, n: hy.n || null, m: null, b: 0, s, x };
     }
 
-    const METHOD_LABEL = { planOr: 'файл ожидаемой загрузки', ens: 'модель', gbm: 'модель (деревья)', lin: 'модель (линейная)', planPick: 'продано + добор по файлу', hist: 'по тем же дням недели', naive: 'продано на сейчас' };
+    const METHOD_LABEL = {
+        ens: 'модель', gbm: 'модель (деревья)', lin: 'модель (линейная)', planOr: 'файл ожидаемой загрузки',
+        planPick: 'продано + добор по файлу', hist: 'по тем же дням недели', pool: 'средний добор всех рейсов', naive: 'продано на сейчас'
+    };
 
-    // Лучший прогноз для вылета (карточка): способ, который на этом горизонте ошибался меньше всех.
+    // Прогноз для вылета (карточка): способ, который ошибался меньше всех для этого горизонта и такого вылета.
     function predict(code, date) {
         if (!isAdmin() || !loaded) return null;
         const ev = evalState.ev;
         if (!ev || evalState.sig !== trainSig()) { startEvaluation(); if (!ev) return null; }
+        const dtdNow = typeof getDaysUntil === 'function' ? getDaysUntil(date) : null;
+        if (dtdNow == null || dtdNow <= 0) return null;   // уже улетел
         const base = getBaseFlight(code);
         const C = context();
         const dep = C.byKey[date + '|' + cleanFlight(code)] || C.byKey[date + '|' + base];
@@ -580,20 +679,21 @@ window.ForecastLab = (function () {
         const h = horizonFor(d);
         const r = liveRecord(dep, d);
         if (!r || !h) return null;
-        const pick = ev.choice[h];
+        const pick = ev.choice[h + '|' + segOf(r)] || ev.choice[h];
         if (!pick) return null;
         let final = null;
         if (pick.k === 'ens' || pick.k === 'gbm' || pick.k === 'lin') {
             if (!models) return null;
             final = predictAll(models, { base, date, ts: dep.ts, h, s: r.s, r })[pick.k];
-        } else final = simple(pick.k, r, r.s);
+        } else final = simple(pick.k, r, r.s, ev.pool, h);
+        if (final == null) final = r.o;
         return { final, seats: r.s, lf: Math.round(final / r.s * 100), method: METHOD_LABEL[pick.k], err: Math.round(pick.v * 10) / 10, trainedOn: pick.n, h };
     }
 
     // ---------- запись журнала ----------
 
     // Восстановить записи улетевшего вылета: что было известно за h дней до вылета.
-    function backfill(dep, byBase) {
+    function backfill(dep) {
         const s = dep.s;
         const f = dep.sold;
         if (!(s > 0) || !(f > 0)) return null;
@@ -602,27 +702,21 @@ window.ForecastLab = (function () {
         const cap = getCapacityFromAircraft(getAircraftType(dep.row[4]));
         const wk = getWeekForExpectedLoad(dep.date);
         const p = getExpectedLoad(cap, dep.base, 0, wk);
-        const dow = new Date(dep.ts).getDay();
         const e = { b: dep.base, s, f, h: {} };
         HORIZONS.forEach(h => {
             const T = dep.ts - h * DAY;
             // Только то, что было в продажах к этому дню (без подсказки итогом вылета).
             const o = at(raw, h);
-            const coh = (byBase[dep.base] || []).filter(c => c.flown && c.ts < T && new Date(c.ts).getDay() === dow && dep.ts - c.ts <= 56 * DAY && c.s > 0 && c.sold > 0);
-            let y = null;
-            if (coh.length >= 2) {
-                const lf = coh.reduce((a, c) => a + Math.max(0, (c.sold - at(anchOf(c), h)) / c.s), 0) / coh.length;
-                y = Math.max(o, Math.min(s, Math.round(o + lf * s)));
-            }
+            const hy = histAsOf(dep, h, T, o);
             const x = neighborFeatures(dep, h, T, false, o).map(v => Math.round(v * 1000) / 1000);
-            e.h[h] = { d: h, o, p: num(p), q: num(getExpectedLoad(cap, dep.base, h, wk)), y, n: coh.length || null, m: null, b: 1, s, x };
+            e.h[h] = { d: h, o, p: num(p), q: num(getExpectedLoad(cap, dep.base, h, wk)), y: hy.y, n: hy.n || null, m: null, b: 1, bv: BACKFILL_V, s, x };
         });
         return e;
     }
 
     function dataToken() {
         const at0 = typeof lastSalesUpdate !== 'undefined' && lastSalesUpdate ? new Date(lastSalesUpdate).getTime() : 0;
-        return `v3|${today()}|${at0}|${(typeof allData !== 'undefined' && allData ? allData.length : 0)}`;
+        return `v4|${today()}|${at0}|${(typeof allData !== 'undefined' && allData ? allData.length : 0)}`;
     }
 
     async function capture(force) {
@@ -640,7 +734,7 @@ window.ForecastLab = (function () {
         let recorded = 0;
         let finals = 0;
         let backfilled = 0;
-        let i = 0;
+        let lastYield = Date.now();
 
         for (const base of Object.keys(C.byBase)) {
             for (const dep of C.byBase[base]) {
@@ -651,9 +745,9 @@ window.ForecastLab = (function () {
                     // Факт — только когда данные уже охватывают день вылета.
                     if (observedFromDtd(dep.date) !== 0) continue;
                     if (cur && cur.f !== dep.sold) { add(key, dep.date, { b: base, s: dep.s, f: dep.sold, h: {} }); finals++; }
-                    const need = !cur || HORIZONS.some(h => !cur.h[h] || (cur.h[h].b && !cur.h[h].x));
+                    const need = !cur || HORIZONS.some(h => !cur.h[h] || (cur.h[h].b && (cur.h[h].bv || 0) < BACKFILL_V));
                     if (need) {
-                        const e = backfill(dep, C.byBase);
+                        const e = backfill(dep);
                         if (e) { add(key, dep.date, e); backfilled++; }
                     }
                 } else if (!stale) {
@@ -667,7 +761,8 @@ window.ForecastLab = (function () {
                     add(key, dep.date, { b: base, s: r.s, f: null, h: { [h]: r } });
                     recorded++;
                 }
-                if (++i % 40 === 0) await pause();
+                // Отдавать управление браузеру по времени, а не по числу вылетов: восстановление тяжелее записи.
+                if (Date.now() - lastYield > 25) { await pause(); lastYield = Date.now(); }
             }
         }
 
@@ -683,11 +778,15 @@ window.ForecastLab = (function () {
             if (remote && typeof remote === 'object') Object.keys(remote).forEach(k => { const e = normEntry(remote[k]); if (e) merged[k] = e; });
             let changed = false;
             Object.keys(additions[month]).forEach(k => { if (mergeEntry(merged, k, additions[month][k])) changed = true; });
+            let written = true;
             if (changed) {
-                ok = (await SharedStorage.writeJsonFile(fileOf(month), { version: VERSION, updatedAt: new Date().toISOString(), flights: merged })) && ok;
-                changedAny = true;
+                written = await SharedStorage.writeJsonFile(fileOf(month), { version: VERSION, updatedAt: new Date().toISOString(), flights: merged });
+                ok = written && ok;
+                if (written) changedAny = true;
             }
-            Object.keys(merged).forEach(k => mergeEntry(log, k, merged[k]));
+            // В память — только записанное: иначе повторная запись решит, что всё уже сохранено.
+            const source = written ? merged : (remote && typeof remote === 'object' ? remote : {});
+            Object.keys(source).forEach(k => { const e = written ? source[k] : normEntry(source[k]); if (e) mergeEntry(log, k, e); });
         }
         if (changedAny) invalidate();
         lastCapture = { at: Date.now(), recorded, finals, backfilled, ok, stale };
@@ -709,98 +808,125 @@ window.ForecastLab = (function () {
 
     // ---------- честная проверка (в фоне) ----------
 
-    // Прогноз за h дней до вылета знает только вылеты, улетевшие до этого момента. Модель для недели w и
-    // горизонта h обучается на вылетах, улетевших до (начало недели w − h дней); модели кэшируются по набору.
-    // Все способы сравниваются на одних и тех же вылетах — там, где есть прогноз модели.
+    const modelCache = new Map();   // между запусками: обучающий набор не изменился — модель не переобучается
+
+    async function cachedTrain(all, len, cum) {
+        const key = `${len}|${cum[len]}`;
+        if (modelCache.has(key)) return modelCache.get(key);
+        const m = await train(all.slice(0, len));
+        modelCache.set(key, m);
+        if (modelCache.size > 40) modelCache.delete(modelCache.keys().next().value);
+        return m;
+    }
+
+    function loadChoicePrev() {
+        try { return JSON.parse(localStorage.getItem(CHOICE_KEY) || '{}') || {}; } catch (e) { return {}; }
+    }
+
+    function saveChoice(c) {
+        const out = {};
+        Object.keys(c).forEach(k => { if (c[k]) out[k] = c[k].k; });
+        try { localStorage.setItem(CHOICE_KEY, JSON.stringify(out)); } catch (e) { /* ignore */ }
+    }
+
+    // Прогноз за h дней до вылета знает только вылеты, улетевшие до недели, в которой он сделан.
+    // Все способы сравниваются на одних и тех же вылетах; выбор — отдельно для вылетов с файлом ожидаемой,
+    // с историей дней недели и без того и другого. Выбор меняется, только если новый способ заметно лучше.
     async function evaluate() {
         const all = samples();
+        const cum = [0];
+        all.forEach((x, i) => { cum.push(cum[i] + x.f * 7 + x.r.o * 3 + (x.r.y || 0) * 5 + (x.r.p || 0) * 11 + (x.r.x ? 1 : 0)); });
         const weeks = [...new Set(all.map(x => weekOf(x.ts)))].sort((a, b) => a - b).slice(-EVAL_WEEKS);
-        const cache = new Map();   // длина набора → модель
+        const firstWeek = weeks.length ? weeks[0] : Infinity;
+        const test = all.filter(x => weekOf(x.ts) >= firstWeek);
         const pred = new Map();
-        for (const w of weeks) {
-            const test = all.filter(x => weekOf(x.ts) === w);
-            for (const h of HORIZONS) {
-                const cutoff = weekOf(w - h * DAY);   // неделя, в которой сделан прогноз
-                let len = 0;
-                while (len < all.length && all[len].ts + DAY <= cutoff) len++;
-                if (len < MIN_TRAIN) continue;
-                if (!cache.has(len)) cache.set(len, await train(all.slice(0, len)));
-                const m = cache.get(len);
-                if (m) test.filter(x => x.h === h).forEach(x => pred.set(x, predictAll(m, x)));
-                await pause();
-            }
+        const pools = new Map();
+        // Модель для каждого «среза» (понедельник недели, когда делался прогноз).
+        const byCut = new Map();
+        test.forEach(x => {
+            const cut = weekOf(x.ts - x.h * DAY);
+            (byCut.get(cut) || byCut.set(cut, []).get(cut)).push(x);
+        });
+        for (const [cut, list] of [...byCut.entries()].sort((a, b) => a[0] - b[0])) {
+            let len = 0;
+            while (len < all.length && all[len].ts + DAY <= cut) len++;
+            const pool = poolOf(all.slice(0, len));
+            list.forEach(x => pools.set(x, pool));
+            if (len < MIN_TRAIN) continue;
+            const m = await cachedTrain(all, len, cum);
+            if (m) list.forEach(x => pred.set(x, predictAll(m, x)));
+            await pause();
         }
-        const kinds = ['naive', 'plan', 'planOr', 'planPick', 'hist', 'lin', 'gbm', 'ens'];
-        const val = (k, x) => (k === 'lin' || k === 'gbm' || k === 'ens' ? (pred.has(x) ? pred.get(x)[k] : null) : simple(k, x.r, x.s));
+        const kinds = ['naive', 'pool', 'plan', 'planOr', 'planPick', 'hist', 'lin', 'gbm', 'ens'];
+        const val = (k, x) => (k === 'lin' || k === 'gbm' || k === 'ens' ? (pred.has(x) ? pred.get(x)[k] : null) : simple(k, x.r, x.s, pools.get(x), x.h));
+        const err = (k, x) => { const v = val(k, x); return v == null ? null : Math.abs(v - x.f); };
+        const stat = (k, list) => {
+            const c = { sum: 0, bias: 0, n: 0 };
+            list.forEach(x => { const v = val(k, x); if (v == null) return; c.sum += Math.abs(v - x.f); c.bias += v - x.f; c.n++; });
+            return c;
+        };
+        // Таблица: по горизонту, на одних и тех же вылетах (где есть прогноз модели), иначе — на всех.
         const byH = {};
         HORIZONS.forEach(h => {
-            byH[h] = { total: 0, common: 0 };
-            kinds.forEach(k => { byH[h][k] = { sum: 0, bias: 0, n: 0 }; });
+            const hl = test.filter(x => x.h === h);
+            const common = hl.filter(x => pred.has(x));
+            const base = common.length >= MIN_CHOICE ? common : hl;
+            byH[h] = { total: hl.length, common: common.length, simpleOnly: common.length < MIN_CHOICE };
+            kinds.forEach(k => { byH[h][k] = stat(k, base); });
         });
-        all.forEach(x => {
-            const B = byH[x.h];
-            if (!B) return;
-            B.total++;
-            // Сравнение — только на вылетах, где посчитаны все способы (кроме файла, его бывает мало).
-            if (!pred.has(x)) return;
-            B.common++;
-            kinds.forEach(k => {
-                const v = val(k, x);
-                if (v == null) return;
-                B[k].sum += Math.abs(v - x.f);
-                B[k].bias += v - x.f;
-                B[k].n++;
-            });
-        });
-        // Где модель проверить ещё не на чем — простые способы сравниваются на всех вылетах этого горизонта.
-        HORIZONS.forEach(h => {
-            const B = byH[h];
-            if (B.common >= MIN_CHOICE) return;
-            kinds.forEach(k => { B[k] = { sum: 0, bias: 0, n: 0 }; });
-            B.simpleOnly = true;
-            all.forEach(x => {
-                if (x.h !== h) return;
-                ['naive', 'plan', 'planOr', 'planPick', 'hist'].forEach(k => {
-                    const v = val(k, x);
-                    if (v == null) return;
-                    B[k].sum += Math.abs(v - x.f);
-                    B[k].bias += v - x.f;
-                    B[k].n++;
-                });
-            });
-        });
-        const anyModel = HORIZONS.some(h => byH[h].common >= MIN_CHOICE);
+        // Выбор по горизонту и сегменту, с устойчивостью к шуму.
+        const prev = loadChoicePrev();
         const choice = {};
+        const decide = (key, list) => {
+            const withModel = list.filter(x => pred.has(x));
+            const base = withModel.length >= MIN_CHOICE_SEG ? withModel : list;
+            const cands = (withModel.length >= MIN_CHOICE_SEG ? ['ens', 'gbm', 'lin'] : []).concat(['planOr', 'planPick', 'hist', 'pool', 'naive']);
+            const scored = cands.map(k => {
+                const e = base.map(x => err(k, x)).filter(v => v != null);
+                return { k, n: e.length, v: e.length ? e.reduce((a, b) => a + b, 0) / e.length : Infinity };
+            }).filter(c => c.n >= MIN_CHOICE_SEG && c.n >= base.length * 0.9);
+            if (!scored.length) return null;
+            scored.sort((a, b) => a.v - b.v);
+            let best = scored[0];
+            const old = scored.find(c => c.k === prev[key]);
+            if (old && old.k !== best.k) {
+                // Парная разница ошибок на одних вылетах: меняем, только если новый способ надёжно лучше.
+                const d = base.map(x => { const a = err(best.k, x); const b = err(old.k, x); return a == null || b == null ? null : a - b; }).filter(v => v != null);
+                const mean = d.reduce((a, b) => a + b, 0) / (d.length || 1);
+                const sd = Math.sqrt(d.reduce((a, b) => a + (b - mean) * (b - mean), 0) / Math.max(1, d.length - 1));
+                const t = sd > 0 ? -mean / (sd / Math.sqrt(d.length)) : (mean < 0 ? Infinity : 0);
+                if (!(t > SWITCH_T)) best = old;
+            }
+            return { k: best.k, v: best.v, n: best.n };
+        };
         HORIZONS.forEach(h => {
-            let best = null;
-            ['ens', 'gbm', 'lin', 'planOr', 'planPick', 'hist', 'naive'].forEach(k => {
-                const c = byH[h][k];
-                if (c.n < MIN_CHOICE) return;
-                const v = c.sum / c.n;
-                if (!best || v < best.v - 1e-9) best = { k, v, n: c.n };
+            const hl = test.filter(x => x.h === h);
+            choice[h] = decide(String(h), hl);
+            ['plan', 'hist', 'none'].forEach(sg => {
+                const sl = hl.filter(x => segOf(x.r) === sg);
+                if (sl.length >= MIN_CHOICE_SEG) choice[h + '|' + sg] = decide(h + '|' + sg, sl);
             });
-            choice[h] = best;
         });
+        saveChoice(choice);
+        const anyModel = HORIZONS.some(h => !byH[h].simpleOnly);
         const byWeek = new Map();
         const byBase = new Map();
-        all.filter(x => x.h === 7).forEach(x => {
+        test.filter(x => x.h === 7).forEach(x => {
             const w = weekOf(x.ts);
-            const W = byWeek.get(w) || { plan: [0, 0], best: [0, 0], ts: w, src: new Set() };
+            const W = byWeek.get(w) || { plan: [0, 0], best: [0, 0], ts: w };
             const pl = simple('plan', x.r, x.s);
-            const pick = choice[7];
-            const md = pick ? val(pick.k, x) : null;
+            const pick = choice[7 + '|' + segOf(x.r)] || choice[7];
+            const md = pick ? (val(pick.k, x) != null ? val(pick.k, x) : x.r.o) : null;
             if (pl != null) { W.plan[0] += Math.abs(pl - x.f); W.plan[1]++; }
             if (md != null) { W.best[0] += Math.abs(md - x.f); W.best[1]++; }
             byWeek.set(w, W);
-            const R = byBase.get(x.base) || { plan: [0, 0], model: [0, 0], seats: 0, n: 0 };
+            const R = byBase.get(x.base) || { plan: [0, 0], model: [0, 0] };
             if (pl != null) { R.plan[0] += Math.abs(pl - x.f); R.plan[1]++; }
             if (md != null) { R.model[0] += Math.abs(md - x.f); R.model[1]++; }
-            R.seats += x.s;
-            R.n++;
             byBase.set(x.base, R);
         });
         // Модель для карточки — на всём журнале; «что влияет» — по её деревьям.
-        const full = await train(all);
+        const full = await cachedTrain(all, all.length, cum);
         let influence = [];
         if (full) {
             let pos = 0;
@@ -812,19 +938,21 @@ window.ForecastLab = (function () {
                 return { label, share: g / total };
             }).sort((a, b) => b.share - a.share);
         }
-        return { full, byH, byWeek, byBase, choice, influence, samples: all.length, departures: new Set(all.map(x => x.key)).size, trained: !!full, anyModel };
+        const segCount = { plan: 0, hist: 0, none: 0 };
+        test.forEach(x => { if (x.h === 7) segCount[segOf(x.r)]++; });
+        return { full, pool: poolOf(all), byH, byWeek, byBase, choice, influence, segCount, samples: all.length, departures: new Set(all.map(x => x.key)).size, trained: !!full, anyModel };
     }
 
-    // Один расчёт за раз; все, кто ждал, получают результат. Устаревший расчёт (данные поменялись) не применяется.
+    // Один расчёт за раз; все, кто ждал, получают результат (и при ошибке). Устаревший расчёт не применяется.
     function startEvaluation(onDone) {
         if (onDone) evalState.waiters.push(onDone);
         if (!loaded) return;
         const sig = trainSig();
-        if (evalState.ev && evalState.sig === sig && !evalState.busy) {
+        const flush = () => {
             const w = evalState.waiters.splice(0);
             w.forEach(f => { try { f(); } catch (e) { console.warn(e); } });
-            return;
-        }
+        };
+        if (evalState.ev && evalState.sig === sig && !evalState.busy) { flush(); return; }
         if (evalState.busy) return;
         const run = ++evalState.run;
         evalState.busy = true;
@@ -835,12 +963,12 @@ window.ForecastLab = (function () {
             evalState.ev = ev;
             evalState.sig = sig;
             models = ev.full || null;
-            const w = evalState.waiters.splice(0);
-            w.forEach(f => { try { f(); } catch (e) { console.warn(e); } });
+            flush();
             if (typeof FlightCard !== 'undefined' && FlightCard.isOpen && FlightCard.isOpen() && FlightCard.refresh) FlightCard.refresh();
         }).catch(e => {
             console.warn('ForecastLab.evaluate', e);
             if (run === evalState.run) evalState.busy = false;
+            flush();
         });
     }
 
@@ -867,7 +995,16 @@ window.ForecastLab = (function () {
             const d = parseLocalDate(k.slice(0, k.lastIndexOf('|')));
             return d && d.getTime() >= now;
         }).length;
-        const cols = [['naive', 'Продано на сейчас'], ['plan', 'Файл ожидаемой, итог'], ['planPick', 'Продано + добор по файлу'], ['hist', 'По тем же дням недели'], ['lin', 'Модель: линейная'], ['gbm', 'Модель: деревья'], ['ens', 'Модель: среднее']];
+        const cols = [['naive', 'Продано на сейчас'], ['pool', 'Средний добор всех рейсов'], ['plan', 'Файл ожидаемой, итог'], ['planPick', 'Продано + добор по файлу'], ['hist', 'По тем же дням недели'], ['lin', 'Модель: линейная'], ['gbm', 'Модель: деревья'], ['ens', 'Модель: среднее']];
+        // Что берём: отдельно для вылетов с файлом ожидаемой, с историей и без того и другого (если данных хватает).
+        const choiceCell = (h) => {
+            const segs = ['plan', 'hist', 'none'].filter(sg => ev.choice[h + '|' + sg]);
+            if (!segs.length) return ev.choice[h] ? `<strong>${esc(METHOD_LABEL[ev.choice[h].k])}</strong>` : '<span class="rp-muted">мало данных</span>';
+            return segs.map(sg => {
+                const c = ev.choice[h + '|' + sg];
+                return `<div class="fl-seg"><span class="rp-muted">${esc(SEG_LABEL[sg])}:</span> <strong>${esc(METHOD_LABEL[c.k])}</strong> <span class="rp-muted">±${fmt(c.v)}</span></div>`;
+            }).join('');
+        };
         const rowsH = HORIZONS.map(h => {
             const B = ev.byH[h];
             const vals = cols.map(([k]) => (B[k].n ? B[k].sum / B[k].n : null));
@@ -877,7 +1014,7 @@ window.ForecastLab = (function () {
                 const v = vals[i];
                 const b = B[k].n ? B[k].bias / B[k].n : null;
                 return `<td class="${v != null && v === best && B[k].n >= MIN_CHOICE && k !== 'plan' ? 'fl-best' : ''}">${fmt(v)}${v != null ? `<div class="rp-muted">${B[k].n} · ${b > 0 ? '↑' : '↓'}${fmt(Math.abs(b))}</div>` : ''}</td>`;
-            }).join('')}<td class="rp-left">${ev.choice[h] ? `<strong>${esc(METHOD_LABEL[ev.choice[h].k])}</strong>` : '<span class="rp-muted">мало данных</span>'}${B.simpleOnly ? '<div class="rp-muted">модель проверить пока не на чем</div>' : ''}</td></tr>`;
+            }).join('')}<td class="rp-left">${choiceCell(h)}${B.simpleOnly ? '<div class="rp-muted">модель проверить пока не на чем</div>' : ''}</td></tr>`;
         }).join('');
         const weeks = [...ev.byWeek.entries()].sort((a, b) => a[0] - b[0]).slice(-12);
         const rowsW = weeks.map(([, W]) => {
@@ -901,6 +1038,9 @@ window.ForecastLab = (function () {
                     день недели, выходные, праздники и каникулы, сезон и тип рейса. Ошибка — в пассажирах, в среднем по вылетам; под числом — сколько вылетов
                     и в какую сторону ошибается (↑ завышает, ↓ занижает). Проверка честная: прогноз за N дней до вылета модель делает, зная только вылеты,
                     улетевшие к тому моменту. Все способы сравниваются на одних и тех же вылетах (последние ${EVAL_WEEKS} недель).
+                    Способ выбирается отдельно для вылетов с файлом ожидаемой загрузки, с историей по дням недели и без того и другого,
+                    и меняется, только когда новый способ надёжно точнее. «Средний добор всех рейсов» — сколько в среднем добирают все рейсы
+                    за столько же дней до вылета: запасной способ для рейсов без файла и без истории.
                     ${ev.anyModel ? '' : '<strong>Модели пока не на чем проверяться: улетевших вылетов мало. Сравниваются простые способы.</strong>'}</p>
                 <div class="dr-kpis">
                     <div class="dr-kpi"><div class="dr-kpi-label">Вылетов с фактом</div><div class="dr-kpi-value">${ev.departures}</div><div class="dr-kpi-sub">записей прогноза: ${ev.samples}</div></div>
