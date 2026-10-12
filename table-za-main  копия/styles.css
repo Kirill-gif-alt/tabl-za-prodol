@@ -8256,3 +8256,9 @@ table.cr-table thead tr.cr-totals th { background: var(--cr-totals-bg, #e2e8f0);
 html[data-theme="dark"] .fs-lf-hi { color: #34d399; }
 html[data-theme="dark"] .fs-lf-mid { color: #fbbf24; }
 html[data-theme="dark"] .fs-lf-lo { color: #f87171; }
+
+/* ---------- Точность прогноза (js/forecast-lab.js) ---------- */
+.rp-table td.fl-best { background: color-mix(in srgb, #10b981 12%, var(--surface)) !important; font-weight: 700; }
+.fl-admin { font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--muted-bg, #f1f5f9); color: var(--text-muted); }
+.fc-it-ml { margin-top: 5px; padding-top: 5px; border-top: 1px dashed var(--border); font-size: 0.74rem; color: #6d28d9; }
+html[data-theme="dark"] .fc-it-ml { color: #a78bfa; }

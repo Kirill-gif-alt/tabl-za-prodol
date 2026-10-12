@@ -874,6 +874,7 @@ window.ReportsView = (function () {
             list.push({ id: 'reconcile', label: 'Сверка', badge: n ? String(n) : '' });
         }
         if (typeof DecisionsReport !== 'undefined' && DecisionsReport.canView()) list.push({ id: 'decisions', label: 'Решения', badge: '' });
+        if (typeof ForecastLab !== 'undefined' && ForecastLab.canView()) list.push({ id: 'forecast', label: 'Точность прогноза', badge: '' });
         list.push({ id: 'export', label: 'Выгрузки в Excel', badge: '' });
         return list;
     }
@@ -888,6 +889,7 @@ window.ReportsView = (function () {
         if (subtab === 'checks') content = checksHtml();
         else if (subtab === 'refs') content = typeof ReferenceView !== 'undefined' ? ReferenceView.html(refsHtml) : refsHtml();
         else if (subtab === 'decisions') content = DecisionsReport.html();
+        else if (subtab === 'forecast' && typeof ForecastLab !== 'undefined') content = ForecastLab.html(renderBody);
         else if (subtab === 'reconcile') content = SalesReconcile.html();
         else {
             content = `<div class="rp-export-grid">${[
@@ -956,6 +958,7 @@ window.ReportsView = (function () {
             if (!btn || btn.disabled) return;
             if (typeof ReferenceView !== 'undefined' && ReferenceView.handleClick(btn, renderBody)) return;
             if (typeof DecisionsReport !== 'undefined' && DecisionsReport.handleClick(btn, renderBody)) return;
+            if (typeof ForecastLab !== 'undefined' && ForecastLab.handleClick(btn, renderBody)) return;
             if (btn.dataset.rpTab) {
                 subtab = btn.dataset.rpTab;
                 try { localStorage.setItem(SUBTAB_KEY, subtab); } catch (e) { /* ignore */ }

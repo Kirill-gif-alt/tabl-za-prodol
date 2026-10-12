@@ -170,10 +170,12 @@ window.SharedStorage = (function () {
     // Отметки «Управления продажами»: у каждого автора свой файл за месяц — никто не перезаписывает чужое.
     const MARKS_FILE_RE = /^sales-marks\/\d{4}-\d{2}\/[a-z0-9_]{1,40}\.json$/;
     const MARKS_DIR_RE = /^sales-marks\/\d{4}-\d{2}$/;
+    // Журнал прогнозов загрузки: shared/forecast-log/ГГГГ-ММ.json (см. forecast-lab.js).
+    const FCLOG_FILE_RE = /^forecast-log\/\d{4}-\d{2}\.json$/;
 
     function isAllowedSharedFile(filename) {
         const name = String(filename || '');
-        return ALLOWED_FILES.has(name) || HISTORY_FILE_RE.test(name) || MARKS_FILE_RE.test(name);
+        return ALLOWED_FILES.has(name) || HISTORY_FILE_RE.test(name) || MARKS_FILE_RE.test(name) || FCLOG_FILE_RE.test(name);
     }
 
     // Папка и имя файла внутри shared/ (для архива — подпапка history/).
