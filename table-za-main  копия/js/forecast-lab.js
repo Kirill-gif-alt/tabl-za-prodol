@@ -16,6 +16,45 @@
 //    Две модели — линейная (гребневая регрессия) и решающие деревья (градиентный бустинг) — и их среднее.
 //    Проверка честная: для каждой недели модели обучены только на более ранних неделях. На каждом горизонте
 //    берётся способ, который ошибался меньше всех.
+//
+// ═══════════════════════ МАТЕМАТИКА МОДЕЛИ ═══════════════════════
+// Обозначения (вылет i, горизонт h — дней до вылета):
+//   sᵢ — кресла, oᵢₕ — продано за h дней, fᵢ — итог (факт), pᵢ / qᵢₕ — файл ожидаемой: итог и значение на день h,
+//   yᵢₕ — прогноз по тем же дням недели, xᵢₕ ∈ ℝ³¹ — признаки (см. features / FEATURE_GROUPS).
+//
+// (1) Цель — добор в долях кресел:      tᵢₕ = (fᵢ − oᵢₕ) / sᵢ
+//     Итог из прогноза добора:           f̂ᵢₕ = clamp(round(oᵢₕ + sᵢ·t̂ᵢₕ), oᵢₕ, sᵢ)   — не меньше проданного, не больше кресел.
+//
+// (2) Простые способы:
+//     naive     f̂ = o                                 (дальше не продадут ничего)
+//     planOr    f̂ = clamp(p, o, s)                     (итог файла ожидаемой)
+//     planPick  f̂ = clamp(o + (p − q), o, s)           (продано + добор по файлу от дня h до вылета)
+//     hist      f̂ = y                                  (те же дни недели: средний итог при похожих продажах на день h)
+//     pool      f̂ = clamp(o + π̄ₕ·s, o, s),  π̄ₕ = (1/Nₕ)·Σⱼ tⱼₕ   (средний добор всех улетевших рейсов на горизонте h, Nₕ ≥ 10)
+//
+// (3) Гребневая регрессия (на всех горизонтах и своя на каждом h при nₕ ≥ 80):
+//     ŵ = argmin_w Σᵢ (tᵢ − w₀ − wᵀxᵢ)² + λ‖w‖²   ⇒   ŵ = (X̃ᵀX̃ + λ·I₀)⁻¹ X̃ᵀt,
+//     X̃ = [1 | X], I₀ = diag(0, 1, …, 1) (свободный член не штрафуется), λ = 0,8; решение — Гаусс–Жордан с выбором ведущего.
+//
+// (4) Градиентный бустинг деревьев с потерями Хьюбера:
+//     F₀ = median(t);   δ = max(0,02; Q₀,₉ |tᵢ − F₀|)
+//     для m = 1..M:  rᵢ = clip(tᵢ − Fₘ₋₁(xᵢ), −δ, δ)              (антиградиент Хьюбера: выбросы обрезаются)
+//                    hₘ = дерево глубины 3 по МНК на rᵢ, лист ≥ 12, пороги — 16 квантилей признака
+//                    разбиение по максимуму  G = S_L²/n_L + S_R²/n_R − S²/n   (S — сумма rᵢ в узле)
+//                    Fₘ = Fₘ₋₁ + η·hₘ,    η = 0,08, M = 120
+//     Важность признака: доля Σ G всех его разбиений во всех деревьях.
+//
+// (5) Ансамбль: t̂ = ½·(t̂_lin + t̂_gbm) + c_{b,g}
+//     Поправка рейса b на группе горизонтов g (1–3 / 5–10 / 14–30 дней) — эмпирический Байес:
+//     c_{b,g} = n/(n + K) · (1/n)·Σᵢ (tᵢ − t̂ᵢ),   K = 10   (мало вылетов — поправка ≈ 0, много — средний остаток рейса).
+//
+// (6) Честная проверка (walk-forward): прогноз за h дней до вылета i сделан в неделю cᵢ = понедельник(tsᵢ − h·сутки);
+//     модель для него обучена только на вылетах j с tsⱼ + сутки ≤ cᵢ. Точность способа k на вылетах A:
+//     MAEₖ = (1/|A|)·Σ |f̂ₖᵢ − fᵢ|,   смещение = (1/|A|)·Σ (f̂ₖᵢ − fᵢ),   все способы — на одних и тех же вылетах.
+//
+// (7) Выбор способа на горизонте h для сегмента (есть файл / есть история / нет ничего):  k* = argminₖ MAEₖ,
+//     но прежний способ k₀ меняется на k*, только если парная разница dᵢ = |eₖ*,ᵢ| − |eₖ₀,ᵢ| надёжно меньше нуля:
+//     t = −d̄ / (s_d/√n) > 1   (защита от «прыжков» из-за шума).
 window.ForecastLab = (function () {
     const HORIZONS = [30, 21, 14, 10, 7, 5, 3, 1];
     const GROUPS = [{ id: 'near', label: '1–3 дня', hs: [1, 3] }, { id: 'mid', label: '5–10 дней', hs: [5, 7, 10] }, { id: 'far', label: '14–30 дней', hs: [14, 21, 30] }];
@@ -908,6 +947,21 @@ window.ForecastLab = (function () {
             });
         });
         saveChoice(choice);
+        // «Что берём» — выбранный способ по сегменту на тех же вылетах, что и остальные столбцы.
+        const chosenVal = (x) => {
+            const pick = choice[x.h + '|' + segOf(x.r)] || choice[x.h];
+            if (!pick) return null;
+            const v = val(pick.k, x);
+            return v != null ? v : x.r.o;
+        };
+        HORIZONS.forEach(h => {
+            const hl = test.filter(x => x.h === h);
+            const common = hl.filter(x => pred.has(x));
+            const base = common.length >= MIN_CHOICE ? common : hl;
+            const c = { sum: 0, bias: 0, n: 0 };
+            base.forEach(x => { const v = chosenVal(x); if (v == null) return; c.sum += Math.abs(v - x.f); c.bias += v - x.f; c.n++; });
+            byH[h].best = c;
+        });
         const anyModel = HORIZONS.some(h => !byH[h].simpleOnly);
         const byWeek = new Map();
         const byBase = new Map();
@@ -976,6 +1030,96 @@ window.ForecastLab = (function () {
 
     function fmt(v) {
         return v == null ? '—' : (Math.round(v * 10) / 10).toLocaleString('ru-RU');
+    }
+
+    // График «ошибка по горизонтам»: линии (не столбцы) — ошибка меняется по мере приближения вылета.
+    // Ось X — дни до вылета слева направо (30 → 1), Y — средняя ошибка, пасс. Подписи серий — у правого края,
+    // подсказка по наведению/фокусу — на чистом CSS (без обработчиков). Таблица ниже — табличный вид того же.
+    const CHART_SERIES = [['best', 'Что берём'], ['ens', 'Модель'], ['pool', 'Средний добор'], ['naive', 'Продано на сейчас']];
+
+    function chartHtml(ev) {
+        const W = 760, H = 260, L = 44, R = 150, T = 14, B = 34;
+        const pw = W - L - R, ph = H - T - B;
+        const xs = HORIZONS.map((h, i) => L + (HORIZONS.length === 1 ? pw / 2 : i * pw / (HORIZONS.length - 1)));
+        const mae = (k, h) => { const c = ev.byH[h] && ev.byH[h][k]; return c && c.n >= MIN_CHOICE ? c.sum / c.n : null; };
+        const series = CHART_SERIES.map(([k, label], si) => ({ k, label, si, vals: HORIZONS.map(h => mae(k, h)) }))
+            .filter(sr => sr.vals.some(v => v != null));
+        const all = series.flatMap(sr => sr.vals).filter(v => v != null);
+        if (!all.length) return '';
+        const rawMax = Math.max(...all);
+        const step = [1, 2, 5, 10, 20, 50].find(st => rawMax / st <= 5) || 100;
+        const yMax = Math.max(step, Math.ceil(rawMax / step) * step);
+        const yOf = v => T + ph - v / yMax * ph;
+        const r1 = v => (Math.round(v * 10) / 10).toLocaleString('ru-RU');
+        const grid = [];
+        for (let v = 0; v <= yMax + 1e-9; v += step) {
+            grid.push(`<line class="flc-grid${v === 0 ? ' flc-base' : ''}" x1="${L}" x2="${L + pw}" y1="${yOf(v)}" y2="${yOf(v)}"/><text class="flc-ytick" x="${L - 8}" y="${yOf(v) + 4}">${v}</text>`);
+        }
+        const xt = HORIZONS.map((h, i) => `<text class="flc-xtick" x="${xs[i]}" y="${T + ph + 18}">${h}</text>`).join('');
+        const lines = series.map(sr => {
+            const segs = [];
+            let cur = [];
+            sr.vals.forEach((v, i) => { if (v == null) { if (cur.length) segs.push(cur); cur = []; } else cur.push(`${xs[i].toFixed(1)},${yOf(v).toFixed(1)}`); });
+            if (cur.length) segs.push(cur);
+            const path = segs.map(sg => 'M' + sg.join('L')).join('');
+            const dots = sr.vals.map((v, i) => (v == null ? '' : `<circle class="flc-dot" cx="${xs[i].toFixed(1)}" cy="${yOf(v).toFixed(1)}" r="4"/>`)).join('');
+            return `<g class="flc-s flc-s${sr.si + 1}">${path ? `<path class="flc-line" d="${path}"/>` : ''}${dots}</g>`;
+        }).join('');
+        // Подписи у последней точки каждой серии, раздвинутые, чтобы не наезжали.
+        const labs = series.map(sr => {
+            let i = sr.vals.length - 1;
+            while (i >= 0 && sr.vals[i] == null) i--;
+            return { sr, y: yOf(sr.vals[i]), x: xs[i] };
+        }).sort((a, b) => a.y - b.y);
+        for (let i = 1; i < labs.length; i++) if (labs[i].y - labs[i - 1].y < 15) labs[i].y = labs[i - 1].y + 15;
+        const over = labs.length ? labs[labs.length - 1].y - (T + ph + 4) : 0;
+        if (over > 0) labs.forEach(lb => { lb.y -= over; });
+        const direct = labs.map(lb => `<text class="flc-dlabel" x="${L + pw + 12}" y="${(lb.y + 4).toFixed(1)}"><tspan class="flc-key flc-s${lb.sr.si + 1}">●</tspan> ${esc(lb.sr.label)}</text>`).join('');
+        // Колонки для наведения: зона шире точки, перекрестие и подсказка со всеми сериями.
+        const nOf = (h) => { const c = ev.byH[h] && ev.byH[h].best; return c ? c.n : 0; };
+        const colW = pw / Math.max(1, HORIZONS.length - 1);
+        const cols = HORIZONS.map((h, i) => {
+            const rows = series.map(sr => ({ sr, v: sr.vals[i] })).filter(r => r.v != null);
+            if (!rows.length) return '';
+            const tw = 224, th = 26 + rows.length * 18;
+            const tx = xs[i] + 12 + tw > W ? xs[i] - 12 - tw : xs[i] + 12;
+            const ty = T + 4;
+            const word = h === 1 ? 'день' : (h < 5 ? 'дня' : 'дней');
+            return `<g class="flc-col" tabindex="0" aria-label="За ${h} ${word} до вылета: ${rows.map(r => `${esc(r.sr.label)} ${r1(r.v)}`).join(', ')}">
+                <rect class="flc-hit" x="${(xs[i] - colW / 2).toFixed(1)}" y="${T}" width="${colW.toFixed(1)}" height="${ph}"/>
+                <line class="flc-cross" x1="${xs[i]}" x2="${xs[i]}" y1="${T}" y2="${T + ph}"/>
+                <g class="flc-tip"><rect class="flc-tip-box" x="${tx}" y="${ty}" width="${tw}" height="${th}" rx="6"/>
+                    <text class="flc-tip-head" x="${tx + 10}" y="${ty + 17}">За ${h} ${word} до вылета</text><text class="flc-tip-n" x="${tx + tw - 10}" y="${ty + 17}">${nOf(h)} выл.</text>
+                    ${rows.map((r, j) => `<text class="flc-tip-row" x="${tx + 10}" y="${ty + 36 + j * 18}"><tspan class="flc-key flc-s${r.sr.si + 1}">●</tspan> ${esc(r.sr.label)}</text><text class="flc-tip-val" x="${tx + tw - 10}" y="${ty + 36 + j * 18}">±${r1(r.v)}</text>`).join('')}
+                </g></g>`;
+        }).join('');
+        const legend = series.map(sr => `<span class="flc-leg"><span class="flc-leg-mark flc-s${sr.si + 1}"></span>${esc(sr.label)}</span>`).join('');
+        return `<div class="fl-chart">
+            <div class="flc-legend">${legend}</div>
+            <svg class="flc-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Средняя ошибка прогноза в пассажирах по числу дней до вылета">
+                ${grid.join('')}${xt}
+                <text class="flc-axis" x="${L + pw / 2}" y="${H - 2}">дней до вылета</text>
+                ${lines}${direct}${cols}
+            </svg></div>`;
+    }
+
+    // «Как считается» — те же формулы, что в шапке файла, человеческим языком.
+    function mathHtml() {
+        const f = (formula, text) => `<div class="fl-math-row"><div class="fl-math-f">${formula}</div><div class="fl-math-t">${text}</div></div>`;
+        return `<details class="fl-math"><summary>Как считается прогноз — формулы</summary>
+            <p class="rp-muted">Обозначения: <i>s</i> — кресел, <i>o<sub>h</sub></i> — продано за <i>h</i> дней до вылета, <i>f</i> — итог (факт),
+                <i>p</i> и <i>q<sub>h</sub></i> — файл ожидаемой загрузки: итог и его значение на день <i>h</i>.</p>
+            ${f('<i>t</i> = (<i>f</i> − <i>o<sub>h</sub></i>) / <i>s</i>', 'Модель предсказывает <b>добор</b> — сколько ещё купят, в долях кресел.')}
+            ${f('<i>f̂</i> = min(<i>s</i>, max(<i>o<sub>h</sub></i>, <i>o<sub>h</sub></i> + <i>s</i>·<i>t̂</i>))', 'Итог: не меньше уже проданного и не больше кресел.')}
+            ${f('<i>f̂</i> = <i>o<sub>h</sub></i> + (<i>p</i> − <i>q<sub>h</sub></i>)', '«Продано + добор по файлу»: сколько файл ожидаемой ещё добирает от этого дня до вылета.')}
+            ${f('<i>f̂</i> = <i>o<sub>h</sub></i> + <i>s</i>·<span class="fl-bar">π</span><sub>h</sub>, &nbsp; <span class="fl-bar">π</span><sub>h</sub> = среднее <i>t</i> всех улетевших рейсов на горизонте <i>h</i>', '«Средний добор всех рейсов» — запасной способ, когда нет ни файла, ни истории.')}
+            ${f('<i>ŵ</i> = (<i>X</i><sup>T</sup><i>X</i> + λ<i>I</i>)<sup>−1</sup><i>X</i><sup>T</sup><i>t</i>, &nbsp; λ = 0,8', 'Линейная модель (гребневая регрессия) по 31 признаку: штраф λ не даёт весам раздуваться на малых данных. Своя модель на каждом горизонте, когда записей ≥ 80.')}
+            ${f('<i>F<sub>m</sub></i> = <i>F</i><sub><i>m</i>−1</sub> + η·<i>h<sub>m</sub></i>, &nbsp; <i>r</i> = clip(<i>t</i> − <i>F</i>, −δ, δ), &nbsp; η = 0,08, <i>M</i> = 120', 'Решающие деревья (градиентный бустинг): каждое следующее дерево исправляет ошибки предыдущих. Ошибка обрезается на δ (потери Хьюбера) — группы и отмены не сбивают модель.')}
+            ${f('<i>t̂</i> = ½(<i>t̂</i><sub>лин</sub> + <i>t̂</i><sub>дер</sub>) + <i>c</i><sub>рейс</sub>, &nbsp; <i>c</i><sub>рейс</sub> = <i>n</i>/(<i>n</i> + 10) · средний остаток рейса', 'Среднее двух моделей и поправка по рейсу: при малом числе вылетов поправка почти ноль, при большом — равна средней ошибке рейса.')}
+            ${f('обучение: вылеты с датой ≤ понедельник(дата − <i>h</i>) − 1 день', 'Честная проверка: прогноз за <i>h</i> дней модель делает, зная только вылеты, улетевшие к тому моменту.')}
+            ${f('MAE = (1/<i>N</i>)·Σ|<i>f̂</i> − <i>f</i>|, &nbsp; смещение = (1/<i>N</i>)·Σ(<i>f̂</i> − <i>f</i>)', 'Средняя ошибка в пассажирах и в какую сторону ошибается (↑ завышает, ↓ занижает).')}
+            ${f('<i>t</i> = −<i>d̄</i> / (<i>s<sub>d</sub></i>/√<i>n</i>) &gt; 1, &nbsp; <i>d<sub>i</sub></i> = |<i>e</i><sub>новый</sub>| − |<i>e</i><sub>прежний</sub>|', 'Способ меняется, только если новый надёжно точнее на тех же вылетах, а не случайно.')}
+        </details>`;
     }
 
     function html(rerender) {
@@ -1048,6 +1192,8 @@ window.ForecastLab = (function () {
                     <div class="dr-kpi ${ev.anyModel ? 'dr-kpi-up' : ''}"><div class="dr-kpi-label">Модель</div><div class="dr-kpi-value">${ev.anyModel ? 'работает' : (ev.trained ? 'копит данные' : 'учится')}</div><div class="dr-kpi-sub">${ev.anyModel ? 'линейная + деревья, проверена' : 'нужно больше улетевших вылетов для честной проверки'}</div></div>
                 </div>
                 ${cap ? `<p class="rp-note">${esc(cap)}</p>` : ''}
+                <div class="dr-list-title">Насколько ошибается прогноз, пасс. (меньше — лучше)</div>
+                ${chartHtml(ev)}
                 <div class="dr-list-title">Ошибка по горизонтам, пасс.</div>
                 <div class="rp-scroll"><table class="rp-table">
                     <thead><tr><th>До вылета</th>${cols.map(([, l]) => `<th>${esc(l)}</th>`).join('')}<th title="Этот способ показывается в карточке рейса">Что берём</th></tr></thead>
@@ -1063,6 +1209,7 @@ window.ForecastLab = (function () {
                 <div class="dr-sum"><div class="dr-sum-title">Где ошибается сильнее всего, за 7 дней</div>
                     ${rowsR ? `<table class="rp-table dr-sum-table"><thead><tr><th>Рейс</th><th>Файл ожидаемой</th><th>Что берём</th><th>Вылетов</th></tr></thead><tbody>${rowsR}</tbody></table>` : '<p class="rp-note">Пока нет данных.</p>'}
                 </div>
+                ${mathHtml()}
                 <div class="ref-toolbar"><button type="button" class="btn-secondary rp-btn" id="fl-capture">Записать прогнозы сейчас</button>
                     <span class="rp-muted">Обычно это происходит само раз в день при входе администратора.</span></div>
             </section>`;
