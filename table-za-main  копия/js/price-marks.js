@@ -103,10 +103,14 @@ window.PriceMarks = (function () {
         // Итог в рублях: выручка за 3 дня после решения против той, что была бы без него.
         //   E = max(0, обычно_после + ½·(до − обычно_до)) — столько продали бы по старому тарифу: отклонение от нормы
         //   до решения учитывается наполовину (окна по 3 дня шумные, отклонения обычно возвращаются к норме);
+        //   повышение: E ≥ после (дороже — не продали бы больше), снижение: E ≤ после;
         //   R0 = E × тариф_до,  R1 = после × тариф_после,  ΔR = R1 − R0.
         let money = null;
         if (complete && nb && na && fareBefore != null && fareAfter != null) {
-            const expected = Math.max(0, Math.round((na.value + (before.n - nb.value) / 2) * 10) / 10);
+            let expected = Math.max(0, Math.round((na.value + (before.n - nb.value) / 2) * 10) / 10);
+            // Цена против спроса: после повышения билетов не может стать больше, чем было бы без него, а после снижения — меньше.
+            if (mark.status === 'up') expected = Math.max(expected, after.n);
+            if (mark.status === 'down') expected = Math.min(expected, after.n);
             const r0 = expected * fareBefore;
             const r1 = after.n * fareAfter;
             money = {
