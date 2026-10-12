@@ -28,6 +28,9 @@ window.ForecastLab = (function () {
     const NB_DAYS = 3;              // соседние даты: ±3 дня
     const PICK_DAYS = 28;           // добор вылетов рейса за 4 недели
     const MONTHS_BACK = 6;
+    const VERSION = 2;              // формат журнала; файл новее — не перезаписываем
+    const TRAIN_MAX = 6000;         // обучение — на последних записях (быстрее, свежее)
+    const EVAL_WEEKS = 12;          // проверка — на последних неделях
     const DONE_KEY = 'krasavia_fclog_done';
     const DAY = 86400000;
 
@@ -36,9 +39,10 @@ window.ForecastLab = (function () {
     let loading = null;
     let loaded = false;
     let models = null;              // обученные на всём журнале (для карточки)
-    let modelsBusy = false;
-    let evalState = { rev: -1, ev: null, busy: false };
+    let evalState = { sig: '', ev: null, run: 0, busy: false, waiters: [] };
     let rev = 0;
+    let loadMonth = '';             // месяц, от которого считали окно журнала
+    let failedMonths = 0;
     let lastCapture = null;
 
     // ---------- общее ----------
@@ -84,6 +88,22 @@ window.ForecastLab = (function () {
     function fmtDate(ts) {
         const d = new Date(ts);
         return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`;
+    }
+
+    // Неделя — с понедельника по местному времени.
+    function weekOf(ts) {
+        const d = new Date(ts);
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7)).getTime();
+    }
+
+    // Дней от среза данных продаж до вылета (данные могут быть старше «сегодня»).
+    function dataLagDays() {
+        if (typeof salesDataCutoffTime !== 'function') return 0;
+        const c = salesDataCutoffTime();
+        if (!c) return 0;
+        const cd = new Date(c);
+        const day = new Date(cd.getFullYear(), cd.getMonth(), cd.getDate()).getTime();
+        return Math.max(0, Math.round((todayTs() - day) / DAY));
     }
 
     function groupOf(h) {
@@ -133,24 +153,38 @@ window.ForecastLab = (function () {
 
     async function readMonth(month) {
         if (loadedMonths.has(month) || typeof SharedStorage === 'undefined') return;
-        loadedMonths.add(month);
         const r = await SharedStorage.readJsonFileStrict(fileOf(month)).catch(() => ({ ok: false }));
-        if (!r.ok) { loadedMonths.delete(month); return; }
+        if (!r.ok) { failedMonths++; return; }
+        loadedMonths.add(month);
         const flights = r.data && r.data.flights;
         if (flights && typeof flights === 'object') {
             Object.keys(flights).forEach(k => { const e = normEntry(flights[k]); if (e) mergeEntry(log, k, e); });
         }
     }
 
+    // Подпись обучающих данных: модель и проверка пересчитываются, только когда она меняется.
+    function trainSig() {
+        let n = 0;
+        let sum = 0;
+        Object.keys(log).forEach(k => {
+            const e = log[k];
+            if (e.f == null) return;
+            Object.keys(e.h).forEach(h => { n++; sum += e.f * 7 + e.h[h].o * 3 + (e.h[h].x ? 1 : 0); });
+        });
+        const cal = typeof CalendarEvents !== 'undefined' && CalendarEvents.revision ? CalendarEvents.revision() : 0;
+        return `${n}|${sum}|${cal}`;
+    }
+
     function invalidate() {
-        models = null;
-        evalState = { rev: -1, ev: null, busy: false };
         rev++;
     }
 
+    // Окно журнала: −6…+2 месяца от сегодняшнего. Не прочитанные (нет доступа) — перечитываются при следующем вызове.
     function ensureLoaded() {
-        if (!loading) {
-            const m0 = monthOf(today());
+        const m0 = monthOf(today());
+        if (!loading || m0 !== loadMonth || (loaded && failedMonths)) {
+            loadMonth = m0;
+            failedMonths = 0;
             const months = [];
             for (let i = -MONTHS_BACK; i <= 2; i++) months.push(shiftMonth(m0, i));
             loading = Promise.all(months.map(readMonth)).then(() => { loaded = true; invalidate(); });
@@ -170,16 +204,21 @@ window.ForecastLab = (function () {
         const byKey = Object.create(null);
         Object.keys(typeof groupedData !== 'undefined' && groupedData ? groupedData : {}).forEach(base => {
             const seen = new Set();
-            (groupedData[base] || []).forEach(row => {
+            const rows = groupedData[base] || [];
+            const perDate = Object.create(null);
+            rows.forEach(row => { perDate[row[1]] = (perDate[row[1]] || 0) + 1; });
+            rows.forEach(row => {
                 const date = row[1];
                 const t = parseLocalDate(date);
-                if (!t || seen.has(date)) return;
-                seen.add(date);
                 const code = cleanFlight(row[0]);
-                const sc = getFlightSalesList(date, code).length ? code : base;
+                // Два вылета рейса в один день (основной и доп. номер) — это два разных вылета.
+                if (!t || seen.has(date + '|' + code)) return;
+                seen.add(date + '|' + code);
+                const sc = getFlightSalesList(date, code).length || perDate[date] > 1 ? code : base;
                 const dep = { base, date, ts: t.getTime(), row, rowCode: code, code: sc, s: getSeatsOnSale(row), sold: getSoldFromRow(row), flown: t.getTime() < now };
                 (byBase[base] || (byBase[base] = [])).push(dep);
-                byKey[date + '|' + base] = dep;
+                byKey[date + '|' + code] = dep;
+                if (!byKey[date + '|' + base] || code === base) byKey[date + '|' + base] = dep;
             });
         });
         Object.keys(byBase).forEach(b => byBase[b].sort((a, c) => a.ts - c.ts));
@@ -208,8 +247,8 @@ window.ForecastLab = (function () {
     function soldAt(X, T, live) {
         if (X.ts <= T) return X.sold;
         if (live) return X.sold;
-        const d = Math.round((X.ts - T) / DAY);
-        return Math.min(X.sold || Infinity, at(rawOf(X), d));
+        // Только то, что было в продажах к этому дню, — без подсказки итогом вылета.
+        return at(rawOf(X), Math.round((X.ts - T) / DAY));
     }
 
     // Признаки соседей для вылета dep на момент T (h — дней до вылета): [темп 7 дн., соседние даты, добор рейса, обратный, есть обратный].
@@ -241,9 +280,12 @@ window.ForecastLab = (function () {
 
     // ---------- календарь и рейс ----------
 
-    const calMemo = new Map();
+    let calMemo = new Map();
+    let calRev = -1;
 
     function calFeatures(date) {
+        const cr = typeof CalendarEvents !== 'undefined' && CalendarEvents.revision ? CalendarEvents.revision() : 0;
+        if (cr !== calRev) { calMemo = new Map(); calRev = cr; }
         if (calMemo.has(date)) return calMemo.get(date);
         const d = parseLocalDate(date);
         const dow = d.getDay();
@@ -342,10 +384,10 @@ window.ForecastLab = (function () {
 
     // ---------- решающие деревья (градиентный бустинг) ----------
 
-    function gbmTrain(X, y) {
+    // Обучение отдаёт управление браузеру каждые несколько деревьев — интерфейс не подвисает.
+    async function gbmTrain(X, y) {
         const n = X.length;
         const k = X[0].length;
-        // Пороги по квантилям каждого признака.
         const cuts = [];
         for (let f = 0; f < k; f++) {
             const vals = X.map(r => r[f]).sort((a, b) => a - b);
@@ -357,11 +399,13 @@ window.ForecastLab = (function () {
         const pred = new Array(n).fill(base);
         const trees = [];
         const gain = new Array(k).fill(0);
+        const all = Array.from({ length: n }, (_, i) => i);
         for (let t = 0; t < GBM.rounds; t++) {
             const res = y.map((v, i) => v - pred[i]);
-            const tree = grow(X, res, Array.from({ length: n }, (_, i) => i), 0, cuts, gain);
+            const tree = grow(X, res, all, 0, cuts, gain);
             trees.push(tree);
             for (let i = 0; i < n; i++) pred[i] += GBM.rate * treeValue(tree, X[i]);
+            if (t % 6 === 5) await pause();
         }
         return { base, trees, gain };
     }
@@ -377,7 +421,6 @@ window.ForecastLab = (function () {
         for (let f = 0; f < cuts.length; f++) {
             const cs = cuts[f];
             if (!cs.length) continue;
-            // Гистограмма: сумма и число по корзинам порогов.
             const bs = new Array(cs.length + 1).fill(0);
             const bn = new Array(cs.length + 1).fill(0);
             idx.forEach(i => {
@@ -421,6 +464,7 @@ window.ForecastLab = (function () {
 
     // ---------- обучение и прогноз ----------
 
+    // Записи с известным фактом, по дате вылета.
     function samples() {
         const out = [];
         Object.keys(log).forEach(key => {
@@ -436,24 +480,24 @@ window.ForecastLab = (function () {
                 out.push({ key, base: e.b, date, ts: d.getTime(), h: Number(h), s, r, f: e.f });
             });
         });
-        return out;
+        return out.sort((a, b) => a.ts - b.ts || a.h - b.h);
     }
 
     function target(x) {
         return (x.f - x.r.o) / x.s;
     }
 
-    function train(list) {
+    async function train(list) {
+        if (list.length > TRAIN_MAX) list = list.slice(list.length - TRAIN_MAX);
         if (list.length < MIN_TRAIN) return null;
         const X = list.map(features);
         const y = list.map(target);
-        const res = { n: list.length, lin: {}, linAll: ridge(X, y), gbm: gbmTrain(X, y), route: {} };
+        const res = { n: list.length, lin: {}, linAll: ridge(X, y), gbm: await gbmTrain(X, y), route: {} };
         HORIZONS.forEach(h => {
             const ids = [];
             list.forEach((x, i) => { if (x.h === h) ids.push(i); });
             if (ids.length >= MIN_TRAIN_H) res.lin[h] = ridge(ids.map(i => X[i]), ids.map(i => y[i]));
         });
-        // Поправка по рейсу: средняя остаточная ошибка ансамбля, сжатая к нулю при малом числе вылетов.
         const acc = {};
         list.forEach((x, i) => {
             const p = (linPredict(res.lin[x.h] || res.linAll, X[i]) + gbmPredict(res.gbm, X[i])) / 2;
@@ -477,15 +521,15 @@ window.ForecastLab = (function () {
         return { lin: clamp(l + corr), gbm: clamp(g + corr), ens: clamp((l + g) / 2 + corr) };
     }
 
-    function trainedModel() {
-        if (models || modelsBusy) return models;
-        modelsBusy = true;
-        // Обучение — в фоне, чтобы не задерживать открытие карточки.
-        setTimeout(() => {
-            try { models = train(samples()) || false; } catch (e) { console.warn('ForecastLab.train', e); models = false; }
-            modelsBusy = false;
-            if (typeof FlightCard !== 'undefined' && FlightCard.isOpen && FlightCard.isOpen() && FlightCard.refresh) FlightCard.refresh();
-        }, 0);
+    // Простые способы — с теми же подстановками, что и в карточке: нет данных — берётся следующий.
+    function simple(k, r, s) {
+        const pp = r.p != null && r.q != null ? Math.max(r.o, Math.min(s, Math.round(r.o + r.p - r.q))) : null;
+        if (k === 'naive') return r.o;
+        if (k === 'planPick') return pp != null ? pp : r.o;
+        if (k === 'hist') return r.y != null ? r.y : (pp != null ? pp : r.o);
+        if (k === 'plan') return r.p != null ? Math.min(s, r.p) : null;
+        // Итог по файлу, а где файла нет — по тем же дням недели или продано на сейчас.
+        if (k === 'planOr') return r.p != null ? Math.max(r.o, Math.min(s, r.p)) : (r.y != null ? r.y : r.o);
         return null;
     }
 
@@ -496,13 +540,20 @@ window.ForecastLab = (function () {
         return null;
     }
 
-    function liveRecord(dep, dtd) {
+    // Дней до вылета от среза данных (если данные вчерашние — на день больше, чем от сегодня).
+    function dataDtd(date) {
+        const dtd = typeof getDaysUntil === 'function' ? getDaysUntil(date) : null;
+        if (dtd == null) return null;
+        return Math.max(dtd, typeof observedFromDtd === 'function' ? observedFromDtd(date) : dtd);
+    }
+
+    function liveRecord(dep, d) {
         const s = dep.s;
         if (!(s > 0)) return null;
         const cap = getCapacityFromAircraft(getAircraftType(dep.row[4]));
         const wk = getWeekForExpectedLoad(dep.date);
         const p = getExpectedLoad(cap, dep.base, 0, wk);
-        const q = getExpectedLoad(cap, dep.base, dtd, wk);
+        const q = getExpectedLoad(cap, dep.base, d, wk);
         let y = null;
         let n = null;
         if (typeof FlightInsights !== 'undefined') {
@@ -510,35 +561,32 @@ window.ForecastLab = (function () {
             if (f && f.source === 'history') { y = f.final; n = f.n; }
         }
         const o = dep.sold;
-        const x = neighborFeatures(dep, dtd, context().now, true, o).map(v => Math.round(v * 1000) / 1000);
-        return { d: dtd, o, p: num(p), q: num(q), y: num(y), n, m: null, b: 0, s, x };
+        const x = neighborFeatures(dep, d, context().now, true, o).map(v => Math.round(v * 1000) / 1000);
+        return { d, o, p: num(p), q: num(q), y: num(y), n, m: null, b: 0, s, x };
     }
 
-    const METHOD_LABEL = { ens: 'модель', gbm: 'модель (деревья)', lin: 'модель (линейная)', planPick: 'продано + добор по файлу', hist: 'по истории', naive: 'продано на сейчас' };
+    const METHOD_LABEL = { planOr: 'файл ожидаемой загрузки', ens: 'модель', gbm: 'модель (деревья)', lin: 'модель (линейная)', planPick: 'продано + добор по файлу', hist: 'по тем же дням недели', naive: 'продано на сейчас' };
 
     // Лучший прогноз для вылета (карточка): способ, который на этом горизонте ошибался меньше всех.
     function predict(code, date) {
         if (!isAdmin() || !loaded) return null;
         const ev = evalState.ev;
-        if (!ev) { startEvaluation(); return null; }
+        if (!ev || evalState.sig !== trainSig()) { startEvaluation(); if (!ev) return null; }
         const base = getBaseFlight(code);
-        const dep = context().byKey[date + '|' + base];
-        const dtd = typeof getDaysUntil === 'function' ? getDaysUntil(date) : null;
-        if (!dep || dtd == null || dtd <= 0 || dtd > 30) return null;
-        const h = horizonFor(dtd);
-        const r = liveRecord(dep, dtd);
+        const C = context();
+        const dep = C.byKey[date + '|' + cleanFlight(code)] || C.byKey[date + '|' + base];
+        const d = dataDtd(date);
+        if (!dep || d == null || d <= 0 || d > 30) return null;
+        const h = horizonFor(d);
+        const r = liveRecord(dep, d);
         if (!r || !h) return null;
         const pick = ev.choice[h];
         if (!pick) return null;
-        const smp = { base, date, ts: dep.ts, h, s: r.s, r };
         let final = null;
         if (pick.k === 'ens' || pick.k === 'gbm' || pick.k === 'lin') {
-            const m = trainedModel();
-            if (!m) return null;
-            final = predictAll(m, smp)[pick.k];
-        } else if (pick.k === 'planPick') final = r.p != null && r.q != null ? Math.max(r.o, Math.min(r.s, Math.round(r.o + r.p - r.q))) : r.o;
-        else if (pick.k === 'hist') final = r.y != null ? r.y : r.o;
-        else final = r.o;
+            if (!models) return null;
+            final = predictAll(models, { base, date, ts: dep.ts, h, s: r.s, r })[pick.k];
+        } else final = simple(pick.k, r, r.s);
         return { final, seats: r.s, lf: Math.round(final / r.s * 100), method: METHOD_LABEL[pick.k], err: Math.round(pick.v * 10) / 10, trainedOn: pick.n, h };
     }
 
@@ -558,8 +606,8 @@ window.ForecastLab = (function () {
         const e = { b: dep.base, s, f, h: {} };
         HORIZONS.forEach(h => {
             const T = dep.ts - h * DAY;
-            const o = Math.min(f, at(raw, h));
-            // По истории: те же дни недели, улетевшие к этому моменту (±8 недель).
+            // Только то, что было в продажах к этому дню (без подсказки итогом вылета).
+            const o = at(raw, h);
             const coh = (byBase[dep.base] || []).filter(c => c.flown && c.ts < T && new Date(c.ts).getDay() === dow && dep.ts - c.ts <= 56 * DAY && c.s > 0 && c.sold > 0);
             let y = null;
             if (coh.length >= 2) {
@@ -574,7 +622,7 @@ window.ForecastLab = (function () {
 
     function dataToken() {
         const at0 = typeof lastSalesUpdate !== 'undefined' && lastSalesUpdate ? new Date(lastSalesUpdate).getTime() : 0;
-        return `v2|${today()}|${at0}|${(typeof allData !== 'undefined' && allData ? allData.length : 0)}`;
+        return `v3|${today()}|${at0}|${(typeof allData !== 'undefined' && allData ? allData.length : 0)}`;
     }
 
     async function capture(force) {
@@ -585,6 +633,8 @@ window.ForecastLab = (function () {
         if (!(await SharedStorage.canWrite())) return false;
         await ensureLoaded();
         const C = context();
+        // Данные старше суток: прогнозы «на сегодня» по ним не пишем — они бы записались не на свой горизонт.
+        const stale = dataLagDays() > 1;
         const additions = Object.create(null);
         const add = (key, date, e) => { const m = monthOf(date); (additions[m] || (additions[m] = Object.create(null)))[key] = e; };
         let recorded = 0;
@@ -598,21 +648,22 @@ window.ForecastLab = (function () {
                 const cur = log[key];
                 if (dep.flown) {
                     if (!(dep.s > 0) || !(dep.sold > 0)) continue;
-                    if (cur && cur.f == null) { add(key, dep.date, { b: base, s: dep.s, f: dep.sold, h: {} }); finals++; }
-                    const need = observedFromDtd(dep.date) === 0 && (!cur || HORIZONS.some(h => !cur.h[h] || (cur.h[h].b && !cur.h[h].x)));
+                    // Факт — только когда данные уже охватывают день вылета.
+                    if (observedFromDtd(dep.date) !== 0) continue;
+                    if (cur && cur.f !== dep.sold) { add(key, dep.date, { b: base, s: dep.s, f: dep.sold, h: {} }); finals++; }
+                    const need = !cur || HORIZONS.some(h => !cur.h[h] || (cur.h[h].b && !cur.h[h].x));
                     if (need) {
                         const e = backfill(dep, C.byBase);
                         if (e) { add(key, dep.date, e); backfilled++; }
                     }
-                } else {
-                    const dtd = getDaysUntil(dep.date);
-                    if (dtd == null || dtd <= 0 || dtd > 30) continue;
-                    const h = horizonFor(dtd);
+                } else if (!stale) {
+                    const d = dataDtd(dep.date);
+                    if (d == null || d <= 0 || d > 30) continue;
+                    const h = horizonFor(d);
                     if (cur && cur.h[h] && !cur.h[h].b) continue;
-                    const r = liveRecord(dep, dtd);
+                    const r = liveRecord(dep, d);
                     if (!r) continue;
-                    const m = models || null;
-                    if (m) r.m = predictAll(m, { base, date: dep.date, ts: dep.ts, h, s: r.s, r }).ens;
+                    if (models) r.m = predictAll(models, { base, date: dep.date, ts: dep.ts, h, s: r.s, r }).ens;
                     add(key, dep.date, { b: base, s: r.s, f: null, h: { [h]: r } });
                     recorded++;
                 }
@@ -621,87 +672,108 @@ window.ForecastLab = (function () {
         }
 
         let ok = true;
+        let changedAny = false;
         for (const month of Object.keys(additions)) {
             const read = await SharedStorage.readJsonFileStrict(fileOf(month)).catch(() => ({ ok: false }));
             if (!read.ok) { ok = false; continue; }
+            // Файл записан более новой версией сайта — не трогаем, чтобы не потерять её поля.
+            if (read.data && Number(read.data.version) > VERSION) { ok = false; continue; }
             const merged = Object.create(null);
             const remote = read.data && read.data.flights;
             if (remote && typeof remote === 'object') Object.keys(remote).forEach(k => { const e = normEntry(remote[k]); if (e) merged[k] = e; });
             let changed = false;
             Object.keys(additions[month]).forEach(k => { if (mergeEntry(merged, k, additions[month][k])) changed = true; });
-            if (changed) ok = (await SharedStorage.writeJsonFile(fileOf(month), { version: 2, updatedAt: new Date().toISOString(), flights: merged })) && ok;
+            if (changed) {
+                ok = (await SharedStorage.writeJsonFile(fileOf(month), { version: VERSION, updatedAt: new Date().toISOString(), flights: merged })) && ok;
+                changedAny = true;
+            }
             Object.keys(merged).forEach(k => mergeEntry(log, k, merged[k]));
         }
-        invalidate();
-        lastCapture = { at: Date.now(), recorded, finals, backfilled, ok };
+        if (changedAny) invalidate();
+        lastCapture = { at: Date.now(), recorded, finals, backfilled, ok, stale };
         if (ok) { try { localStorage.setItem(DONE_KEY, token); } catch (e) { /* ignore */ } }
         return ok;
     }
 
+    // После входа: прочитать журнал, обучить модель, записать сегодняшние прогнозы (с прогнозом модели).
     function afterStart() {
         if (!isAdmin()) return;
-        const run = () => capture().then(() => startEvaluation()).catch(e => console.warn('ForecastLab.capture', e));
+        const run = () => ensureLoaded()
+            .then(() => new Promise(r => startEvaluation(r)))
+            .then(() => capture())
+            .then(() => startEvaluation())
+            .catch(e => console.warn('ForecastLab', e));
         if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 30000 });
         else setTimeout(run, 5000);
     }
 
     // ---------- честная проверка (в фоне) ----------
 
-    const weekOf = (ts) => Math.floor((ts - 4 * DAY) / (7 * DAY));
-
+    // Прогноз за h дней до вылета знает только вылеты, улетевшие до этого момента. Модель для недели w и
+    // горизонта h обучается на вылетах, улетевших до (начало недели w − h дней); модели кэшируются по набору.
+    // Все способы сравниваются на одних и тех же вылетах — там, где есть прогноз модели.
     async function evaluate() {
-        const all = samples().sort((a, b) => a.ts - b.ts);
-        const weeks = [...new Set(all.map(x => weekOf(x.ts)))].sort((a, b) => a - b);
+        const all = samples();
+        const weeks = [...new Set(all.map(x => weekOf(x.ts)))].sort((a, b) => a - b).slice(-EVAL_WEEKS);
+        const cache = new Map();   // длина набора → модель
         const pred = new Map();
         for (const w of weeks) {
-            const m = train(all.filter(x => weekOf(x.ts) < w));
-            if (m) all.filter(x => weekOf(x.ts) === w).forEach(x => pred.set(x, predictAll(m, x)));
-            await pause();
+            const test = all.filter(x => weekOf(x.ts) === w);
+            for (const h of HORIZONS) {
+                const cutoff = weekOf(w - h * DAY);   // неделя, в которой сделан прогноз
+                let len = 0;
+                while (len < all.length && all[len].ts + DAY <= cutoff) len++;
+                if (len < MIN_TRAIN) continue;
+                if (!cache.has(len)) cache.set(len, await train(all.slice(0, len)));
+                const m = cache.get(len);
+                if (m) test.filter(x => x.h === h).forEach(x => pred.set(x, predictAll(m, x)));
+                await pause();
+            }
         }
-        const mp = (k) => (x) => (pred.has(x) ? pred.get(x)[k] : null);
-        const methods = {
-            naive: (x) => x.r.o,
-            plan: (x) => (x.r.p != null ? Math.min(x.s, x.r.p) : null),
-            planPick: (x) => (x.r.p != null && x.r.q != null ? Math.max(x.r.o, Math.min(x.s, Math.round(x.r.o + x.r.p - x.r.q))) : null),
-            hist: (x) => x.r.y,
-            lin: mp('lin'),
-            gbm: mp('gbm'),
-            ens: mp('ens')
-        };
+        const kinds = ['naive', 'plan', 'planOr', 'planPick', 'hist', 'lin', 'gbm', 'ens'];
+        const val = (k, x) => (k === 'lin' || k === 'gbm' || k === 'ens' ? (pred.has(x) ? pred.get(x)[k] : null) : simple(k, x.r, x.s));
         const byH = {};
-        HORIZONS.forEach(h => { byH[h] = { total: 0 }; Object.keys(methods).forEach(k => { byH[h][k] = { sum: 0, bias: 0, n: 0 }; }); });
-        const byWeek = new Map();
-        const byBase = new Map();
+        HORIZONS.forEach(h => {
+            byH[h] = { total: 0, common: 0 };
+            kinds.forEach(k => { byH[h][k] = { sum: 0, bias: 0, n: 0 }; });
+        });
         all.forEach(x => {
             const B = byH[x.h];
             if (!B) return;
             B.total++;
-            Object.keys(methods).forEach(k => {
-                const v = methods[k](x);
+            // Сравнение — только на вылетах, где посчитаны все способы (кроме файла, его бывает мало).
+            if (!pred.has(x)) return;
+            B.common++;
+            kinds.forEach(k => {
+                const v = val(k, x);
                 if (v == null) return;
                 B[k].sum += Math.abs(v - x.f);
                 B[k].bias += v - x.f;
                 B[k].n++;
             });
-            if (x.h === 7) {
-                const w = weekOf(x.ts);
-                const W = byWeek.get(w) || { plan: [0, 0], best: [0, 0], ts: x.ts };
-                const pl = methods.plan(x);
-                const md = methods.ens(x) != null ? methods.ens(x) : (methods.hist(x) != null ? methods.hist(x) : methods.planPick(x));
-                if (pl != null) { W.plan[0] += Math.abs(pl - x.f); W.plan[1]++; }
-                if (md != null) { W.best[0] += Math.abs(md - x.f); W.best[1]++; }
-                W.ts = Math.min(W.ts, x.ts);
-                byWeek.set(w, W);
-                const R = byBase.get(x.base) || { plan: [0, 0], model: [0, 0] };
-                if (pl != null) { R.plan[0] += Math.abs(pl - x.f); R.plan[1]++; }
-                if (md != null) { R.model[0] += Math.abs(md - x.f); R.model[1]++; }
-                byBase.set(x.base, R);
-            }
         });
+        // Где модель проверить ещё не на чем — простые способы сравниваются на всех вылетах этого горизонта.
+        HORIZONS.forEach(h => {
+            const B = byH[h];
+            if (B.common >= MIN_CHOICE) return;
+            kinds.forEach(k => { B[k] = { sum: 0, bias: 0, n: 0 }; });
+            B.simpleOnly = true;
+            all.forEach(x => {
+                if (x.h !== h) return;
+                ['naive', 'plan', 'planOr', 'planPick', 'hist'].forEach(k => {
+                    const v = val(k, x);
+                    if (v == null) return;
+                    B[k].sum += Math.abs(v - x.f);
+                    B[k].bias += v - x.f;
+                    B[k].n++;
+                });
+            });
+        });
+        const anyModel = HORIZONS.some(h => byH[h].common >= MIN_CHOICE);
         const choice = {};
         HORIZONS.forEach(h => {
             let best = null;
-            ['ens', 'gbm', 'lin', 'planPick', 'hist', 'naive'].forEach(k => {
+            ['ens', 'gbm', 'lin', 'planOr', 'planPick', 'hist', 'naive'].forEach(k => {
                 const c = byH[h][k];
                 if (c.n < MIN_CHOICE) return;
                 const v = c.sum / c.n;
@@ -709,8 +781,26 @@ window.ForecastLab = (function () {
             });
             choice[h] = best;
         });
-        // Что влияет: вклад признаков в деревья модели, обученной на всём журнале.
-        const full = train(all);
+        const byWeek = new Map();
+        const byBase = new Map();
+        all.filter(x => x.h === 7).forEach(x => {
+            const w = weekOf(x.ts);
+            const W = byWeek.get(w) || { plan: [0, 0], best: [0, 0], ts: w, src: new Set() };
+            const pl = simple('plan', x.r, x.s);
+            const pick = choice[7];
+            const md = pick ? val(pick.k, x) : null;
+            if (pl != null) { W.plan[0] += Math.abs(pl - x.f); W.plan[1]++; }
+            if (md != null) { W.best[0] += Math.abs(md - x.f); W.best[1]++; }
+            byWeek.set(w, W);
+            const R = byBase.get(x.base) || { plan: [0, 0], model: [0, 0], seats: 0, n: 0 };
+            if (pl != null) { R.plan[0] += Math.abs(pl - x.f); R.plan[1]++; }
+            if (md != null) { R.model[0] += Math.abs(md - x.f); R.model[1]++; }
+            R.seats += x.s;
+            R.n++;
+            byBase.set(x.base, R);
+        });
+        // Модель для карточки — на всём журнале; «что влияет» — по её деревьям.
+        const full = await train(all);
         let influence = [];
         if (full) {
             let pos = 0;
@@ -721,21 +811,37 @@ window.ForecastLab = (function () {
                 pos += len;
                 return { label, share: g / total };
             }).sort((a, b) => b.share - a.share);
-            models = full;
         }
-        return { byH, byWeek, byBase, choice, influence, samples: all.length, departures: new Set(all.map(x => x.key)).size, trained: !!full };
+        return { full, byH, byWeek, byBase, choice, influence, samples: all.length, departures: new Set(all.map(x => x.key)).size, trained: !!full, anyModel };
     }
 
+    // Один расчёт за раз; все, кто ждал, получают результат. Устаревший расчёт (данные поменялись) не применяется.
     function startEvaluation(onDone) {
-        if (!loaded || evalState.busy || evalState.rev === rev) { if (onDone && evalState.rev === rev) onDone(); return; }
-        const myRev = rev;
-        evalState = { rev: -1, ev: evalState.ev, busy: true };
+        if (onDone) evalState.waiters.push(onDone);
+        if (!loaded) return;
+        const sig = trainSig();
+        if (evalState.ev && evalState.sig === sig && !evalState.busy) {
+            const w = evalState.waiters.splice(0);
+            w.forEach(f => { try { f(); } catch (e) { console.warn(e); } });
+            return;
+        }
+        if (evalState.busy) return;
+        const run = ++evalState.run;
+        evalState.busy = true;
         evaluate().then(ev => {
-            if (myRev !== rev) { evalState.busy = false; startEvaluation(onDone); return; }
-            evalState = { rev: myRev, ev, busy: false };
-            if (onDone) onDone();
+            if (run !== evalState.run) return;
+            evalState.busy = false;
+            if (trainSig() !== sig) { startEvaluation(); return; }
+            evalState.ev = ev;
+            evalState.sig = sig;
+            models = ev.full || null;
+            const w = evalState.waiters.splice(0);
+            w.forEach(f => { try { f(); } catch (e) { console.warn(e); } });
             if (typeof FlightCard !== 'undefined' && FlightCard.isOpen && FlightCard.isOpen() && FlightCard.refresh) FlightCard.refresh();
-        }).catch(e => { console.warn('ForecastLab.evaluate', e); evalState.busy = false; });
+        }).catch(e => {
+            console.warn('ForecastLab.evaluate', e);
+            if (run === evalState.run) evalState.busy = false;
+        });
     }
 
     // ---------- отчёт ----------
@@ -750,23 +856,28 @@ window.ForecastLab = (function () {
             ensureLoaded().then(() => startEvaluation(rerender));
             return '<p class="rp-note">Загружаю журнал прогнозов…</p>';
         }
-        if (evalState.rev !== rev || !evalState.ev) {
+        if (!evalState.ev || evalState.sig !== trainSig()) {
             startEvaluation(rerender);
-            return '<p class="rp-note">Модель учится и проверяет себя на прошлых неделях…</p>';
+            if (!evalState.ev) return '<p class="rp-note">Модель учится и проверяет себя на прошлых неделях… Это занимает несколько секунд, работать на сайте можно.</p>';
         }
         const ev = evalState.ev;
-        const futureKeys = Object.keys(log).filter(k => log[k].f == null).length;
+        const now = todayTs();
+        const futureKeys = Object.keys(log).filter(k => {
+            if (log[k].f != null) return false;
+            const d = parseLocalDate(k.slice(0, k.lastIndexOf('|')));
+            return d && d.getTime() >= now;
+        }).length;
         const cols = [['naive', 'Продано на сейчас'], ['plan', 'Файл ожидаемой, итог'], ['planPick', 'Продано + добор по файлу'], ['hist', 'По тем же дням недели'], ['lin', 'Модель: линейная'], ['gbm', 'Модель: деревья'], ['ens', 'Модель: среднее']];
         const rowsH = HORIZONS.map(h => {
             const B = ev.byH[h];
             const vals = cols.map(([k]) => (B[k].n ? B[k].sum / B[k].n : null));
-            const okVals = vals.filter((v, i) => v != null && B[cols[i][0]].n >= MIN_CHOICE);
+            const okVals = vals.filter((v, i) => v != null && B[cols[i][0]].n >= MIN_CHOICE && cols[i][0] !== 'plan');
             const best = okVals.length ? Math.min(...okVals) : null;
             return `<tr><td><strong>${h} ${h === 1 ? 'день' : (h < 5 ? 'дня' : 'дней')}</strong></td>${cols.map(([k], i) => {
                 const v = vals[i];
                 const b = B[k].n ? B[k].bias / B[k].n : null;
-                return `<td class="${v != null && v === best && B[k].n >= MIN_CHOICE ? 'fl-best' : ''}">${fmt(v)}${v != null ? `<div class="rp-muted">${B[k].n} · ${b > 0 ? '↑' : '↓'}${fmt(Math.abs(b))}</div>` : ''}</td>`;
-            }).join('')}<td class="rp-left">${ev.choice[h] ? `<strong>${esc(METHOD_LABEL[ev.choice[h].k])}</strong>` : '<span class="rp-muted">мало данных</span>'}</td></tr>`;
+                return `<td class="${v != null && v === best && B[k].n >= MIN_CHOICE && k !== 'plan' ? 'fl-best' : ''}">${fmt(v)}${v != null ? `<div class="rp-muted">${B[k].n} · ${b > 0 ? '↑' : '↓'}${fmt(Math.abs(b))}</div>` : ''}</td>`;
+            }).join('')}<td class="rp-left">${ev.choice[h] ? `<strong>${esc(METHOD_LABEL[ev.choice[h].k])}</strong>` : '<span class="rp-muted">мало данных</span>'}${B.simpleOnly ? '<div class="rp-muted">модель проверить пока не на чем</div>' : ''}</td></tr>`;
         }).join('');
         const weeks = [...ev.byWeek.entries()].sort((a, b) => a[0] - b[0]).slice(-12);
         const rowsW = weeks.map(([, W]) => {
@@ -779,19 +890,22 @@ window.ForecastLab = (function () {
             .filter(x => x.n >= 3).sort((a, b) => (b.m != null ? b.m : b.p || 0) - (a.m != null ? a.m : a.p || 0)).slice(0, 12);
         const rowsR = routes.map(x => `<tr><td class="rp-left"><strong>${esc(x.b)}</strong> <span class="rp-muted">${esc(typeof getFlightDirection === 'function' ? getFlightDirection(x.b) : '')}</span></td><td>${fmt(x.p)}</td><td>${fmt(x.m)}</td><td>${x.n}</td></tr>`).join('');
         const infl = ev.influence.filter(x => x.share > 0.001).map(x => `<div class="fl-infl"><span class="fl-infl-label">${esc(x.label)}</span><span class="fl-infl-bar"><span style="width:${Math.max(2, Math.round(x.share * 100))}%"></span></span><span class="fl-infl-val">${Math.round(x.share * 100)}%</span></div>`).join('');
-        const cap = lastCapture && (lastCapture.recorded || lastCapture.backfilled || lastCapture.finals)
+        let cap = lastCapture && (lastCapture.recorded || lastCapture.backfilled || lastCapture.finals)
             ? `Последняя запись журнала: прогнозов ${lastCapture.recorded}, восстановлено вылетов ${lastCapture.backfilled}, дописан факт ${lastCapture.finals}.` : '';
+        if (lastCapture && lastCapture.stale) cap += ' Данные продаж старше суток — прогнозы на сегодня не записаны (запишутся после загрузки свежих данных).';
         return `
             <section class="rp-card">
                 <div class="rp-card-head"><h3 class="rp-card-title">Точность прогноза загрузки</h3><span class="fl-admin">только администратор</span></div>
                 <p class="rp-card-text">Каждый день сайт записывает прогноз по каждому вылету за 30, 21, 14, 10, 7, 5, 3 и 1 день до вылета, а после вылета — факт.
                     Модель учитывает продажи и их темп, файл ожидаемой загрузки, те же дни недели, соседние даты рейса, обратный рейс,
                     день недели, выходные, праздники и каникулы, сезон и тип рейса. Ошибка — в пассажирах, в среднем по вылетам; под числом — сколько вылетов
-                    и в какую сторону ошибается (↑ завышает, ↓ занижает). Проверка честная: для каждой недели модель обучена только на более ранних неделях.</p>
+                    и в какую сторону ошибается (↑ завышает, ↓ занижает). Проверка честная: прогноз за N дней до вылета модель делает, зная только вылеты,
+                    улетевшие к тому моменту. Все способы сравниваются на одних и тех же вылетах (последние ${EVAL_WEEKS} недель).
+                    ${ev.anyModel ? '' : '<strong>Модели пока не на чем проверяться: улетевших вылетов мало. Сравниваются простые способы.</strong>'}</p>
                 <div class="dr-kpis">
                     <div class="dr-kpi"><div class="dr-kpi-label">Вылетов с фактом</div><div class="dr-kpi-value">${ev.departures}</div><div class="dr-kpi-sub">записей прогноза: ${ev.samples}</div></div>
                     <div class="dr-kpi"><div class="dr-kpi-label">Ждут вылета</div><div class="dr-kpi-value">${futureKeys}</div><div class="dr-kpi-sub">факт допишется после вылета</div></div>
-                    <div class="dr-kpi ${ev.trained ? 'dr-kpi-up' : ''}"><div class="dr-kpi-label">Модель</div><div class="dr-kpi-value">${ev.trained ? 'обучена' : 'учится'}</div><div class="dr-kpi-sub">${ev.trained ? 'линейная + деревья' : `нужно от ${MIN_TRAIN} записей с фактом`}</div></div>
+                    <div class="dr-kpi ${ev.anyModel ? 'dr-kpi-up' : ''}"><div class="dr-kpi-label">Модель</div><div class="dr-kpi-value">${ev.anyModel ? 'работает' : (ev.trained ? 'копит данные' : 'учится')}</div><div class="dr-kpi-sub">${ev.anyModel ? 'линейная + деревья, проверена' : 'нужно больше улетевших вылетов для честной проверки'}</div></div>
                 </div>
                 ${cap ? `<p class="rp-note">${esc(cap)}</p>` : ''}
                 <div class="dr-list-title">Ошибка по горизонтам, пасс.</div>
@@ -803,11 +917,11 @@ window.ForecastLab = (function () {
                         ${infl || '<p class="rp-note">Появится, когда модель обучится.</p>'}
                     </div>
                     <div class="dr-sum"><div class="dr-sum-title">По неделям вылета, за 7 дней</div>
-                        ${rowsW ? `<table class="rp-table dr-sum-table"><thead><tr><th>Неделя</th><th>Файл ожидаемой</th><th>Модель</th><th>Вылетов</th></tr></thead><tbody>${rowsW}</tbody></table>` : '<p class="rp-note">Пока нет данных.</p>'}
+                        ${rowsW ? `<table class="rp-table dr-sum-table"><thead><tr><th>Неделя</th><th>Файл ожидаемой</th><th>Что берём</th><th>Вылетов</th></tr></thead><tbody>${rowsW}</tbody></table>` : '<p class="rp-note">Пока нет данных.</p>'}
                     </div>
                 </div>
                 <div class="dr-sum"><div class="dr-sum-title">Где ошибается сильнее всего, за 7 дней</div>
-                    ${rowsR ? `<table class="rp-table dr-sum-table"><thead><tr><th>Рейс</th><th>Файл ожидаемой</th><th>Модель</th><th>Вылетов</th></tr></thead><tbody>${rowsR}</tbody></table>` : '<p class="rp-note">Пока нет данных.</p>'}
+                    ${rowsR ? `<table class="rp-table dr-sum-table"><thead><tr><th>Рейс</th><th>Файл ожидаемой</th><th>Что берём</th><th>Вылетов</th></tr></thead><tbody>${rowsR}</tbody></table>` : '<p class="rp-note">Пока нет данных.</p>'}
                 </div>
                 <div class="ref-toolbar"><button type="button" class="btn-secondary rp-btn" id="fl-capture">Записать прогнозы сейчас</button>
                     <span class="rp-muted">Обычно это происходит само раз в день при входе администратора.</span></div>

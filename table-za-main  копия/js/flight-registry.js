@@ -127,13 +127,15 @@ window.FlightRegistry = (function () {
         regroup();
     }
 
-    async function apply(id, entry) {
+    // changes: [[id, entry], ...] — все правки одной записью файла (переименование не теряет рейс при сбое).
+    async function apply(changes) {
         if (!canEdit()) return { ok: false, error: 'Нет права менять справочник рейсов' };
         if (typeof SharedStorage === 'undefined') return { ok: false, error: 'Общая папка не подключена' };
         const r = await SharedStorage.readJsonFileStrict(FILE).catch(() => ({ ok: false }));
         if (!r.ok) return { ok: false, error: 'Не удалось прочитать flights.json — изменения не сохранены' };
         const merged = mergeInto({}, r.data && r.data.flights);
-        merged[id] = { ...entry, at: new Date().toISOString(), by: profileName() };
+        const at = new Date().toISOString();
+        changes.forEach(([id, entry]) => { merged[id] = { ...entry, at, by: profileName() }; });
         const okWrite = await SharedStorage.writeJsonFile(FILE, { version: 1, updatedAt: new Date().toISOString(), flights: merged });
         if (!okWrite) return { ok: false, error: 'Не удалось записать flights.json' };
         entries = mergeInto({}, merged);
@@ -143,12 +145,11 @@ window.FlightRegistry = (function () {
         return { ok: true };
     }
 
-    // Все номера, уже занятые другими рейсами (встроенные и добавленные) — чтобы не задвоить.
+    // Кто уже занимает номер: добавленный рейс (кроме exceptId) или встроенный; '' — свободен.
     function owner(c, exceptId) {
         const own = list().find(e => e.code !== exceptId && (e.code === c || e.back === c || e.extras.includes(c) || e.backExtras.includes(c)));
         if (own) return own.code;
-        if (!list().some(e => e.code === exceptId && (e.code === c || e.back === c)) && BUILTIN_DIRS[c]) return c;
-        return '';
+        return BUILTIN_DIRS[c] ? c : '';
     }
 
     function save(raw, id) {
@@ -156,19 +157,23 @@ window.FlightRegistry = (function () {
         if (!e || e.deleted) return Promise.resolve({ ok: false, error: 'Укажите номер рейса, откуда и куда' });
         const all = [e.code, e.back].concat(e.extras, e.backExtras).filter(Boolean);
         if (new Set(all).size !== all.length) return Promise.resolve({ ok: false, error: 'Номера повторяются' });
-        for (const c of all) {
-            const o = owner(c, id || e.code);
-            // Встроенный рейс можно переопределить своим (тот же номер) — это правка, а не дубль.
-            if (o && o !== e.code && o !== e.back && !(BUILTIN_DIRS[c] && (c === e.code || c === e.back))) {
-                return Promise.resolve({ ok: false, error: `Номер ${c} уже есть у рейса ${o}` });
-            }
+        // Новый рейс или переименование — номер не должен совпадать с уже добавленным рейсом.
+        if (e.code !== id && entries[e.code] && !entries[e.code].deleted) {
+            return Promise.resolve({ ok: false, error: `Рейс ${e.code} уже есть в справочнике — откройте его кнопкой «Изменить»` });
         }
-        const p = id && id !== e.code ? apply(id, { deleted: true }).then(res => (res.ok ? apply(e.code, e) : res)) : apply(e.code, e);
-        return p;
+        for (const c of all) {
+            const o = owner(c, id || null);
+            if (!o) continue;
+            // Встроенный рейс можно переопределить своим: тот же номер туда или его обычный обратный номер.
+            const builtinOk = o === c && BUILTIN_DIRS[c] && !entries[c] && (c === e.code || (c === e.back && suggestBack(e.code) === c));
+            if (!builtinOk) return Promise.resolve({ ok: false, error: `Номер ${c} уже есть у рейса ${o}` });
+        }
+        const changes = id && id !== e.code ? [[id, { deleted: true }], [e.code, e]] : [[e.code, e]];
+        return apply(changes);
     }
 
     function remove(id) {
-        return apply(id, { deleted: true });
+        return apply([[id, { deleted: true }]]);
     }
 
     // Обратный номер по умолчанию: нечётный туда → следующий чётный.

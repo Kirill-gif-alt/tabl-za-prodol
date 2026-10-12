@@ -452,19 +452,39 @@ window.ReferenceView = (function () {
             || '<span class="rp-muted">нет</span>';
     }
 
-    function extrasChange(side, add, remove) {
+    // Введённое в форме рейса — в flEdit, чтобы перерисовка (поиск по списку, обновление данных) его не стёрла.
+    function syncFlEdit() {
+        if (!flEdit) return;
+        const v = (id) => document.getElementById(id);
+        if (!v('ref-f-code')) return;
+        flEdit.code = FlightRegistry.codes(v('ref-f-code').value)[0] || v('ref-f-code').value.trim();
+        flEdit.from = v('ref-f-from').value;
+        flEdit.to = v('ref-f-to').value;
+        flEdit.back = FlightRegistry.codes(v('ref-f-back').value)[0] || '';
+        flEdit.type = v('ref-f-type') ? v('ref-f-type').value : flEdit.type;
+    }
+
+    function extrasChange(side, add, remove, keepFocus) {
         const id = side === 'out' ? 'ref-f-extras' : 'ref-f-bextras';
         const hidden = document.getElementById(id);
         if (!hidden) return;
         let list = FlightRegistry.codes(hidden.value);
-        if (add) FlightRegistry.codes(add).forEach(c => { if (!list.includes(c)) list.push(c); });
+        if (add) {
+            const bad = String(add).split(/[\s,;]+/).filter(t => t && !FlightRegistry.codes(t).length);
+            if (bad.length && typeof showToast === 'function') showToast(`Не похоже на номер рейса: ${bad.join(', ')} (нужно от 1 до 4 цифр)`, 'error');
+            FlightRegistry.codes(add).forEach(c => { if (!list.includes(c)) list.push(c); });
+        }
         if (remove) list = list.filter(c => c !== remove);
         hidden.value = list.join(',');
         if (flEdit) flEdit[side === 'out' ? 'extras' : 'backExtras'] = list.slice();
         const chips = document.getElementById(id + '-chips');
         if (chips) chips.innerHTML = chipsHtml(side, list);
         const input = document.getElementById(id + '-new');
-        if (input && add) { input.value = ''; input.focus(); }
+        if (input && add) {
+            input.value = '';
+            // Фокус возвращаем, только если номер добавили кнопкой или Enter — уход из поля (Tab, клик) не держим.
+            if (keepFocus) input.focus();
+        }
     }
 
     function warnText(list) {
@@ -1107,7 +1127,7 @@ window.ReferenceView = (function () {
         if (d.reffAdd) {
             const side = d.reffAdd;
             const input = document.getElementById((side === 'out' ? 'ref-f-extras' : 'ref-f-bextras') + '-new');
-            extrasChange(side, input ? input.value : '', null);
+            extrasChange(side, input ? input.value : '', null, true);
             return true;
         }
         if (d.reffRm) {
@@ -1221,9 +1241,10 @@ window.ReferenceView = (function () {
         if (target.id === 'ref-c-year') { calYear = target.value || calYear; rerender(); return true; }
         if ((target.id === 'ref-f-extras-new' || target.id === 'ref-f-bextras-new') && flEdit) {
             // Enter или уход из поля — номер добавляется в список.
-            if (target.value.trim()) extrasChange(target.id === 'ref-f-extras-new' ? 'out' : 'back', target.value, null);
+            if (target.value.trim()) extrasChange(target.id === 'ref-f-extras-new' ? 'out' : 'back', target.value, null, document.activeElement === target);
             return true;
         }
+        if (target.id === 'ref-f-type' && flEdit) { syncFlEdit(); return true; }
         if (target.id === 'ref-f-code' && flEdit) {
             // Номер туда ввели — обратный подставляем сам, если его не трогали.
             const back = document.getElementById('ref-f-back');
@@ -1243,7 +1264,9 @@ window.ReferenceView = (function () {
 
     let filterTimer = null;
     function handleInput(target, rerender) {
+        if (/^ref-f-(code|from|to|back|type)$/.test(target.id)) { syncFlEdit(); return false; }
         if (target.id === 'ref-f-filter') {
+            syncFlEdit();
             flFilter = target.value || '';
             clearTimeout(filterTimer);
             filterTimer = setTimeout(() => {

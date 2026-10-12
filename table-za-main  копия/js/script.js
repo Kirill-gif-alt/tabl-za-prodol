@@ -338,18 +338,38 @@ function renderHeaderKpi() {
     }
     if (typeof FlightChecks !== 'undefined') safe(() => FlightChecks.headerChip());
     if (typeof MorningSummary !== 'undefined') safe(() => MorningSummary.headerChip());
+    // Файл продаж давно не обновлялся — «0 продаж за сегодня» означает «нет свежих данных», а не «не продаём».
+    safe(() => {
+        if (!salesReady || typeof lastSalesUpdate === 'undefined' || !lastSalesUpdate) return null;
+        const upd = new Date(lastSalesUpdate);
+        const t = parseLocalDate(typeof getTodayDate === 'function' ? getTodayDate() : '');
+        if (!t) return null;
+        const days = Math.round((t.getTime() - new Date(upd.getFullYear(), upd.getMonth(), upd.getDate()).getTime()) / 86400000);
+        if (days < 2) return null;
+        const chip = document.createElement('span');
+        chip.className = 'header-kpi-stale';
+        chip.textContent = `данные от ${String(upd.getDate()).padStart(2, '0')}.${String(upd.getMonth() + 1).padStart(2, '0')}`;
+        chip.title = `Файл продаж не обновлялся ${days} дн. «Продаж за сегодня» по нему не видно — загрузите свежие данные.`;
+        return chip;
+    });
     kpiBar.replaceChildren(...items);
     kpiBar.classList.toggle('hidden', !items.length);
     updateHeaderWithLastUpdate();
 }
 
 // Вернулись на вкладку браузера (или прошла полночь) — счётчики шапки на сегодня.
-document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && typeof updateHeaderStatus === 'function') updateHeaderStatus();
-});
-setInterval(() => {
-    if (!document.hidden && typeof updateHeaderStatus === 'function') updateHeaderStatus();
-}, 5 * 60 * 1000);
+// Наступил новый день — продажи «за сегодня» пересчитываются от новой даты (иначе в шапке вчерашние).
+function refreshHeaderForToday() {
+    if (document.hidden) return;
+    if (typeof salesAggregatesFresh === 'function' && typeof rebuildSalesAggregatesFromDetails === 'function'
+        && Object.keys(typeof salesDetails !== 'undefined' && salesDetails ? salesDetails : {}).length && !salesAggregatesFresh()) {
+        rebuildSalesAggregatesFromDetails();
+        return;
+    }
+    if (typeof updateHeaderStatus === 'function') updateHeaderStatus();
+}
+document.addEventListener('visibilitychange', refreshHeaderForToday);
+setInterval(refreshHeaderForToday, 5 * 60 * 1000);
 
 function savePinnedFlights() {
     try {
@@ -735,9 +755,10 @@ function initKeyboardShortcuts() {
         }
         // поиск рейсов — в панели таблицы, если есть
         if (e.key === '/') {
-            e.preventDefault();
-            document.getElementById('table-flight-search')?.focus()
-                || document.getElementById('data-search-input')?.focus();
+            // Поле поиска на открытой вкладке (id повторяется во вкладках — берём видимое).
+            const el = document.querySelector('#main-content-inner > .tab-panel:not([hidden]) .table-flight-search')
+                || document.querySelector('#main-content-inner > .tab-panel:not([hidden]) #data-search-input');
+            if (el && el.offsetParent) { e.preventDefault(); el.focus(); }
         }
         if (e.key === 'Escape' && document.getElementById('profile-admin-modal')?.classList.contains('open')) {
             if (typeof ProfileAuth !== 'undefined') ProfileAuth.closeAdminPanel?.();

@@ -60,7 +60,11 @@ window.SalesReconcile = (function () {
             || ((Number(a.adjustedFare) || 0) - (Number(b.adjustedFare) || 0))
             || String(a.basicFareStr || '').localeCompare(String(b.basicFareStr || ''))
             || ((Number(a.grp) || 0) - (Number(b.grp) || 0))
-            || String(a.grpId == null ? '' : a.grpId).localeCompare(String(b.grpId == null ? '' : b.grpId));
+            || String(a.grpId == null ? '' : a.grpId).localeCompare(String(b.grpId == null ? '' : b.grpId))
+            // Последним — номер билета и пассажир (есть у тех, кому видны данные): одинаково на всех ПК.
+            || String(a.bsonum || '').localeCompare(String(b.bsonum || ''))
+            || String(a.pnr || '').localeCompare(String(b.pnr || ''))
+            || String(a.fio || '').localeCompare(String(b.fio || ''));
     }
 
     // Билеты одного заказа (групповая бронь) переносятся вместе: «единица» — заказ или одиночный билет.
@@ -194,18 +198,22 @@ window.SalesReconcile = (function () {
                 const units = sortedUnits(key);
                 const extra = flying.has(c) ? takeUnits(units, salesOf(c) - loadOf(c)) : units.splice(0, units.length);
                 store(key, units);
-                extra.forEach(u => pool.push({ u, from: key }));
+                extra.forEach(u => pool.push({ u, from: key, orphan: !flying.has(c) }));
             });
             deficits.forEach(c => {
                 const key = date + '|' + c;
-                const need = loadOf(c) - salesOf(c);
-                const units = pool.map(p => p.u);
-                const got = new Set(takeUnits(units, need));
-                for (let j = pool.length - 1; j >= 0; j--) {
-                    if (!got.has(pool[j].u)) continue;
-                    pool[j].u.forEach(s => { put(details, key, s, pool[j].from); moved++; });
-                    pool.splice(j, 1);
-                }
+                let need = loadOf(c) - salesOf(c);
+                // Сначала билеты номеров, которые в этот день не летят (им больше некуда), потом излишки.
+                [true, false].forEach(orphan => {
+                    if (need <= 0) return;
+                    const part = pool.filter(p => p.orphan === orphan);
+                    const got = new Set(takeUnits(part.map(p => p.u), need));
+                    for (let j = pool.length - 1; j >= 0; j--) {
+                        if (!got.has(pool[j].u)) continue;
+                        pool[j].u.forEach(s => { put(details, key, s, pool[j].from); moved++; need--; });
+                        pool.splice(j, 1);
+                    }
+                });
                 if (details[key]) details[key].sort(byDeal);
             });
             // Не хватило места — остаются где были.
@@ -214,7 +222,9 @@ window.SalesReconcile = (function () {
         });
 
         // 2. Перенос даты: билеты на дату, где рейса нет, — на ближайший вылет с нехваткой продаж.
-        Object.keys(details).sort().forEach(k => {
+        // По порядку дат вылета (а не по тексту «дд.мм.гггг»).
+        const keyTs = (k) => { const d = parseLocalDate(k.slice(0, k.lastIndexOf('|'))); return d ? d.getTime() : 0; };
+        Object.keys(details).sort((a, b) => keyTs(a) - keyTs(b) || a.localeCompare(b)).forEach(k => {
             const i = k.lastIndexOf('|');
             if (i < 0) return;
             const date = k.slice(0, i);
@@ -256,8 +266,19 @@ window.SalesReconcile = (function () {
     }
 
     // Отчёт: будущие вылеты, где продажи и загрузка расходятся или билеты пришлось перенести.
+    let reportMemo = { sig: '', v: null };
+
     function report() {
         const details = typeof salesDetails !== 'undefined' ? salesDetails : {};
+        // Пересчёт только при новых данных: «Отчёты» спрашивают отчёт при каждой перерисовке.
+        const sig = `${typeof dataEpoch === 'number' ? dataEpoch : 0}|${typeof getTodayDate === 'function' ? getTodayDate() : ''}|${lastRun.at}`;
+        if (reportMemo.sig === sig && reportMemo.details === details) return reportMemo.v;
+        const v = buildReport(details);
+        reportMemo = { sig, details, v };
+        return v;
+    }
+
+    function buildReport(details) {
         const { load } = loadsByDeparture();
         const movedIn = new Map();
         const movedOut = new Map();

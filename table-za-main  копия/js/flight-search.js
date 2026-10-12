@@ -1,8 +1,9 @@
 // Поиск рейса: по номеру (101, кв101, KV-301 — доп. номер ведёт к основному) и по городам маршрута
-// («абак», «томск стреж», даже в английской раскладке: «fofr» → «абак»).
+// («абак», «томск стреж», «абакан, томск»).
 // • Поле на панели «Динамики продаж», «Экономики», «ПКЗ»: подсказки прямо под полем.
 // • Ctrl+K на любой вкладке: окно поиска по центру — недавние рейсы и совпадения.
 //   Enter — открыть на текущей вкладке (или в «Динамике продаж»), Shift+Enter — в «Экономической таблице».
+// Английская раскладка тоже понимается: «f,fr» → «абак».
 window.FlightSearch = (function () {
     const RECENT_KEY = 'krasavia_recent_flights_';
     const RECENT_MAX = 8;
@@ -18,7 +19,7 @@ window.FlightSearch = (function () {
     }
 
     function norm(s) {
-        return String(s || '').toLowerCase().replace(/ё/g, 'е').replace(/[—–-]/g, ' ').replace(/\s+/g, ' ').trim();
+        return String(s || '').toLowerCase().replace(/ё/g, 'е').replace(/[—–\-,;]/g, ' ').replace(/\s+/g, ' ').trim();
     }
 
     function toRu(s) {
@@ -124,10 +125,16 @@ window.FlightSearch = (function () {
             const terms = qq.split(' ').filter(Boolean);
             return index().map(f => ({ f, s: scoreOf(f, terms) })).filter(x => x.s > 0);
         };
+        let used = q;
         let res = run(q);
-        // Набрано в английской раскладке («fofrfy» → «абакан»).
-        if (!res.length && /[a-z\[\];',.`]/.test(q)) res = run(stripPrefix(norm(toRu(q))));
-        return res.sort((a, b) => b.s - a.s || (parseInt(a.f.nums[0], 10) || 0) - (parseInt(b.f.nums[0], 10) || 0)).map(x => x.f);
+        // Набрано в английской раскладке («f,frfy» → «абакан»). Запятую раскладки берём до чистки.
+        if (!res.length && /[a-z\[\];',.`]/.test(String(query).toLowerCase())) {
+            used = stripPrefix(norm(toRu(String(query).toLowerCase())));
+            res = run(used);
+        }
+        const out = res.sort((a, b) => b.s - a.s || (parseInt(a.f.nums[0], 10) || 0) - (parseInt(b.f.nums[0], 10) || 0)).map(x => x.f);
+        out.used = used;
+        return out;
     }
 
     function find(code) {
@@ -247,7 +254,9 @@ window.FlightSearch = (function () {
         if (!dropdown) return;
         const q = dropdown.input.value;
         const rec = !norm(q);
-        const items = rec ? recent().slice(0, 6) : search(q).slice(0, LIMIT);
+        const found = rec ? null : search(q);
+        const items = rec ? recent().slice(0, 6) : found.slice(0, LIMIT);
+        const hq = found ? found.used : q;
         dropdown.items = items;
         if (dropdown.active >= items.length) dropdown.active = items.length - 1;
         if (dropdown.active < 0 && items.length) dropdown.active = 0;
@@ -257,7 +266,7 @@ window.FlightSearch = (function () {
                 ? '<div class="fs-empty">Начните вводить номер (101, 301) или город (Абакан, томск)</div>'
                 : `<div class="fs-empty">Ничего не нашлось по «${esc(q)}». Попробуйте номер или часть названия города.</div>`;
         } else {
-            body = (rec ? '<div class="fs-sec">Недавние</div>' : '') + items.map((f, i) => itemHtml(f, q, i, dropdown.active)).join('');
+            body = (rec ? '<div class="fs-sec">Недавние</div>' : '') + items.map((f, i) => itemHtml(f, hq, i, dropdown.active)).join('');
         }
         dropdown.el.innerHTML = body + '<div class="fs-foot"><span><kbd>↑</kbd><kbd>↓</kbd> выбрать</span><span><kbd>Enter</kbd> открыть</span><span><kbd>Esc</kbd> закрыть</span><span class="fs-foot-right" title="Окно поиска рейса открывается с любой вкладки"><kbd>Ctrl</kbd>+<kbd>K</kbd> везде</span></div>';
         placeDropdown();
@@ -350,7 +359,9 @@ window.FlightSearch = (function () {
         if (!palette) return;
         const q = palette.input.value;
         const rec = !norm(q);
-        const items = rec ? recent() : search(q).slice(0, 12);
+        const found = rec ? null : search(q);
+        const items = rec ? recent() : found.slice(0, 12);
+        const hq = found ? found.used : q;
         palette.items = items;
         if (palette.active >= items.length) palette.active = items.length - 1;
         if (palette.active < 0 && items.length) palette.active = 0;
@@ -363,7 +374,7 @@ window.FlightSearch = (function () {
                 : `<div class="fs-empty">Ничего не нашлось по «${esc(q)}».</div>`;
         } else {
             html = `<div class="fs-sec">${rec ? 'Недавние' : `Найдено: ${items.length === 12 ? '12+' : items.length}`}</div>`
-                + items.map((f, i) => itemHtml(f, q, i, palette.active, aside(f))).join('');
+                + items.map((f, i) => itemHtml(f, hq, i, palette.active, aside(f))).join('');
         }
         palette.list.innerHTML = html;
         const cur = typeof currentTab !== 'undefined' ? currentTab : '';
@@ -373,9 +384,15 @@ window.FlightSearch = (function () {
             + '<span><kbd>↑</kbd><kbd>↓</kbd> выбрать</span>';
     }
 
+    // Открыто другое окно (настройки, профили, сводка, увеличенный график, вход) — поиск не открываем поверх.
+    function otherModalOpen() {
+        return !!document.querySelector('.profile-admin-modal.open, #chart-expand-modal.open, .chart-expand-modal.open, #login-overlay.open');
+    }
+
     function openPalette() {
-        if (!paletteTabs().length) return;
+        if (!paletteTabs().length || otherModalOpen()) return;
         if (palette) { palette.input.focus(); palette.input.select(); return; }
+        const prevFocus = document.activeElement;
         closeDropdown();
         const ov = document.createElement('div');
         ov.className = 'fs-ov';
@@ -390,7 +407,7 @@ window.FlightSearch = (function () {
         </div>`;
         document.body.appendChild(ov);
         const input = ov.querySelector('.fs-pal-input');
-        palette = { ov, input, list: ov.querySelector('.fs-pal-list'), hint: ov.querySelector('.fs-pal-hint'), items: [], active: 0 };
+        palette = { ov, input, list: ov.querySelector('.fs-pal-list'), hint: ov.querySelector('.fs-pal-hint'), items: [], active: 0, prevFocus };
         ov.addEventListener('mousedown', (e) => {
             if (e.target === ov) { closePalette(); return; }
             const tb = e.target.closest('[data-fs-open]');
@@ -407,7 +424,11 @@ window.FlightSearch = (function () {
             palette.list.querySelectorAll('.fs-item').forEach(n => n.classList.toggle('fs-on', parseInt(n.dataset.fsI, 10) === i));
         });
         input.addEventListener('input', () => { palette.active = 0; renderPalette(); });
-        input.addEventListener('keydown', (e) => {
+        // Клавиши ловит всё окно: даже если фокус ушёл с поля, Esc и стрелки работают, а Tab не уводит за окно.
+        ov.addEventListener('keydown', (e) => {
+            e.stopPropagation();
+            if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyK' || /^[kKлЛ]$/.test(e.key))) { e.preventDefault(); closePalette(); return; }
+            if (e.key === 'Tab') { e.preventDefault(); input.focus(); return; }
             if (e.key === 'ArrowDown') { e.preventDefault(); move(palette, 1, renderPalette); }
             else if (e.key === 'ArrowUp') { e.preventDefault(); move(palette, -1, renderPalette); }
             else if (e.key === 'Escape') { e.preventDefault(); closePalette(); }
@@ -425,8 +446,10 @@ window.FlightSearch = (function () {
 
     function closePalette() {
         if (!palette) return;
+        const prev = palette.prevFocus;
         palette.ov.remove();
         palette = null;
+        if (prev && prev.focus && document.contains(prev)) { try { prev.focus(); } catch (e) { /* ignore */ } }
     }
 
     document.addEventListener('keydown', (e) => {

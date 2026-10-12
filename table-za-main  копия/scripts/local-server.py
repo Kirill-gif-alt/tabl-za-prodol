@@ -49,8 +49,21 @@ WRITE_LOCK = threading.Lock()
 ALLOWED_HOSTS = {"127.0.0.1:%d" % PORT, "localhost:%d" % PORT}
 
 
+def _history_base(name):
+    # forecast-log/2026-10.json → forecast-log_2026-10 (одна папка копий на файл, без подпапок).
+    return name[:-5].replace("/", "_")
+
+
+def _policy_for(name):
+    if name in HISTORY_POLICY:
+        return HISTORY_POLICY[name]
+    if FCLOG_RE.match(name):
+        return (6 * 3600, 10)
+    return None
+
+
 def _history_versions(name):
-    base = name[:-5]
+    base = _history_base(name)
     folder = os.path.join(HISTORY_DIR, base)
     if not os.path.isdir(folder):
         return folder, []
@@ -69,8 +82,8 @@ def _history_versions(name):
 
 def backup_if_due(name, force=False):
     """Копия текущей версии файла перед перезаписью. Ошибка копии не мешает записи."""
-    policy = HISTORY_POLICY.get(name)
-    target = os.path.join(SHARED_DIR, name)
+    policy = _policy_for(name)
+    target = os.path.join(SHARED_DIR, *name.split("/"))
     if not policy or not os.path.isfile(target):
         return
     every, keep = policy
@@ -82,7 +95,7 @@ def backup_if_due(name, force=False):
             return
         os.makedirs(folder, exist_ok=True)
         stamp = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime(os.path.getmtime(target)))
-        dest = os.path.join(folder, "%s__%s.json" % (name[:-5], stamp))
+        dest = os.path.join(folder, "%s__%s.json" % (_history_base(name), stamp))
         if not os.path.exists(dest):
             shutil.copy2(target, dest)
             os.utime(dest)  # время копии — для интервала; время версии — в имени
