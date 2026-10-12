@@ -55,6 +55,11 @@
 // (7) Выбор способа на горизонте h для сегмента (есть файл / есть история / нет ничего):  k* = argminₖ MAEₖ,
 //     но прежний способ k₀ меняется на k*, только если парная разница dᵢ = |eₖ*,ᵢ| − |eₖ₀,ᵢ| надёжно меньше нуля:
 //     t = −d̄ / (s_d/√n) > 1   (защита от «прыжков» из-за шума).
+//
+// (8) Интервал 80% (сплит-конформный, несимметричный): остатки выбранного способа на честной проверке
+//     rᵢ = (fᵢ − f̂ᵢ)/sᵢ, отсортированы, n ≥ 20;  q_lo = r₍⌊(n+1)·0,1⌋₎,  q_hi = r₍⌈(n+1)·0,9⌉₎;
+//     интервал [max(0, ⌊f̂ + q_lo·s⌋); min(max(s, o), ⌈f̂ + q_hi·s⌉)]. Нижняя граница может быть меньше проданного —
+//     неявки и возвраты (за 1 день до вылета итог меньше проданного у половины вылетов).
 window.ForecastLab = (function () {
     const HORIZONS = [30, 21, 14, 10, 7, 5, 3, 1];
     const GROUPS = [{ id: 'near', label: '1–3 дня', hs: [1, 3] }, { id: 'mid', label: '5–10 дней', hs: [5, 7, 10] }, { id: 'far', label: '14–30 дней', hs: [14, 21, 30] }];
@@ -76,6 +81,8 @@ window.ForecastLab = (function () {
     const EVAL_WEEKS = 12;          // проверка — на последних неделях
     const DONE_KEY = 'krasavia_fclog_done';
     const DAY = 86400000;
+    const CONF_LEVEL = 0.8;         // интервал прогноза: 80% вылетов попадают внутрь (проверено на прошлых неделях)
+    const CONF_MIN = 20;            // остатков в «банке», чтобы интервал показывался
 
     let log = Object.create(null);  // 'дд.мм.гггг|KV-101' → { b: base, s, f, h: { '7': { d, o, p, q, y, n, m, b, s, x } } }
     const loadedMonths = new Set();
@@ -725,8 +732,16 @@ window.ForecastLab = (function () {
             if (!models) return null;
             final = predictAll(models, { base, date, ts: dep.ts, h, s: r.s, r })[pick.k];
         } else final = simple(pick.k, r, r.s, ev.pool, h);
+        // Интервал 80%: [f̂ + q_lo·s, f̂ + q_hi·s], снизу 0 (неявки и возвраты бывают), сверху — кресла.
+        let lo = null;
+        let hi = null;
+        const c = ev.conf && ev.conf[h + '|' + segOf(r)];
+        if (final != null && c && c.k === pick.k) {
+            lo = Math.min(final, Math.max(0, Math.floor(final + c.lo * r.s)));
+            hi = Math.max(final, Math.min(Math.max(r.s, r.o), Math.ceil(final + c.hi * r.s)));
+        }
         if (final == null) final = r.o;
-        return { final, seats: r.s, lf: Math.round(final / r.s * 100), method: METHOD_LABEL[pick.k], err: Math.round(pick.v * 10) / 10, trainedOn: pick.n, h };
+        return { final, lo, hi, cover: lo != null ? Math.round(CONF_LEVEL * 100) : null, seats: r.s, lf: Math.round(final / r.s * 100), method: METHOD_LABEL[pick.k], err: Math.round(pick.v * 10) / 10, trainedOn: pick.n, h };
     }
 
     // ---------- запись журнала ----------
@@ -868,6 +883,41 @@ window.ForecastLab = (function () {
         try { localStorage.setItem(CHOICE_KEY, JSON.stringify(out)); } catch (e) { /* ignore */ }
     }
 
+    // Интервал прогноза (сплит-конформный, несимметричный). Для способа k, выбранного на горизонте h для сегмента,
+    // «банк» честных остатков в долях кресел rᵢ = (fᵢ − f̂ₖᵢ)/sᵢ — только из проверки на прошлых неделях.
+    // Границы — порядковые статистики: q_lo = r₍⌊(n+1)·0,1⌋₎, q_hi = r₍⌈(n+1)·0,9⌉₎ — гарантия покрытия ≥ 80% и при малом n.
+    // Банк берётся с первого уровня, где остатков ≥ 20: (h, сегмент) → h → (группа горизонтов, сегмент) → группа → все.
+    function conformal(test, choice, val) {
+        const alpha = (1 - CONF_LEVEL) / 2;
+        const out = {};
+        const bank = (k, list) => list.map(x => { const v = val(k, x); return v == null ? null : (x.f - v) / x.s; }).filter(v => v != null);
+        HORIZONS.forEach(h => {
+            const g = groupOf(h).id;
+            ['plan', 'hist', 'none'].forEach(sg => {
+                const pick = choice[h + '|' + sg] || choice[h];
+                if (!pick) return;
+                const levels = [
+                    ['h·сегмент', x => x.h === h && segOf(x.r) === sg],
+                    ['h', x => x.h === h],
+                    ['группа·сегмент', x => groupOf(x.h).id === g && segOf(x.r) === sg],
+                    ['группа', x => groupOf(x.h).id === g],
+                    ['все', () => true]
+                ];
+                for (const [level, fn] of levels) {
+                    const r = bank(pick.k, test.filter(fn)).sort((a, b) => a - b);
+                    const n = r.length;
+                    if (n < CONF_MIN) continue;
+                    const iLo = Math.floor((n + 1) * alpha);
+                    const iHi = Math.ceil((n + 1) * (1 - alpha));
+                    if (iLo < 1 || iHi > n) continue;
+                    out[h + '|' + sg] = { k: pick.k, lo: r[iLo - 1], hi: r[iHi - 1], n, level };
+                    break;
+                }
+            });
+        });
+        return out;
+    }
+
     // Прогноз за h дней до вылета знает только вылеты, улетевшие до недели, в которой он сделан.
     // Все способы сравниваются на одних и тех же вылетах; выбор — отдельно для вылетов с файлом ожидаемой,
     // с историей дней недели и без того и другого. Выбор меняется, только если новый способ заметно лучше.
@@ -962,6 +1012,7 @@ window.ForecastLab = (function () {
             base.forEach(x => { const v = chosenVal(x); if (v == null) return; c.sum += Math.abs(v - x.f); c.bias += v - x.f; c.n++; });
             byH[h].best = c;
         });
+        const conf = conformal(test, choice, val);
         const anyModel = HORIZONS.some(h => !byH[h].simpleOnly);
         const byWeek = new Map();
         const byBase = new Map();
@@ -994,7 +1045,7 @@ window.ForecastLab = (function () {
         }
         const segCount = { plan: 0, hist: 0, none: 0 };
         test.forEach(x => { if (x.h === 7) segCount[segOf(x.r)]++; });
-        return { full, pool: poolOf(all), byH, byWeek, byBase, choice, influence, segCount, samples: all.length, departures: new Set(all.map(x => x.key)).size, trained: !!full, anyModel };
+        return { full, pool: poolOf(all), byH, byWeek, byBase, choice, conf, influence, segCount, samples: all.length, departures: new Set(all.map(x => x.key)).size, trained: !!full, anyModel };
     }
 
     // Один расчёт за раз; все, кто ждал, получают результат (и при ошибке). Устаревший расчёт не применяется.
@@ -1116,6 +1167,7 @@ window.ForecastLab = (function () {
             ${f('<i>ŵ</i> = (<i>X</i><sup>T</sup><i>X</i> + λ<i>I</i>)<sup>−1</sup><i>X</i><sup>T</sup><i>t</i>, &nbsp; λ = 0,8', 'Линейная модель (гребневая регрессия) по 31 признаку: штраф λ не даёт весам раздуваться на малых данных. Своя модель на каждом горизонте, когда записей ≥ 80.')}
             ${f('<i>F<sub>m</sub></i> = <i>F</i><sub><i>m</i>−1</sub> + η·<i>h<sub>m</sub></i>, &nbsp; <i>r</i> = clip(<i>t</i> − <i>F</i>, −δ, δ), &nbsp; η = 0,08, <i>M</i> = 120', 'Решающие деревья (градиентный бустинг): каждое следующее дерево исправляет ошибки предыдущих. Ошибка обрезается на δ (потери Хьюбера) — группы и отмены не сбивают модель.')}
             ${f('<i>t̂</i> = ½(<i>t̂</i><sub>лин</sub> + <i>t̂</i><sub>дер</sub>) + <i>c</i><sub>рейс</sub>, &nbsp; <i>c</i><sub>рейс</sub> = <i>n</i>/(<i>n</i> + 10) · средний остаток рейса', 'Среднее двух моделей и поправка по рейсу: при малом числе вылетов поправка почти ноль, при большом — равна средней ошибке рейса.')}
+            ${f('[<i>f̂</i> + <i>q</i><sub>0,1</sub>·<i>s</i>; &nbsp;<i>f̂</i> + <i>q</i><sub>0,9</sub>·<i>s</i>], &nbsp; <i>q</i> — квантили остатков (<i>f</i> − <i>f̂</i>)/<i>s</i> прошлых прогнозов', 'Интервал 80% (конформный): по тому, как этот же способ ошибался раньше на таком же горизонте и таких же вылетах. Несимметричный — вниз и вверх ошибаются по-разному. В карточке: «44 из 72 (40–47, 80%)».')}
             ${f('обучение: вылеты с датой ≤ понедельник(дата − <i>h</i>) − 1 день', 'Честная проверка: прогноз за <i>h</i> дней модель делает, зная только вылеты, улетевшие к тому моменту.')}
             ${f('MAE = (1/<i>N</i>)·Σ|<i>f̂</i> − <i>f</i>|, &nbsp; смещение = (1/<i>N</i>)·Σ(<i>f̂</i> − <i>f</i>)', 'Средняя ошибка в пассажирах и в какую сторону ошибается (↑ завышает, ↓ занижает).')}
             ${f('<i>t</i> = −<i>d̄</i> / (<i>s<sub>d</sub></i>/√<i>n</i>) &gt; 1, &nbsp; <i>d<sub>i</sub></i> = |<i>e</i><sub>новый</sub>| − |<i>e</i><sub>прежний</sub>|', 'Способ меняется, только если новый надёжно точнее на тех же вылетах, а не случайно.')}
@@ -1146,7 +1198,10 @@ window.ForecastLab = (function () {
             if (!segs.length) return ev.choice[h] ? `<strong>${esc(METHOD_LABEL[ev.choice[h].k])}</strong>` : '<span class="rp-muted">мало данных</span>';
             return segs.map(sg => {
                 const c = ev.choice[h + '|' + sg];
-                return `<div class="fl-seg"><span class="rp-muted">${esc(SEG_LABEL[sg])}:</span> <strong>${esc(METHOD_LABEL[c.k])}</strong> <span class="rp-muted">±${fmt(c.v)}</span></div>`;
+                const ci = ev.conf && ev.conf[h + '|' + sg];
+                const pp = v => `${v > 0 ? '+' : (v < 0 ? '−' : '')}${Math.abs(Math.round(v * 100))}`;
+                const ciTxt = ci && ci.k === c.k ? ` <span class="rp-muted" title="80% вылетов попадали в эти пределы вокруг прогноза (п.п. загрузки, по ${ci.n} прошлым прогнозам)">· 80%: ${pp(ci.lo)}…${pp(ci.hi)} п.п.</span>` : '';
+                return `<div class="fl-seg"><span class="rp-muted">${esc(SEG_LABEL[sg])}:</span> <strong>${esc(METHOD_LABEL[c.k])}</strong> <span class="rp-muted">±${fmt(c.v)}</span>${ciTxt}</div>`;
             }).join('');
         };
         const rowsH = HORIZONS.map(h => {
