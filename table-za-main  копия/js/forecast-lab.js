@@ -258,10 +258,10 @@ window.ForecastLab = (function () {
     let sigMemo = { rev: -1, v: '' };
 
     function trainSig() {
-        if (sigMemo.rev === logRev) return sigMemo.v;
-        const v = trainSig0();
-        sigMemo = { rev: logRev, v };
-        return v;
+        const arch = typeof SalesArchive !== 'undefined' && SalesArchive.revision ? SalesArchive.revision() : 0;
+        const cal = typeof CalendarEvents !== 'undefined' && CalendarEvents.revision ? CalendarEvents.revision() : 0;
+        if (sigMemo.rev !== logRev) sigMemo = { rev: logRev, v: trainSig0() };
+        return `${sigMemo.v}|${arch}|${cal}`;
     }
 
     function trainSig0() {
@@ -335,7 +335,7 @@ window.ForecastLab = (function () {
         if (typeof SalesArchive !== 'undefined' && SalesArchive.entries) {
             const from = parseLocalDate('01.' + shiftMonth(monthOf(today()), -MONTHS_BACK).split('-').reverse().join('.'));
             SalesArchive.entries().forEach(({ date, code, e }) => {
-                if (byKey[date + '|' + code] || !(e.s > 0) || !(e.sold > 0)) return;
+                if (byKey[date + '|' + code] || !(e.s > 0) || !(e.sold > 0) || (e.se && e.sold >= e.s)) return;
                 const t = parseLocalDate(date);
                 if (!t || t.getTime() >= now || (from && t < from)) return;
                 const base = typeof getBaseFlight === 'function' ? getBaseFlight(code) : code;
@@ -1116,7 +1116,8 @@ window.ForecastLab = (function () {
     const modelCache = new Map();   // между запусками: обучающий набор не изменился — модель не переобучается
 
     async function cachedTrain(all, len, cum) {
-        const key = `${len}|${cum[len]}`;
+        const cal = typeof CalendarEvents !== 'undefined' && CalendarEvents.revision ? CalendarEvents.revision() : 0;
+        const key = `${len}|${cum[len]}|${cal}`;
         if (modelCache.has(key)) return modelCache.get(key);
         const m = await train(all.slice(0, len));
         modelCache.set(key, m);
@@ -1280,9 +1281,15 @@ window.ForecastLab = (function () {
             if (v != null) chainPred.set(x, v);
             if ((i & 511) === 0) await tick();
         }
+        // «Прошлый год» считается один раз на запись (его спрашивают много раз за проверку).
+        const lyMemo = new Map();
+        const lyOf = (x) => {
+            if (!lyMemo.has(x)) lyMemo.set(x, lyPredict(x.key.slice(x.key.lastIndexOf('|') + 1), x.base, x.ts, x.h, x.r.o, x.s));
+            return lyMemo.get(x);
+        };
         const base0 = (k, x) => (k === 'lin' || k === 'gbm' || k === 'ens' ? (pred.has(x) ? pred.get(x)[k] : null)
             : (k === 'chain' ? (chainPred.has(x) ? chainPred.get(x) : null)
-                : (k === 'ly' ? lyPredict(x.key.slice(x.key.lastIndexOf('|') + 1), x.base, x.ts, x.h, x.r.o, x.s) : simple(k, x.r, x.s, pools.get(x), x.h, x.base))));
+                : (k === 'ly' ? lyOf(x) : simple(k, x.r, x.s, pools.get(x), x.h, x.base))));
         const expertVals = x => {
             const out = {};
             expertsFor(x.h).forEach(k => { const v = base0(k, x); if (v != null) out[k] = v; });
@@ -1975,7 +1982,7 @@ window.ForecastLab = (function () {
                 ${chartHtml(ev)}
                 <div class="dr-list-title">Ошибка по горизонтам, пасс.</div>
                 <div class="rp-scroll"><table class="rp-table">
-                    <thead><tr><th>До вылета</th>${cols.map(([, l]) => `<th>${esc(l)}</th>`).join('')}<th title="Этот способ показывается в карточке рейса">Что берём</th><th>Итог: ошибка, WAPE, интервал</th></tr></thead>
+                    <thead><tr><th>До вылета</th>${cols.map(([, l]) => `<th>${esc(l)}</th>`).join('')}<th title="Этот способ показывается в карточке рейса">Что берём</th><th title="Способ выбран по этим же неделям — поэтому оценка «что берём» немного оптимистична; столбцы отдельных способов честные">Итог: ошибка, WAPE, интервал</th></tr></thead>
                     <tbody>${rowsH}</tbody></table></div>
                 <div class="dr-sums">
                     <div class="dr-sum"><div class="dr-sum-title">Что влияет на прогноз (модель «деревья»)</div>

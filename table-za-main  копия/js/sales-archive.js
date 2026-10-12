@@ -215,7 +215,16 @@ window.SalesArchive = (function () {
         return `${at}|${(allData || []).length}|${Object.keys(salesDetails || {}).length}`;
     }
 
-    async function mergeAndWrite(file, kind, additions) {
+    // Записи в один файл — по очереди: загрузка истории и запись архива по живым данным не затирают друг друга.
+    const writeQueue = Object.create(null);
+
+    function mergeAndWrite(file, kind, additions) {
+        const run = (writeQueue[file] || Promise.resolve()).catch(() => null).then(() => mergeAndWrite0(file, kind, additions));
+        writeQueue[file] = run;
+        return run;
+    }
+
+    async function mergeAndWrite0(file, kind, additions) {
         // Строгое чтение: если файл не прочитался (ошибка, нет доступа), не перезаписываем архив.
         const read = await SharedStorage.readJsonFileStrict(file).catch(() => ({ ok: false }));
         if (!read.ok) return false;
@@ -229,7 +238,8 @@ window.SalesArchive = (function () {
                 const next = additions[k];
                 // Берём вариант, где больше билетов: ранние продажи могли уже выпасть из окна выгрузки.
                 if (!prev || next.c.reduce((a, b) => a + b, 0) > prev.t || (next.sold !== prev.sold && next.c.reduce((a, b) => a + b, 0) === prev.t)) {
-                    flights[k] = next;
+                    // Возвраты, группы и корпоративные из истории продаж в живых данных не считаются — переносим.
+                    flights[k] = prev ? { ...next, ...['r', 'g', 'k'].reduce((o, f) => (prev[f] ? { ...o, [f]: prev[f] } : o), {}) } : next;
                     changed = true;
                 }
             });
@@ -341,7 +351,8 @@ window.SalesArchive = (function () {
     async function importHistory(text) {
         if (typeof SharedStorage === 'undefined') return { ok: false, error: 'нет общей папки' };
         const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/);
-        const head = (lines[0] || '').split(',').map(x => x.trim().toUpperCase());
+        const splitLine = (l) => (typeof parseCSVLine === 'function' ? parseCSVLine(l) : l.split(',')).map(x => String(x == null ? '' : x).replace(/^"|"$/g, '').trim());
+        const head = splitLine(lines[0] || '').map(x => x.toUpperCase());
         const col = (n) => head.indexOf(n);
         const need = ['REIS', 'FLYDATE', 'TICKETS', 'CURVE'];
         if (need.some(n => col(n) < 0)) return { ok: false, error: 'это не файл истории продаж (нужны столбцы REIS, FLYDATE, TICKETS, CURVE)' };
@@ -357,17 +368,20 @@ window.SalesArchive = (function () {
         for (let i = 1; i < lines.length; i++) {
             const line = lines[i];
             if (!line || !line.trim()) continue;
-            const r = line.split(',');
+            const r = splitLine(line);
             const code = cleanFlight(r[col('REIS')] || '');
-            const date = String(r[col('FLYDATE')] || '').trim();
-            const d = parseLocalDate(date);
+            const d = parseLocalDate(String(r[col('FLYDATE')] || '').trim());
+            // Ключ — в том же виде, что у живых данных (дд.мм.гггг), иначе один вылет посчитается дважды.
+            const date = d ? (typeof formatDateRu === 'function' ? formatDateRu(d) : `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`) : '';
             const sold = parseInt(r[col('TICKETS')], 10) || 0;
             if (!code || !d || (today && d >= today) || sold <= 0) { skipped++; continue; }
             const c = parseCurve(r[col('CURVE')], MAX_DTD);
             if (!c.length) { skipped++; continue; }
             if (!typical[code]) typical[code] = typicalOf(code);
             const ty = typical[code];
-            const e = { c, s: Math.max(ty.s, sold), ac: ty.ac, sold, rev: Math.round(Number(r[col('REVENUE')]) || 0), h: 1 };
+            // Кресла прошлых вылетов не записаны — берём по нынешнему рейсу. Рейса нет в данных — кресел не знаем (s: 0):
+            // такой вылет идёт в норму и «прошлый год», но не в обучение модели (иначе загрузка была бы 100% по построению).
+            const e = { c, s: ty.s >= sold ? ty.s : 0, ac: ty.ac, sold, rev: Math.round(Number(r[col('REVENUE')]) || 0), h: 1 };
             e.se = 1;   // кресел прошлых вылетов в истории продаж нет — оценка по нынешнему ВС рейса
             ['REFUNDED', 'GROUP', 'CORP'].forEach((n, j) => { const v = parseInt(r[col(n)], 10); if (v > 0) e[['r', 'g', 'k'][j]] = v; });
             estimated++;

@@ -561,7 +561,7 @@ window.ProfileAuth = (function () {
     }
 
     function getFirstAllowedTab() {
-        const order = ['home', 'main', 'table', 'pkz', 'pair', 'costs', 'data', 'rms', 'sales', 'creative', 'reports', 'today'];
+        const order = ['home', 'main', 'table', 'pkz', 'pair', 'costs', 'data', 'rms', 'sales', 'creative', 'reports', 'today', 'stats'];
         return order.find(t => canAccessTab(t)) || null;
     }
 
@@ -892,6 +892,24 @@ window.ProfileAuth = (function () {
         </div>`;
     }
 
+    // Новый профиль — в список и редактор без перерисовки всего окна; форма создания очищается.
+    function insertProfileEditor(profile) {
+        const body = document.getElementById('profile-admin-body');
+        if (!body || !body.querySelector('.pa-layout')) { paSelected = profile.id; renderAdminPanel(); return; }
+        const tmp = document.createElement('div');
+        tmp.innerHTML = `<button type="button" class="pa-item" data-pa-select="${escAttr(profile.id)}" data-pa-name="${escAttr(String(profile.name || '').toLowerCase())}">
+                <span class="pa-avatar">${escAttr(initialOf(profile.name))}</span>
+                <span class="pa-item-text"><span class="pa-item-name">${escAttr(profile.name)}</span><span class="pa-item-sub" data-pa-summary="${escAttr(profile.id)}">${permSummary(profile)}</span></span>
+            </button>`;
+        body.querySelector('.pa-list').appendChild(tmp.firstElementChild);
+        tmp.innerHTML = editorHtml(profile);
+        body.querySelector('.pa-main').appendChild(tmp.firstElementChild);
+        const fresh = document.createElement('div');
+        fresh.innerHTML = newEditorHtml();
+        body.querySelector('[data-pa-editor="__new__"]').replaceWith(fresh.firstElementChild);
+        selectProfileEditor(profile.id);
+    }
+
     function selectProfileEditor(id) {
         paSelected = id;
         const body = document.getElementById('profile-admin-body');
@@ -988,8 +1006,7 @@ window.ProfileAuth = (function () {
                 cb.checked = cb.dataset.perm === 'tab_main' || cb.dataset.perm === 'tab_sales';
             });
 
-            paSelected = result.profile.id;
-            renderAdminPanel();
+            insertProfileEditor(result.profile);
             if (typeof showToast === 'function') {
                 showToast(`Профиль «${result.profile.name}» создан`);
             }
@@ -1013,12 +1030,13 @@ window.ProfileAuth = (function () {
 
         try {
             profilesCache = profilesCache.filter(p => p.id !== profileId);
-            paSelected = 'admin';
             await saveProfiles(false);
             if (typeof ActivityLog !== 'undefined') {
                 await ActivityLog.log('profile_delete', profile.name, { profileId });
             }
-            renderAdminPanel();
+            // Убираем только этот профиль — несохранённые правки остальных остаются на экране.
+            document.querySelectorAll(`#profile-admin-body [data-pa-select="${CSS.escape(profileId)}"], #profile-admin-body [data-pa-editor="${CSS.escape(profileId)}"]`).forEach(el => el.remove());
+            selectProfileEditor('admin');
             if (typeof showToast === 'function') showToast(`Профиль «${profile.name}» удалён`);
         } catch (e) {
             console.error('handleDeleteProfile', e);
@@ -1067,6 +1085,19 @@ window.ProfileAuth = (function () {
         if (!guardPermission('manage_profiles')) return;
 
         try {
+            // Сначала проверить всё, потом менять: иначе часть профилей изменится, а сохранение оборвётся на ошибке.
+            const minLen = minPasswordLenAdminReset();
+            for (const p of profilesCache) {
+                const passInput = document.querySelector(`.profile-pass-input[data-profile="${p.id}"]`);
+                const noPerms = p.id !== 'admin' && document.querySelector(`input[data-profile="${p.id}"][data-perm]`)
+                    && !document.querySelector(`input[data-profile="${p.id}"][data-perm]:checked`);
+                const badPass = passInput && passInput.value && passInput.value.length < minLen;
+                if (noPerms || badPass) {
+                    if (typeof selectProfileEditor === 'function') selectProfileEditor(p.id);
+                    if (typeof showToast === 'function') showToast(noPerms ? `Профиль «${p.name}»: выберите хотя бы одно право` : `Пароль «${p.name}»: минимум ${minLen} символа`, 'error');
+                    return;
+                }
+            }
             const passwordChanges = [];
 
             for (const p of profilesCache) {
