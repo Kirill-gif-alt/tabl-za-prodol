@@ -324,6 +324,13 @@ window.ProfileAuth = (function () {
             p.salesPermMigrated = true;
             changed = true;
         });
+        (profilesCache || []).forEach(p => {
+            if (!p || p.tabsSplitMigrated || !Array.isArray(p.permissions)) return;
+            if (p.permissions.includes('tab_table') && !p.permissions.includes('tab_pkz')) p.permissions.push('tab_pkz');
+            if (p.permissions.includes('tab_pair') && !p.permissions.includes('tab_costs')) p.permissions.push('tab_costs');
+            p.tabsSplitMigrated = true;
+            changed = true;
+        });
         return changed;
     }
 
@@ -397,14 +404,32 @@ window.ProfileAuth = (function () {
                     showScreenWidgets: p.showScreenWidgets,
                     features: normalizeFeatures(p.features),
                     hashVer: p.hashVer || 2,
-                    salesPermMigrated: p.salesPermMigrated === true ? true : undefined
+                    salesPermMigrated: p.salesPermMigrated === true ? true : undefined,
+                    tabsSplitMigrated: p.tabsSplitMigrated === true ? true : undefined
                 }))
                 : profilesCache;
             localStorage.setItem(STORE_KEY, JSON.stringify(payload));
         } catch (e) { /* ignore */ }
     }
 
-    async function saveProfiles(silent) {
+    // Запись профилей — поверх свежего файла: каждый ПК держит копию со входа, и запись копии целиком
+    // откатывала бы чужие изменения (пароль, сменённый сотрудником после входа админа, права, снятые админом).
+    // change: { update: { id: {поля} }, remove: [id], add: [профиль] } — только то, что поменял этот ПК.
+    async function saveProfiles(silent, change) {
+        if (change && typeof SharedStorage !== 'undefined' && SharedStorage.readJsonFileStrict) {
+            const read = await SharedStorage.readJsonFileStrict('profiles.json').catch(() => ({ ok: false }));
+            const fresh = read.ok && read.data && Array.isArray(read.data.profiles) ? read.data.profiles : null;
+            if (fresh && fresh.length) {
+                const removed = new Set(change.remove || []);
+                const merged = fresh.filter(p => p && !removed.has(p.id)).map(p => ({ ...p }));
+                Object.entries(change.update || {}).forEach(([id, fields]) => {
+                    const t = merged.find(p => p.id === id);
+                    if (t) Object.assign(t, fields);
+                });
+                (change.add || []).forEach(p => { if (!merged.some(x => x.id === p.id)) merged.push(p); });
+                profilesCache = merged;
+            }
+        }
         persistLocalProfilesCache();
         if (typeof SharedStorage !== 'undefined') {
             await SharedStorage.saveProfiles(profilesCache, null, silent);
@@ -432,7 +457,8 @@ window.ProfileAuth = (function () {
         if (result.ok) {
             profilesCache = null;
             await loadProfiles();
-            if (hasPermission('manage_profiles')) await saveProfiles(false);
+            // Локальная копия хранится без паролей: если папка не прочиталась, писать её туда нельзя — сотрёт все пароли.
+            if (hasPermission('manage_profiles') && profilesCache.every(p => p && p.hash && p.salt)) await saveProfiles(false);
             updateSharedStatus();
             const select = document.getElementById('login-profile-select');
             if (select) {
@@ -553,11 +579,9 @@ window.ProfileAuth = (function () {
         if (tab === 'stats') return hasPermission('tab_stats');
         const perm = TAB_PERM[tab];
         if (!perm) return false;
-        if (hasPermission(perm)) return true;
-        // ПКЗ доступна тем, у кого есть таблица загрузки (обратная совместимость)
-        if (tab === 'pkz' && hasPermission('tab_table')) return true;
-        if (tab === 'costs' && hasPermission('tab_pair')) return true;
-        return false;
+        // ПКЗ и «Расчёт расходов» — свои права (раньше открывались с «Динамикой продаж» / «Экономикой»;
+        // старым профилям их один раз проставила миграция, дальше админ может их снять).
+        return hasPermission(perm);
     }
 
     function getFirstAllowedTab() {
@@ -673,9 +697,10 @@ window.ProfileAuth = (function () {
             'tab-creative': 'tab_creative',
             'tab-reports': 'tab_reports'
         };
-        Object.entries(tabMap).forEach(([elId, perm]) => {
+        Object.entries(tabMap).forEach(([elId]) => {
             const btn = document.getElementById(elId);
-            if (btn) btn.style.display = hasPermission(perm) ? '' : 'none';
+            // Те же правила, что у доступа к вкладке (ПКЗ — и с «Динамикой продаж», расчёт расходов — и с экономикой).
+            if (btn) btn.style.display = canAccessTab(elId.slice(4)) ? '' : 'none';
         });
 
         const loadBtn = document.getElementById('load-data-btn');
@@ -962,10 +987,11 @@ window.ProfileAuth = (function () {
             showScreenWidgets: !!showScreenWidgets,
             features: normalizeFeatures(features),
             // Разовая миграция «Управления продажами» к новому профилю не относится: иначе снятая вкладка вернётся при входе.
-            salesPermMigrated: true
+            salesPermMigrated: true,
+            tabsSplitMigrated: true
         };
         profilesCache.push(profile);
-        await saveProfiles(false);
+        await saveProfiles(false, { add: [profile] });
         if (typeof ActivityLog !== 'undefined') {
             await ActivityLog.log('profile_create', trimmed, { profileId: profile.id });
         }
@@ -1030,7 +1056,7 @@ window.ProfileAuth = (function () {
 
         try {
             profilesCache = profilesCache.filter(p => p.id !== profileId);
-            await saveProfiles(false);
+            await saveProfiles(false, { remove: [profileId] });
             if (typeof ActivityLog !== 'undefined') {
                 await ActivityLog.log('profile_delete', profile.name, { profileId });
             }
@@ -1073,7 +1099,7 @@ window.ProfileAuth = (function () {
 
         const cred = await makePasswordRecord(newPwd);
         applyPasswordRecord(profile, cred);
-        await saveProfiles(false);
+        await saveProfiles(false, { update: { [profile.id]: { salt: profile.salt, hash: profile.hash, hashVer: profile.hashVer } } });
 
         if (typeof ActivityLog !== 'undefined') {
             await ActivityLog.log('password_self', 'Пароль изменён');
@@ -1099,6 +1125,7 @@ window.ProfileAuth = (function () {
                 }
             }
             const passwordChanges = [];
+            const passIds = new Set();
 
             for (const p of profilesCache) {
                 const nameInput = document.querySelector(`.profile-name-input[data-profile="${p.id}"]`);
@@ -1122,6 +1149,7 @@ window.ProfileAuth = (function () {
                     applyPasswordRecord(p, cred);
                     passInput.value = '';
                     passwordChanges.push(p.name || p.id);
+                    passIds.add(p.id);
                 }
 
                 if (p.id !== 'admin') {
@@ -1147,7 +1175,14 @@ window.ProfileAuth = (function () {
                 }
             }
 
-            await saveProfiles(false);
+            // В файл — только то, что в этой форме: имя, права, функции; пароль — только если его сейчас сменили.
+            const update = {};
+            profilesCache.forEach(p => {
+                update[p.id] = { name: p.name, permissions: [...(p.permissions || [])], isAdmin: !!p.isAdmin,
+                    showHomeMap: p.showHomeMap, showScreenWidgets: p.showScreenWidgets, features: p.features };
+                if (passIds.has(p.id)) Object.assign(update[p.id], { salt: p.salt, hash: p.hash, hashVer: p.hashVer });
+            });
+            await saveProfiles(false, { update });
 
             if (typeof ActivityLog !== 'undefined') {
                 await ActivityLog.log('profile_save', `Изменено профилей: ${profilesCache.length}`);
@@ -1263,7 +1298,7 @@ window.ProfileAuth = (function () {
         if (!p || !p.isAdmin) return false;
         p.showHomeMap = !!value;
         currentProfile.showHomeMap = resolveShowHomeMap(p);
-        await saveProfiles(false);
+        await saveProfiles(false, { update: { [p.id]: { showHomeMap: p.showHomeMap } } });
         applyPermissions();
         if (!canAccessTab('home') && typeof currentTab !== 'undefined' && currentTab === 'home') {
             const fb = getFirstAllowedTab() || 'main';

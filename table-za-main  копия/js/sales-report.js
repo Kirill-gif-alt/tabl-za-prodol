@@ -473,7 +473,7 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
     }
     if (expVal != null && !isNaN(expVal)) {
         const d = nowVal - expVal;
-        lines.push({ label: 'По плану', value: expVal, d, title: 'Из файла ожидаемой загрузки' });
+        lines.push({ label: 'По плану к этому дню', value: expVal, d, title: 'Из файла ожидаемой загрузки — сколько должно быть продано к этому дню' });
         if (mainDelta == null) mainDelta = d;
     }
     const head = `Продано ${nowVal} · за ${axisMin} дн. до вылета`;

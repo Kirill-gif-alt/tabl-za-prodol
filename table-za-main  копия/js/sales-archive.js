@@ -212,7 +212,8 @@ window.SalesArchive = (function () {
 
     function dataToken() {
         const at = typeof lastSalesUpdate !== 'undefined' && lastSalesUpdate ? new Date(lastSalesUpdate).getTime() : 0;
-        return `${at}|${(allData || []).length}|${Object.keys(salesDetails || {}).length}`;
+        // С датой: после полуночи вчерашние вылеты становятся улетевшими и должны попасть в архив без новых данных.
+        return `${todayStr()}|${at}|${(allData || []).length}|${Object.keys(salesDetails || {}).length}`;
     }
 
     // Записи в один файл — по очереди: загрузка истории и запись архива по живым данным не затирают друг друга.
@@ -399,6 +400,8 @@ window.SalesArchive = (function () {
             ok = (await mergeAndWrite(`history/curves-${m}.json`, 'import', byMonth[m])) && ok;
             loadedMonths.delete(m);
             await readMonth(m).catch(() => null);
+            // Повторная загрузка заменяет историю и в памяти (readMonth берёт запись, только если в ней больше билетов).
+            Object.entries(byMonth[m]).forEach(([k, e]) => { const prev = curves[k]; if (!prev || prev.h) { const n = normalizeCurve(e); if (n) curves[k] = n; } });
         }
         rev++;
         if (typeof ActivityLog !== 'undefined') ActivityLog.log('import', `История продаж: ${flights} вылетов`);

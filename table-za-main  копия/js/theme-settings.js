@@ -110,7 +110,7 @@ window.ThemeSettings = (function () {
 
     const PRESETS = {
         krasavia: {
-            name: 'Стандартный',
+            name: 'Стандартная',
             mainOpen: '#012A4A', mainOpenText: '#ffffff', mainLow: '#fff7ed', mainLowText: '#9a3412',
             mainFull: '#ecfdf5', mainFullText: '#047857', mainClosed: '#fef2f2', mainClosedText: '#991b1b',
             mainFlew: '#f1f5f9', mainFlewText: '#475569',
@@ -417,6 +417,9 @@ window.ThemeSettings = (function () {
             }
         }
         if (sectionId === 'excel') renderExcelFolders(container);
+        // «Сбросить цвета» — только в разделах оформления.
+        const resetBtn = document.getElementById('profile-settings-reset');
+        if (resetBtn) resetBtn.hidden = !(sectionId === 'general' || sectionId === 'colors');
     }
 
     function renderExcelFolders(container) {
@@ -743,6 +746,10 @@ window.ThemeSettings = (function () {
         apply(load(), false);
         if (typeof TabOrder !== 'undefined') TabOrder.apply();
         document.getElementById('profile-settings-btn')?.addEventListener('click', openModal);
+        // Esc закрывает настройки, как и остальные окна.
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && document.getElementById('profile-settings-modal')?.classList.contains('open')) closeModal();
+        });
         document.getElementById('profile-settings-close')?.addEventListener('click', closeModal);
         document.getElementById('profile-settings-save')?.addEventListener('click', () => {
             const bodyEl = document.getElementById('profile-settings-body');

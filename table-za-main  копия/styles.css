@@ -8477,3 +8477,60 @@ html[data-theme="dark"] .fl-warn-fast, html[data-theme="dark"] .fl-warn-slow { b
 #rp-page .ref-toolbar { margin-top: 12px; }
 #rp-page .rp-subtabs { flex-shrink: 0; }
 #rp-page .rp-subtab-body > * { flex-shrink: 0; }
+
+/* Запасные цвета для браузеров без color-mix() (Chrome/Edge до 111) — метку .no-cmix ставит core-utils.js */
+.no-cmix table.cr-table thead tr:first-child th.cr-sorted { background: #1a5276; }
+.no-cmix .fs-item.fs-on { background: #e7f8f1; }
+.no-cmix .fs-item mark, .no-cmix .fs-pal mark { background: #fde68a; }
+.no-cmix .rc-row-big > td, .no-cmix .rc-row-big td { background-color: #fef2f2 !important; }
+.no-cmix .rc-row-big:hover > td { background-color: #fee2e2 !important; }
+.no-cmix .rp-table td.fl-best { background: #ecfdf5 !important; }
+.no-cmix .pa-side { background: var(--bg); }
+.no-cmix .pa-new { border-color: #6ee7b7; background: #ecfdf5; }
+.no-cmix .pa-new:hover, .no-cmix .pa-new.active { background: #d1fae5; }
+.no-cmix .pa-item.active { border-color: #94a3b8; }
+.no-cmix .pa-avatar { background: #e2e8f0; }
+.no-cmix .pa-avatar-admin { background: #fef3c7; }
+.no-cmix .pa-chip:has(input:checked), .no-cmix .pa-ref-opt:has(input:checked) { border-color: #6ee7b7; background: #ecfdf5; }
+.no-cmix .pa-switch-ui { background: #cbd5e1; }
+.no-cmix .pa-switch-row, .no-cmix .pa-ref-row { border-top-color: var(--border); }
+.no-cmix #rp-page .rp-subtabs { background: var(--surface); }
+.no-cmix #rp-page .rp-subtab:hover { background: rgba(1, 42, 74, 0.07); }
+.no-cmix #rp-page .rp-card, .no-cmix #rp-page .dr-kpi { border-color: var(--border); }
+.no-cmix #rp-page .dr-kpi { background: var(--surface); }
+
+/* ---------- Тёмная тема: места, где светлый фон оставался под светлым текстом (аудит дизайна) ---------- */
+html[data-theme="dark"] #rp-page .rp-subtab-on, html[data-theme="dark"] #rp-page .rp-subtab-on:hover { background: var(--accent, #238636); color: #fff; }
+html[data-theme="dark"] .cr-table tbody tr:nth-child(even) td { background: var(--cr-row-even, #1c2128); }
+html[data-theme="dark"] .stats-row-odd td { background: #1c2128; }
+html[data-theme="dark"] .sm-table .sm-freeze { background: var(--surface); }
+html[data-theme="dark"] .timeline-date-head-today { background: linear-gradient(180deg, #3a2a0a 0%, #2d2008 100%); border-color: #b45309; }
+html[data-theme="dark"] .timeline-date-head-weekend:not(.timeline-date-head-today) { background: #2a1416; border-color: #7f1d1d; }
+html[data-theme="dark"] .timeline-date-head-weekend .timeline-dow { color: #fca5a5; }
+html[data-theme="dark"] .timeline-ac-name { color: var(--text-muted); }
+html[data-theme="dark"] .booking-curve-verdict-up { background: #0f2e22; color: #86efac; }
+html[data-theme="dark"] .booking-curve-verdict-down { background: #3b1717; color: #fca5a5; }
+html[data-theme="dark"] .booking-curve-verdict .vd-line { color: inherit; }
+html[data-theme="dark"] .dtd-urgent, html[data-theme="dark"] .delta-red { background: #3b1717; color: #fca5a5 !important; }
+html[data-theme="dark"] .rms-flight-name { color: var(--text-muted); }
+html[data-theme="dark"] .rms-row-crit:hover { background: #3b1717 !important; }
+html[data-theme="dark"] .data-table tbody tr.flew-flight { background: #21262d !important; color: #8b949e !important; }
+html[data-theme="dark"] .data-table tbody tr.flew-flight td { color: #8b949e !important; }
+html[data-theme="dark"] .data-board-table tbody tr.flew-flight { background: #21262d !important; }
+html[data-theme="dark"] .data-board-table tbody tr.flew-flight td { color: #8b949e !important; }
+html[data-theme="dark"] .profile-admin-close { background: #30363d; color: var(--text); }
+html[data-theme="dark"] .filter-btn { color: var(--text-muted); }
+.profile-admin-close { color: var(--text); }
+/* Готовые темы в настройках: кнопки не налезают друг на друга */
+.theme-section-panel .theme-presets { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
+.theme-section-panel .theme-preset-btn { min-width: 0; }
+/* Плитки предупреждений — фильтр списка */
+.fl-w-kpi { text-align: left; font: inherit; cursor: pointer; color: inherit; }
+.fl-w-kpi:hover { border-color: var(--accent); }
+.fl-w-kpi-on { border-color: var(--accent) !important; box-shadow: 0 0 0 2px rgb(16 185 129 / 0.25); }
+/* Графплан: шапка выходных дней непрозрачная — карточки при прокрутке не просвечивают */
+.timeline-date-head-weekend:not(.timeline-date-head-today) { background: #fef2f2; }
+#profile-settings-reset[hidden] { display: none; }
+html[data-theme="dark"] .cr-table td { background: var(--surface); border-color: #30363d; }
+html[data-theme="dark"] .cr-table tbody tr:nth-child(even) td { background: var(--cr-row-even, #1c2128); }
+html[data-theme="dark"] .cr-table tbody tr:hover td { background: #1f2a37; }

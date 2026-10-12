@@ -314,7 +314,7 @@ window.FlightCard = (function () {
                     if (!ml) return '';
                     // Одна строка по делу; как посчитано — во всплывающей подсказке.
                     const err = String(ml.err).replace('.', ',');
-                    const tip = ['Прогноз модели (видит только администратор).',
+                    const tip = ['Прогноз модели (видно по праву «Прогноз загрузки и предупреждения»).',
                         ml.lo != null ? `В 8 случаях из 10 итог будет от ${ml.lo} до ${ml.hi}.` : '',
                         `Способ: ${ml.method}; за ${ml.h} дн. до вылета ошибается в среднем на ${err} пасс.`,
                         ml.team && ml.team.length > 1 ? `Веса на этом рейсе: ${ml.team.slice(0, 4).map(t => `${t.label} ${t.w}%`).join(', ')}.` : ''
@@ -526,7 +526,9 @@ window.FlightCard = (function () {
         if (e.ctrlKey || e.altKey || e.metaKey) return;
         // Стрелки листают даты, только когда фокус в самой карточке (или в её окне) — таблицам не мешаем.
         const inCard = t && t.closest && t.closest('#flight-card');
-        if (!inCard && hostDoc() === document) return;
+        // Карточка в отдельном окне: стрелки — только когда нажаты в её окне, а не на основной странице.
+        const inWin = t && t.ownerDocument && t.ownerDocument !== document;
+        if (!inCard && !inWin) return;
         if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
         else if (e.key === 'ArrowRight') { e.preventDefault(); step(1); }
     }

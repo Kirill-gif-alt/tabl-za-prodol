@@ -2212,6 +2212,10 @@ function buildSalesWorkbook(lib, flights, stamp, colored) {
 }
 
 async function exportSalesManagementExcel() {
+    if (typeof ProfileAuth !== 'undefined' && !ProfileAuth.hasPermission('export_excel')) {
+        if (typeof showToast === 'function') showToast('Экспорт в Excel недоступен для вашего профиля', 'error');
+        return;
+    }
     if (!SalesManagement.canView()) {
         if (typeof showToast === 'function') showToast('Вкладка недоступна для вашего профиля', 'error');
         return;

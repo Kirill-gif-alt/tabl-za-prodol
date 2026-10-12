@@ -126,7 +126,7 @@ window.PriceMarks = (function () {
                 fareBefore: Math.round(fareBefore),
                 fareAfter: after.n ? Math.round(fareAfter) : null,
                 // Повышение окупается, пока продано не меньше E × тариф_до / тариф_после.
-                breakEven: after.n && fareAfter > 0 ? Math.round(expected * fareBefore / fareAfter * 10) / 10 : null
+                breakEven: after.n && fareAfter > 0 ? Math.ceil(expected * fareBefore / fareAfter * 10) / 10 : null
             };
         }
         // Улетевший вылет: заполнился ли он (тогда «недопроданные» после повышения места ушли позже, дороже).
