@@ -530,5 +530,5 @@ window.FlightCard = (function () {
         return isShown();
     }
 
-    return { open, close, maybeOpen, syncToggle, setShown, enabled, resolve, isOpen: () => isShown(), mode: () => mode };
+    return { open, close, maybeOpen, syncToggle, setShown, enabled, resolve, isOpen: () => isShown(), mode: () => mode, refresh: () => { if (state && isShown()) render(); } };
 })();
