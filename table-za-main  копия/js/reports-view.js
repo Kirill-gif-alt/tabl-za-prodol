@@ -874,7 +874,7 @@ window.ReportsView = (function () {
             list.push({ id: 'reconcile', label: 'Сверка', badge: n ? String(n) : '' });
         }
         if (typeof DecisionsReport !== 'undefined' && DecisionsReport.canView()) list.push({ id: 'decisions', label: 'Решения', badge: '' });
-        if (typeof ForecastLab !== 'undefined' && ForecastLab.canView()) list.push({ id: 'forecast', label: 'Точность прогноза', badge: '' });
+        if (typeof ForecastLab !== 'undefined' && ForecastLab.canView()) list.push({ id: 'forecast', label: 'Прогноз и предупреждения', badge: '' });
         list.push({ id: 'export', label: 'Выгрузки в Excel', badge: '' });
         return list;
     }
