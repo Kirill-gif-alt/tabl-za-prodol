@@ -8287,3 +8287,45 @@ html[data-theme="dark"] .fc-it-ml { color: #a78bfa; }
     white-space: nowrap;
 }
 .fl-seg { font-size: 0.74rem; line-height: 1.35; white-space: normal; }
+
+/* График «ошибка прогноза по горизонтам» (только администратор). Цвета серий проверены на различимость
+   при нарушениях цветового зрения (светлая и тёмная темы); у каждой серии есть подпись — цвет не единственный признак. */
+.fl-chart { --flc-s1: #2a78d6; --flc-s2: #eb6834; --flc-s3: #1baf7a; --flc-s4: #eda100; margin: 6px 0 14px; max-width: 900px; }
+html[data-theme="dark"] .fl-chart { --flc-s1: #3987e5; --flc-s2: #d95926; --flc-s3: #199e70; --flc-s4: #c98500; }
+.flc-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.78rem; color: var(--text); margin-bottom: 4px; }
+.flc-leg { display: inline-flex; align-items: center; gap: 6px; }
+.flc-leg-mark { width: 16px; height: 2px; border-radius: 2px; background: var(--flc-c); }
+.flc-svg { width: 100%; height: auto; display: block; overflow: visible; font-family: inherit; }
+.flc-s1 { --flc-c: var(--flc-s1); }
+.flc-s2 { --flc-c: var(--flc-s2); }
+.flc-s3 { --flc-c: var(--flc-s3); }
+.flc-s4 { --flc-c: var(--flc-s4); }
+.flc-grid { stroke: var(--border); stroke-width: 1; }
+.flc-base { stroke: var(--text-muted); opacity: 0.6; }
+.flc-ytick { font-size: 11px; fill: var(--text-muted); text-anchor: end; font-variant-numeric: tabular-nums; }
+.flc-xtick { font-size: 11px; fill: var(--text-muted); text-anchor: middle; }
+.flc-axis { font-size: 11px; fill: var(--text-muted); text-anchor: middle; }
+.flc-tip-n { font-size: 11px; fill: var(--text-muted); text-anchor: end; }
+.flc-line { fill: none; stroke: var(--flc-c); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.flc-dot { fill: var(--flc-c); stroke: var(--surface); stroke-width: 2; }
+.flc-dlabel { font-size: 12px; fill: var(--text); }
+.flc-key { fill: var(--flc-c); }
+.flc-hit { fill: transparent; }
+.flc-col { outline: none; cursor: default; }
+.flc-cross { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0; }
+.flc-tip { opacity: 0; pointer-events: none; transition: opacity 0.08s; }
+.flc-col:hover .flc-cross, .flc-col:focus .flc-cross { opacity: 0.8; }
+.flc-col:hover .flc-tip, .flc-col:focus .flc-tip { opacity: 1; }
+.flc-col:focus .flc-hit { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 2 2; }
+.flc-tip-box { fill: var(--surface); stroke: var(--border); filter: drop-shadow(0 2px 6px rgba(0,0,0,0.15)); }
+.flc-tip-head { font-size: 12px; font-weight: 700; fill: var(--text); }
+.flc-tip-row { font-size: 12px; fill: var(--text); }
+.flc-tip-val { font-size: 12px; font-weight: 700; fill: var(--text); text-anchor: end; font-variant-numeric: tabular-nums; }
+.fl-math { margin: 12px 0; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; background: var(--surface); }
+.fl-math summary { cursor: pointer; font-weight: 700; font-size: 0.85rem; color: var(--text); }
+.fl-math > p { margin: 8px 0; font-size: 0.8rem; }
+.fl-math-row { display: grid; grid-template-columns: minmax(260px, 1fr) 1.4fr; gap: 6px 16px; padding: 7px 0; border-top: 1px solid var(--border); align-items: baseline; }
+.fl-math-f { font-family: 'Cambria Math', 'STIX Two Math', 'Times New Roman', serif; font-size: 1rem; color: var(--text); white-space: normal; }
+.fl-math-t { font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; }
+.fl-bar { text-decoration: overline; }
+@media (max-width: 760px) { .fl-math-row { grid-template-columns: 1fr; } }
