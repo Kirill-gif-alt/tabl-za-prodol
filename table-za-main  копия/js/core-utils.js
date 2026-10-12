@@ -1,6 +1,14 @@
 // js\core-utils.js - extracted from script.js, logic unchanged.
 // Globals on purpose: no bundler; onclick and other files call by name.
 
+// Chrome/Edge до 111 (например, 109 на Windows 7) не знают color-mix(): такие цвета у них становятся прозрачными.
+// Метка на <html> включает запасные цвета в styles.css (.no-cmix …).
+try {
+    if (typeof CSS !== 'undefined' && CSS.supports && !CSS.supports('color', 'color-mix(in srgb, red 50%, white)')) {
+        document.documentElement.classList.add('no-cmix');
+    }
+} catch (e) { /* ignore */ }
+
 function escHtml(s) {
     return typeof Security !== 'undefined' ? Security.escapeHtml(s) : String(s || '');
 }

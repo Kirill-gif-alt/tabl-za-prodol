@@ -403,7 +403,7 @@ window.ReportsView = (function () {
     }
 
     function canSales() {
-        return canTab('sales');
+        return canTab('sales') && hasPerm('export_excel');
     }
 
     function canEcon() {
@@ -831,7 +831,7 @@ window.ReportsView = (function () {
                 </div>
                 <div>
                     <h4 class="rp-preview-title">План: ${esc(weekLabel(rep.weeks.next))}</h4>
-                    <table class="rp-table"><thead><tr><th>Категория</th><th>Рейсов</th><th>Кресла в продаже</th><th>План загрузки</th><th>План ЗПК</th><th>Без прогноза</th></tr></thead><tbody>${planRows}</tbody></table>
+                    <table class="rp-table"><thead><tr><th>Категория</th><th>Рейсов</th><th>Кресла в продаже</th><th>План загрузки</th><th title="Только по рейсам, у которых есть прогноз в файле ожидаемой загрузки">План ЗПК (рейсы с прогнозом)</th><th>Без прогноза</th></tr></thead><tbody>${planRows}</tbody></table>
                     ${rep.hasExpected ? '' : '<p class="rp-note rp-warn">Файл прогноза загрузки не загружен — плана нет.</p>'}
                 </div>
             </div>`;
@@ -924,6 +924,9 @@ window.ReportsView = (function () {
                 </button>`).join('')}
             </nav>
             <div class="rp-subtab-body">${content}</div>`;
+        // Узкое окно: выбранный раздел может уйти за край полосы — прокручиваем к нему.
+        const on = body.querySelector('.rp-subtab-on');
+        if (on && on.scrollIntoView) { try { on.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) { /* ignore */ } }
         previewSig = signature();
     }
 

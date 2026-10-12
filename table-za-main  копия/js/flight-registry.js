@@ -165,7 +165,7 @@ window.FlightRegistry = (function () {
             const o = owner(c, id || null);
             if (!o) continue;
             // Встроенный рейс можно переопределить своим: тот же номер туда или его обычный обратный номер.
-            const builtinOk = o === c && BUILTIN_DIRS[c] && !entries[c] && (c === e.code || (c === e.back && suggestBack(e.code) === c));
+            const builtinOk = o === c && BUILTIN_DIRS[c] && (!entries[c] || entries[c].deleted || c === id) && (c === e.code || (c === e.back && suggestBack(e.code) === c));
             if (!builtinOk) return Promise.resolve({ ok: false, error: `Номер ${c} уже есть у рейса ${o}` });
         }
         const changes = id && id !== e.code ? [[id, { deleted: true }], [e.code, e]] : [[e.code, e]];

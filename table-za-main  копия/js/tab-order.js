@@ -126,7 +126,7 @@ window.TabOrder = (function () {
     }
 
     function getEditableTabs() {
-        return load().filter(id => (id !== 'stats' && id !== 'home') || canShowTab(id));
+        return load().filter(id => canShowTab(id));   // недоступные вкладки не показываем и не даём переименовать
     }
 
     function moveTab(order, index, direction) {

@@ -303,8 +303,10 @@ window.SharedStorage = (function () {
     }
 
     async function readSharedJson(filename, timeField) {
-        // Сеть и подключённая папка читаются одновременно, а не по очереди.
-        const [fromFetch, fromHandle] = await Promise.all([readViaFetch(filename), readViaHandle(filename)]);
+        // Сеть и подключённая папка читаются одновременно, а не по очереди. При запуске через сервер папку
+        // не трогаем: файл тот же, а запрос доступа к папке при входе только мешал (и большие файлы читались дважды).
+        const server = await detectServerWrite();
+        const [fromFetch, fromHandle] = await Promise.all([readViaFetch(filename), server ? Promise.resolve(null) : readViaHandle(filename)]);
         let result = pickNewer(fromFetch, fromHandle, timeField);
 
         if (fromFetch && !fromHandle) linkStatus = 'fetch';
@@ -476,6 +478,11 @@ window.SharedStorage = (function () {
     }
 
     async function saveProfiles(profiles, updatedAt, silent) {
+        // Профиль без пароля в общий файл не пишем: это локальная копия без паролей — она заблокировала бы всем вход.
+        if (!Array.isArray(profiles) || !profiles.length || profiles.some(p => !p || !p.hash || !p.salt)) {
+            console.warn('saveProfiles: профили без паролей — запись в общий файл отменена');
+            return false;
+        }
         const payload = {
             version: 1,
             updatedAt: updatedAt || new Date().toISOString(),
@@ -490,7 +497,8 @@ window.SharedStorage = (function () {
                 showHomeMap: p.showHomeMap === true ? true : (p.showHomeMap === false ? false : undefined),
                 showScreenWidgets: p.showScreenWidgets === true ? true : (p.showScreenWidgets === false ? false : undefined),
                 features: p.features && typeof p.features === 'object' && Object.keys(p.features).length ? { ...p.features } : undefined,
-                salesPermMigrated: p.salesPermMigrated === true ? true : undefined
+                salesPermMigrated: p.salesPermMigrated === true ? true : undefined,
+                tabsSplitMigrated: p.tabsSplitMigrated === true ? true : undefined
             }))
         };
         const ok = await writeViaHandle(PROFILES_FILE, payload);

@@ -108,7 +108,9 @@ function computeRowMetrics(row, base) {
     const cap = getCapacityFromAircraft(ac);
     const wk = getWeekForExpectedLoad(date);
     const ev = getExpectedLoad(cap, base, dtd, wk);
-    const evR = ev !== null ? Math.ceil(ev) : null;
+    // Файл ожидаемой считает от вместимости ВС; если в продаже кресел меньше, ожидать больше них нельзя
+    // (иначе почти полный рейс выглядит «отстающим»).
+    const evR = ev !== null ? Math.ceil(seatsOnSale > 0 ? Math.min(ev, seatsOnSale) : ev) : null;
     const { delta, cls: deltaCls } = getDeltaFromExpected(free, evR);
     const salesReady = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(typeof dataLoadStatus !== 'undefined' && dataLoadStatus.sales);
     const s = typeof getSalesMapForRow === 'function' ? getSalesMapForRow(row) : (salesMap[k] || { today: 0, yesterday: 0 });

@@ -261,7 +261,8 @@ window.ForecastLab = (function () {
         const arch = typeof SalesArchive !== 'undefined' && SalesArchive.revision ? SalesArchive.revision() : 0;
         const cal = typeof CalendarEvents !== 'undefined' && CalendarEvents.revision ? CalendarEvents.revision() : 0;
         if (sigMemo.rev !== logRev) sigMemo = { rev: logRev, v: trainSig0() };
-        return `${sigMemo.v}|${arch}|${cal}`;
+        const w = warnSettings();   // проверка сигналов считается при нынешних порогах
+        return `${sigMemo.v}|${arch}|${cal}|${w.under}|${w.over}`;
     }
 
     function trainSig0() {
@@ -1571,6 +1572,7 @@ window.ForecastLab = (function () {
     const CAPS = [46, 72, 120];
 
     let warnMemo = { sig: '', list: null };
+    let warnKind = '';   // фильтр списка по плитке: under / over / pace
     let warnBusy = null;
 
     function warnSig() {
@@ -1640,6 +1642,11 @@ window.ForecastLab = (function () {
                     const smaller = CAPS.filter(c => c < cap - 4 && c >= hiTop).pop();
                     if (smaller && dtd >= 5) act.push(`ВС на ${smaller} кресел вместит даже верхнюю оценку (${hiTop})`);
                 }
+                if (g.kind === 'over' && p.sold >= s) {
+                    // Уже распродан: «поднять цену» бессмысленно.
+                    act.push(cap > s + 1 ? `распродан — открыть закрытые кресла (в продаже ${s} из ${cap}), если позволяет взлётная масса` : 'распродан — проверить овербукинг и замену на ВС больше');
+                    return;
+                }
                 if (g.kind === 'over') {
                     act.push('поднять цену / закрыть дешёвые классы');
                     if (p.hiRaw != null && p.hiRaw > s) {
@@ -1677,7 +1684,8 @@ window.ForecastLab = (function () {
         const ev = evalState.ev;
         const pr = (a, b) => (b ? `${Math.round(a / b * 100)}%` : '—');
         const sigRows = (ev.signals || []).map(z => `<tr><td>${z.h} дн.</td>${['under', 'over'].map(k => { const c = z[k]; return `<td>${pr(c.tp, c.tp + c.fp)} <span class="rp-muted">(${c.tp} из ${c.tp + c.fp})</span></td><td>${pr(c.tp, c.tp + c.fn)} <span class="rp-muted">(${c.tp} из ${c.tp + c.fn})</span></td>`; }).join('')}</tr>`).join('');
-        const rows = list.slice(0, 60).map(w => `<tr>
+        const shown = warnKind ? list.filter(w => warnKind === 'pace' ? (w.kinds.includes('fast') || w.kinds.includes('slow')) : w.kinds.includes(warnKind)) : list;
+        const rows = shown.slice(0, 60).map(w => `<tr>
                 <td class="rp-left"><strong>${esc(w.code)}</strong> <span class="rp-muted">${esc(w.dir)}</span></td>
                 <td>${esc(w.date)}<div class="rp-muted">через ${w.dtd} дн.</div></td>
                 <td class="rp-left">${w.kinds.map(k => `<span class="fl-warn fl-warn-${k}">${esc(WARN_LABEL[k])}</span>`).join(' ')}</td>
@@ -1693,15 +1701,13 @@ window.ForecastLab = (function () {
                 <label>Перегруз, если выше <input type="number" id="fl-w-over" min="50" max="100" value="${cfg.over}">%</label>
                 <label>На <input type="number" id="fl-w-days" min="3" max="30" value="${cfg.days}"> дн. вперёд</label>
                 <button type="button" class="btn-secondary rp-btn" id="fl-w-apply">Применить</button>
-                <button type="button" class="btn-primary rp-btn" id="fl-w-xlsx"${list.length ? '' : ' disabled'}>В Excel</button>
+                ${canExport() ? `<button type="button" class="btn-primary rp-btn" id="fl-w-xlsx"${list.length ? '' : ' disabled'}>В Excel</button>` : ''}
             </div>
             <div class="dr-kpis">
-                <div class="dr-kpi"><div class="dr-kpi-label">Риск недобора</div><div class="dr-kpi-value">${counts.under}</div></div>
-                <div class="dr-kpi"><div class="dr-kpi-label">Риск перегруза</div><div class="dr-kpi-value">${counts.over}</div></div>
-                <div class="dr-kpi"><div class="dr-kpi-label">Необычный темп продаж</div><div class="dr-kpi-value">${counts.fast + counts.slow}</div><div class="dr-kpi-sub">выше: ${counts.fast} · ниже: ${counts.slow}</div></div>
+                ${[['under', 'Риск недобора', counts.under, ''], ['over', 'Риск перегруза', counts.over, ''], ['pace', 'Необычный темп продаж', counts.fast + counts.slow, `выше: ${counts.fast} · ниже: ${counts.slow}`]].map(([k, label, n, sub]) => `<button type="button" class="dr-kpi fl-w-kpi${warnKind === k ? ' fl-w-kpi-on' : ''}" data-fl-wkind="${k}" title="${warnKind === k ? 'Показать все' : 'Показать только эти'}"><div class="dr-kpi-label">${label}</div><div class="dr-kpi-value">${n}</div><div class="dr-kpi-sub">${sub || (warnKind === k ? 'показаны только эти · нажмите ещё раз — все' : 'нажмите — показать только эти')}</div></button>`).join('')}
             </div>
             ${rows ? `<div class="rp-scroll"><table class="rp-table"><thead><tr><th>Рейс</th><th>Вылет</th><th>Сигнал</th><th>Продано</th><th>Прогноз · интервал</th><th>Почему</th><th>Что сделать</th></tr></thead><tbody>${rows}</tbody></table></div>
-                ${list.length > 60 ? `<p class="rp-note">Показаны 60 самых срочных из ${list.length} — полный список в Excel.</p>` : ''}` : '<p class="rp-note">Сигналов нет.</p>'}
+                ${shown.length > 60 ? `<p class="rp-note">Показаны 60 самых срочных из ${shown.length} — полный список в Excel.</p>` : ''}` : '<p class="rp-note">Сигналов нет.</p>'}
             ${sigRows ? `<details class="fl-math"><summary>Насколько сигналам можно верить — проверка на улетевших</summary>
                 <p class="rp-muted">Прогноз за N дней до вылета (честный, как в таблице точности) против факта, при нынешних порогах. «Сбылось» — из поданных сигналов сколько подтвердилось; «Поймали» — из случившихся недоборов/перегрузов сколько было предсказано.</p>
                 <table class="rp-table dr-sum-table"><thead><tr><th>За</th><th>Недобор: сбылось</th><th>Недобор: поймали</th><th>Перегруз: сбылось</th><th>Перегруз: поймали</th></tr></thead><tbody>${sigRows}</tbody></table></details>` : ''}
@@ -1756,7 +1762,12 @@ window.ForecastLab = (function () {
         inp.click();
     }
 
+    function canExport() {
+        return isAdmin() || !!(typeof ProfileAuth !== 'undefined' && ProfileAuth.hasPermission('export_excel'));
+    }
+
     async function exportWarnings() {
+        if (!canExport()) return;
         const list = (await warningsAsync()) || [];
         const lib = typeof loadStyledXlsx === 'function' ? await loadStyledXlsx() : (typeof XLSX !== 'undefined' ? XLSX : null);
         if (!lib) { if (typeof showToast === 'function') showToast('Библиотека Excel не загружена', 'error'); return; }
@@ -2010,6 +2021,7 @@ window.ForecastLab = (function () {
     }
 
     function handleClick(btn, rerender) {
+        if (btn.dataset.flWkind) { warnKind = warnKind === btn.dataset.flWkind ? '' : btn.dataset.flWkind; rerender(); return true; }
         if (btn.id === 'fl-w-apply') {
             const num = (id, lo, hi, def) => { const v = parseInt(document.getElementById(id) && document.getElementById(id).value, 10); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : def; };
             const cfg = { under: num('fl-w-under', 10, 95, WARN_DEFAULT.under), over: num('fl-w-over', 50, 100, WARN_DEFAULT.over), days: num('fl-w-days', 3, 30, WARN_DEFAULT.days) };
@@ -2017,7 +2029,7 @@ window.ForecastLab = (function () {
             rerender();
             return true;
         }
-        if (btn.id === 'fl-w-xlsx') { exportWarnings().catch(e => console.warn(e)); return true; }
+        if (btn.id === 'fl-w-xlsx') { if (canExport()) exportWarnings().catch(e => console.warn(e)); return true; }
         if (btn.id === 'fl-hist-load') { if (canWrite()) loadHistory(rerender); return true; }
         if (btn.id !== 'fl-capture') return false;
         btn.disabled = true;

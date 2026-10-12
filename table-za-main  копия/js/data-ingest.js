@@ -461,7 +461,8 @@ function readSalesCsvText(file) {
         r.onload = e => {
             let text = String(e.target.result || '').replace(/^\uFEFF/, '');
             const head = text.split('\n')[0] || '';
-            if (/BSONUM/i.test(head) && /FLYDATE/i.test(head)) {
+            // Заголовок латиницей — и в Windows-1251 читается; кириллица тогда превращается в «�» — читаем как 1251.
+            if (/BSONUM/i.test(head) && /FLYDATE/i.test(head) && !text.includes('\uFFFD')) {
                 resolve(text);
                 return;
             }

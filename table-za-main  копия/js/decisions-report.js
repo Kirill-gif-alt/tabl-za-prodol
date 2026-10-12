@@ -82,7 +82,7 @@ window.DecisionsReport = (function () {
 
     function signed(n) {
         if (n == null) return '—';
-        return (n > 0 ? '+' : (n < 0 ? '−' : '')) + Math.abs(n);
+        return (n > 0 ? '+' : (n < 0 ? '−' : '')) + String(Math.abs(n)).replace('.', ',');
     }
 
     // «Сработало» — по выручке (PriceMarks.judge); «рано судить» в долю не входит.
