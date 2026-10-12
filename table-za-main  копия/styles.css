@@ -8434,3 +8434,46 @@ html[data-theme="dark"] .fl-warn-fast, html[data-theme="dark"] .fl-warn-slow { b
     .profile-settings-panel .theme-settings-layout { grid-template-columns: 1fr; }
     .theme-section-panel .theme-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ---------- Отчёты: современное оформление (цвета — из темы) ---------- */
+#rp-page .rp-body { max-width: none; gap: 14px; }
+#rp-page .rp-subtabs {
+    position: sticky; top: 0; z-index: 5; align-self: stretch;
+    display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 6px; padding: 6px;
+    border-radius: 14px; background: color-mix(in srgb, var(--surface) 88%, transparent);
+    border: 1px solid var(--border); box-shadow: 0 4px 14px rgb(15 23 42 / 0.05);
+    backdrop-filter: blur(6px); scrollbar-width: thin;
+}
+#rp-page .rp-subtab {
+    display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+    padding: 8px 14px; border-radius: 10px; font-size: 0.84rem; font-weight: 600;
+    color: var(--text-muted); transition: background 0.12s, color 0.12s;
+}
+#rp-page .rp-subtab:hover { background: color-mix(in srgb, var(--primary) 7%, transparent); color: var(--text); }
+#rp-page .rp-subtab-on, #rp-page .rp-subtab-on:hover { background: var(--primary); color: #fff; box-shadow: 0 2px 8px color-mix(in srgb, var(--primary) 35%, transparent); }
+#rp-page .rp-subtab-ico { flex: none; opacity: 0.85; }
+#rp-page .rp-subtab-on .rp-subtab-badge { background: #fff; }
+#rp-page .rp-subtab-body { gap: 14px; }
+#rp-page .rp-card {
+    border-radius: 14px; padding: 18px 20px; border-color: color-mix(in srgb, var(--border) 85%, transparent);
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 6px 18px rgb(15 23 42 / 0.04);
+}
+#rp-page .rp-card-head { margin-bottom: 2px; }
+#rp-page .rp-card-title { font-size: 1.06rem; font-weight: 800; letter-spacing: -0.01em; display: inline-flex; align-items: center; gap: 8px; }
+#rp-page .rp-card-text { max-width: 120ch; line-height: 1.5; font-size: 0.83rem; }
+#rp-page .rp-note { max-width: 120ch; line-height: 1.45; }
+#rp-page .rp-card .rp-btn { min-width: 0; padding: 7px 16px; border-radius: 10px; font-size: 0.82rem; box-shadow: none; }
+#rp-page .rp-card .rp-btn.btn-primary { box-shadow: 0 2px 6px color-mix(in srgb, var(--accent) 30%, transparent); }
+#rp-page .rp-table { border-radius: 10px; }
+#rp-page .dr-kpis { gap: 12px; }
+#rp-page .dr-kpi {
+    border-radius: 12px; border: 1px solid color-mix(in srgb, var(--border) 85%, transparent); border-left-width: 4px;
+    background: linear-gradient(180deg, var(--surface), color-mix(in srgb, var(--bg) 40%, var(--surface)));
+    padding: 12px 14px;
+}
+#rp-page .dr-kpi-value { font-size: 1.6rem; letter-spacing: -0.02em; }
+#rp-page .dr-sum-title, #rp-page .dr-list-title { font-size: 0.9rem; font-weight: 800; color: var(--text); margin: 4px 0 8px; }
+#rp-page details.fl-math, #rp-page details.dr-help { border-radius: 12px; }
+#rp-page .ref-toolbar { margin-top: 12px; }
+#rp-page .rp-subtabs { flex-shrink: 0; }
+#rp-page .rp-subtab-body > * { flex-shrink: 0; }
