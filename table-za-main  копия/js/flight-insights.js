@@ -54,8 +54,9 @@ window.FlightInsights = (function () {
             list.forEach(s => {
                 if (!s || !s.pnr) return;
                 by.set(s.pnr, (by.get(s.pnr) || 0) + 1);
-                if (!ids.has(s.pnr)) ids.set(s.pnr, ids.size + 1);
             });
+            // Номера заказов — по самому PNR, а не по порядку в списке: одинаковые на всех ПК и при любом порядке.
+            [...by.keys()].sort().forEach((pnr, i) => ids.set(pnr, i + 1));
             // grpId — номер заказа внутри вылета (1, 2, …), не PNR: по нему группы не склеиваются и не дробятся.
             list.forEach(s => {
                 if (!s) return;
@@ -77,7 +78,11 @@ window.FlightInsights = (function () {
             const key = s.pnr || (s.grpId != null ? 'id' + s.grpId : 'g' + n + '|' + s.dealDate);
             const prev = out.get(key);
             if (!prev) out.set(key, { n, dealDate: s.dealDate, pnr: s.pnr || '' });
-            else if (String(s.dealDate) < String(prev.dealDate) && parseLocalDate(s.dealDate) < parseLocalDate(prev.dealDate)) prev.dealDate = s.dealDate;
+            else {
+                const a = parseLocalDate(s.dealDate);
+                const b = parseLocalDate(prev.dealDate);
+                if (a && (!b || a < b)) prev.dealDate = s.dealDate;
+            }
         });
         return [...out.values()].sort((a, b) => b.n - a.n);
     }

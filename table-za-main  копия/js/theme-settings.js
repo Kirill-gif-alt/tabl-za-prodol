@@ -172,6 +172,20 @@ window.ThemeSettings = (function () {
             if (!raw) return { ...DEFAULTS };
             const saved = JSON.parse(raw);
             const theme = { ...DEFAULTS, ...saved };
+            // Тема сохранена до появления цветов новых вкладок — берём их из её же цветов, а не из светлого шаблона.
+            const has = (k) => Object.prototype.hasOwnProperty.call(saved, k);
+            const dark = hexLuminance(theme.bg || DEFAULTS.bg) < 0.25;
+            const derive = {
+                todayHead: () => theme.tableHead,
+                crHead: () => theme.tableHead,
+                rpHead: () => theme.tableHead,
+                todayCard: () => theme.surface,
+                todayActive: () => theme.text,
+                crRowEven: () => theme.rmsRowEven || theme.tableRowEven,
+                rpRowEven: () => theme.rmsRowEven || theme.tableRowEven,
+                crTotals: () => (dark ? shadeColor(theme.surface, 12) : '#e2e8f0')
+            };
+            Object.keys(derive).forEach(k => { if (!has(k)) { const v = derive[k](); if (v) theme[k] = v; } });
             const oldDown = String(saved.smDown || '').replace('#', '').toUpperCase();
             if (!Object.prototype.hasOwnProperty.call(saved, 'smAttn') && oldDown === 'F5B7B1') {
                 theme.smDown = DEFAULTS.smDown;
@@ -661,13 +675,20 @@ window.ThemeSettings = (function () {
         const tabsOpen = body.querySelector('.theme-section-panel[data-section="tabs"].active');
         if (tabsOpen) showSection(body, 'tabs');
         buildFormOnce(body);
+        // Форма строится один раз — цвета в ней заполняем заново: после смены профиля там были бы чужие.
+        updateInputsFromTheme(body, load());
         syncAdminSettings(body);
         if (body.querySelector('.theme-section-panel[data-section="excel"].active')) renderExcelFolders(body);
         modal.classList.add('open');
     }
 
+    // Закрыли без «Сохранить» — убрать предпросмотр, вернуть сохранённые цвета.
     function closeModal() {
-        document.getElementById('profile-settings-modal')?.classList.remove('open');
+        const modal = document.getElementById('profile-settings-modal');
+        if (!modal || !modal.classList.contains('open')) return;
+        modal.classList.remove('open');
+        clearTimeout(previewTimer);
+        apply(load(), false);
     }
 
     function init() {

@@ -281,8 +281,13 @@ window.FlightCard = (function () {
     // Прогноз к вылету, безубыточность, группы (flight-insights.js).
     const INSIGHTS_KEY = 'fc_insights_open';
 
+    // Открыт ли блок прогноза: в памяти, а localStorage — только чтобы помнить между сеансами.
+    let insightsState = null;
     function insightsOpen() {
-        try { return localStorage.getItem(INSIGHTS_KEY) === '1'; } catch (e) { return false; }
+        if (insightsState == null) {
+            try { insightsState = localStorage.getItem(INSIGHTS_KEY) === '1'; } catch (e) { insightsState = false; }
+        }
+        return insightsState;
     }
 
     // Прогноз к вылету и группы — плиткой; блок сворачивается (по умолчанию свёрнут, видна одна строка-итог).
@@ -305,7 +310,7 @@ window.FlightCard = (function () {
                 <div class="fc-it-sub"><strong>${f.lf}%</strong>${range ? ' · ' + esc(range) : ''}</div>
                 <div class="fc-it-note">${esc(src)}</div>
                 ${(() => {
-                    const ml = typeof ForecastLab !== 'undefined' ? ForecastLab.predict(code, date) : null;
+                    const ml = insightsOpen() && typeof ForecastLab !== 'undefined' ? ForecastLab.predict(code, date) : null;
                     return ml ? `<div class="fc-it-ml" title="Видит только администратор. Способ выбран по точности на прошлых вылетах: за ${ml.h} дн. до вылета ошибается в среднем на ${String(ml.err).replace('.', ',')} пасс. (${ml.trainedOn} вылетов).">Самообучение: <strong>${ml.final} из ${ml.seats}</strong> · ${ml.lf}% <span>(${esc(ml.method)}, ±${String(ml.err).replace('.', ',')})</span></div>` : '';
                 })()}
             </div>`);
@@ -384,7 +389,7 @@ window.FlightCard = (function () {
             </div>
             ${issues.length ? `<div class="fc-issues">${issues.map(i => `<div>! ${esc(i.title)}: ${esc(i.detail)}</div>`).join('')}</div>` : ''}
             <div class="fc-tiles">
-                ${tile('Загрузка', m && m.pct != null ? m.pct + '%' : '—', m ? `${m.free} из ${m.total}` : '')}
+                ${tile('Загрузка, пасс.', m ? `${m.free} <span class="fc-tile-of">из ${m.total}</span>` : '—', m && m.pct != null ? `<span class="fc-tile-pct">${m.pct}%</span> мест занято` : '', 'fc-tile-load')}
                 ${tile('Ожидаемая', m && m.evR != null ? String(m.evR) : '—', '')}
                 ${tile('Δ к ожидаемой', m && m.delta != null ? `<span class="${deltaCls}">${m.delta > 0 ? '+' : ''}${m.delta}</span>` : '—', '')}
                 ${tile('Остаток', m && m.remainder != null ? String(m.remainder) : '—', '')}
@@ -500,7 +505,8 @@ window.FlightCard = (function () {
         else if (a === 'window') setMode('window');
         else if (a === 'dock') setMode('page');
         else if (a === 'insights') {
-            try { localStorage.setItem(INSIGHTS_KEY, insightsOpen() ? '0' : '1'); } catch (err) { /* ignore */ }
+            insightsState = !insightsOpen();
+            try { localStorage.setItem(INSIGHTS_KEY, insightsState ? '1' : '0'); } catch (err) { /* ignore */ }
             render();
         }
     }

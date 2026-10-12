@@ -7934,7 +7934,7 @@ html[data-theme="dark"] .ref-chip { background: #1e293b; color: #c7d2fe; }
 .td-table thead th:first-child { border-top-left-radius: 8px; }
 .rp-table thead th:last-child,
 .td-table thead th:last-child { border-top-right-radius: 8px; }
-.rp-table tbody tr:nth-child(even) > td { background-color: color-mix(in srgb, var(--table-row-even, #f1f5f9) 35%, var(--surface)); }
+.rp-table tbody tr:nth-child(even):not(.rp-total):not(.rp-flew):not(.rc-row-big) > td { background-color: color-mix(in srgb, var(--table-row-even, #f1f5f9) 35%, var(--surface)); }
 .rp-table tbody tr:hover > td,
 .td-table tbody tr:hover > td { background-color: var(--hover-bg, #eef2f7); }
 .rp-table tbody tr:last-child > td { border-bottom: 0; }
@@ -8053,7 +8053,8 @@ table.td-table thead { box-shadow: none; }
 .td-tab-on { box-shadow: inset 0 -2px 0 var(--today-active, var(--text)); }
 table.td-table thead th { background: var(--today-head-bg, var(--table-head-bg, #012A4A)); }
 table.rp-table thead th { background: var(--rp-head-bg, var(--table-head-bg, #012A4A)); }
-.rp-table tbody tr:nth-child(even) > td { background-color: var(--rp-row-even, #f4f8fe); }
+.rp-table tbody tr:nth-child(even):not(.rp-total):not(.rp-flew):not(.rc-row-big) > td { background-color: var(--rp-row-even, #f4f8fe); }
+html[data-theme="dark"] .rp-checks-table tr.rp-flew td { background: #1e293b; color: #94a3b8; }
 .rp-table tbody tr:hover > td { background-color: var(--hover-bg, #eef2f7); }
 .rc-row-big > td { background-color: color-mix(in srgb, #dc2626 5%, var(--surface)) !important; }
 table.cr-table thead tr:first-child th { background: var(--cr-head-bg, var(--table-head-bg, #012A4A)); }
@@ -8194,7 +8195,7 @@ table.cr-table thead tr.cr-totals th { background: var(--cr-totals-bg, #e2e8f0);
 .fs-ov {
     position: fixed;
     inset: 0;
-    z-index: 4000;
+    z-index: 20000;
     display: flex;
     justify-content: center;
     align-items: flex-start;
@@ -8267,3 +8268,21 @@ html[data-theme="dark"] .fc-it-ml { color: #a78bfa; }
 .fl-infl-bar { height: 8px; border-radius: 4px; background: var(--muted-bg, #eef2f7); overflow: hidden; }
 .fl-infl-bar span { display: block; height: 100%; background: #6d28d9; border-radius: 4px; }
 .fl-infl-val { text-align: right; font-weight: 700; color: var(--text-muted); }
+
+/* Карточка: загрузка — в пассажирах крупно, процент — подписью */
+.fc-tile-of { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); }
+.fc-tile-load .fc-tile-value { font-size: 1.25rem; }
+.fc-tile-pct { font-weight: 700; color: var(--text); }
+
+/* Шапка: данные продаж устарели */
+.header-kpi-stale {
+    margin-left: 8px;
+    padding: 1px 9px;
+    border-radius: 9999px;
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fcd34d;
+    font-weight: 700;
+    font-size: 0.72rem;
+    white-space: nowrap;
+}
