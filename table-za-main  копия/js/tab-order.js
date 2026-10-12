@@ -119,7 +119,7 @@ window.TabOrder = (function () {
             return typeof ProfileAuth !== 'undefined' && ProfileAuth.canAccessTab('home');
         }
         if (id === 'stats') {
-            return !!(typeof ProfileAuth !== 'undefined' && ProfileAuth.getCurrentProfile()?.isAdmin);
+            return !!(typeof ProfileAuth !== 'undefined' && ProfileAuth.canAccessTab('stats'));
         }
         if (typeof ProfileAuth !== 'undefined') return ProfileAuth.canAccessTab(id);
         return true;

@@ -128,8 +128,15 @@ window.ForecastLab = (function () {
         return !!(p && p.isAdmin);
     }
 
+    // Видеть прогноз: администратор или право «Прогноз загрузки и предупреждения».
     function canView() {
-        return isAdmin();
+        if (isAdmin()) return true;
+        return !!(typeof ProfileAuth !== 'undefined' && ProfileAuth.hasPermission && ProfileAuth.hasPermission('view_forecast'));
+    }
+
+    // Писать журнал и загружать историю — ещё и право публиковать данные.
+    function canWrite() {
+        return canView() && (isAdmin() || !!(typeof ProfileAuth !== 'undefined' && ProfileAuth.hasPermission('share_data')));
     }
 
     function esc(v) {
@@ -939,7 +946,7 @@ window.ForecastLab = (function () {
 
     // Прогноз для вылета (карточка): способ, который ошибался меньше всех для этого горизонта и такого вылета.
     function predict(code, date) {
-        if (!isAdmin() || !loaded) return null;
+        if (!canView() || !loaded) return null;
         const ev = evalState.ev;
         if (!ev || evalState.sig !== trainSig()) { startEvaluation(); if (!ev) return null; }
         const dtdNow = typeof getDaysUntil === 'function' ? getDaysUntil(date) : null;
@@ -1018,7 +1025,7 @@ window.ForecastLab = (function () {
     }
 
     async function capture(force) {
-        if (!isAdmin() || typeof SharedStorage === 'undefined') return false;
+        if (!canWrite() || typeof SharedStorage === 'undefined') return false;
         if (typeof groupedData === 'undefined' || !Object.keys(groupedData || {}).length) return false;
         const token = dataToken();
         if (!force) { try { if (localStorage.getItem(DONE_KEY) === token) return true; } catch (e) { /* ignore */ } }
@@ -1094,10 +1101,10 @@ window.ForecastLab = (function () {
 
     // После входа: прочитать журнал, обучить модель, записать сегодняшние прогнозы (с прогнозом модели).
     function afterStart() {
-        if (!isAdmin()) return;
+        if (!canView()) return;
         const run = () => ensureLoaded()
             .then(() => new Promise(r => startEvaluation(r)))
-            .then(() => capture())
+            .then(() => (canWrite() ? capture() : false))
             .then(() => startEvaluation())
             .catch(e => console.warn('ForecastLab', e));
         if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 30000 });
@@ -1560,13 +1567,13 @@ window.ForecastLab = (function () {
 
     // Готовый список (или null, если ещё не посчитан под текущие данные и пороги).
     function warnings() {
-        if (!evalState.ev || !loaded || !isAdmin()) return null;
+        if (!evalState.ev || !loaded || !canView()) return null;
         return warnMemo.sig === warnSig() ? warnMemo.list : null;
     }
 
     // Посчитать в фоне: сотни вылетов, управление отдаётся браузеру каждые ~25 мс.
     function warningsAsync() {
-        if (!evalState.ev || !loaded || !isAdmin()) return Promise.resolve(null);
+        if (!evalState.ev || !loaded || !canView()) return Promise.resolve(null);
         const sig = warnSig();
         if (warnMemo.sig === sig) return Promise.resolve(warnMemo.list);
         if (warnBusy && warnBusy.sig === sig) return warnBusy.p;
@@ -1648,7 +1655,7 @@ window.ForecastLab = (function () {
         const list = warnings();
         if (!list) {
             warningsAsync().then(() => { if (rerender) rerender(); }).catch(e => console.warn(e));
-            return `<section class="rp-card"><div class="rp-card-head"><h3 class="rp-card-title">Ранние предупреждения</h3><span class="fl-admin">только администратор</span></div>
+            return `<section class="rp-card"><div class="rp-card-head"><h3 class="rp-card-title">Ранние предупреждения</h3></div>
                 <p class="rp-note">Считаю прогноз по всем вылетам на ${warnSettings().days} дн. вперёд… Работать на сайте можно.</p></section>`;
         }
         const cfg = warnSettings();
@@ -1666,7 +1673,7 @@ window.ForecastLab = (function () {
                 <td class="rp-left fl-warn-why">${w.why.map(esc).join('; ')}</td>
                 <td class="rp-left fl-warn-why">${w.act.map(esc).join('; ')}</td></tr>`).join('');
         return `<section class="rp-card">
-            <div class="rp-card-head"><h3 class="rp-card-title">Ранние предупреждения</h3><span class="fl-admin">только администратор</span></div>
+            <div class="rp-card-head"><h3 class="rp-card-title">Ранние предупреждения</h3></div>
             <p class="rp-card-text">Все вылеты на ${cfg.days} дн. вперёд: прогноз к вылету и интервал 80% (в карточке рейса — то же). Сначала — самые срочные: сильное отклонение и близкий вылет.</p>
             <div class="fl-warn-cfg">
                 <label>Недобор, если прогноз ниже <input type="number" id="fl-w-under" min="10" max="95" value="${cfg.under}">%</label>
@@ -1697,13 +1704,13 @@ window.ForecastLab = (function () {
             ? `В архиве ${st.n.toLocaleString('ru-RU')} улетевших вылетов: с ${d(st.from)} по ${d(st.to)}${st.h ? `, из файла истории — ${st.h.toLocaleString('ru-RU')}` : ''}.`
             : 'Архив пока пустой: модель видит только вылеты из текущего файла продаж (около 2 недель).';
         return `<section class="rp-card">
-            <div class="rp-card-head"><h3 class="rp-card-title">История продаж для прогноза</h3><span class="fl-admin">только администратор</span></div>
+            <div class="rp-card-head"><h3 class="rp-card-title">История продаж для прогноза</h3></div>
             <p class="rp-card-text">Файл <strong>SalesHistory.csv</strong> из скрипта <strong>Export-SalesHistory.ps1</strong> — улетевшие вылеты за прошлые месяцы и годы,
                 уже сведённые по вылетам, без ФИО, PNR и контактов. На них модель учится, по ним считаются «прошлый год» и норма продаж по дням недели.
                 Кресла прошлых вылетов в продажах не записаны — берутся по нынешнему самолёту рейса. Загружать можно повторно: история заменяется,
                 вылеты из текущих данных не трогаются.</p>
             <p class="rp-note">${esc(status)}</p>
-            <div class="ref-toolbar"><button type="button" class="btn-primary rp-btn" id="fl-hist-load">Загрузить файл истории</button></div>
+            ${canWrite() ? '<div class="ref-toolbar"><button type="button" class="btn-primary rp-btn" id="fl-hist-load">Загрузить файл истории</button></div>' : '<p class="rp-muted">Загружать историю может тот, у кого есть право «Публикация данных для всех».</p>'}
         </section>`;
     }
 
@@ -1883,7 +1890,7 @@ window.ForecastLab = (function () {
     }
 
     function html(rerender) {
-        if (!canView()) return '<p class="rp-note">Раздел доступен только администратору.</p>';
+        if (!canView()) return '<p class="rp-note">Раздел доступен по праву «Прогноз загрузки и предупреждения» (выдаёт администратор в «Профилях»).</p>';
         if (!loaded) {
             ensureLoaded().then(() => startEvaluation(rerender));
             return '<p class="rp-note">Загружаю журнал прогнозов…</p>';
@@ -1948,7 +1955,7 @@ window.ForecastLab = (function () {
         if (lastCapture && lastCapture.stale) cap += ' Данные продаж старше суток — прогнозы на сегодня не записаны (запишутся после загрузки свежих данных).';
         return `${warnHtml(rerender)}
             <section class="rp-card">
-                <div class="rp-card-head"><h3 class="rp-card-title">Точность прогноза загрузки</h3><span class="fl-admin">только администратор</span></div>
+                <div class="rp-card-head"><h3 class="rp-card-title">Точность прогноза загрузки</h3></div>
                 <p class="rp-card-text">Каждый день сайт записывает прогноз по каждому вылету за 30, 21, 14, 10, 7, 5, 3 и 1 день до вылета, а после вылета — факт.
                     Модель учитывает продажи и их темп, файл ожидаемой загрузки, те же дни недели, соседние даты рейса, обратный рейс,
                     день недели, выходные, праздники и каникулы, сезон и тип рейса. Ошибка — в пассажирах, в среднем по вылетам; под числом — сколько вылетов
@@ -1983,8 +1990,8 @@ window.ForecastLab = (function () {
                 </div>
                 ${groupsHtml(ev)}
                 ${mathHtml()}
-                <div class="ref-toolbar"><button type="button" class="btn-secondary rp-btn" id="fl-capture">Записать прогнозы сейчас</button>
-                    <span class="rp-muted">Обычно это происходит само раз в день при входе администратора.</span></div>
+                ${canWrite() ? `<div class="ref-toolbar"><button type="button" class="btn-secondary rp-btn" id="fl-capture">Записать прогнозы сейчас</button>
+                    <span class="rp-muted">Обычно это происходит само раз в день при входе администратора.</span></div>` : ''}
             </section>
             ${historyHtml()}`;
     }
@@ -1998,7 +2005,7 @@ window.ForecastLab = (function () {
             return true;
         }
         if (btn.id === 'fl-w-xlsx') { exportWarnings().catch(e => console.warn(e)); return true; }
-        if (btn.id === 'fl-hist-load') { loadHistory(rerender); return true; }
+        if (btn.id === 'fl-hist-load') { if (canWrite()) loadHistory(rerender); return true; }
         if (btn.id !== 'fl-capture') return false;
         btn.disabled = true;
         capture(true).then(ok => {
