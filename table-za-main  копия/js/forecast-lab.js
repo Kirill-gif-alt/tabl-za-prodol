@@ -1459,6 +1459,7 @@ window.ForecastLab = (function () {
             if (comp) why.push(`на линии ${comp}`);
             const ev2 = typeof CalendarEvents !== 'undefined' && CalendarEvents.on ? CalendarEvents.on(dep.date).map(e => e.title || e.name || e.type).filter(Boolean) : [];
             if (ev2.length) why.push(`календарь: ${ev2.slice(0, 2).join(', ')}`);
+            if (!why.length) why.push(`прогноз: ${p.method}, обычно ошибается на ±${String(p.err).replace('.', ',')} пасс.`);
             // Что сделать.
             const act = [];
             const hiTop = p.hi != null ? p.hi : p.final;
@@ -1472,7 +1473,7 @@ window.ForecastLab = (function () {
                 if (g.kind === 'over') {
                     act.push('поднять цену / закрыть дешёвые классы');
                     if (p.hiRaw != null && p.hiRaw > s) {
-                        if (cap > s + 1) act.push(`в продаже ${s} из ${cap} кресел — открыть ещё, спрос до ~${p.hiRaw}`);
+                        if (cap > s + 1) act.push(`в продаже ${s} из ${cap} кресел — если нет ограничений по взлётной массе, открыть ещё (спрос до ~${p.hiRaw})`);
                         else {
                             const bigger = CAPS.find(c => c > cap + 4);
                             if (bigger) act.push(`спрос до ~${p.hiRaw} — рассмотреть ВС на ${bigger}`);
