@@ -1,6 +1,5 @@
 // Общие утилиты безопасности (XSS, валидация, защита входа)
 window.Security = (function () {
-    const LOGIN_MAX_ATTEMPTS = 8;
     const LOGIN_LOCK_MS = 60_000;
     const LOGIN_LOCK_KEY = 'krasavia_login_lock';
     const MAX_UPLOAD_FILES = 500;
@@ -12,7 +11,6 @@ window.Security = (function () {
     const FLIGHT_BASE_RE = /^KV-\d{1,6}$/;
     const DATE_RE = /^\d{2}\.\d{2}\.\d{4}$/;
     const TIME_RE = /^\d{2}:\d{2}$/;
-    const MIN_PASSWORD_LEN = 8;
     /** Админ может задавать себе/сбрасывать пароли от 3 символов */
     const MIN_PASSWORD_LEN_ADMIN = 3;
 
@@ -99,7 +97,7 @@ window.Security = (function () {
 
     function recordLoginFailure() {
         loginState.fails += 1;
-        if (loginState.fails >= LOGIN_MAX_ATTEMPTS) {
+        if (loginState.fails >= PV.LOGIN_MAX_ATTEMPTS) {
             loginState.lockUntil = Date.now() + LOGIN_LOCK_MS;
             loginState.fails = 0;
         }
@@ -188,7 +186,7 @@ window.Security = (function () {
         sanitizeTextInput,
         MAX_FILE_BYTES,
         MAX_UPLOAD_FILES,
-        MIN_PASSWORD_LEN,
+        get MIN_PASSWORD_LEN() { return PV.MIN_PASSWORD_LEN; },
         MIN_PASSWORD_LEN_ADMIN
     };
 })();

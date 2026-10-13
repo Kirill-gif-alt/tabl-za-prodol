@@ -10,7 +10,6 @@
 // Групповая бронь переносится целиком.
 // По ней строится отчёт «Сверка» (reports-view → SalesReconcile.report).
 window.SalesReconcile = (function () {
-    const MOVE_DAYS = 7;
     let lastRun = { moved: 0, at: 0 };
 
     function loadsByDeparture() {
@@ -239,7 +238,7 @@ window.SalesReconcile = (function () {
                 const d = parseLocalDate(dt);
                 if (!d) return;
                 const gap = Math.round(Math.abs(d - d0) / 86400000);
-                if (gap > MOVE_DAYS) return;
+                if (gap > PV.RECONCILE_MOVE_DAYS) return;
                 codes.forEach(c => {
                     const tk = dt + '|' + c;
                     const deficit = (load.get(tk) || 0) - (details[tk] || []).length;

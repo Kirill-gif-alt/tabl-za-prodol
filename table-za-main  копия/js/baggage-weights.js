@@ -8,13 +8,7 @@ const BAGGAGE_MONTH_COL_DO = { 1: 3, 2: 4, 3: 5, 4: 6, 5: 7, 6: 8, 7: 9, 8: 10, 
 // Актуальный формат (Весовые.о): A — «Красноярск-Байкит», B–M — багаж (1–12)
 const BAGGAGE_MONTH_COL_BM = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11, 12: 12 };
 const BAGGAGE_HUB = 'Красноярск';
-const ADULT_WEIGHT_SUMMER = 75;
-const ADULT_WEIGHT_WINTER = 80;
 /** Дети 2–12 лет — 30 кг (без багажа по ТЗ — только 30) */
-const CHILD_WEIGHT_FIXED_KG = 30;
-const PKZ_HORIZON_DAYS = 10;
-const CHILD_AGE_MIN = 2;
-const CHILD_AGE_MAX = 12;
 
 const BAGGAGE_SECTION_MARKERS = new Set([
     'краевые',
@@ -254,17 +248,17 @@ function isSummerWeightMonth(month) {
 }
 
 function getAdultBaseWeightKg(month) {
-    return isSummerWeightMonth(month) ? ADULT_WEIGHT_SUMMER : ADULT_WEIGHT_WINTER;
+    return isSummerWeightMonth(month) ? PV.ADULT_WEIGHT_SUMMER : PV.ADULT_WEIGHT_WINTER;
 }
 
 function getChildBaseWeightKg(_month) {
-    return CHILD_WEIGHT_FIXED_KG;
+    return PV.CHILD_WEIGHT_FIXED_KG;
 }
 
 function isPkzHorizonDate(dateStr) {
     if (typeof getDaysUntil !== 'function') return true;
     const d = getDaysUntil(dateStr);
-    return d !== null && d >= 0 && d <= PKZ_HORIZON_DAYS;
+    return d !== null && d >= 0 && d <= PV.PKZ_HORIZON_DAYS;
 }
 
 function childrenKey(dateStr, flight) {
@@ -310,7 +304,7 @@ function parseChildrenCsvText(text) {
             age = calculateAgeAtFly(birth, fly);
         }
         // Дети 2–12 включительно; младенцы <2 не считаем
-        if (age === null || age < CHILD_AGE_MIN || age > CHILD_AGE_MAX) continue;
+        if (age === null || age < PV.CHILD_AGE_MIN || age > PV.CHILD_AGE_MAX) continue;
 
         const k = childrenKey(fly, fl);
         if (!k) continue;
@@ -436,7 +430,7 @@ function getPkzFlightDetails(row, flightBase, options = {}) {
     const route = getRouteCitiesForFlight(flightBase || flightCode);
     const baggage = route ? getBaggageKgForRoute(route.from, route.to, month, row[4]) : null;
     const adultBaseKg = getAdultBaseWeightKg(month);
-    const childBaseKg = CHILD_WEIGHT_FIXED_KG;
+    const childBaseKg = PV.CHILD_WEIGHT_FIXED_KG;
     const extraKg = Math.max(0, parseFloat(options.extraKg) || 0);
     const adultUnitKg = baggage !== null ? adultBaseKg + baggage : adultBaseKg;
     const childUnitKg = baggage !== null ? childBaseKg + baggage : childBaseKg;
@@ -538,10 +532,10 @@ function buildPkzAdjustPanelHtml(details, opts = {}) {
              data-date="${esc(flyDate)}"
              data-flight="${esc(flightCode)}"
              data-adult-unit="${details.adultUnitKg != null ? details.adultUnitKg : ''}"
-             data-child-unit="${details.childUnitKg != null ? details.childUnitKg : CHILD_WEIGHT_FIXED_KG}">
+             data-child-unit="${details.childUnitKg != null ? details.childUnitKg : PV.CHILD_WEIGHT_FIXED_KG}">
             <div class="pkz-adjust-head">
                 <h4 class="pkz-adjust-title">КЗ расчётная</h4>
-                <span class="pkz-adjust-season">${esc(seasonLabel)} · багаж ${esc(bagPerPax)}/пасс. · дети ${CHILD_WEIGHT_FIXED_KG} кг</span>
+                <span class="pkz-adjust-season">${esc(seasonLabel)} · багаж ${esc(bagPerPax)}/пасс. · дети ${PV.CHILD_WEIGHT_FIXED_KG} кг</span>
             </div>
             <div class="pkz-adjust-grid">
                 <div class="pkz-stat pkz-stat-edit">
@@ -603,7 +597,7 @@ function bindPkzAdjustPanel(root) {
     if (!input || !adultsEl || !pkzEl) return;
 
     const adultUnit = parseFloat(panel.dataset.adultUnit);
-    const childUnit = parseFloat(panel.dataset.childUnit) || CHILD_WEIGHT_FIXED_KG;
+    const childUnit = parseFloat(panel.dataset.childUnit) || PV.CHILD_WEIGHT_FIXED_KG;
     const fmt = typeof formatNum === 'function' ? formatNum : (n) => String(n);
 
     const syncVacancy = (kzNum) => {
@@ -770,8 +764,8 @@ window.BaggageWeights = {
     bindPkzAdjustPanel,
     isPkzHorizonDate,
     getChildrenCountFromFile,
-    CHILD_WEIGHT_FIXED_KG,
-    PKZ_HORIZON_DAYS,
+    get CHILD_WEIGHT_FIXED_KG() { return PV.CHILD_WEIGHT_FIXED_KG; },
+    get PKZ_HORIZON_DAYS() { return PV.PKZ_HORIZON_DAYS; },
     formatPkzKg,
     formatBaggageTimesLoadKg,
     formatAvgBaggageOnlyKg,

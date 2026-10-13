@@ -255,6 +255,7 @@ const VIEW_ZOOM_KEY = 'krasavia_view_zoom';
 let dataBoardZoom = VIEW_ZOOM.data;
 /** Спец. брони (AV SSP Seg) — галочка на данных / динамике / экономике / ПКЗ */
 let dataShowSpecBookings = false;
+let dataShowDaySales = false;
 let showSpecBookings = false;
 /** Время местное (вылет/прилёт) на «Загрузка рейсов» */
 let dataShowLocalTimes = false;
@@ -327,15 +328,12 @@ function buildViewZoomHtml() { return ''; }
 const DAYS_RU = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
 
 const MAX_WEEK = 52;
-const DEFAULT_AIRCRAFT_CAPACITY = 46;
-const ATR72_CAPACITY = 72;
-const YAK42_CAPACITY = 120;
 
 function parseDateStr(str){if(!str)return null;const c=String(str).replace(/[^0-9]/g,'');if(c.length!==8)return null;const d=parseInt(c.slice(0,2),10),m=parseInt(c.slice(2,4),10)-1,y=parseInt(c.slice(4),10);if(!isValidCalendarDate(y,m,d))return null;return new Date(y,m,d)}
 function calculateAgeAtFly(b,f){const br=parseDateStr(b),fl=parseDateStr(f);if(!br||!fl)return null;let a=fl.getFullYear()-br.getFullYear();const md=fl.getMonth()-br.getMonth();if(md<0||(md===0&&fl.getDate()<br.getDate()))a--;return a}
 function extractDiscountPercent(s){if(!s)return 0;s=String(s).toUpperCase().trim();let m=s.match(/CN(\d{1,2})/);if(m)return parseInt(m[1],10);m=s.match(/\/(\d{2})$/);if(m)return parseInt(m[1],10);if((s.includes('LOW')||s.includes('CN')||s.includes('CHILD'))&&(m=s.match(/(\d{2})$/)))return parseInt(m[1],10);return 0}
 function getAdjustedFare(paid,basic,birth,fly){if(!paid||paid<=0)return paid;const d=extractDiscountPercent(basic);const age=calculateAgeAtFly(birth,fly);return(age!==null&&age<12&&d>0)?Math.round((paid*100)/(100-d)):paid}
-function getCapacityFromAircraft(t){t=String(t||'').toUpperCase();if(t.includes('ATR-72')||t.includes('AT7'))return ATR72_CAPACITY;if(t.includes('ЯК-42')||t.includes('YK2'))return YAK42_CAPACITY;return DEFAULT_AIRCRAFT_CAPACITY}
+function getCapacityFromAircraft(t){t=String(t||'').toUpperCase();if(t.includes('ATR-72')||t.includes('AT7'))return PV.ATR72_CAPACITY;if(t.includes('ЯК-42')||t.includes('YK2'))return PV.YAK42_CAPACITY;return PV.DEFAULT_AIRCRAFT_CAPACITY}
 function getWeekNumber(input){
     if (typeof PerfCache !== 'undefined' && PerfCache.getWeekNumberMemo) return PerfCache.getWeekNumberMemo(input);
     if(!input)return 1;let d;if(input instanceof Date){d=new Date(input)}else{d=new Date(String(input).split('.').reverse().join('-'))}d.setHours(0,0,0,0);const j=new Date(d.getFullYear(),0,1);j.setHours(0,0,0,0);const dow=j.getDay();let mon=new Date(j);if(dow===0)mon.setDate(j.getDate()-6);else mon.setDate(j.getDate()-(dow-1));const diff=Math.floor((d-mon)/86400000);let w=Math.floor(diff/7)+1;return Math.min(Math.max(w,1),MAX_WEEK)
@@ -384,7 +382,8 @@ let CACHED_YESTERDAY = null;
 function analyticsRevision() {
     return [typeof SalesArchive !== 'undefined' && SalesArchive.revision ? SalesArchive.revision() : 0,
         typeof CalendarEvents !== 'undefined' && CalendarEvents.revision ? CalendarEvents.revision() : 0,
-        typeof ForecastLab !== 'undefined' && ForecastLab.modelRevision ? ForecastLab.modelRevision() : 0].join('.');
+        typeof ForecastLab !== 'undefined' && ForecastLab.modelRevision ? ForecastLab.modelRevision() : 0,
+        typeof Params !== 'undefined' ? Params.revision() : 0].join('.');
 }
 
 // «1 вылет», «3 вылета», «7 вылетов»: pluralRu(n, 'вылет', 'вылета', 'вылетов').

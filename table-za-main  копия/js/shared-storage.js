@@ -8,9 +8,10 @@ window.SharedStorage = (function () {
     const ACTIVITY_FILE = 'activity.json';
     const SHARED_DIR = 'shared';
     const ALLOWED_FILES = new Set([
-        'profiles.json', 'snapshot.json', 'activity.json', 'flight-comments.json',
+        'profiles.json', 'fare-grid.json', 'snapshot.json', 'activity.json', 'flight-comments.json',
         'subsidy-overrides.json', 'pkz-nav.json', 'sales-management.json',
         'creative-layouts.json', 'subsidy-fares.json', 'subsidy-ref.json', 'calendar.json', 'flights.json',
+        'params.json',        // параметры расчётов администратора (js/params.js)
         'forecast-now.json'   // прогноз к вылету по всем рейсам — один для всех (пишет тот, у кого модель обучена)
     ]);
 

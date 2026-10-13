@@ -15,7 +15,8 @@ window.ThemeSettings = (function () {
         { group: 'Работа', items: [
             { id: 'tabs', label: 'Вкладки: названия и порядок', hint: 'Свои названия и порядок кнопок в шапке — только у вас.' },
             { id: 'excel', label: 'Папки для Excel', hint: 'Куда сохранять выгрузки на этом компьютере.' },
-            { id: 'salesAdmin', label: 'Управление продажами', hint: 'Направления и диапазоны таблицы — для всех. Видит только администратор.', admin: true }
+            { id: 'salesAdmin', label: 'Управление продажами', hint: 'Направления и диапазоны таблицы — для всех. Видит только администратор.', admin: true },
+            { id: 'params', label: 'Параметры расчётов', hint: 'Все числа, от которых зависят расчёты: с какого размера брони считается группа, пороги сигналов, модель прогноза, ценовой советник. Действуют у всех. Видит только администратор.', admin: true }
         ] },
         { group: 'Безопасность', items: [
             { id: 'password', label: 'Пароль', hint: 'Смена своего пароля: нужен текущий, новый — от 8 символов.' }
@@ -378,6 +379,10 @@ window.ThemeSettings = (function () {
                         <div id="theme-sales-routes-wrap" class="theme-sales-routes" hidden></div>
                         <div id="theme-sales-ranges-wrap" class="theme-sales-routes" hidden></div>
                     </div>
+                    <div class="theme-section-panel" data-section="params" hidden>
+                        ${panelHead('params')}
+                        <div id="theme-params-wrap" class="theme-params"></div>
+                    </div>
                     <div class="theme-section-panel" data-section="password" hidden>
                         ${panelHead('password')}
                         <div class="theme-password-block">
@@ -418,9 +423,81 @@ window.ThemeSettings = (function () {
             }
         }
         if (sectionId === 'excel') renderExcelFolders(container);
+        if (sectionId === 'params') renderParams(container);
         // «Сбросить цвета» — только в разделах оформления.
         const resetBtn = document.getElementById('profile-settings-reset');
         if (resetBtn) resetBtn.hidden = !(sectionId === 'general' || sectionId === 'colors');
+    }
+
+    // ---------- Параметры расчётов (только администратор) ----------
+    let paramsFilter = '';
+
+    function renderParams(container) {
+        const wrap = container.querySelector('#theme-params-wrap');
+        const prof = typeof ProfileAuth !== 'undefined' ? ProfileAuth.getCurrentProfile() : null;
+        if (!wrap) return;
+        if (typeof Params === 'undefined' || !prof || !prof.isAdmin) { wrap.innerHTML = '<p class="theme-section-hint">Только для администратора.</p>'; return; }
+        const esc = (v) => (typeof escHtml === 'function' ? escHtml(v) : String(v));
+        const fmtN = (v) => String(v).replace('.', ',');
+        const q = paramsFilter.trim().toLowerCase();
+        const defs = Params.defs().filter(d => !q || (d.group + ' ' + d.label + ' ' + d.hint + ' ' + d.key).toLowerCase().includes(q));
+        const groups = [];
+        defs.forEach(d => { let g = groups.find(x => x.name === d.group); if (!g) { g = { name: d.group, items: [] }; groups.push(g); } g.items.push(d); });
+        const meta = Params.meta();
+        const changed = Params.defs().filter(d => d.value !== d.def).length;
+        wrap.innerHTML = `
+            <div class="theme-params-bar">
+                <input type="search" id="theme-params-search" class="theme-password-input" placeholder="Найти параметр…" value="${esc(paramsFilter)}">
+                <span class="theme-section-hint">${changed ? `Изменено: ${changed}` : 'Все значения по умолчанию'}${meta.updatedAt ? ` · сохранено ${esc(new Date(meta.updatedAt).toLocaleString('ru-RU'))}${meta.by ? ', ' + esc(meta.by) : ''}` : ''}</span>
+            </div>
+            ${groups.map(g => `<div class="theme-params-group"><div class="theme-params-title">${esc(g.name)}</div>
+                ${g.items.map(d => `<label class="theme-param${d.value !== d.def ? ' theme-param-changed' : ''}">
+                    <span class="theme-param-label">${esc(d.label)}${d.hint ? `<span class="theme-param-hint">${esc(d.hint)}</span>` : ''}</span>
+                    <input type="number" class="theme-param-input" data-param="${d.key}" value="${d.value}" min="${d.min}" max="${d.max}" step="${d.step}">
+                    <span class="theme-param-def">по умолч. ${fmtN(d.def)} · ${fmtN(d.min)}…${fmtN(d.max)}</span>
+                    <button type="button" class="theme-param-reset" data-param-reset="${d.key}" title="Вернуть ${fmtN(d.def)}"${d.value === d.def ? ' disabled' : ''}>↺</button>
+                </label>`).join('')}</div>`).join('') || '<p class="theme-section-hint">Ничего не найдено.</p>'}
+            <div class="theme-params-actions">
+                <button type="button" class="btn-primary" id="theme-params-save">Сохранить параметры</button>
+                <button type="button" class="btn-secondary" id="theme-params-defaults">Всё по умолчанию</button>
+                <span id="theme-params-status" class="theme-section-hint"></span>
+            </div>`;
+        if (wrap.dataset.bound) return;
+        wrap.dataset.bound = '1';
+        wrap.addEventListener('input', (e) => {
+            if (e.target.id !== 'theme-params-search') return;
+            paramsFilter = e.target.value;
+            const pos = e.target.selectionStart;
+            renderParams(container);
+            const s = wrap.querySelector('#theme-params-search');
+            if (s) { s.focus(); try { s.setSelectionRange(pos, pos); } catch (err) { /* ignore */ } }
+        });
+        wrap.addEventListener('click', async (e) => {
+            const r = e.target.closest('[data-param-reset]');
+            if (r) {
+                e.preventDefault();
+                const d = Params.defs().find(x => x.key === r.dataset.paramReset);
+                const inp = wrap.querySelector(`[data-param="${r.dataset.paramReset}"]`);
+                if (d && inp) inp.value = d.def;
+                return;
+            }
+            const id = e.target.id;
+            if (id !== 'theme-params-save' && id !== 'theme-params-defaults') return;
+            if (id === 'theme-params-defaults') {
+                if (!confirm('Вернуть все параметры расчётов к значениям по умолчанию? Изменится у всех.')) return;
+                wrap.querySelectorAll('[data-param]').forEach(inp => { const d = Params.defs().find(x => x.key === inp.dataset.param); if (d) inp.value = d.def; });
+            }
+            // Скрытые поиском параметры не трогаем — берём их нынешние значения.
+            const vals = {};
+            Params.defs().forEach(d => { vals[d.key] = d.value; });
+            wrap.querySelectorAll('[data-param]').forEach(inp => { vals[inp.dataset.param] = inp.value; });
+            const st = wrap.querySelector('#theme-params-status');
+            if (st) st.textContent = 'Сохраняю…';
+            const res = await Params.save(vals);
+            if (typeof showToast === 'function') showToast(res.ok ? 'Параметры сохранены — действуют у всех' : 'Параметры применены здесь, но не записаны в общую папку', res.ok ? 'success' : 'error');
+            if (typeof refreshCurrentView === 'function') refreshCurrentView();
+            renderParams(container);
+        });
     }
 
     function renderExcelFolders(container) {
@@ -714,7 +791,8 @@ window.ThemeSettings = (function () {
         // Пункты «только для администратора» — в меню только у него.
         const isAdmin = !!(prof && prof.isAdmin);
         body.querySelectorAll('.theme-section-nav [data-admin-only]').forEach(el => { el.hidden = !isAdmin; });
-        if (!isAdmin && body.querySelector('.theme-section-panel[data-section="salesAdmin"].active')) showSection(body, 'general');
+        if (!isAdmin && body.querySelector('.theme-section-panel[data-section="salesAdmin"].active, .theme-section-panel[data-section="params"].active')) showSection(body, 'general');
+        if (isAdmin && body.querySelector('.theme-section-panel[data-section="params"].active')) renderParams(body);
     }
 
     function openModal() {

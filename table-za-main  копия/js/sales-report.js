@@ -223,8 +223,6 @@ function resolveSwlyDate(baseFlight, flyDateStr, flightCode) {
 //   ATR-42, ATR-72 и Як-42 можно усреднять вместе.
 // • Берутся вылеты в пределах ±8 недель (без смешивания сезонов); если на сегодняшний день
 //   до вылета так набирается меньше 2 вылетов — весь период данных.
-const WEEKDAY_NORM_WINDOW_DAYS = 56;
-const WEEKDAY_NORM_MIN_N = 2;
 let salesCutoffCache = { ref: null, sig: '', time: 0 };
 
 // Дата среза продаж: последний день, за который есть сделки (не дата на часах компьютера).
@@ -342,7 +340,7 @@ function weekdayNormSeries(cohort, dtds, targetSeats) {
             // Не больше 100%: билетов бывает больше кресел из-за возвратов и обменов.
             if (v != null) lfs.push(Math.min(1, v / c.seats));
         });
-        if (lfs.length < WEEKDAY_NORM_MIN_N || !scale) return { n: lfs.length, value: null, lo: null, hi: null, lf: null };
+        if (lfs.length < PV.WEEKDAY_NORM_MIN_N || !scale) return { n: lfs.length, value: null, lo: null, hi: null, lf: null };
         const mean = lfs.reduce((a, b) => a + b, 0) / lfs.length;
         return {
             n: lfs.length,
@@ -432,7 +430,7 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
         const cohortAll = collectSameWeekdayCohort(baseFlight, flyDateStr, code);
         const targetRow = typeof getFlightRowForDate === 'function' ? getFlightRowForDate(baseFlight, flyDateStr, code) : null;
         const targetSeats = targetRow && typeof getSeatsOnSale === 'function' ? getSeatsOnSale(targetRow) : 0;
-        const near = cohortAll.filter(c => c.dayGap <= WEEKDAY_NORM_WINDOW_DAYS);
+        const near = cohortAll.filter(c => c.dayGap <= PV.WEEKDAY_NORM_WINDOW_DAYS);
         let norm = weekdayNormSeries(near, dtds, targetSeats);
         let windowed = true;
         const last = norm.points[norm.points.length - 1];
@@ -462,7 +460,7 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
             lyData = null;
             caption = `Серая линия — как продавался этот рейс год назад в тот же день недели (${dowName} ${swlyDate}): нынешней нормы по ${prep} пока нет.`;
         } else if (cohortAll.length) {
-            caption = `Серая норма не построена: среди ${cohortAll.length} других вылетов по ${prep} меньше ${WEEKDAY_NORM_MIN_N} таких, у которых этот день до вылета уже прошёл. Норма появится, когда накопится история.`;
+            caption = `Серая норма не построена: среди ${cohortAll.length} других вылетов по ${prep} меньше ${PV.WEEKDAY_NORM_MIN_N} таких, у которых этот день до вылета уже прошёл. Норма появится, когда накопится история.`;
         } else {
             caption = 'Серая норма не построена: в файле нет других вылетов этого рейса в тот же день недели. Синяя линия — загрузка этого рейса.';
         }
