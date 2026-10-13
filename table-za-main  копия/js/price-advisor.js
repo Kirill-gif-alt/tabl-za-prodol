@@ -208,17 +208,18 @@ window.PriceAdvisor = (function () {
         return res;
     }
 
-    // Нынешний минимальный класс: самый дешёвый взрослый тариф, проданный на этом вылете за последние 7 дней продаж.
+    // Открытый сейчас класс — по последним продажам вылета: взрослые билеты за последний день продаж в файле
+    // (без окна «7 дней» и без «самого дешёвого»: дешёвый билет недельной давности — уже закрытый класс).
     function currentPrice(code, date) {
         const list = typeof getFlightSalesList === 'function' ? getFlightSalesList(date, code) : [];
-        const fly = parseLocalDate(date);
-        if (!fly || !list.length) return null;
-        const cutoff = typeof salesDataCutoffTime === 'function' ? salesDataCutoffTime() : Date.now();
-        const recent = list.filter(s => isAdultPaid(s) && (() => { const d = parseLocalDate(s.dealDate); return d && cutoff - d.getTime() <= 7 * 86400000; })());
-        const use = recent.length ? recent : list.filter(isAdultPaid);
-        if (!use.length) return null;
-        const min = use.reduce((m, s) => ((s.adjustedFare || s.fare) < (m.adjustedFare || m.fare) ? s : m));
-        return { price: min.adjustedFare || min.fare, cls: String(min.basicFareStr || '').trim().charAt(0).toUpperCase() };
+        const paid = list.filter(isAdultPaid);
+        if (!paid.length) return null;
+        const t = s => { const d = parseLocalDate(s.dealDate); return d ? d.getTime() : 0; };
+        const last = Math.max(...paid.map(t));
+        const day = paid.filter(s => t(s) === last);
+        const cls = [...new Set(day.map(s => String(s.basicFareStr || '').trim().charAt(0).toUpperCase()).filter(Boolean))];
+        const tail = day[day.length - 1];   // в файле продажи идут по времени — последний билет дня
+        return { price: tail.adjustedFare || tail.fare, cls: String(tail.basicFareStr || '').trim().charAt(0).toUpperCase(), classes: cls, dealDate: tail.dealDate };
     }
 
     function nearestIdx(prices, p) {
@@ -252,8 +253,12 @@ window.PriceAdvisor = (function () {
         const kRaw = act[dtd][x];
         const cp = currentPrice(code, date);
         // Открытый класс — по букве проданного билета, а не по ближайшей цене (иначе Q путается с G).
-        let kCur = cp ? ladder.findIndex(l => l.cls === cp.cls) : null;
-        if (cp && kCur < 0) kCur = nearestIdx(prices, cp.price);
+        // Если в последний день продано несколько классов — открыт самый дорогой из них (дешёвые закрывали в течение дня).
+        let kCur = null;
+        if (cp) {
+            const idx = cp.classes.map(c => ladder.findIndex(l => l.cls === c)).filter(i => i >= 0);
+            kCur = idx.length ? Math.max(...idx) : nearestIdx(prices, cp.price);
+        }
         const corr = settings().corridor;
         let k = kRaw;
         if (kCur != null && corr < 9) k = Math.max(kCur - corr, Math.min(kCur + corr, kRaw));
@@ -269,7 +274,7 @@ window.PriceAdvisor = (function () {
         const action = kCur == null ? 'set' : (k > kCur ? 'up' : (k < kCur ? 'down' : 'hold'));
         return {
             code, date, dtd, free, cap, bid, beta: betaFor(), action,
-            early, cls: ladder[k].cls, price: prices[k], curCls: kCur != null ? ladder[kCur].cls : null, curPrice: cp ? cp.price : null,
+            early, cls: ladder[k].cls, price: prices[k], curCls: kCur != null ? ladder[kCur].cls : null, curDeal: cp ? cp.dealDate : null, curPrice: kCur != null ? prices[kCur] : null,
             raw: { cls: ladder[kRaw].cls, price: prices[kRaw] }, ladder, route: info.dir, deps: info.deps
         };
     }
@@ -286,7 +291,8 @@ window.PriceAdvisor = (function () {
                 : a.action === 'down' ? `снизить: открыть ${a.cls} (${rub(a.price)})`
                     : `открыть ${a.cls} (${rub(a.price)}), закрыть дешевле`;
         const why = a.early != null ? ` · при нынешней цене распродастся за ${a.early} дн. до вылета — рано` : '';
-        return `${what}${why} · нижняя цена места ${rub(a.bid)}${capNote}`;
+        const now = a.curCls ? `сейчас продаётся ${a.curCls}${a.curDeal ? ` (продажи ${a.curDeal})` : ''}; ` : '';
+        return `${now}${what}${why} · нижняя цена места ${rub(a.bid)}${capNote}`;
     }
 
     function canView() {
