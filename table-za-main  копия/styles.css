@@ -3917,8 +3917,11 @@ table.pair-table button {
 .chart-expand-body { flex: 1; min-height: 0; padding: 20px; position: relative; }
 .chart-expand-body canvas { width: 100% !important; height: 100% !important; }
 
+.export-excel-bar {
+    display: flex; justify-content: flex-end;
+    margin: 0 0 6px;
+}
 .export-excel-btn {
-    position: absolute; top: 12px; right: 12px; z-index: 30;
     padding: 7px 14px; font-size: 12px;
     background: var(--surface); border: 1px solid var(--border);
     color: #047857; border-radius: 10px;

@@ -1075,9 +1075,12 @@ async function exportTableToExcel(tableElement, filename = 'КРАСАВИА_э�
     }
 }
 
+// Кнопка — строкой над таблицей, вне прокручиваемой области: внутри неё закреплённая шапка таблицы её закрывала.
 function addExportButtonToTable(container, kind) {
     const oldBtn = container.querySelector('.export-excel-btn');
     if (oldBtn) oldBtn.remove();
+    const prev = container.previousElementSibling;
+    if (prev && prev.classList.contains('export-excel-bar')) prev.remove();
     if (typeof ProfileAuth !== 'undefined' && !ProfileAuth.hasPermission('export_excel')) return;
 
     const btn = document.createElement('button');
@@ -1097,6 +1100,9 @@ function addExportButtonToTable(container, kind) {
             if (isPair && !wasExpanded) table.classList.remove('table-extra-expanded');
         }
     };
-    container.style.position = 'relative';
-    container.appendChild(btn);
+    const bar = document.createElement('div');
+    bar.className = 'export-excel-bar';
+    bar.appendChild(btn);
+    if (container.parentNode) container.parentNode.insertBefore(bar, container);
+    else container.appendChild(btn);
 }
