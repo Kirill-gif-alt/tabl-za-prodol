@@ -876,6 +876,7 @@ window.ReportsView = (function () {
         }
         if (typeof DecisionsReport !== 'undefined' && DecisionsReport.canView()) list.push({ id: 'decisions', label: 'Решения', badge: '' });
         if (typeof ForecastLab !== 'undefined' && ForecastLab.canView()) list.push({ id: 'forecast', label: 'Прогноз и предупреждения', badge: '' });
+        else if (typeof PriceAdvisor !== 'undefined' && PriceAdvisor.canView()) list.push({ id: 'forecast', label: 'Ценовой советник', badge: '' });
         list.push({ id: 'export', label: 'Выгрузки в Excel', badge: '' });
         return list;
     }
@@ -960,6 +961,7 @@ window.ReportsView = (function () {
             if (typeof ReferenceView !== 'undefined' && ReferenceView.handleChange(event.target, renderBody)) return;
             if (typeof DecisionsReport !== 'undefined' && DecisionsReport.handleChange(event.target, renderBody)) return;
             if (typeof SalesReconcile !== 'undefined' && SalesReconcile.handleChange(event.target, renderBody)) return;
+            if (typeof PriceAdvisor !== 'undefined' && PriceAdvisor.handleChange(event.target, renderBody)) return;
             if (event.target.id === 'rp-ref-flight') { syncPairLabel(); return; }
             if (event.target.id !== 'rp-checks-future') return;
             checksFutureOnly = event.target.checked;
@@ -974,6 +976,7 @@ window.ReportsView = (function () {
             if (typeof ReferenceView !== 'undefined' && ReferenceView.handleClick(btn, renderBody)) return;
             if (typeof DecisionsReport !== 'undefined' && DecisionsReport.handleClick(btn, renderBody)) return;
             if (typeof ForecastLab !== 'undefined' && ForecastLab.handleClick(btn, renderBody)) return;
+            if (typeof PriceAdvisor !== 'undefined' && PriceAdvisor.handleClick(btn, renderBody)) return;
             if (btn.dataset.rpTab) {
                 subtab = btn.dataset.rpTab;
                 try { localStorage.setItem(SUBTAB_KEY, subtab); } catch (e) { /* ignore */ }

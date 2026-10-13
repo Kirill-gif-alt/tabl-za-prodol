@@ -2204,7 +2204,11 @@ window.ForecastLab = (function () {
     }
 
     function html(rerender) {
-        if (!canView()) return '<p class="rp-note">Раздел доступен по праву «Прогноз загрузки и предупреждения» (выдаёт администратор в «Профилях»).</p>';
+        if (!canView()) {
+            // Только «Ценовой советник» (своё право) — без отчёта о прогнозе.
+            if (typeof PriceAdvisor !== 'undefined' && PriceAdvisor.canView()) return PriceAdvisor.reportHtml(rerender);
+            return '<p class="rp-note">Раздел доступен по праву «Прогноз загрузки и предупреждения» (выдаёт администратор в «Профилях»).</p>';
+        }
         if (!loaded) {
             ensureLoaded().then(() => startEvaluation(rerender));
             return '<p class="rp-note">Загружаю журнал прогнозов…</p>';
@@ -2274,6 +2278,7 @@ window.ForecastLab = (function () {
             ? `Последняя запись журнала: прогнозов ${lastCapture.recorded}, восстановлено вылетов ${lastCapture.backfilled}, дописан факт ${lastCapture.finals}.` : '';
         if (lastCapture && lastCapture.stale) cap += ' Данные продаж старше суток — прогнозы на сегодня не записаны (запишутся после загрузки свежих данных).';
         return `${warnHtml(rerender)}
+            ${typeof PriceAdvisor !== 'undefined' ? PriceAdvisor.reportHtml(rerender) : ''}
             <section class="rp-card">
                 <div class="rp-card-head"><h3 class="rp-card-title">Точность прогноза загрузки</h3></div>
                 <p class="rp-card-text">Каждый день сайт записывает прогноз по каждому вылету за 30, 21, 14, 10, 7, 5, 3 и 1 день до вылета, а после вылета — факт.

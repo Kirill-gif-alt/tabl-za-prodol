@@ -325,6 +325,21 @@ window.FlightCard = (function () {
             else if (f.soldOutDtd != null) advice = `<div class="fc-advice fc-advice-up">▲ ${f.soldOutDtd === 0 ? 'Распродастся к дню вылета' : `Распродастся примерно за ${f.soldOutDtd} дн. до вылета`} — можно поднимать тариф</div>`;
             else if (f.lf < 60) advice = '<div class="fc-advice fc-advice-down">▼ Не доберёт загрузку — стоит снижать тариф или продвигать</div>';
         }
+        // Ценовой советник (межрегиональные + Богучаны, Мотыгино, Кодинск; потолок субсидии).
+        if (typeof PriceAdvisor !== 'undefined' && PriceAdvisor.canView()) {
+            let pa = null;
+            try { pa = PriceAdvisor.advise(code, date); } catch (e) { pa = null; }
+            if (pa && pa.action !== 'closed') {
+                const cls = pa.action === 'up' ? 'fc-advice-up' : (pa.action === 'down' ? 'fc-advice-down' : 'fc-advice-hold');
+                const icon = pa.action === 'up' ? '▲' : (pa.action === 'down' ? '▼' : '●');
+                const tip = `Ценовой советник: выручка вылета наибольшая, если минимальный открытый класс — ${pa.cls} (${PriceAdvisor.rub(pa.price)}).`
+                    + (pa.curPrice != null ? ` Сейчас продаётся от ${PriceAdvisor.rub(pa.curPrice)}.` : '')
+                    + ` Bid price ${PriceAdvisor.rub(pa.bid)} — дешевле продавать место (в том числе группе) невыгодно.`
+                    + (pa.cap != null ? ` Рейс субсидируемый: выше ${PriceAdvisor.rub(pa.cap)} не продаём.` : '')
+                    + ` Совет — не дальше ${PriceAdvisor.settings().corridor} класса от нынешнего; эластичность ${String(pa.beta).replace('.', ',')} — сценарий, пока не измерена.`;
+                advice += `<div class="fc-advice ${cls}" title="${attr(tip)}">${icon} Цена: ${esc(PriceAdvisor.text(pa))}</div>`;
+            }
+        }
         const g = FI.groupsFor(code, date);
         let groups = '';
         if (g.length) {
