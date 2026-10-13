@@ -16,7 +16,8 @@ window.PriceAdvisor = (function () {
     const SETTINGS_KEY = 'krasavia_price_advisor';
     const DEFAULTS = { beta: -1.5, corridor: 1 };
     const MIN_CLASS_TICKETS = 3;
-    const MIN_DEPS = 8;               // вылетов в архиве, чтобы построить кривую бронирований
+    const MIN_DEPS = 8;
+    const PACE_DAYS = 2;              // распродан раньше чем за 2 дня до вылета — продаём слишком дёшево               // вылетов в архиве, чтобы построить кривую бронирований
 
     let memo = { sig: '', routes: new Map(), dp: new Map() };
 
@@ -252,11 +253,19 @@ window.PriceAdvisor = (function () {
         const corr = settings().corridor;
         let k = kRaw;
         if (kCur != null && corr < 9) k = Math.max(kCur - corr, Math.min(kCur + corr, kRaw));
+        // Цель продаж: последний билет — ближе к вылету, а не за месяц. Если по прогнозу (тот же, что в карточке)
+        // при нынешней цене рейс распродастся раньше чем за PACE_DAYS дн. до вылета — поднимаем хотя бы на класс.
+        let early = null;
+        const fc = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(code, date) : null;
+        if (fc && fc.soldOutDtd != null && fc.soldOutDtd >= PACE_DAYS && free > 0 && kCur != null && kCur < prices.length - 1 && k <= kCur) {
+            k = kCur + 1;
+            early = fc.soldOutDtd;
+        }
         const bid = dtd >= 1 ? Math.max(0, Math.round(V[dtd - 1][x] - V[dtd - 1][x - 1])) : 0;
         const action = kCur == null ? 'set' : (k > kCur ? 'up' : (k < kCur ? 'down' : 'hold'));
         return {
             code, date, dtd, free, cap, bid, beta: betaFor(), action,
-            cls: ladder[k].cls, price: prices[k], curCls: kCur != null ? ladder[kCur].cls : null, curPrice: cp,
+            early, cls: ladder[k].cls, price: prices[k], curCls: kCur != null ? ladder[kCur].cls : null, curPrice: cp,
             raw: { cls: ladder[kRaw].cls, price: prices[kRaw] }, ladder, route: info.dir, deps: info.deps
         };
     }
@@ -272,7 +281,8 @@ window.PriceAdvisor = (function () {
             : a.action === 'up' ? `поднять: открыть ${a.cls} (${rub(a.price)}), закрыть дешевле`
                 : a.action === 'down' ? `снизить: открыть ${a.cls} (${rub(a.price)})`
                     : `открыть ${a.cls} (${rub(a.price)}), закрыть дешевле`;
-        return `${what} · bid price ${rub(a.bid)}${capNote}`;
+        const why = a.early != null ? ` · при нынешней цене распродастся за ${a.early} дн. до вылета — рано` : '';
+        return `${what}${why} · bid price ${rub(a.bid)}${capNote}`;
     }
 
     function canView() {
@@ -335,7 +345,7 @@ window.PriceAdvisor = (function () {
             <td>${esc(a.date)}<div class="rp-muted">через ${a.dtd} дн.</div></td>
             <td>${a.free}</td>
             <td>${a.curPrice != null ? `${esc(a.curCls || '')} ${rub(a.curPrice)}` : '—'}</td>
-            <td>${act(a)}</td>
+            <td>${act(a)}${a.early != null ? `<div class="rp-muted">иначе распродан за ${a.early} дн.</div>` : ''}</td>
             <td><strong>${esc(a.cls || '')}</strong> ${rub(a.price)}${a.raw && a.raw.price !== a.price ? `<div class="rp-muted" title="Без ограничения коридором">модель: ${esc(a.raw.cls)} ${rub(a.raw.price)}</div>` : ''}</td>
             <td>${rub(a.bid)}</td>
             <td>${a.cap != null ? rub(a.cap) : '—'}</td></tr>`).join('');
