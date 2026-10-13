@@ -60,6 +60,9 @@ def _policy_for(name):
         return HISTORY_POLICY[name]
     if FCLOG_RE.match(name):
         return (6 * 3600, 10)
+    # Архив продаж (кривые по месяцам) — копия раз в сутки, три последних: загрузка истории переписывает все месяцы.
+    if ARCHIVE_RE.match(name):
+        return (24 * 3600, 3)
     return None
 
 

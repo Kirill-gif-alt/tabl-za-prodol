@@ -1760,9 +1760,15 @@ window.ForecastLab = (function () {
     function publishedFor(code, date) {
         if (!published.flights || !published.token || published.token !== salesToken()) return null;
         const e = published.flights[date + '|' + cleanFlight(code)];
-        if (!Array.isArray(e) || !(e[0] >= 0) || !(e[3] > 0)) return null;
-        const [final, lo, hi, seats, method, err, h] = e;
-        return { final, lo: lo == null ? null : lo, hi: hi == null ? null : hi, seats, method: String(method || 'модель'), err: Number(err) || 0, h: Number(h) || null, team: [], lf: Math.round(final / seats * 100), shared: true };
+        if (!Array.isArray(e)) return null;
+        const nn = (v) => (typeof v === 'number' && isFinite(v) ? Math.round(v) : null);   // общий файл — только числа
+        const final = nn(e[0]);
+        const seats = nn(e[3]);
+        if (final == null || final < 0 || !(seats > 0)) return null;
+        const lo = nn(e[1]);
+        const hi = nn(e[2]);
+        const [, , , , method, err, h] = e;
+        return { final, lo, hi, seats, method: String(method || 'модель'), err: Number(err) || 0, h: Number(h) || null, team: [], lf: Math.round(final / seats * 100), shared: true };
     }
 
     // Один прогноз: своя обученная модель, иначе общий файл. null — модели нет (тогда прогноз по прошлым вылетам).
