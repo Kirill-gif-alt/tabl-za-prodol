@@ -24,7 +24,7 @@ import pandas as pd
 FEATS = ["dtd", "log_rel_price", "week", "month", "dow", "route_c", "cap", "seats", "sold_frac", "left", "price_age"]
 MONO = {"log_rel_price": -1}
 PARAMS = dict(objective="poisson", learning_rate=0.05, num_leaves=15, min_data_in_leaf=50, feature_fraction=0.9,
-              bagging_fraction=0.8, bagging_freq=1, lambda_l2=1.0, verbose=-1, seed=7, num_threads=4)
+              bagging_fraction=0.8, bagging_freq=1, lambda_l2=1.0, verbose=-1, seed=7, num_threads=1, max_bin=63)  # >1 потока здесь в 10+ раз медленнее
 N_ROUNDS = 300
 
 
@@ -192,7 +192,7 @@ def state_at(panel, S):
     return last
 
 
-def hist_panel(hist, dep, panel, asof, lookback=200, t_max=60):
+def hist_panel(hist, dep, panel, asof, lookback=150, t_max=60):
     """Доп. обучающие строки из hist.csv (улетевшие вылеты с fly_date ≤ asof, дневная кривая бронирований).
     Нужны, т.к. в окне билетов вылеты начинаются с 23.09 и до этой даты в панели НЕТ ближних к вылету дней.
     Дневной цены там нет: цена = средний тариф вылета (avg_fare), price_age = 999 («цена не наблюдалась»).
