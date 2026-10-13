@@ -348,8 +348,45 @@ window.SalesArchive = (function () {
         return c;
     }
 
+    // Какой файл истории загружен последним (history/import.json): тот же файл повторно не загружается.
+    const IMPORT_FILE = 'history/import.json';
+    let lastImport = null;
+
+    function fileSig(file) {
+        return file ? `${file.size}|${file.lastModified}` : '';
+    }
+
+    async function readLastImport() {
+        if (typeof SharedStorage === 'undefined') return null;
+        const r = await SharedStorage.readJsonFileStrict(IMPORT_FILE).catch(() => ({ ok: false }));
+        if (r.ok) lastImport = r.data && typeof r.data === 'object' ? r.data : null;
+        return r;
+    }
+
+    async function noteImport(file, r) {
+        lastImport = {
+            version: 1, sig: fileSig(file), file: file ? String(file.name || '').slice(0, 80) : '', at: new Date().toISOString(),
+            flights: r.flights, from: r.from ? formatDateRu(r.from) : '', to: r.to ? formatDateRu(r.to) : ''
+        };
+        await SharedStorage.writeJsonFile(IMPORT_FILE, lastImport).catch(() => false);
+    }
+
+    // SalesHistory.csv из папки данных (её пишет Export-SalesHistory.ps1, например каждую ночь по расписанию):
+    // загружается сама у публикующего, если файл изменился с прошлой загрузки. Модель после этого доучивается.
+    async function autoImport(file) {
+        if (!file || typeof SharedStorage === 'undefined' || typeof ProfileAuth === 'undefined') return null;
+        if (!ProfileAuth.hasPermission('share_data')) return null;
+        if (!(await SharedStorage.canWrite())) return null;
+        const read = await readLastImport();
+        if (!read.ok) return null;   // не прочитали отметку — не грузим вслепую
+        if (lastImport && lastImport.sig === fileSig(file)) return { ok: true, same: true };
+        const r = await importHistory(await file.text(), file);
+        if (r.ok && typeof ForecastLab !== 'undefined' && ForecastLab.afterHistoryImport) ForecastLab.afterHistoryImport();
+        return r;
+    }
+
     // Разобрать файл истории и дописать архив. Возвращает { ok, flights, months, skipped, estimated, from, to, error }.
-    async function importHistory(text) {
+    async function importHistory(text, file) {
         if (typeof SharedStorage === 'undefined') return { ok: false, error: 'нет общей папки' };
         const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/);
         const splitLine = (l) => (typeof parseCSVLine === 'function' ? parseCSVLine(l) : l.split(',')).map(x => String(x == null ? '' : x).replace(/^"|"$/g, '').trim());
@@ -405,7 +442,9 @@ window.SalesArchive = (function () {
         }
         rev++;
         if (typeof ActivityLog !== 'undefined') ActivityLog.log('import', `История продаж: ${flights} вылетов`);
-        return { ok, flights, months: months.length, skipped, estimated, from, to };
+        const res = { ok, flights, months: months.length, skipped, estimated, from, to };
+        if (ok) await noteImport(file, res);
+        return res;
     }
 
     return {
@@ -416,6 +455,9 @@ window.SalesArchive = (function () {
         entryFor,
         stats,
         importHistory,
+        autoImport,
+        lastImport: () => lastImport,
+        readLastImport,
         curveFor,
         departuresFor,
         capture,

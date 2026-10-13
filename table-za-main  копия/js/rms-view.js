@@ -199,7 +199,7 @@ function renderRmsWatchlist() {
                     <th class="rms-col-dtd" title="Дней до вылета">DTD</th>
                     <th class="rms-col-load" title="Загрузка / (AU снимка − спец.брони)">ЗПК</th>
                     <th class="rms-col-remain" title="AU − загрузка − спец.брони">Остаток</th>
-                    <th class="rms-col-fc" title="Прогноз загрузки к вылету: сколько обычно добирают такие же вылеты (тот же день недели) от этого дня; в скобках — разброс">Прогноз к вылету</th>
+                    <th class="rms-col-fc" title="Прогноз загрузки к вылету — тот же, что в карточке рейса: модель прогноза (если она вам доступна), иначе сколько обычно добирают такие же вылеты в тот же день недели; в скобках — разброс">Прогноз к вылету</th>
                     ${hasExpected ? '<th class="rms-col-forecast" title="Ожидаемая загрузка.xlsx">Ожидаемая</th><th class="rms-col-delta">Δ к ожидаемой</th>' : ''}
                     <th class="rms-col-pickup" title="Билеты сегодня+вчера из файла 14д">Pickup 1–2д</th>
                     <th class="rms-col-today" title="Билеты с DEALDATE=сегодня из файла 14д">Сегодня (файл 14д)</th>

@@ -40,7 +40,7 @@ window.SalesAdvice = (function () {
         const ref = s.refData && s.refData.length ? s.refData[s.refData.length - 1] : null;
         const exp = s.expectedData && s.expectedData.length ? s.expectedData[s.expectedData.length - 1] : null;
         const refs = [];
-        if (ref != null && !isNaN(ref)) refs.push({ label: 'обычно к этому дню', value: Math.round(ref), d: sold - Math.round(ref) });
+        if (ref != null && !isNaN(ref)) refs.push({ label: s.refIsLy ? 'год назад к этому дню' : 'обычно к этому дню', value: Math.round(ref), d: sold - Math.round(ref) });
         if (exp != null && !isNaN(exp)) refs.push({ label: 'по плану', value: exp, d: sold - exp });
         if (!refs.length) return null;
         const T = Math.max(3, Math.round((seats || 0) * 0.10));

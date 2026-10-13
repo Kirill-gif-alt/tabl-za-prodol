@@ -20,7 +20,8 @@ window.FlightInsights = (function () {
             typeof SalesArchive !== 'undefined' && SalesArchive.revision ? SalesArchive.revision() : 0,
             typeof CalendarEvents !== 'undefined' ? CalendarEvents.revision() : 0,
             typeof SubsidyRef !== 'undefined' && SubsidyRef.revision ? SubsidyRef.revision() : 0,
-            typeof SharedOverrides !== 'undefined' && SharedOverrides.subsidyRevision ? SharedOverrides.subsidyRevision() : 0].join('|');
+            typeof SharedOverrides !== 'undefined' && SharedOverrides.subsidyRevision ? SharedOverrides.subsidyRevision() : 0,
+            typeof ForecastLab !== 'undefined' && ForecastLab.modelRevision ? ForecastLab.modelRevision() : 0].join('|');
     }
 
     function cache() {
@@ -134,7 +135,27 @@ window.FlightInsights = (function () {
         return res;
     }
 
+    // Один прогноз на вылет: если модель доступна (право «Прогноз загрузки и предупреждения») и обучена — её число.
+    // Она сама учитывает и прошлые вылеты в этот день недели, и файл ожидаемой, и темп, и календарь — и выбрана
+    // по честной проверке как самая точная. Простой расчёт по прошлым вылетам остаётся запасным и для подсказки.
     function computeForecast(code, date) {
+        const simple = computeSimple(code, date);
+        if (!simple || simple.source === 'flown') return simple;
+        let ml = null;
+        try { ml = typeof ForecastLab !== 'undefined' && ForecastLab.canView() ? ForecastLab.predict(code, date) : null; } catch (e) { ml = null; }
+        if (!ml || ml.final == null || ml.seats !== simple.seats) return simple;
+        const final = Math.max(simple.load, Math.min(simple.seats, ml.final));
+        let soldOutDtd = simple.soldOutDtd;
+        if (final < simple.seats) soldOutDtd = simple.load >= simple.seats ? simple.dtd : null;
+        else if (soldOutDtd == null) soldOutDtd = 0;
+        return {
+            ...simple, final, lo: ml.lo, hi: ml.hi, lf: Math.round(final / simple.seats * 100), soldOutDtd,
+            source: 'model', model: { method: ml.method, err: ml.err, h: ml.h, team: ml.team || [], cover: ml.cover },
+            simple: { final: simple.final, source: simple.source, n: simple.n }
+        };
+    }
+
+    function computeSimple(code, date) {
         const row = rowOf(code, date);
         if (!row) return null;
         const base = getBaseFlight(code);
@@ -288,8 +309,8 @@ window.FlightInsights = (function () {
 
     function forecastText(f) {
         if (!f || f.source === 'flown') return '';
-        const range = f.lo != null && f.hi != null && f.lo !== f.hi ? `, разброс ${f.lo}–${f.hi}` : '';
-        const src = f.source === 'history'
+        const range = f.lo != null && f.hi != null && f.lo !== f.hi ? `, ${f.source === 'model' ? '8 из 10 —' : 'разброс'} ${f.lo}–${f.hi}` : '';
+        const src = f.source === 'model' ? 'модель прогноза (все способы вместе)' : f.source === 'history'
             ? `по ${f.n} ${plural(f.n, 'прошлому вылету', 'прошлым вылетам', 'прошлым вылетам')} в этот день недели`
             : 'по файлу ожидаемой загрузки (своей истории пока мало)';
         let tail = '';

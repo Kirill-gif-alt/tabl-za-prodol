@@ -166,7 +166,7 @@ window.SharedStorage = (function () {
     }
 
     // Архив продаж: shared/history/curves-ГГГГ-ММ.json (см. sales-archive.js).
-    const HISTORY_FILE_RE = /^history\/curves-\d{4}-\d{2}\.json$/;
+    const HISTORY_FILE_RE = /^history\/(curves-\d{4}-\d{2}|import)\.json$/;   // import.json — какой файл истории загружен последним
     // Отметки «Управления продажами»: у каждого автора свой файл за месяц — никто не перезаписывает чужое.
     const MARKS_FILE_RE = /^sales-marks\/\d{4}-\d{2}\/[a-z0-9_]{1,40}\.json$/;
     const MARKS_DIR_RE = /^sales-marks\/\d{4}-\d{2}$/;
