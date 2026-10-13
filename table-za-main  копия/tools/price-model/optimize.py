@@ -180,6 +180,11 @@ def run():
         # Потолок — на ближайший будущий вылет направления (субсидия действует по датам).
         fut_dates = dep[(dep.route == r) & (dep.fly_date > cutoff)].fly_date
         cap = cap_for(fl0, fut_dates.min() if len(fut_dates) else cutoff, caps, commercial)
+        # Справочника потолков нет, а продажи явно по одной цене (≥80% билетов) — считаем этот тариф потолком
+        # (ДОПУЩЕНИЕ, печатается), а не коммерческим рейсом без ограничения.
+        if cap is None and fl0 and is_subsidized(ar) and not caps:
+            cap = float(ar.fare.round().value_counts().index[0])
+            print(f"  {r}: потолок не задан — принят преобладающий тариф {cap:.0f} ₽ (допущение)")
         lad = ladder(ar)
         if not lad:
             continue
