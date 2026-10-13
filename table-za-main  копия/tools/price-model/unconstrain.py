@@ -116,8 +116,9 @@ def ml_nb(y, cens):
     r = optimize.minimize(nll, [np.log(max(y.mean(), 0.5)), np.log(5.0)], method="Nelder-Mead",
                           options={"maxiter": 400, "xatol": 1e-4, "fatol": 1e-6})
     mu, k = np.exp(r.x)
-    k = min(k, 1e4)
-    e = np.where(cens, nb_cond_mean(y, mu, k, int(max(y.max(), mu) * 4 + 20)), y)
+    # малые группы / почти все распроданы → правдоподобие плоское; ограничиваем: k∈[1,1e4], μ ≤ 1.5·max(y)
+    k = float(np.clip(k, 1.0, 1e4)); mu = min(mu, 1.5 * y.max())
+    e = np.where(cens, np.minimum(nb_cond_mean(y, mu, k, int(max(y.max(), mu) * 4 + 20)), 2 * y), y)
     return mu, e
 
 
@@ -176,7 +177,7 @@ def run_methods(h, prof):
 METHODS = ["naive", "curve_m", "em_pois", "ml_nb", "pd"]
 
 
-def unconstrained_final(df, method="ml_nb", hist=None):
+def unconstrained_final(df, method="pd", hist=None):
     """Неограниченный спрос к вылету. df: flight, fly_date, cap, y (бронирования), [net], [curve].
     Вылеты из df оцениваются вместе с историей (hist) своей группы. Возвращает Series D̂ (index df)."""
     t, dep, cutoff, meta = load()
@@ -199,12 +200,13 @@ def unconstrained_final(df, method="ml_nb", hist=None):
 
 
 # ---------------------------------------------------------------- уровень дня
-def unconstrained_daily(panel, hist=None, prof=None):
+def unconstrained_daily(panel, hist=None, prof=None, uplift=None):
     """Добавляет в панель:
       soldout_dtd  — день до вылета, к которому накоплено ≥ кресел в продаже (seats) − 1 (NaN — не распродан)
       cens_cap     — 1 в дни ПОСЛЕ распродажи (dtd < soldout_dtd): нулевые продажи — не отсутствие спроса
-      bookings_unc — бронирования без цензуры: факт в открытые дни; в цензурированные — D̂·(F(t)−F(t−1)), где
-                     D̂ = (продано к распродаже)/F(soldout_dtd) — досчёт по кривой класса ВС
+      bookings_unc — факт в открытые дни; в цензурированные: недостающий спрос (D̂ − S)·ΔF(t)/F(soldout_dtd),
+                     S — продано к распродаже, D̂ = S·uplift[класс ВС], uplift = Σ D̂_PD / Σ y по распроданным
+                     вылетам истории (Projection Detruncation — лучший по тесту); ΔF(t)=F(t)−F(t+1) — форма кривой
       min_price_day, route_min_typ, cheap_closed, dep_floor_up — признаки закрытия дешёвых классов (см. записку)."""
     p = panel.copy()
     if prof is None:
@@ -224,8 +226,13 @@ def unconstrained_daily(panel, hist=None, prof=None):
         Fprev = np.array([prof[k][min(int(t) + 1, 120)] for k, t in zip(key, p.dtd)])
         Fso = np.array([prof[k][min(int(t), 120)] if t == t else 1 for k, t in zip(key, p.soldout_dtd.fillna(0))])
         sold_at = p.groupby(["flight", "fly_date"]).cum.transform("max")
-        D = sold_at / np.maximum(Fso, 0.05)
-        p.loc[m, "bookings_unc"] = (D * np.maximum(F - Fprev, 0))[m.values]
+        if uplift is None:
+            uplift = {"all": 1.11}
+        up = np.array([uplift.get(k, uplift.get("all", 1.11)) for k in key])
+        extra = sold_at * (up - 1)
+        # ΔF(t)=F(t)−F(t+1) — доля дня t; Σ_{t<t*} ΔF = 1 − F(t*), нормируем, чтобы Σ добавки = extra
+        rem = np.maximum(1 - Fso, 1e-3)   # …нормированную так, чтобы Σ по цензурированным дням = extra
+        p.loc[m, "bookings_unc"] = p.bookings[m] + (extra * np.maximum(F - Fprev, 0) / rem)[m.values]
     # --- закрытие классов из продаж
     p["min_price_day"] = p.price_seen
     obs = p[p.price_seen.notna()]
@@ -317,7 +324,11 @@ def main():
 
     # 3–4. Дневной уровень и закрытие классов
     panel = build_panel(t, dep, cutoff)
-    pu = unconstrained_daily(panel, prof=prof)
+    upl = {cc: g.pd.sum() / g.y.sum() for cc, g in cen.groupby("cap_class")}
+    upl["all"] = cen.pd.sum() / cen.y.sum()
+    print("uplift PD по классу ВС:", {k: round(v, 3) for k, v in upl.items()})
+    json.dump({str(k): v for k, v in upl.items()}, open(os.path.join(OUT, "uplift.json"), "w"))
+    pu = unconstrained_daily(panel, prof=prof, uplift=upl)
     pu.to_csv(os.path.join(OUT, "panel_unc.csv.gz"), index=False, compression="gzip")
     nd = pu.groupby(["flight", "fly_date"]).soldout_dtd.first()
     print(f"\nПанель: вылетов {len(nd)}, распродано {nd.notna().sum()} ({nd.notna().mean():.1%}); "

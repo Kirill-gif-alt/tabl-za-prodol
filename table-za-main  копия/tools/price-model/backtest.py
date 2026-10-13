@@ -16,7 +16,7 @@ import pandas as pd
 from scipy import stats
 
 from common import build_panel, data_dir, load
-from model import DemandModel, add_features, state_at
+from model import DemandModel, add_features, hist_panel, state_at
 
 OUT = os.environ.get("PM_OUT") or os.path.join(os.path.dirname(data_dir()), "out", "ml")
 os.makedirs(OUT, exist_ok=True)
@@ -74,10 +74,11 @@ def main():
     for S in cutoffs:
         tS = t[t.deal_date <= S]
         pan = add_features(build_panel(tS, dep, S))
+        hx = hist_panel(hist, dep, pan, S)
         models = {}
         for name, kw in [("lgb", dict(kind="lgb", halflife=60)), ("glm", dict(kind="glm", halflife=60)),
                          ("lgb_hl30", dict(kind="lgb", halflife=30)), ("lgb_nohl", dict(kind="lgb", halflife=None))]:
-            models[name] = DemandModel(**kw).fit(pan, S)
+            models[name] = DemandModel(**kw).fit(pan, S, extra=hx)
             timing.append((S, name, len(pan), models[name].fit_seconds))
         st = state_at(pan, S)
         st = st[st.ref_fare.notna()].reset_index(drop=True)
@@ -121,7 +122,7 @@ def main():
         fl = st[st.fly_date <= cutoff].copy()
         fl["hb"] = fl.dtd_now.map(hbucket)
         fin_rows.append(fl[fl.hb.notna()])
-        print(f"  {S:%d.%m}: панель {len(pan)} строк, открытых вылетов {len(st)}, улетевших к оценке {fl.hb.notna().sum()}, "
+        print(f"  {S:%d.%m}: панель {len(pan)} + hist {len(hx)} строк, открытых вылетов {len(st)}, улетевших к оценке {fl.hb.notna().sum()}, "
               f"LGB {models['lgb'].fit_seconds:.1f}s, GLM {models['glm'].fit_seconds:.1f}s")
     models["lgb"].save(os.path.join(OUT, "model_latest.pkl"))
 

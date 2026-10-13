@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 
 from common import load
+from scope import apply_cap, cap_for, in_rms, load_caps, load_geo
 
 OUT = os.environ.get("PM_OUT") or os.path.join(os.path.dirname(os.environ.get("PM_DATA", ".").rstrip("/")), "out", "opt")
 T = 90               # горизонт продаж, дней
@@ -46,6 +47,22 @@ def booking_curve(t_route, dep_flown):
     n = len(dep_flown)
     s = t_route.groupby("dtd").size().reindex(range(T + 1), fill_value=0) / max(n, 1)
     return s.rolling(7, center=True, min_periods=1).mean().values
+
+
+def hist_curve(hist, flights, share):
+    """a(t) по истории продаж за год (hist.csv): средние билеты в день t на вылет этих рейсов × доля взрослых платных.
+    История — по всем вылетам рейсов направления (в окне файла продаж улетевших вылетов всего 2–10)."""
+    h = hist[hist.flight.isin(flights)]
+    if len(h) < 10:
+        return None, len(h)
+    acc = np.zeros(T + 1)
+    for c in h.curve:
+        for k, v in json.loads(c).items():
+            k = int(k)
+            if 0 <= k <= T:
+                acc[k] += v
+    a = pd.Series(acc / len(h)).rolling(7, center=True, min_periods=1).mean().values
+    return a * share, len(h)
 
 
 def make_demand(a, p_ref, beta, kind="exp"):
@@ -147,25 +164,49 @@ def run():
     a = t[t.adult & t.paid & t.route.notna()]
     flown = dep[dep.fly_date <= cutoff]
     rows, excluded, policies, today = [], [], {}, []
+    hp = os.path.join(os.environ.get("PM_DATA", "data"), "hist.csv")
+    hist = pd.read_csv(hp) if os.path.exists(hp) else None
+    allt = t[t.route.notna()]
+    # Где цену выбирает RMS: межрегиональные + Богучаны, Мотыгино, Кодинск; субсидия — потолок тарифа.
+    geo = load_geo()
+    caps, commercial = load_caps(caps_csv=os.environ.get("PM_CAPS"))
     routes = a.groupby("route").size()
-    routes = routes[routes >= 300].index
+    routes = routes[routes >= 100].index
     for r in routes:
         ar = a[a.route == r]
-        if is_subsidized(ar):
+        fl0 = ar.flight.mode().iloc[0]
+        if not in_rms(fl0, geo):
             excluded.append(r); continue
-        lad = ladder(ar); prices = [p for _, p in lad]; cls = {p: c for c, p in lad}
+        # Потолок — на ближайший будущий вылет направления (субсидия действует по датам).
+        fut_dates = dep[(dep.route == r) & (dep.fly_date > cutoff)].fly_date
+        cap = cap_for(fl0, fut_dates.min() if len(fut_dates) else cutoff, caps, commercial)
+        lad = ladder(ar)
+        if not lad:
+            continue
+        prices = apply_cap([p for _, p in lad], cap)
+        cls = {p: c for c, p in lad}
+        for p in prices:
+            cls.setdefault(p, "потолок")
         p_ref = float(ar.fare.median())
         fl_r = flown[flown.route == r]
         tr = ar[ar.fly_date <= cutoff]
-        if len(fl_r) < 5:
+        if len(prices) < 1:
             continue
-        acurve = booking_curve(tr, fl_r)
+        acurve, n_hist = (None, 0)
+        if hist is not None:
+            tot = allt[allt.route == r]
+            share = len(ar) / max(1, len(tot))   # доля взрослых платных среди всех билетов направления
+            acurve, n_hist = hist_curve(hist, set(ar.flight.unique()), share)
+        if acurve is None:
+            if len(fl_r) < 5:
+                continue
+            acurve = booking_curve(tr, fl_r)
         C = int(dep[dep.route == r].seats.median())
         for kind in ["exp", "iso"]:
             for beta in BETAS:
                 dem = make_demand(acurve, p_ref, beta, kind)
                 V, act, bid, ns = solve(prices, dem, C)
-                res = {"route": r, "cap": C, "kind": kind, "beta": beta, "n_classes": len(prices),
+                res = {"route": r, "cap": C, "fare_cap": cap, "kind": kind, "beta": beta, "n_classes": len(prices),
                        "dp_rev": V[T + 1, C], "dp_load": forward(prices, dem, C, act, ns)}
                 # фиксированная цена: лучшая одна ступень лестницы
                 best = (-1, None, None)
@@ -212,7 +253,9 @@ def run():
         summ[c] = summ[c] / summ.cap * 100
     summ.round(1).to_csv(f"{OUT}/summary.csv")
     pd.set_option("display.width", 200)
-    print("Исключены (фиксированный/субсидируемый тариф):", excluded)
+    print("Вне RMS (краевые, кроме Богучан, Мотыгино, Кодинска):", excluded)
+    if not caps:
+        print("ВНИМАНИЕ: потолки субсидированных тарифов не заданы (нет shared/subsidy-fares.json и PM_CAPS) — субсидируемые рейсы посчитаны без потолка.")
     print(f"Направлений в расчёте: {df.route.nunique()}; выручка на 1 вылет, сумма по направлениям; загрузка %")
     print(summ.drop(columns="cap").round(1))
     print("\nПо направлениям (exp, β=−2):")
