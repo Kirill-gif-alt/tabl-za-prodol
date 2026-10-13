@@ -35,7 +35,8 @@ def load(d=None):
     cutoff = pd.Timestamp(t.deal_date.max()).normalize()   # последний день продаж в данных
     t["adult"] = ~t.basis.fillna("").str.contains(DISCOUNT_RE)
     t["paid"] = t.fare > 0
-    dep["route"] = dep.route.fillna("")
+    # Красноярск: Емельяново (KJA) и Черемшанка (KCY) — один рынок; направление одно (как на сайте: оба — «Красноярск»).
+    dep["route"] = dep.route.fillna("").str.replace("KCY", "KJA", regex=False)
     t = t.drop(columns=["route"]).merge(dep[["flight", "fly_date", "route", "cap", "seats", "cap_class", "base", "week", "load", "closed"]],
                                         on=["flight", "fly_date"], how="left")
     return t, dep, cutoff, meta

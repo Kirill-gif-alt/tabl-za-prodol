@@ -59,16 +59,18 @@ class DemandModel:
         X.loc[X.route_c < 0, "route_c"] = np.nan
         return X[FEATS]
 
-    def fit(self, panel, asof):
+    def fit(self, panel, asof, extra=None):
         t0 = time.time()
         tr = panel[(panel.deal_date <= asof) & panel.ref_fare.notna()]
+        if extra is not None and len(extra):
+            tr = pd.concat([tr, extra[extra.deal_date <= asof]], ignore_index=True)
         self.asof = pd.Timestamp(asof)
         self.routes = sorted(tr.route.unique())
         w = 0.5 ** ((self.asof - tr.deal_date).dt.days / self.halflife) if self.halflife else np.ones(len(tr))
         if self.kind == "lgb":
             ds = lgb.Dataset(self._X(tr), tr.bookings.values, weight=np.asarray(w), categorical_feature=["route_c"],
                              free_raw_data=False)
-            prm = dict(PARAMS, monotone_constraints=[MONO.get(f, 0) for f in FEATS], monotone_constraints_method="advanced")
+            prm = dict(PARAMS, monotone_constraints=[MONO.get(f, 0) for f in FEATS], monotone_constraints_method="intermediate")
             self.booster = lgb.train(prm, ds, self.n_rounds)
         else:
             import statsmodels.api as sm
@@ -188,3 +190,38 @@ def state_at(panel, S):
     last["price_age_now"] = (last.dtd_seen - last.dtd_now).fillna(999)
     last["price_now"] = last.price_now.fillna(last.price_x)
     return last
+
+
+def hist_panel(hist, dep, panel, asof, lookback=200, t_max=60):
+    """Доп. обучающие строки из hist.csv (улетевшие вылеты с fly_date ≤ asof, дневная кривая бронирований).
+    Нужны, т.к. в окне билетов вылеты начинаются с 23.09 и до этой даты в панели НЕТ ближних к вылету дней.
+    Дневной цены там нет: цена = средний тариф вылета (avg_fare), price_age = 999 («цена не наблюдалась»).
+    Направление/ёмкость — наиболее частые для номера рейса в departures (допущение). Вылеты, уже входящие в панель, исключены."""
+    import json
+    asof = pd.Timestamp(asof)
+    h = hist[(hist.fly_date <= asof) & (hist.fly_date > asof - pd.Timedelta(days=lookback)) & (hist.tickets > 0)]
+    fm = dep.groupby("flight").agg(route=("route", lambda x: x.mode().iat[0]), cap=("cap", "median"), seats=("seats", "median"))
+    h = h.drop(columns=["route"]).merge(fm, left_on="flight", right_index=True)
+    have = set(zip(panel.flight, panel.fly_date))
+    ref = panel.groupby("route").ref_fare.first()
+    rows = []
+    for r in h.itertuples(index=False):
+        if (r.flight, r.fly_date) in have or r.route not in ref.index or not (r.avg_fare > 0):
+            continue
+        cur = {int(k): v for k, v in json.loads(r.curve).items()}
+        sold = sum(v for k, v in cur.items() if k > t_max)
+        for d in range(t_max, -1, -1):
+            b = cur.get(d, 0)
+            rows.append((r.flight, r.fly_date, d, b, sold, r.route, r.cap, r.seats, r.avg_fare))
+            sold += b
+    x = pd.DataFrame(rows, columns=["flight", "fly_date", "dtd", "bookings", "sold_before", "route", "cap", "seats", "price_x"])
+    x["ref_fare"] = x.route.map(ref)
+    x["log_rel_price"] = np.log(x.price_x / x.ref_fare)
+    x["week"] = x.fly_date.dt.isocalendar().week.astype(int)
+    x["month"] = x.fly_date.dt.month
+    x["dow"] = x.fly_date.dt.dayofweek
+    x["price_age"] = 999.0
+    x["sold_frac"] = x.sold_before / x.seats.clip(lower=1)
+    x["left"] = (x.seats - x.sold_before).clip(lower=0)
+    x["deal_date"] = x.fly_date - pd.to_timedelta(x.dtd, unit="D")
+    return x
