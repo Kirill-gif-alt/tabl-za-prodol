@@ -129,19 +129,19 @@ function computeRowMetrics(row, base) {
     let alertLevel = 0;
     let alertReason = '';
     if (!closed && !flew && dtd !== null && dtd >= 0) {
-        if (delta !== null && delta < -5 && dtd <= 14) {
+        if (delta !== null && delta < -PV.RMS_CRIT_DELTA && dtd <= PV.RMS_CRIT_DAYS) {
             alertLevel = 3;
             alertReason = `Отставание ${delta} пасс., вылет через ${dtd} дн.`;
-        } else if (delta !== null && delta < 0 && dtd <= 21) {
+        } else if (delta !== null && delta < 0 && dtd <= PV.RMS_WARN_DAYS) {
             alertLevel = 2;
             alertReason = `Ниже прогноза на ${Math.abs(delta)} пасс.`;
-        } else if (pct != null && pct < 40 && dtd <= 7) {
+        } else if (pct != null && pct < PV.RMS_LOW_PCT && dtd <= PV.RMS_LOW_DAYS) {
             alertLevel = 2;
             alertReason = `Низкая загрузка ${pct}%, вылет через ${dtd} дн.`;
-        } else if (pct != null && pct >= 95 && dtd > 0) {
+        } else if (pct != null && pct >= PV.RMS_FULL_PCT && dtd > 0) {
             alertLevel = 1;
             alertReason = `Почти полный (${pct}%)`;
-        } else if (s.today >= 3) {
+        } else if (s.today >= PV.RMS_ACTIVE_SALES) {
             alertLevel = 1;
             alertReason = `Активные продажи: +${s.today} сегодня`;
         }

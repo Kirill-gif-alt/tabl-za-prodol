@@ -6,11 +6,6 @@
 //  • групповые брони: заказ (PNR) от 5 билетов: сколько человек и когда куплено.
 // Всё считается лениво — только для показанных рейсов — и кэшируется до новых данных.
 window.FlightInsights = (function () {
-    const GROUP_MIN = 5;              // билетов в одном заказе — это группа
-    const NEAR_DAYS = 56;             // вылеты ±8 недель (как у нормы)
-    const MIN_COHORT = 2;
-    const OWN_FARE_MIN = 5;           // своих оплаченных билетов, чтобы брать средний тариф вылета
-    const ROUTE_FARE_DAYS = 60;
 
     let memo = { sig: '', fc: new Map(), econ: new Map(), fare: new Map() };
 
@@ -21,7 +16,8 @@ window.FlightInsights = (function () {
             typeof CalendarEvents !== 'undefined' ? CalendarEvents.revision() : 0,
             typeof SubsidyRef !== 'undefined' && SubsidyRef.revision ? SubsidyRef.revision() : 0,
             typeof SharedOverrides !== 'undefined' && SharedOverrides.subsidyRevision ? SharedOverrides.subsidyRevision() : 0,
-            typeof ForecastLab !== 'undefined' && ForecastLab.modelRevision ? ForecastLab.modelRevision() : 0].join('|');
+            typeof ForecastLab !== 'undefined' && ForecastLab.modelRevision ? ForecastLab.modelRevision() : 0,
+            typeof Params !== 'undefined' ? Params.revision() : 0].join('|');
     }
 
     function cache() {
@@ -75,7 +71,7 @@ window.FlightInsights = (function () {
         const out = new Map();
         list.forEach(s => {
             const n = Number(s.grp) || 0;
-            if (n < GROUP_MIN) return;
+            if (n < PV.GROUP_MIN) return;
             const key = s.pnr || (s.grpId != null ? 'id' + s.grpId : 'g' + n + '|' + s.dealDate);
             const prev = out.get(key);
             if (!prev) out.set(key, { n, dealDate: s.dealDate, pnr: s.pnr || '' });
@@ -106,7 +102,7 @@ window.FlightInsights = (function () {
     function flownCohort(base, code, date) {
         if (typeof collectSameWeekdayCohort !== 'function') return [];
         const all = collectSameWeekdayCohort(base, date, code).filter(c => c.observedFrom === 0 && c.seats > 0);
-        const near = all.filter(c => c.dayGap <= NEAR_DAYS);
+        const near = all.filter(c => c.dayGap <= PV.NEAR_DAYS);
         const use = near.length >= 3 ? near : all;
         return use.map(c => ({ ...c, curve: anchorCurveToLoad(departureCurve(c.date, c.code), c.load) }))
             .filter(c => c.curve && c.curve.total > 0);
@@ -184,7 +180,7 @@ window.FlightInsights = (function () {
             if (at == null) return;
             pick.push({ c, at, lf: Math.max(0, (c.curve.total - at) / c.seats) });
         });
-        if (pick.length >= MIN_COHORT) {
+        if (pick.length >= PV.MIN_COHORT) {
             const lfs = pick.map(p => p.lf).sort((a, b) => a - b);
             const mean = lfs.reduce((a, b) => a + b, 0) / lfs.length;
             const clamp = (v) => Math.max(load, Math.min(seats, Math.round(v)));
@@ -229,7 +225,7 @@ window.FlightInsights = (function () {
         if (m.fare.has(key)) return m.fare.get(key);
         let res = null;
         const own = paidFares(typeof getFlightSalesList === 'function' ? getFlightSalesList(date, code) : []);
-        if (own.length >= OWN_FARE_MIN) {
+        if (own.length >= PV.OWN_FARE_MIN) {
             res = { value: Math.round(own.reduce((a, b) => a + b, 0) / own.length), source: 'own', n: own.length };
         } else {
             const fly = parseLocalDate(date);
@@ -239,7 +235,7 @@ window.FlightInsights = (function () {
                 const i = k.lastIndexOf('|');
                 if (k.slice(i + 1) !== code || k.slice(0, i) === date) return;
                 const d = parseLocalDate(k.slice(0, i));
-                if (!d || !fly || Math.abs(d - fly) > ROUTE_FARE_DAYS * 86400000) return;
+                if (!d || !fly || Math.abs(d - fly) > PV.ROUTE_FARE_DAYS * 86400000) return;
                 paidFares(salesDetails[k]).forEach(v => { sum += v; n++; });
             });
             if (own.length) own.forEach(v => { sum += v; n++; });
@@ -355,5 +351,5 @@ window.FlightInsights = (function () {
         return g.length === 1 ? `Группа: ${items}` : `Группы (${g.length}): ${items}${g.length > 3 ? ' и др.' : ''} — всего ${total} ${plural(total, 'человек', 'человека', 'человек')}`;
     }
 
-    return { forecast, economics, groupsFor, groupSeats, annotateGroups, forecastShort, forecastText, economicsText, groupsText, canEconomy, GROUP_MIN, rub, rubFull, plural };
+    return { forecast, economics, groupsFor, groupSeats, annotateGroups, forecastShort, forecastText, economicsText, groupsText, canEconomy, get GROUP_MIN() { return PV.GROUP_MIN; }, rub, rubFull, plural };
 })();

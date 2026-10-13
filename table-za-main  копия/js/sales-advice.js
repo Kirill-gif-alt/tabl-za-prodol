@@ -6,7 +6,6 @@
 //   от одного отстаёт, другой опережает на порог           → ! внимание.
 // Порог — 10% кресел, но не меньше 3 билетов. Решение всегда принимает человек: это только подсветка.
 window.SalesAdvice = (function () {
-    const DAYS_AHEAD = 15;
     let memo = new Map();
     let memoSig = '';
 
@@ -21,11 +20,11 @@ window.SalesAdvice = (function () {
         return typeof getDaysUntil === 'function' ? getDaysUntil(date) : null;
     }
 
-    // maxDays — своё окно (вкладка «Сегодня»); по умолчанию DAYS_AHEAD (УП и утренняя сводка).
+    // maxDays — своё окно (вкладка «Сегодня»); по умолчанию PV.ADVICE_DAYS_AHEAD (УП и утренняя сводка).
     function inWindow(date, maxDays) {
         const d = daysUntil(date);
         // С завтрашнего дня: в день вылета менять цену уже поздно.
-        return d != null && d >= 1 && d <= (maxDays || DAYS_AHEAD);
+        return d != null && d >= 1 && d <= (maxDays || PV.ADVICE_DAYS_AHEAD);
     }
 
     function compute(code, date) {
@@ -44,7 +43,7 @@ window.SalesAdvice = (function () {
         if (ref != null && !isNaN(ref) && !s.refIsLy) refs.push({ label: 'обычно к этому дню', value: Math.round(ref), d: sold - Math.round(ref) });
         if (exp != null && !isNaN(exp)) refs.push({ label: 'по плану', value: exp, d: sold - exp });
         if (!refs.length) return null;
-        const T = Math.max(3, Math.round((seats || 0) * 0.10));
+        const T = Math.max(PV.ADVICE_THRESHOLD_MIN, Math.round((seats || 0) * PV.ADVICE_THRESHOLD_PCT / 100));
         const behind = refs.filter(r => r.d <= -T).length;
         const ahead = refs.filter(r => r.d >= T).length;
         let status = null;
@@ -56,8 +55,8 @@ window.SalesAdvice = (function () {
         const fc = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(code, date) : null;
         const fcOk = fc && fc.source !== 'flown' && fc.final != null;
         let conflict = '';
-        if (fcOk && status === 'down' && fc.lf >= 90) { status = 'attn'; conflict = 'продаётся медленнее обычного, но прогноз к вылету высокий'; }
-        if (fcOk && status === 'up' && fc.lf < 60) { status = 'attn'; conflict = 'продаётся быстрее обычного, но прогноз к вылету низкий'; }
+        if (fcOk && status === 'down' && fc.lf >= PV.ADVICE_FC_HIGH) { status = 'attn'; conflict = 'продаётся медленнее обычного, но прогноз к вылету высокий'; }
+        if (fcOk && status === 'up' && fc.lf < PV.ADVICE_FC_LOW) { status = 'attn'; conflict = 'продаётся быстрее обычного, но прогноз к вылету низкий'; }
         const dtd = daysUntil(date);
         const diff = (d) => (d > 0 ? `+${d}` : String(d));
         const text = `Продано ${sold} ${dtd === 0 ? 'в день вылета' : `за ${dtd} дн. до вылета`}; ` + refs.map(r => `${r.label} ${r.value} (${diff(r.d)})`).join(', ')
@@ -114,5 +113,5 @@ window.SalesAdvice = (function () {
         return out;
     }
 
-    return { forDeparture, scanAll, departuresAhead, inWindow, LABEL, STATUS, DAYS_AHEAD };
+    return { forDeparture, scanAll, departuresAhead, inWindow, LABEL, STATUS, get DAYS_AHEAD() { return PV.ADVICE_DAYS_AHEAD; } };
 })();

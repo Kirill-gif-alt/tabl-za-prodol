@@ -8,7 +8,6 @@
 //   уже сведённые по вылетам, без персональных данных. Загружает администратор — кривые попадают в тот же архив
 //   (h: 1 — из истории; se: 1 — кресла оценены по нынешнему ВС рейса; r — возвращено; g — в группах; k — корпоративных).
 window.SalesArchive = (function () {
-    const MONTHS_BACK = 3;           // норма берёт вылеты ±8 недель — хватает трёх месяцев
     const MAX_DTD = 365;
     const STD_SEATS = [48, 72, 120];   // ёмкость ВС парка: ATR-42 (до 48), ATR-72, 120 кресел
     const DONE_KEY = 'krasavia_archive_done';
@@ -74,7 +73,7 @@ window.SalesArchive = (function () {
         const now = monthOf(todayStr());
         if (!now) return Promise.resolve();
         const months = [];
-        for (let i = 0; i <= MONTHS_BACK; i++) months.push(shiftMonth(now, -i));
+        for (let i = 0; i <= PV.ARCH_MONTHS_BACK; i++) months.push(shiftMonth(now, -i));
         months.push(shiftMonth(now, -12), shiftMonth(now, -11));
         loading = Promise.all(months.map(m => readMonth(m).catch(() => null))).then(() => {
             rev++;

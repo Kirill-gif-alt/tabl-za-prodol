@@ -7,7 +7,6 @@
 //   и тот же файл, что в «Управлении продажами».
 window.PriceMarks = (function () {
     const GLYPH = { up: '▲', down: '▼', attn: '!' };
-    const WINDOW = 3;
     const DECISIONS = new Set(['up', 'down', 'attn']);
 
     function cssVar(name, fallback) {
@@ -72,7 +71,7 @@ window.PriceMarks = (function () {
         // Оба дня окна — у одних и тех же вылетов: только те, у кого и конец окна уже наступил
         // (иначе разность двух средних по разным наборам вылетов врёт).
         const cohort = collectSameWeekdayCohort(base, flyDate, code)
-            .filter(c => c.dayGap <= (typeof WEEKDAY_NORM_WINDOW_DAYS === 'number' ? WEEKDAY_NORM_WINDOW_DAYS : 56))
+            .filter(c => c.dayGap <= (typeof PV.WEEKDAY_NORM_WINDOW_DAYS === 'number' ? PV.WEEKDAY_NORM_WINDOW_DAYS : 56))
             .filter(c => !(c.observedFrom > Math.max(0, dtdTo)));
         const pts = weekdayNormSeries(cohort, [dtdFrom + 1, Math.max(0, dtdTo)], seats).points;
         if (!pts[0] || !pts[1] || pts[0].value == null || pts[1].value == null) return null;
@@ -91,15 +90,15 @@ window.PriceMarks = (function () {
         if (d == null) return null;
         const archived = !list.length && typeof SalesArchive !== 'undefined' ? SalesArchive.curveFor(flyDate, code) : null;
         const stats = (from, to) => (archived ? curveStats(archived, from, to) : windowStats(list, flyDate, from, to));
-        const before = stats(d + WINDOW, d + 1);
-        const afterTo = Math.max(0, d - (WINDOW - 1));
+        const before = stats(d + PV.DECISION_WINDOW, d + 1);
+        const afterTo = Math.max(0, d - (PV.DECISION_WINDOW - 1));
         const after = stats(d, afterTo);
         const cutoff = typeof salesDataCutoffTime === 'function' ? salesDataCutoffTime() : Date.now();
         const lastAfterDay = parseLocalDate(flyDate);
         if (lastAfterDay) lastAfterDay.setDate(lastAfterDay.getDate() - afterTo);
         // Последний день окна «после» должен быть целиком в данных: день среза может быть неполным.
         const complete = !!(lastAfterDay && lastAfterDay.getTime() < cutoff);
-        const nb = normPickup(base, code, flyDate, d + WINDOW, d + 1);
+        const nb = normPickup(base, code, flyDate, d + PV.DECISION_WINDOW, d + 1);
         const na = normPickup(base, code, flyDate, d, afterTo);
         const effect = complete && nb && na ? (after.n - na.value) - (before.n - nb.value) : null;
         // Тариф «до»: средний за 3 дня до решения, а если тогда не продали ни одного — по всем более ранним продажам.
@@ -204,7 +203,7 @@ window.PriceMarks = (function () {
     function effectLines(e, status) {
         if (!e) return [];
         const usual = (x) => (x ? ` (обычно ${x.value})` : '');
-        const lines = [`До решения: ${tickets(e.before.n)} за ${WINDOW} дня${usual(e.normBefore)} → после: ${tickets(e.after.n)}${usual(e.normAfter)}${e.complete ? '' : ' — дни ещё идут'}`];
+        const lines = [`До решения: ${tickets(e.before.n)} за ${PV.DECISION_WINDOW} дня${usual(e.normBefore)} → после: ${tickets(e.after.n)}${usual(e.normAfter)}${e.complete ? '' : ' — дни ещё идут'}`];
         if (e.before.avg != null && e.after.avg != null && e.before.avg !== e.after.avg) {
             const d = e.after.avg - e.before.avg;
             lines.push(`Средний тариф: ${rub(e.before.avg)} → ${rub(e.after.avg)} (${d > 0 ? '+' : '−'}${rub(Math.abs(d))})`);

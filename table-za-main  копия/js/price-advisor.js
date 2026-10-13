@@ -8,16 +8,12 @@
 //   • покупатель берёт самый дешёвый открытый класс, поэтому «цена» = «открыт минимальный класс k» (закрыть всё дешевле);
 //   • динамическое программирование по дням до вылета t и свободным креслам x:
 //       V_t(x) = max_k Σ_n P(N = n | λ(p_k, t)) · [p_k·min(n, x) + V_{t−1}(x − min(n, x))],  V_{−1} ≡ 0
-//     bid price b_t(x) = V_{t−1}(x) − V_{t−1}(x − 1) — дешевле продавать место (например, группе) невыгодно;
+//     нижняя цена места b_t(x) = V_{t−1}(x) − V_{t−1}(x − 1) — дешевле продавать место (например, группе) невыгодно;
 //   • совет — в коридоре ±1 класс от нынешнего (пока эластичность не измерена экспериментом), не чаще раза в день.
 window.PriceAdvisor = (function () {
-    const T = 90;                     // горизонт продаж, дней
     const KRAI_IN_RMS = ['богучаны', 'мотыгино', 'кодинск'];
     const SETTINGS_KEY = 'krasavia_price_advisor';
-    const DEFAULTS = { beta: -1.5, corridor: 1 };
-    const MIN_CLASS_TICKETS = 3;
-    const MIN_DEPS = 8;
-    const PACE_DAYS = 2;              // распродан раньше чем за 2 дня до вылета — продаём слишком дёшево               // вылетов в архиве, чтобы построить кривую бронирований
+    const DEFAULTS = { get beta() { return PV.PA_BETA_DEFAULT; }, get corridor() { return PV.PA_CORRIDOR_DEFAULT; } };
 
     let memo = { sig: '', routes: new Map(), dp: new Map() };
 
@@ -37,7 +33,9 @@ window.PriceAdvisor = (function () {
     function sig() {
         return [typeof dataEpoch === 'number' ? dataEpoch : 0,
             typeof SalesArchive !== 'undefined' && SalesArchive.revision ? SalesArchive.revision() : 0,
-            typeof getTodayDate === 'function' ? getTodayDate() : ''].join('|');
+            typeof getTodayDate === 'function' ? getTodayDate() : '',
+            typeof Params !== 'undefined' ? Params.revision() : 0,
+            typeof FareGrid !== 'undefined' ? FareGrid.revision() : 0].join('|');
     }
 
     function cache() {
@@ -111,13 +109,16 @@ window.PriceAdvisor = (function () {
         });
         const ladder = [];
         Object.keys(byClass).forEach(cls => {
-            if (byClass[cls].length < MIN_CLASS_TICKETS) return;
+            if (byClass[cls].length < PV.PA_MIN_CLASS_TICKETS) return;
             ladder.push({ cls, price: Math.round(median(byClass[cls])), n: byClass[cls].length });
         });
         ladder.sort((a, b) => a.price - b.price);
+        // Сетка тарифов из справочника (лайт/стандарт — цена класса, оптимум не смешивается); иначе — медианы продаж.
+        const fg = typeof FareGrid !== 'undefined' ? FareGrid.ladderFor([...flights][0] || code) : [];
+        if (fg.length >= 2) { ladder.length = 0; fg.forEach(l => ladder.push({ cls: l.cls, price: l.price, n: 0 })); }
         const uniq = ladder.filter((l, i) => !i || Math.round(l.price / 10) !== Math.round(ladder[i - 1].price / 10));
         // Кривая бронирований по архиву продаж: средние продажи в день t на вылет (по всем вылетам рейсов направления).
-        const acc = new Float64Array(T + 1);
+        const acc = new Float64Array(PV.PA_HORIZON + 1);
         let deps = 0;
         if (typeof SalesArchive !== 'undefined' && SalesArchive.departuresFor) {
             flights.forEach(fl => {
@@ -126,7 +127,7 @@ window.PriceAdvisor = (function () {
                     if (!cv || !(cv.total > 0)) return;
                     deps++;
                     let prev = 0;
-                    for (let t = Math.min(T, cv.maxDtd); t >= 0; t--) {
+                    for (let t = Math.min(PV.PA_HORIZON, cv.maxDtd); t >= 0; t--) {
                         const v = cv.onHand[t] != null ? cv.onHand[t] : prev;
                         acc[t] += Math.max(0, v - prev);
                         prev = v;
@@ -135,13 +136,13 @@ window.PriceAdvisor = (function () {
             });
         }
         let a = null;
-        if (deps >= MIN_DEPS) {
+        if (deps >= PV.PA_MIN_DEPS) {
             const share = tickets ? adultPaid / tickets : 1;
-            a = new Float64Array(T + 1);
-            for (let t = 0; t <= T; t++) {
+            a = new Float64Array(PV.PA_HORIZON + 1);
+            for (let t = 0; t <= PV.PA_HORIZON; t++) {
                 let s = 0;
                 let n = 0;
-                for (let j = Math.max(0, t - 3); j <= Math.min(T, t + 3); j++) { s += acc[j]; n++; }
+                for (let j = Math.max(0, t - 3); j <= Math.min(PV.PA_HORIZON, t + 3); j++) { s += acc[j]; n++; }
                 a[t] = (s / n / deps) * share;
             }
         }
@@ -174,7 +175,7 @@ window.PriceAdvisor = (function () {
         const V = [];
         const act = [];
         let prev = new Float64Array(C + 1);   // V_{t−1}, после вылета 0
-        for (let t = 0; t <= T; t++) {
+        for (let t = 0; t <= PV.PA_HORIZON; t++) {
             const cur = new Float64Array(C + 1);
             const ak = new Uint8Array(C + 1);
             const dists = prices.map(p => {
@@ -216,7 +217,8 @@ window.PriceAdvisor = (function () {
         const recent = list.filter(s => isAdultPaid(s) && (() => { const d = parseLocalDate(s.dealDate); return d && cutoff - d.getTime() <= 7 * 86400000; })());
         const use = recent.length ? recent : list.filter(isAdultPaid);
         if (!use.length) return null;
-        return Math.min(...use.map(s => s.adjustedFare || s.fare));
+        const min = use.reduce((m, s) => ((s.adjustedFare || s.fare) < (m.adjustedFare || m.fare) ? s : m));
+        return { price: min.adjustedFare || min.fare, cls: String(min.basicFareStr || '').trim().charAt(0).toUpperCase() };
     }
 
     function nearestIdx(prices, p) {
@@ -235,7 +237,7 @@ window.PriceAdvisor = (function () {
         const sold = typeof getSoldFromRow === 'function' ? getSoldFromRow(row) : 0;
         const dtd0 = typeof getDaysUntil === 'function' ? getDaysUntil(date) : null;
         if (!(C > 0) || dtd0 == null || dtd0 < 1) return null;
-        const dtd = Math.min(T, Math.max(dtd0, typeof observedFromDtd === 'function' ? observedFromDtd(date) : dtd0));
+        const dtd = Math.min(PV.PA_HORIZON, Math.max(dtd0, typeof observedFromDtd === 'function' ? observedFromDtd(date) : dtd0));
         const info = routeInfo(code);
         if (!info.a || !info.pRef || info.ladder.length < 2) return null;
         const cap = capFor(code, date);
@@ -249,15 +251,17 @@ window.PriceAdvisor = (function () {
         const x = Math.min(free, cc);
         const kRaw = act[dtd][x];
         const cp = currentPrice(code, date);
-        const kCur = cp != null ? nearestIdx(prices, cp) : null;
+        // Открытый класс — по букве проданного билета, а не по ближайшей цене (иначе Q путается с G).
+        let kCur = cp ? ladder.findIndex(l => l.cls === cp.cls) : null;
+        if (cp && kCur < 0) kCur = nearestIdx(prices, cp.price);
         const corr = settings().corridor;
         let k = kRaw;
         if (kCur != null && corr < 9) k = Math.max(kCur - corr, Math.min(kCur + corr, kRaw));
         // Цель продаж: последний билет — ближе к вылету, а не за месяц. Если по прогнозу (тот же, что в карточке)
-        // при нынешней цене рейс распродастся раньше чем за PACE_DAYS дн. до вылета — поднимаем хотя бы на класс.
+        // при нынешней цене рейс распродастся раньше чем за PV.PA_PACE_DAYS дн. до вылета — поднимаем хотя бы на класс.
         let early = null;
         const fc = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(code, date) : null;
-        if (fc && fc.soldOutDtd != null && fc.soldOutDtd >= PACE_DAYS && free > 0 && kCur != null && kCur < prices.length - 1 && k <= kCur) {
+        if (fc && fc.soldOutDtd != null && fc.soldOutDtd >= PV.PA_PACE_DAYS && free > 0 && kCur != null && kCur < prices.length - 1 && k <= kCur) {
             k = kCur + 1;
             early = fc.soldOutDtd;
         }
@@ -265,7 +269,7 @@ window.PriceAdvisor = (function () {
         const action = kCur == null ? 'set' : (k > kCur ? 'up' : (k < kCur ? 'down' : 'hold'));
         return {
             code, date, dtd, free, cap, bid, beta: betaFor(), action,
-            early, cls: ladder[k].cls, price: prices[k], curCls: kCur != null ? ladder[kCur].cls : null, curPrice: cp,
+            early, cls: ladder[k].cls, price: prices[k], curCls: kCur != null ? ladder[kCur].cls : null, curPrice: cp ? cp.price : null,
             raw: { cls: ladder[kRaw].cls, price: prices[kRaw] }, ladder, route: info.dir, deps: info.deps
         };
     }
@@ -282,7 +286,7 @@ window.PriceAdvisor = (function () {
                 : a.action === 'down' ? `снизить: открыть ${a.cls} (${rub(a.price)})`
                     : `открыть ${a.cls} (${rub(a.price)}), закрыть дешевле`;
         const why = a.early != null ? ` · при нынешней цене распродастся за ${a.early} дн. до вылета — рано` : '';
-        return `${what}${why} · bid price ${rub(a.bid)}${capNote}`;
+        return `${what}${why} · нижняя цена места ${rub(a.bid)}${capNote}`;
     }
 
     function canView() {
@@ -314,7 +318,6 @@ window.PriceAdvisor = (function () {
     }
 
     // ---------- отчёт «Ценовой советник» («Отчёты» → «Прогноз и предупреждения») ----------
-    const REPORT_DAYS = 30;
     let report = { sig: '', list: null, busy: false };
     let onlyChange = true;
 
@@ -329,10 +332,10 @@ window.PriceAdvisor = (function () {
             if (!report.busy) {
                 report.busy = true;
                 const want = reportSig();
-                scanAll(REPORT_DAYS).then(list => { report = { sig: want, list, busy: false }; if (rerender) rerender(); })
+                scanAll(PV.PA_REPORT_DAYS).then(list => { report = { sig: want, list, busy: false }; if (rerender) rerender(); })
                     .catch(e => { report.busy = false; console.warn('PriceAdvisor', e); });
             }
-            if (!report.list) return `<section class="rp-card"><div class="rp-card-head"><h3 class="rp-card-title">Ценовой советник</h3></div><p class="rp-note">Считаю оптимальные классы по вылетам на ${REPORT_DAYS} дн.…</p></section>`;
+            if (!report.list) return `<section class="rp-card"><div class="rp-card-head"><h3 class="rp-card-title">Ценовой советник</h3></div><p class="rp-note">Считаю оптимальные классы по вылетам на ${PV.PA_REPORT_DAYS} дн.…</p></section>`;
         }
         const list = report.list;
         const shown = onlyChange ? list.filter(a => a.action === 'up' || a.action === 'down') : list;
@@ -351,7 +354,7 @@ window.PriceAdvisor = (function () {
             <td>${a.cap != null ? rub(a.cap) : '—'}</td></tr>`).join('');
         return `<section class="rp-card">
             <div class="rp-card-head"><h3 class="rp-card-title">Ценовой советник</h3></div>
-            <p class="rp-card-text">Какой минимальный класс держать открытым, чтобы выручка вылета была наибольшей (всё дешевле — закрыть). Межрегиональные рейсы и Богучаны, Мотыгино, Кодинск; на субсидируемых — не выше предельного тарифа из «Справочника». Bid price — дешевле продавать место (и группе) невыгодно.
+            <p class="rp-card-text">Какой минимальный класс держать открытым, чтобы выручка вылета была наибольшей (всё дешевле — закрыть). Межрегиональные рейсы и Богучаны, Мотыгино, Кодинск; на субсидируемых — не выше предельного тарифа из «Справочника». Нижняя цена места — дешевле продавать место (и группе) невыгодно.
                 Эластичность спроса по данным пока не измерена — используется сценарий; совет — не дальше выбранного числа классов от нынешнего.</p>
             <div class="fl-warn-cfg">
                 <label>Эластичность <select id="pa-beta">${[-1, -1.5, -2, -3].map(b => `<option value="${b}"${s.beta === b ? ' selected' : ''}>${String(b).replace('.', ',')}${b === -1.5 ? ' (по умолчанию)' : ''}</option>`).join('')}</select></label>
@@ -362,18 +365,18 @@ window.PriceAdvisor = (function () {
             <div class="dr-kpis">
                 <div class="dr-kpi"><div class="dr-kpi-label">Поднять</div><div class="dr-kpi-value">${cnt.up}</div></div>
                 <div class="dr-kpi"><div class="dr-kpi-label">Снизить</div><div class="dr-kpi-value">${cnt.down}</div></div>
-                <div class="dr-kpi"><div class="dr-kpi-label">Держать</div><div class="dr-kpi-value">${cnt.hold}</div><div class="dr-kpi-sub">из ${list.length} вылетов на ${REPORT_DAYS} дн.</div></div>
+                <div class="dr-kpi"><div class="dr-kpi-label">Держать</div><div class="dr-kpi-value">${cnt.hold}</div><div class="dr-kpi-sub">из ${list.length} вылетов на ${PV.PA_REPORT_DAYS} дн.</div></div>
             </div>
-            ${rows ? `<div class="rp-scroll"><table class="rp-table"><thead><tr><th>Рейс</th><th>Вылет</th><th>Свободно</th><th>Сейчас от</th><th>Совет</th><th>Класс · цена</th><th>Bid price</th><th>Потолок</th></tr></thead><tbody>${rows}</tbody></table></div>
+            ${rows ? `<div class="rp-scroll"><table class="rp-table"><thead><tr><th>Рейс</th><th>Вылет</th><th>Свободно</th><th>Сейчас от</th><th>Совет</th><th>Класс · цена</th><th>Нижняя цена места</th><th>Потолок</th></tr></thead><tbody>${rows}</tbody></table></div>
                 ${shown.length > 80 ? `<p class="rp-note">Показаны 80 ближайших из ${shown.length} — полный список в Excel.</p>` : ''}` : '<p class="rp-note">Менять сейчас нечего.</p>'}
         </section>`;
     }
 
     async function exportReport() {
-        const list = report.list || await scanAll(REPORT_DAYS);
+        const list = report.list || await scanAll(PV.PA_REPORT_DAYS);
         const lib = typeof loadStyledXlsx === 'function' ? await loadStyledXlsx() : (typeof XLSX !== 'undefined' ? XLSX : null);
         if (!lib) { if (typeof showToast === 'function') showToast('Библиотека Excel не загружена', 'error'); return; }
-        const head = ['Рейс', 'Направление', 'Дата вылета', 'Дней до вылета', 'Свободно', 'Сейчас класс', 'Сейчас цена', 'Совет', 'Класс', 'Цена', 'Модель без коридора: класс', 'Модель: цена', 'Bid price', 'Потолок субсидии', 'Эластичность (сценарий)'];
+        const head = ['Рейс', 'Направление', 'Дата вылета', 'Дней до вылета', 'Свободно', 'Сейчас класс', 'Сейчас цена', 'Совет', 'Класс', 'Цена', 'Модель без коридора: класс', 'Модель: цена', 'Нижняя цена места', 'Потолок субсидии', 'Эластичность (сценарий)'];
         const lab = { up: 'поднять', down: 'снизить', hold: 'держать', set: 'открыть', closed: 'распродан' };
         const rows = list.map(a => [a.code, a.route || '', a.date, a.dtd, a.free, a.curCls || '', a.curPrice != null ? Math.round(a.curPrice) : '', lab[a.action] || '', a.cls || '', a.price != null ? Math.round(a.price) : '',
             a.raw ? a.raw.cls : '', a.raw ? Math.round(a.raw.price) : '', a.bid != null ? a.bid : '', a.cap != null ? Math.round(a.cap) : '', a.beta != null ? a.beta : '']);
@@ -400,5 +403,5 @@ window.PriceAdvisor = (function () {
         return false;
     }
 
-    return { advise, text, inScope, capFor, routeInfo, settings, saveSettings, scanAll, canView, rub, T, reportHtml, handleClick, handleChange };
+    return { advise, text, inScope, capFor, routeInfo, settings, saveSettings, scanAll, canView, rub, get T() { return PV.PA_HORIZON; }, reportHtml, handleClick, handleChange };
 })();

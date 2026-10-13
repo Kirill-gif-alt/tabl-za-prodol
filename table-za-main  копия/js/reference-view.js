@@ -61,6 +61,7 @@ window.ReferenceView = (function () {
         { id: 'amounts', label: 'Суммы субсидии и себестоимость', view: () => typeof SubsidyRef !== 'undefined' && SubsidyRef.canView() },
         { id: 'nav', label: 'ПКЗ из NAV', view: () => typeof SubsidyRef !== 'undefined' && SubsidyRef.canViewPkz() },
         { id: 'flights', label: 'Рейсы', view: () => typeof FlightRegistry !== 'undefined' },
+        { id: 'grid', label: 'Сетка тарифов', view: () => typeof FareGrid !== 'undefined' },
         { id: 'calendar', label: 'Календарь событий', view: () => typeof CalendarEvents !== 'undefined' }
     ];
 
@@ -943,6 +944,7 @@ window.ReferenceView = (function () {
         else if (section === 'amounts') body = amountsHtml();
         else if (section === 'nav') body = navHtml();
         else if (section === 'calendar') body = calendarHtml();
+        else if (section === 'grid') body = FareGrid.sectionHtml();
         else if (section === 'flights') body = flightsHtml();
         return `
             ${excelBarHtml()}
@@ -985,6 +987,7 @@ window.ReferenceView = (function () {
     // Клик по кнопке справочника. true — обработано (rerender — перерисовать вкладку).
     function handleClick(btn, rerender) {
         const d = btn.dataset;
+        if (typeof FareGrid !== 'undefined' && (btn.id === 'fg-save' || btn.id === 'fg-reset')) { FareGrid.handleClick(btn, rerender); return true; }
         if (d.refSection) {
             section = d.refSection;
             try { localStorage.setItem(SECTION_KEY, section); } catch (e) { /* ignore */ }
@@ -1228,6 +1231,7 @@ window.ReferenceView = (function () {
     }
 
     function handleChange(target, rerender) {
+        if (typeof FareGrid !== 'undefined' && FareGrid.handleChange(target, rerender)) return true;
         if (target.id === 'ref-p-flight' && periodEdit) {
             // Другой рейс — в форму его текущие периоды.
             const code = target.value;

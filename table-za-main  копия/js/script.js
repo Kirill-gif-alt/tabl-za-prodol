@@ -816,6 +816,9 @@ async function startAppAfterLogin() {
     if (typeof SalesSync !== 'undefined') {
         await SalesSync.initAfterLogin();
     }
+    // Параметры расчётов администратора (shared/params.json): поменялись — пересчитать открытое.
+    if (typeof FareGrid !== 'undefined') FareGrid.load().then(() => { if (typeof refreshCurrentView === 'function') refreshCurrentView(); }).catch(() => null);
+    if (typeof Params !== 'undefined') Params.load().then(changed => { if (changed && typeof refreshCurrentView === 'function') refreshCurrentView(); }).catch(() => null);
     if (typeof SalesArchive !== 'undefined') SalesArchive.scheduleAfterStart();
     if (typeof MorningSummary !== 'undefined') MorningSummary.afterStart().catch(e => console.warn('MorningSummary', e));
     if (typeof ForecastLab !== 'undefined') ForecastLab.afterStart();

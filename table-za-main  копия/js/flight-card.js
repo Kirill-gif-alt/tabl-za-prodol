@@ -334,7 +334,7 @@ window.FlightCard = (function () {
                 const icon = pa.action === 'up' ? '▲' : (pa.action === 'down' ? '▼' : '●');
                 const tip = `Ценовой советник: выручка вылета наибольшая, если минимальный открытый класс — ${pa.cls} (${PriceAdvisor.rub(pa.price)}).`
                     + (pa.curPrice != null ? ` Сейчас продаётся от ${PriceAdvisor.rub(pa.curPrice)}.` : '')
-                    + ` Bid price ${PriceAdvisor.rub(pa.bid)} — дешевле продавать место (в том числе группе) невыгодно.`
+                    + ` Нижняя цена места ${PriceAdvisor.rub(pa.bid)} — дешевле продавать место (в том числе группе) невыгодно.`
                     + (pa.cap != null ? ` Рейс субсидируемый: выше ${PriceAdvisor.rub(pa.cap)} не продаём.` : '')
                     + ` Совет — не дальше ${PriceAdvisor.settings().corridor} класса от нынешнего; эластичность ${String(pa.beta).replace('.', ',')} — сценарий, пока не измерена.`;
                 advice += `<div class="fc-advice ${cls}" title="${attr(tip)}">${icon} Цена: ${esc(PriceAdvisor.text(pa))}</div>`;

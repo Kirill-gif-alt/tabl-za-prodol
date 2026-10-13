@@ -39,6 +39,7 @@ window.SessionStore = (function () {
                 tableExtraColsExpanded: !!tableExtraColsExpanded,
                 pairColVisibility: typeof pairColVisibility !== 'undefined' ? { ...pairColVisibility } : null,
                 dataShowSpecBookings: typeof dataShowSpecBookings !== 'undefined' ? !!dataShowSpecBookings : false,
+                dataShowDaySales: typeof dataShowDaySales !== 'undefined' ? !!dataShowDaySales : false,
                 dataShowLocalTimes: typeof dataShowLocalTimes !== 'undefined' ? !!dataShowLocalTimes : false,
                 showSpecBookings: typeof showSpecBookings !== 'undefined' ? !!showSpecBookings : false,
                 rmsConditions: typeof rmsActiveConditions !== 'undefined' ? rmsActiveConditions : [],
@@ -126,6 +127,7 @@ window.SessionStore = (function () {
                 const el = document.getElementById('data-sort-select');
                 if (el) el.value = s.dataSort;
             }
+            if (typeof s.dataShowDaySales === 'boolean' && typeof dataShowDaySales !== 'undefined') dataShowDaySales = s.dataShowDaySales;
             if (typeof s.dataShowSpecBookings === 'boolean' && typeof dataShowSpecBookings !== 'undefined') {
                 dataShowSpecBookings = s.dataShowSpecBookings;
             }

@@ -9,13 +9,14 @@ function invalidateDataBoardCache() {
 
 function getDataBoardCacheSignature() {
     const hl = typeof DataBoardFilters !== 'undefined' ? DataBoardFilters.signature() : '';
-    return `${getMetricsCacheSignature()}|${dataRouteTypeFilter}|${dataSort}|${dataHideFlew ? 1 : 0}|${dataSearchQuery}|${dataShowSpecBookings ? 1 : 0}|${dataShowLocalTimes ? 1 : 0}|h${hl}`;
+    return `${getMetricsCacheSignature()}|${dataRouteTypeFilter}|${dataSort}|${dataHideFlew ? 1 : 0}|${dataSearchQuery}|${dataShowSpecBookings ? 1 : 0}|${dataShowLocalTimes ? 1 : 0}|y${dataShowDaySales ? 1 : 0}|h${hl}`;
 }
 
 function getDataBoardLegColCount() {
     let n = 3; // крес. · загр. · зпк
     if (dataShowSpecBookings) n += 1;
     if (dataShowLocalTimes) n += 2;
+    if (dataShowDaySales) n += 1;
     return n;
 }
 
@@ -167,7 +168,7 @@ function renderDataLegCells(row, legCls, options = {}) {
     const showBook = !!dataShowSpecBookings;
     const showTimes = !!dataShowLocalTimes;
     const emptyDash = (extra = '') => `<td class="${legCls} ${block} font-semibold${extra}">—</td>`;
-    const emptyBook = showBook ? emptyDash() : '';
+    const emptyBook = (showBook ? emptyDash() : '') + (dataShowDaySales ? emptyDash() : '');
     if (!row) {
         if (isOut) {
             const emptyTimes = showTimes ? `${emptyDash()}${emptyDash()}` : '';
@@ -205,11 +206,17 @@ function renderDataLegCells(row, legCls, options = {}) {
     const bookCell = showBook
         ? `<td class="${cellBase} data-col-bookings${fullCls}${hlCls}"${hlStyle}>${m.bookings != null ? formatNum(m.bookings) : '—'}</td>`
         : '';
+    // Продажи за прошлые сутки (DEALDATE = вчера), как столбец «Вчера» в «Динамике продаж».
+    const ds = dataShowDaySales && typeof getSalesMapForRow === 'function' ? getSalesMapForRow(row) : null;
+    const daySalesCell = dataShowDaySales
+        ? `<td class="${cellBase} data-col-bookings${fullCls}${hlCls}"${hlStyle}>${ds && ds.yesterday ? formatNum(ds.yesterday) : '—'}</td>`
+        : '';
     return `
         ${timesCells}
         <td class="${cellBase}${seatsSplit}${fullCls}${hlCls}"${hlStyle}>${formatNum(m.seats)}</td>
         ${bookCell}
         <td class="${cellBase}${fullCls}${hlCls}"${hlStyle}>${formatNum(m.load)}</td>
+        ${daySalesCell}
         <td class="${cellBase}${splitEnd}${fullCls}${hlCls}"${hlStyle}>${zpkVal}</td>`;
 }
 
@@ -308,7 +315,7 @@ function buildDataRouteCardHtml(pair, todayStart) {
     const seatsThOutSplit = dataShowLocalTimes ? '' : '';
     const seatsThInSplit = dataShowLocalTimes ? '' : ' pair-split-start';
     const tableMods = [
-        dataShowSpecBookings ? 'data-board-with-bookings' : '',
+        dataShowSpecBookings || dataShowDaySales ? 'data-board-with-bookings' : '',
         dataShowLocalTimes ? 'data-board-with-times' : ''
     ].filter(Boolean).join(' ');
 
@@ -355,11 +362,13 @@ function buildDataRouteCardHtml(pair, todayStart) {
                             <th class="pair-sub-out${seatsThOutSplit}" title="AU снимка − спец.брони">Крес.</th>
                             ${bookThOut}
                             <th class="pair-sub-out" title="sold из снимка, не свободные места">Загр.</th>
+                            ${dataShowDaySales ? '<th class="pair-sub-out data-col-bookings" title="Продано за прошлые сутки">За сутки</th>' : ''}
                             <th class="pair-sub-out pair-split-end" title="sold / (AU − спец.брони)">ЗПК</th>
                             ${timeThIn}
                             <th class="pair-sub-in${seatsThInSplit}" title="AU снимка − спец.брони">Крес.</th>
                             ${bookThIn}
                             <th class="pair-sub-in" title="sold из снимка, не свободные места">Загр.</th>
+                            ${dataShowDaySales ? '<th class="pair-sub-in data-col-bookings" title="Продано за прошлые сутки">За сутки</th>' : ''}
                             <th class="pair-sub-in" title="sold / (AU − спец.брони)">ЗПК</th>
                         </tr>
                     </thead>
@@ -385,6 +394,8 @@ function syncDataBoardToolbar() {
     if (hideEl) hideEl.checked = dataHideFlew;
     const bookEl = document.getElementById('data-show-spec-bookings');
     if (bookEl) bookEl.checked = dataShowSpecBookings;
+    const daySalesEl = document.getElementById('data-show-day-sales');
+    if (daySalesEl) daySalesEl.checked = dataShowDaySales;
     const timesEl = document.getElementById('data-show-local-times');
     if (timesEl) timesEl.checked = dataShowLocalTimes;
     const searchEl = document.getElementById('data-search-input');
@@ -508,6 +519,17 @@ function initDataViewToolbar(root) {
         bookEl.checked = dataShowSpecBookings;
         bookEl.addEventListener('change', () => {
             dataShowSpecBookings = bookEl.checked;
+            onDataBoardFilterChange();
+        });
+    }
+
+    const daySalesEl = root.querySelector('#data-show-day-sales');
+    if (daySalesEl && !daySalesEl.dataset.bound) {
+        daySalesEl.dataset.bound = '1';
+        daySalesEl.checked = dataShowDaySales;
+        daySalesEl.addEventListener('change', () => {
+            dataShowDaySales = daySalesEl.checked;
+            if (typeof SessionStore !== 'undefined') SessionStore.saveUiSession();
             onDataBoardFilterChange();
         });
     }
@@ -661,6 +683,9 @@ function createDataView(c) {
                         </label>
                         <label class="data-hide-flew-label data-ctrl-sm">
                             <input type="checkbox" id="data-show-spec-bookings"${dataShowSpecBookings ? ' checked' : ''}> Спец. брони
+                        </label>
+                        <label class="data-hide-flew-label data-ctrl-sm" title="Столбец: продано за прошлые сутки">
+                            <input type="checkbox" id="data-show-day-sales"${dataShowDaySales ? ' checked' : ''}> Продажа за сутки
                         </label>
                         <button type="button" id="data-hl-btn" class="filter-btn data-ctrl-sm rms-conditions-open-btn">
                             Подсветка <span id="data-hl-badge" class="rms-cond-badge"></span>

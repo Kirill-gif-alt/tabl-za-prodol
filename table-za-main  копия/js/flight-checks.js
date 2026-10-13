@@ -264,7 +264,6 @@ window.FlightChecks = (function () {
     // (не меньше 10% билетов) на субсидированных датах рейса; коммерческие даты не учитываются.
     // Дешевле предела бывают другие тарифы — это не ошибка, поэтому берётся не самый частый, а «потолок».
     // Админ подтверждает подсказку одним кликом; сам справочник ничего не заполняет.
-    const SUGGEST_MIN_TICKETS = 20;
     function suggestRefs() {
         const missing = new Set(missingRefs());
         if (!missing.size) return [];
@@ -337,7 +336,7 @@ window.FlightChecks = (function () {
                 maxPaid,
                 departures: merged.dates.size,
                 // Надёжно: билетов хватает и дороже предела — единичные выбросы (меньше 5%).
-                enough: merged.total >= SUGGEST_MIN_TICKETS && above <= merged.total * 0.05
+                enough: merged.total >= PV.CHECKS_SUGGEST_MIN && above <= merged.total * 0.05
             };
         };
         const out = [];

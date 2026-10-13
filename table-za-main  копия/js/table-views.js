@@ -982,7 +982,7 @@ function actuallyRenderPkzTable(base, targetDate = null) {
     ttl.innerHTML = `
         <span class="table-flight-code">${escHtml(base)}</span>
         <span class="table-flight-route">${escHtml(getFlightDirection(base))}</span>
-        <span class="table-flight-badge">${flightCount} · горизонт ${typeof PKZ_HORIZON_DAYS !== 'undefined' ? PKZ_HORIZON_DAYS : 10} дн.</span>
+        <span class="table-flight-badge">${flightCount} · горизонт ${typeof PV.PKZ_HORIZON_DAYS !== 'undefined' ? PV.PKZ_HORIZON_DAYS : 10} дн.</span>
     `;
 
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);

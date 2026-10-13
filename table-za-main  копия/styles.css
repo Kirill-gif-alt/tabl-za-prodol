@@ -8548,3 +8548,20 @@ html[data-theme="dark"] .filter-btn { color: var(--text-muted); }
 html[data-theme="dark"] .cr-table td { background: var(--surface); border-color: #30363d; }
 html[data-theme="dark"] .cr-table tbody tr:nth-child(even) td { background: var(--cr-row-even, #1c2128); }
 html[data-theme="dark"] .cr-table tbody tr:hover td { background: #1f2a37; }
+
+/* Настройки → Параметры расчётов (администратор) */
+.theme-params-bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.theme-params-bar input { max-width: 260px; }
+.theme-params-group { margin-bottom: 14px; }
+.theme-params-title { font-weight: 700; font-size: 0.85rem; margin: 6px 0; color: var(--text); }
+.theme-param { display: grid; grid-template-columns: 110px minmax(0, 1fr) 32px; gap: 4px 10px; align-items: center; padding: 8px; border-radius: 8px; }
+.theme-param-label { grid-column: 1 / -1; }
+.theme-param:nth-child(even) { background: var(--muted-bg, #f8fafc); }
+.theme-param-changed { box-shadow: inset 3px 0 0 var(--accent); }
+.theme-param-label { font-size: 0.82rem; color: var(--text); }
+.theme-param-hint { display: block; font-size: 0.72rem; color: var(--text-muted); }
+.theme-param-input { width: 100%; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+.theme-param-def { font-size: 0.72rem; color: var(--text-muted); }
+.theme-param-reset { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 6px; cursor: pointer; height: 28px; }
+.theme-param-reset:disabled { opacity: 0.35; cursor: default; }
+.theme-params-actions { display: flex; gap: 10px; align-items: center; position: sticky; bottom: 0; background: var(--surface); padding: 10px 0; border-top: 1px solid var(--border); }
