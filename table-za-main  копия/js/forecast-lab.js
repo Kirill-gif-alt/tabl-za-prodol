@@ -34,20 +34,22 @@
 //     pool      f̂ = clamp(o + π̄ₕ·s, o, s),  π̄ₕ = (1/Nₕ)·Σⱼ tⱼₕ   (средний добор всех улетевших рейсов на горизонте h, Nₕ ≥ 10)
 //
 // (3) Гребневая регрессия (на всех горизонтах и своя на каждом h при nₕ ≥ 80):
-//     ŵ = argmin_w Σᵢ (tᵢ − w₀ − wᵀxᵢ)² + λ‖w‖²   ⇒   ŵ = (X̃ᵀX̃ + λ·I₀)⁻¹ X̃ᵀt,
+//     Вес записи по давности (модель постоянно доучивается и подстраивается под нынешние продажи):
+//       aᵢ = 2^(−(T − tsᵢ)/τ½),  τ½ = 120 дней,  T — последний вылет в обучающем наборе; окно — 12 месяцев.
+//     ŵ = argmin_w Σᵢ aᵢ·(tᵢ − w₀ − wᵀxᵢ)² + λ̄‖w‖²   ⇒   ŵ = (X̃ᵀAX̃ + λ̄·I₀)⁻¹ X̃ᵀAt,  λ̄ = λ·(Σa/n),
 //     X̃ = [1 | X], I₀ = diag(0, 1, …, 1) (свободный член не штрафуется), λ = 0,8; решение — Гаусс–Жордан с выбором ведущего.
 //
 // (4) Градиентный бустинг деревьев с потерями Хьюбера:
 //     F₀ = median(t);   δ = max(0,02; Q₀,₉ |tᵢ − F₀|)
 //     для m = 1..M:  rᵢ = clip(tᵢ − Fₘ₋₁(xᵢ), −δ, δ)              (антиградиент Хьюбера: выбросы обрезаются)
 //                    hₘ = дерево глубины 3 по МНК на rᵢ, лист ≥ 12, пороги — 16 квантилей признака
-//                    разбиение по максимуму  G = S_L²/n_L + S_R²/n_R − S²/n   (S — сумма rᵢ в узле)
+//                    разбиение по максимуму  G = S_L²/A_L + S_R²/A_R − S²/A   (S = Σaᵢrᵢ, A = Σaᵢ в узле; лист = S/A)
 //                    Fₘ = Fₘ₋₁ + η·hₘ,    η = 0,08, M = 120
 //     Важность признака: доля Σ G всех его разбиений во всех деревьях.
 //
 // (5) Ансамбль: t̂ = ½·(t̂_lin + t̂_gbm) + c_{b,g}
 //     Поправка рейса b на группе горизонтов g (1–3 / 5–10 / 14–30 дней) — эмпирический Байес:
-//     c_{b,g} = n/(n + K) · (1/n)·Σᵢ (tᵢ − t̂ᵢ),   K = 10   (мало вылетов — поправка ≈ 0, много — средний остаток рейса).
+//     c_{b,g} = A/(A + K) · Σᵢ aᵢ(tᵢ − t̂ᵢ)/A,   A = Σaᵢ,   K = 10   (мало вылетов — поправка ≈ 0, много — средний остаток рейса).
 //
 // (6) Честная проверка (walk-forward): прогноз за h дней до вылета i сделан в неделю cᵢ = понедельник(tsᵢ − h·сутки);
 //     модель для него обучена только на вылетах j с tsⱼ + сутки ≤ cᵢ. Точность способа k на вылетах A:
@@ -84,7 +86,8 @@ window.ForecastLab = (function () {
     const GBM = { rounds: 120, depth: 3, rate: 0.08, minLeaf: 12, bins: 16 };
     const NB_DAYS = 3;              // соседние даты: ±3 дня
     const PICK_DAYS = 28;           // добор вылетов рейса за 4 недели
-    const MONTHS_BACK = 6;
+    const MONTHS_BACK = 12;         // окно обучения — год: вся загруженная история продаж, все сезоны
+    const HALF_LIFE = 120;          // вес записи в обучении вдвое меньше каждые 120 дней давности: свежие продажи важнее
     const VERSION = 2;              // формат журнала; файл новее — не перезаписываем
     const BACKFILL_V = 2;           // правила восстановления; старее — пересчитываются
     const MIN_CHOICE_SEG = 30;      // записей в сегменте (есть файл / есть история / нет ничего), чтобы выбирать для него отдельно
@@ -117,6 +120,7 @@ window.ForecastLab = (function () {
     let models = null;              // обученные на всём журнале (для карточки)
     let evalState = { sig: '', ev: null, run: 0, busy: false, waiters: [] };
     let rev = 0;
+    let modelRev = 0;               // растёт после каждого обучения — карточка, RMS и «Сегодня» берут новый прогноз
     let loadMonth = '';             // месяц, от которого считали окно журнала
     let failedMonths = 0;
     let lastCapture = null;
@@ -297,6 +301,7 @@ window.ForecastLab = (function () {
             const arch = [];
             for (let i = -(MONTHS_BACK + 13); i <= 0; i++) arch.push(shiftMonth(m0, i));
             const archP = typeof SalesArchive !== 'undefined' && SalesArchive.ensureMonths ? SalesArchive.ensureMonths(arch).catch(() => null) : Promise.resolve();
+            if (typeof SalesArchive !== 'undefined' && SalesArchive.readLastImport) SalesArchive.readLastImport().catch(() => null);
             loading = Promise.all(months.map(readMonth).concat([archP])).then(() => { loaded = true; ctxMemo.sig = ''; invalidate(); });
         }
         return loading;
@@ -612,19 +617,24 @@ window.ForecastLab = (function () {
 
     // ---------- линейная модель ----------
 
-    function ridge(X, y) {
+    function ridge(X, y, w) {
         const k = X[0].length + 1;
         const A = Array.from({ length: k }, () => new Array(k).fill(0));
         const b = new Array(k).fill(0);
+        let sw = 0;
         X.forEach((row, i) => {
             const x = [1].concat(row);
+            const wi = w ? w[i] : 1;
+            sw += wi;
             for (let a = 0; a < k; a++) {
-                b[a] += x[a] * y[i];
-                for (let c = a; c < k; c++) A[a][c] += x[a] * x[c];
+                b[a] += wi * x[a] * y[i];
+                for (let c = a; c < k; c++) A[a][c] += wi * x[a] * x[c];
             }
         });
         for (let a = 0; a < k; a++) for (let c = 0; c < a; c++) A[a][c] = A[c][a];
-        for (let a = 1; a < k; a++) A[a][a] += LAMBDA;
+        // Штраф — в той же мере, что без весов: λ·(Σw/n).
+        const lam = LAMBDA * (X.length ? sw / X.length : 1);
+        for (let a = 1; a < k; a++) A[a][a] += lam;
         A[0][0] += 1e-6;
         for (let c = 0; c < k; c++) {
             let p = c;
@@ -654,7 +664,7 @@ window.ForecastLab = (function () {
 
     // Потери Хьюбера: большие ошибки (группы, отмены) не тянут деревья — ближе к средней ошибке в пассажирах.
     // Обучение отдаёт управление браузеру примерно каждые 25 мс — интерфейс не подвисает.
-    async function gbmTrain(X, y) {
+    async function gbmTrain(X, y, w) {
         const n = X.length;
         const k = X[0].length;
         // Пороги — квантили признака; значения раскладываются по корзинам один раз на обучение
@@ -689,7 +699,8 @@ window.ForecastLab = (function () {
         const gain = new Array(k).fill(0);
         const all = new Int32Array(n);
         for (let i = 0; i < n; i++) all[i] = i;
-        const ws = { bs: new Float64Array(GBM.bins + 1), bn: new Int32Array(GBM.bins + 1) };
+        const wt = w ? Float64Array.from(w) : new Float64Array(n).fill(1);
+        const ws = { bs: new Float64Array(GBM.bins + 1), bn: new Int32Array(GBM.bins + 1), bw: new Float64Array(GBM.bins + 1), w: wt };
         let last = Date.now();
         for (let t = 0; t < GBM.rounds; t++) {
             for (let i = 0; i < n; i++) { const r = y[i] - pred[i]; res[i] = r > delta ? delta : (r < -delta ? -delta : r); }
@@ -708,28 +719,33 @@ window.ForecastLab = (function () {
     // Узел: лучший порог по всем признакам (максимум G = S_L²/n_L + S_R²/n_R − S²/n).
     function grow(bins, res, idx, depth, cuts, gain, ws) {
         const nAll = idx.length;
+        const { bs, bn, bw, w } = ws;
         let total = 0;
-        for (let j = 0; j < nAll; j++) total += res[idx[j]];
-        const mean = total / nAll;
+        let wAll = 0;
+        for (let j = 0; j < nAll; j++) { const i = idx[j]; total += w[i] * res[i]; wAll += w[i]; }
+        const mean = wAll > 0 ? total / wAll : 0;
         if (depth >= GBM.depth || nAll < GBM.minLeaf * 2) return { v: mean };
         let best = null;
-        const { bs, bn } = ws;
         for (let f = 0; f < cuts.length; f++) {
             const cs = cuts[f];
             if (!cs.length) continue;
             const bf = bins[f];
             bs.fill(0);
             bn.fill(0);
-            for (let j = 0; j < nAll; j++) { const i = idx[j]; const b = bf[i]; bs[b] += res[i]; bn[b]++; }
+            bw.fill(0);
+            for (let j = 0; j < nAll; j++) { const i = idx[j]; const b = bf[i]; bs[b] += w[i] * res[i]; bn[b]++; bw[b] += w[i]; }
             let ls = 0;
             let ln = 0;
+            let lw = 0;
             for (let c = 0; c < cs.length; c++) {
                 ls += bs[c];
                 ln += bn[c];
+                lw += bw[c];
                 const rn = nAll - ln;
-                if (ln < GBM.minLeaf || rn < GBM.minLeaf) continue;
+                const rw = wAll - lw;
+                if (ln < GBM.minLeaf || rn < GBM.minLeaf || lw <= 0 || rw <= 0) continue;
                 const rs = total - ls;
-                const g = ls * ls / ln + rs * rs / rn - total * total / nAll;
+                const g = ls * ls / lw + rs * rs / rw - total * total / wAll;
                 if (!best || g > best.g) best = { g, f, c, thr: cs[c] };
             }
         }
@@ -835,6 +851,14 @@ window.ForecastLab = (function () {
         return out;
     }
 
+    // Вес записи по давности вылета: wᵢ = 2^(−(T − tsᵢ)/τ½), T — последний вылет в наборе.
+    function recencyWeights(list) {
+        if (!(HALF_LIFE > 0) || !list.length) return null;
+        let T = -Infinity;
+        list.forEach(x => { if (x.ts > T) T = x.ts; });
+        return list.map(x => Math.pow(2, -(T - x.ts) / (HALF_LIFE * DAY)));
+    }
+
     async function train(list) {
         if (list.length > TRAIN_MAX) {
             // Свежие недели — целиком, более старые — каждая m-я запись: в обучение попадают все сезоны истории.
@@ -848,11 +872,12 @@ window.ForecastLab = (function () {
         if (list.length < MIN_TRAIN) return null;
         const X = list.map(features);
         const y = list.map(target);
-        const res = { n: list.length, lin: {}, linAll: ridge(X, y), gbm: await gbmTrain(X, y), route: {} };
+        const W = recencyWeights(list);
+        const res = { n: list.length, lin: {}, linAll: ridge(X, y, W), gbm: await gbmTrain(X, y, W), route: {} };
         HORIZONS.forEach(h => {
             const ids = [];
             list.forEach((x, i) => { if (x.h === h) ids.push(i); });
-            if (ids.length >= MIN_TRAIN_H) res.lin[h] = ridge(ids.map(i => X[i]), ids.map(i => y[i]));
+            if (ids.length >= MIN_TRAIN_H) res.lin[h] = ridge(ids.map(i => X[i]), ids.map(i => y[i]), W && ids.map(i => W[i]));
         });
         // Поправка по рейсу — своя для близких, средних и дальних горизонтов, сжата к нулю при малом числе вылетов.
         const acc = {};
@@ -860,10 +885,11 @@ window.ForecastLab = (function () {
             const p = (linPredict(res.lin[x.h] || res.linAll, X[i]) + gbmPredict(res.gbm, X[i])) / 2;
             const key = x.base + '|' + groupOf(x.h).id;
             const a = acc[key] || (acc[key] = { sum: 0, n: 0 });
-            a.sum += y[i] - p;
-            a.n++;
+            const wi = W ? W[i] : 1;
+            a.sum += wi * (y[i] - p);
+            a.n += wi;
         });
-        Object.keys(acc).forEach(k => { res.route[k] = (acc[k].sum / acc[k].n) * (acc[k].n / (acc[k].n + ROUTE_K)); });
+        Object.keys(acc).forEach(k => { res.route[k] = acc[k].n > 0 ? (acc[k].sum / acc[k].n) * (acc[k].n / (acc[k].n + ROUTE_K)) : 0; });
         return res;
     }
 
@@ -1513,7 +1539,10 @@ window.ForecastLab = (function () {
         }
         const segCount = { plan: 0, hist: 0, none: 0 };
         test.forEach(x => { if (x.h === 7) segCount[segOf(x.r)]++; });
-        return { full, pool: poolOf(all), committee, cover, groups, signals, byH, byWeek, byBase, choice, conf, influence, segCount, samples: all.length, departures: new Set(all.map(x => x.key)).size, trained: !!full, anyModel };
+        // Как модель учится: сколько вылетов за последнюю неделю данных добавилось в обучение.
+        const lastTs = all.length ? all[all.length - 1].ts : 0;
+        const fresh = new Set(all.filter(x => x.ts > lastTs - 7 * DAY).map(x => x.key)).size;
+        return { at: Date.now(), fresh, full, pool: poolOf(all), committee, cover, groups, signals, byH, byWeek, byBase, choice, conf, influence, segCount, samples: all.length, departures: new Set(all.map(x => x.key)).size, trained: !!full, anyModel };
     }
 
     // Один расчёт за раз; все, кто ждал, получают результат (и при ошибке). Устаревший расчёт не применяется.
@@ -1536,6 +1565,7 @@ window.ForecastLab = (function () {
             evalState.ev = ev;
             evalState.sig = sig;
             models = ev.full || null;
+            modelRev++;
             flush();
             if (typeof FlightCard !== 'undefined' && FlightCard.isOpen && FlightCard.isOpen() && FlightCard.refresh) FlightCard.refresh();
         }).catch(e => {
@@ -1722,13 +1752,15 @@ window.ForecastLab = (function () {
         const status = st && st.n
             ? `В архиве ${st.n.toLocaleString('ru-RU')} улетевших вылетов: с ${d(st.from)} по ${d(st.to)}${st.h ? `, из файла истории — ${st.h.toLocaleString('ru-RU')}` : ''}.`
             : 'Архив пока пустой: модель видит только вылеты из текущего файла продаж (около 2 недель).';
+        const li = typeof SalesArchive !== 'undefined' && SalesArchive.lastImport ? SalesArchive.lastImport() : null;
+        const liTxt = li && li.at ? `Последняя загрузка истории: ${fmtDate(new Date(li.at).getTime())}${li.file ? ` (${li.file})` : ''} — ${Number(li.flights || 0).toLocaleString('ru-RU')} вылетов${li.from ? ` с ${li.from} по ${li.to}` : ''}.` : '';
         return `<section class="rp-card">
             <div class="rp-card-head"><h3 class="rp-card-title">История продаж для прогноза</h3></div>
-            <p class="rp-card-text">Файл <strong>SalesHistory.csv</strong> из скрипта <strong>Export-SalesHistory.ps1</strong> — улетевшие вылеты за прошлые месяцы и годы,
-                уже сведённые по вылетам, без ФИО, PNR и контактов. На них модель учится, по ним считаются «прошлый год» и норма продаж по дням недели.
-                Кресла прошлых вылетов в продажах не записаны — берутся по нынешнему самолёту рейса. Загружать можно повторно: история заменяется,
-                вылеты из текущих данных не трогаются.</p>
-            <p class="rp-note">${esc(status)}</p>
+            <p class="rp-card-text">Файл <strong>SalesHistory.csv</strong> из скрипта <strong>Export-SalesHistory.ps1</strong> — улетевшие вылеты, сведённые по вылетам, без ФИО, PNR и контактов.
+                На них модель учится, по ним считаются «прошлый год» и норма по дням недели. Если файл лежит в папке данных (рядом с файлом продаж, в папке csv),
+                сайт сам загружает его при загрузке данных, когда файл обновился. Скрипт можно запускать по расписанию каждую ночь — история будет пополняться без участия людей.
+                Кресла прошлых вылетов берутся по нынешнему самолёту рейса.</p>
+            <p class="rp-note">${esc(status)}${liTxt ? `<br>${esc(liTxt)}` : ''}</p>
             ${canWrite() ? '<div class="ref-toolbar"><button type="button" class="btn-primary rp-btn" id="fl-hist-load">Загрузить файл истории</button></div>' : '<p class="rp-muted">Загружать историю может тот, у кого есть право «Публикация данных для всех».</p>'}
         </section>`;
     }
@@ -1744,13 +1776,10 @@ window.ForecastLab = (function () {
             try {
                 if (typeof showLoading === 'function') showLoading('Загружаю историю продаж…');
                 const text = await file.text();
-                const r = await SalesArchive.importHistory(text);
+                const r = await SalesArchive.importHistory(text, file);
                 if (!r.ok) { toast('История не загружена: ' + (r.error || 'ошибка записи'), 'error'); return; }
                 toast(`История загружена: ${r.flights.toLocaleString('ru-RU')} вылетов за ${r.months} мес.${r.skipped ? `, пропущено строк: ${r.skipped}` : ''}`);
-                ctxMemo.sig = '';
-                invalidate();
-                // Восстановить журнал по новым вылетам и переобучить модель — в фоне.
-                capture(true).then(() => startEvaluation(rerender)).catch(e => console.warn(e));
+                afterHistoryImport(rerender);
             } catch (e) {
                 console.warn(e);
                 toast('Не удалось прочитать файл истории', 'error');
@@ -1760,6 +1789,14 @@ window.ForecastLab = (function () {
             }
         };
         inp.click();
+    }
+
+    // После загрузки истории: восстановить журнал по новым вылетам и переобучить модель — в фоне.
+    function afterHistoryImport(rerender) {
+        ctxMemo.sig = '';
+        invalidate();
+        if (!canView()) return;
+        ensureLoaded().then(() => (canWrite() ? capture(true) : false)).then(() => startEvaluation(rerender)).catch(e => console.warn(e));
     }
 
     function canExport() {
@@ -1901,7 +1938,8 @@ window.ForecastLab = (function () {
             ${f('<i>ℓ</i><sub>a→b</sub> = Σ<i>w</i>·(<i>o<sub>b</sub></i> − <i>o<sub>a</sub></i>)/<i>s</i> ⁄ Σ<i>w</i>, &nbsp; <i>w</i> = e<sup>−возраст/28</sup>, &nbsp; <i>f̂</i> = <i>o<sub>h</sub></i> + <i>s</i>·Σ<i>ℓ</i>', '«Цепочка добора» (advanced pickup, как в RMS авиакомпаний): добор между соседними точками 30→21→…→1→вылет считается и по ещё не улетевшим рейсам, свежие недели весят больше. Для рейса и дня недели звено сглаживается к общему.')}
             ${f('<i>t̂</i><sub>рейс</sub> = (Σ<i>t</i><sub>рейс</sub> + 10·<i>t̄</i>) / (<i>n</i><sub>рейс</sub> + 10)', '«Добор этого рейса»: средний добор рейса, подтянутый к среднему всех рейсов, пока вылетов мало (эмпирический Байес). Он же — признак для моделей.')}
             ${f('<i>w<sub>k</sub></i> ∝ exp(−4·(<i>L<sub>k</sub></i>/<i>L</i><sub>min</sub> − 1)), &nbsp; <i>L</i><sub>рейс</sub> = (Σ|<i>e</i>| + 8·<i>L</i><sub>все</sub>) / (<i>n</i> + 8)', '«Комитет моделей»: все способы считают прогноз, вес каждого — по его ошибкам именно на этом рейсе (пока вылетов мало — по всем рейсам). Лучший на рейсе весит больше, остальные страхуют; способ с ошибкой больше двух лучших не голосует.')}
-            ${f('<i>ŵ</i> = (<i>X</i><sup>T</sup><i>X</i> + λ<i>I</i>)<sup>−1</sup><i>X</i><sup>T</sup><i>t</i>, &nbsp; λ = 0,8', 'Линейная модель (гребневая регрессия) по 34 признакам: штраф λ не даёт весам раздуваться на малых данных. Своя модель на каждом горизонте, когда записей ≥ 80.')}
+            ${f('<i>a<sub>i</sub></i> = 2<sup>−давность/120 дн.</sup>', 'Постоянное дообучение: каждый день модели заново учатся на всех улетевших вылетах за год (загруженная история + новые вылеты). Свежие вылеты весят больше: полугодовой — в 3 раза меньше вчерашнего, годовой — в 8 раз.')}
+            ${f('<i>ŵ</i> = (<i>X</i><sup>T</sup><i>AX</i> + λ<i>I</i>)<sup>−1</sup><i>X</i><sup>T</sup><i>At</i>, <i>A</i> = diag(<i>a</i>), &nbsp; λ = 0,8', 'Линейная модель (гребневая регрессия) по 34 признакам: штраф λ не даёт весам раздуваться на малых данных. Своя модель на каждом горизонте, когда записей ≥ 80.')}
             ${f('<i>F<sub>m</sub></i> = <i>F</i><sub><i>m</i>−1</sub> + η·<i>h<sub>m</sub></i>, &nbsp; <i>r</i> = clip(<i>t</i> − <i>F</i>, −δ, δ), &nbsp; η = 0,08, <i>M</i> = 120', 'Решающие деревья (градиентный бустинг): каждое следующее дерево исправляет ошибки предыдущих. Ошибка обрезается на δ (потери Хьюбера) — группы и отмены не сбивают модель.')}
             ${f('<i>t̂</i> = ½(<i>t̂</i><sub>лин</sub> + <i>t̂</i><sub>дер</sub>) + <i>c</i><sub>рейс</sub>, &nbsp; <i>c</i><sub>рейс</sub> = <i>n</i>/(<i>n</i> + 10) · средний остаток рейса', 'Среднее двух моделей и поправка по рейсу: при малом числе вылетов поправка почти ноль, при большом — равна средней ошибке рейса.')}
             ${f('[<i>f̂</i> + <i>q</i><sub>0,1</sub>·<i>s</i>; &nbsp;<i>f̂</i> + <i>q</i><sub>0,9</sub>·<i>s</i>], &nbsp; <i>q</i> — квантили остатков (<i>f</i> − <i>f̂</i>)/<i>s</i> прошлых прогнозов', 'Интервал 80% (конформный): по тому, как этот же способ ошибался раньше на таком же горизонте и таких же вылетах. Несимметричный — вниз и вверх ошибаются по-разному. В карточке: «44 из 72 (40–47, 80%)».')}
@@ -1911,6 +1949,19 @@ window.ForecastLab = (function () {
             ${f('MAE = (1/<i>N</i>)·Σ|<i>f̂</i> − <i>f</i>|, &nbsp; смещение = (1/<i>N</i>)·Σ(<i>f̂</i> − <i>f</i>)', 'Средняя ошибка в пассажирах и в какую сторону ошибается (↑ завышает, ↓ занижает).')}
             ${f('<i>t</i> = −<i>d̄</i> / (<i>s<sub>d</sub></i>/√<i>n</i>) &gt; 1, &nbsp; <i>d<sub>i</sub></i> = |<i>e</i><sub>новый</sub>| − |<i>e</i><sub>прежний</sub>|', 'Способ меняется, только если новый надёжно точнее на тех же вылетах, а не случайно.')}
         </details>`;
+    }
+
+    // Постоянное дообучение: когда модель обучилась, на скольких новых вылетах, как меняется ошибка за 7 дней.
+    function learnKpis(ev) {
+        const d = new Date(ev.at || Date.now());
+        const when = `${fmtDate(d.getTime()) === fmtDate(Date.now()) ? 'сегодня' : fmtDate(d.getTime())} в ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        const weeks = [...ev.byWeek.values()].sort((a, b) => a.ts - b.ts).filter(W => W.best[1]);
+        const avg = (ws) => { const s = ws.reduce((a, W) => a + W.best[0], 0); const n = ws.reduce((a, W) => a + W.best[1], 0); return n ? s / n : null; };
+        const now4 = weeks.length >= 6 ? avg(weeks.slice(-4)) : null;
+        const prev4 = weeks.length >= 6 ? avg(weeks.slice(-8, -4)) : null;
+        const trend = now4 != null && prev4 != null
+            ? `<div class="dr-kpi ${now4 <= prev4 ? 'dr-kpi-up' : ''}"><div class="dr-kpi-label">Ошибка за 7 дней до вылета</div><div class="dr-kpi-value">±${fmt(now4)}</div><div class="dr-kpi-sub">последние 4 недели; до этого ±${fmt(prev4)}</div></div>` : '';
+        return `<div class="dr-kpi"><div class="dr-kpi-label">Обучена</div><div class="dr-kpi-value">${when}</div><div class="dr-kpi-sub">за неделю +${ev.fresh || 0} новых вылетов · доучивается при каждом обновлении данных</div></div>${trend}`;
     }
 
     function html(rerender) {
@@ -1993,6 +2044,7 @@ window.ForecastLab = (function () {
                     <div class="dr-kpi"><div class="dr-kpi-label">Вылетов с фактом</div><div class="dr-kpi-value">${ev.departures}</div><div class="dr-kpi-sub">записей прогноза: ${ev.samples}</div></div>
                     <div class="dr-kpi"><div class="dr-kpi-label">Ждут вылета</div><div class="dr-kpi-value">${futureKeys}</div><div class="dr-kpi-sub">факт допишется после вылета</div></div>
                     <div class="dr-kpi ${ev.anyModel ? 'dr-kpi-up' : ''}"><div class="dr-kpi-label">Модель</div><div class="dr-kpi-value">${ev.anyModel ? 'работает' : (ev.trained ? 'копит данные' : 'учится')}</div><div class="dr-kpi-sub">${ev.anyModel ? 'линейная + деревья, проверена' : 'нужно больше улетевших вылетов для честной проверки'}</div></div>
+                    ${learnKpis(ev)}
                 </div>
                 ${cap ? `<p class="rp-note">${esc(cap)}</p>` : ''}
                 <div class="dr-list-title">Насколько ошибается прогноз, пасс. (меньше — лучше)</div>
@@ -2040,5 +2092,5 @@ window.ForecastLab = (function () {
         return true;
     }
 
-    return { canView, html, handleClick, capture, afterStart, ensureLoaded, predict, warnings, warningsAsync, revision: () => rev, HORIZONS, evaluation: () => evalState.ev, startEvaluation };
+    return { canView, html, handleClick, capture, afterStart, afterHistoryImport, ensureLoaded, predict, warnings, warningsAsync, revision: () => rev, HORIZONS, evaluation: () => evalState.ev, modelRevision: () => modelRev, startEvaluation };
 })();

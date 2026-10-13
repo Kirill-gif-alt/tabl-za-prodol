@@ -299,28 +299,25 @@ window.FlightCard = (function () {
         let advice = '';
         const f = FI.forecast(code, date);
         if (f && f.source !== 'flown') {
-            const range = f.lo != null && f.hi != null && f.lo !== f.hi ? `разброс ${f.lo}–${f.hi}` : '';
-            const src = f.source === 'history'
-                ? `по ${f.n} ${FI.plural(f.n, 'прошлому вылету', 'прошлым вылетам', 'прошлым вылетам')} в этот день недели`
-                : 'по файлу ожидаемой загрузки';
+            const isModel = f.source === 'model';
+            const range = f.lo != null && f.hi != null && f.lo !== f.hi ? `${isModel ? '8 из 10: ' : 'разброс '}${f.lo}–${f.hi}` : '';
+            const histNote = (s) => (s.source === 'history'
+                ? `по ${s.n} ${FI.plural(s.n, 'прошлому вылету', 'прошлым вылетам', 'прошлым вылетам')} в этот день недели`
+                : 'по файлу ожидаемой загрузки');
+            const src = isModel ? 'модель: продажи и темп, норма дня недели, план, календарь' : histNote(f);
+            // Один прогноз. Из чего он сложен — в подсказке (без второго числа рядом).
+            const tip = isModel ? [
+                f.lo != null ? `В 8 случаях из 10 итог будет от ${f.lo} до ${f.hi}.` : '',
+                `Способ: ${f.model.method}; за ${f.model.h} дн. до вылета ошибается в среднем на ${String(f.model.err).replace('.', ',')} пасс.`,
+                f.model.method === 'комитет моделей' && f.model.team && f.model.team.length > 1 ? `Веса на этом рейсе: ${f.model.team.slice(0, 4).map(x => `${x.label} ${x.w}%`).join(', ')}.` : '',
+                f.simple ? `Только ${histNote(f.simple)} было бы ${f.simple.final} — это один из способов внутри модели.` : ''
+            ].filter(Boolean).join('\n') : '';
             const tone = f.lf >= 90 ? 'up' : (f.lf < 60 ? 'down' : '');
-            tiles.push(`<div class="fc-it fc-it-${tone || 'plain'}">
+            tiles.push(`<div class="fc-it fc-it-${tone || 'plain'}"${tip ? ` title="${attr(tip)}"` : ''}>
                 <div class="fc-it-label">Прогноз к вылету</div>
                 <div class="fc-it-value">${f.final} <span class="fc-it-of">из ${f.seats}</span></div>
                 <div class="fc-it-sub"><strong>${f.lf}%</strong>${range ? ' · ' + esc(range) : ''}</div>
                 <div class="fc-it-note">${esc(src)}</div>
-                ${(() => {
-                    const ml = insightsOpen() && typeof ForecastLab !== 'undefined' ? ForecastLab.predict(code, date) : null;
-                    if (!ml) return '';
-                    // Одна строка по делу; как посчитано — во всплывающей подсказке.
-                    const err = String(ml.err).replace('.', ',');
-                    const tip = ['Прогноз модели (видно по праву «Прогноз загрузки и предупреждения»).',
-                        ml.lo != null ? `В 8 случаях из 10 итог будет от ${ml.lo} до ${ml.hi}.` : '',
-                        `Способ: ${ml.method}; за ${ml.h} дн. до вылета ошибается в среднем на ${err} пасс.`,
-                        ml.team && ml.team.length > 1 ? `Веса на этом рейсе: ${ml.team.slice(0, 4).map(t => `${t.label} ${t.w}%`).join(', ')}.` : ''
-                    ].filter(Boolean).join('\n');
-                    return `<div class="fc-it-ml" title="${attr(tip)}"><span class="fc-it-ml-label">Модель:</span> <strong>${ml.final} из ${ml.seats}</strong> · ${ml.lf}%${ml.lo != null ? ` <span class="fc-it-ml-range">от ${ml.lo} до ${ml.hi}</span>` : ''}</div>`;
-                })()}
             </div>`);
             summary.push(`<span class="fc-ins-chip fc-ins-${tone || 'plain'}">прогноз ${f.final}/${f.seats} · ${f.lf}%</span>`);
             if (f.load >= f.seats) advice = '<div class="fc-advice fc-advice-up">✓ Уже распродан</div>';
@@ -427,6 +424,7 @@ window.FlightCard = (function () {
             fill: true, tension: 0.15, pointRadius: 0, pointHoverRadius: 3, borderWidth: 2, spanGaps: true
         }];
         if (c.refData) datasets.push({ label: c.refLabel || 'Норма', data: c.refData, borderColor: '#64748b', borderDash: [5, 4], fill: false, pointRadius: 0, borderWidth: 2, spanGaps: true });
+        if (c.lyData) datasets.push({ label: 'Год назад (' + (c.lyLabel.match(/\(([^)]+)\)/) || [, ''])[1] + ')', data: c.lyData, borderColor: '#94a3b8', borderDash: [2, 3], fill: false, pointRadius: 0, borderWidth: 1.5, spanGaps: true });
         if (c.expectedData) datasets.push({ label: 'Ожидаемая', data: c.expectedData, borderColor: '#d97706', borderDash: [6, 4], fill: false, pointRadius: 0, borderWidth: 2, spanGaps: true });
         const fly = parseLocalDate(date);
         chart = new Chart(canvas, {
