@@ -59,7 +59,9 @@ window.PriceMarks = (function () {
             const v = s.adjustedFare || s.fare || 0;
             if (v > 0) { sum += v; paid++; }
         });
-        return { n, sum, avg: paid ? Math.round(sum / paid) : null };
+        // avg — средний оплаченный тариф (для показа); perTicket — выручка на один билет, включая билеты за 0 ₽:
+        // по нему считается выручка «без решения», иначе нулевые билеты занижали бы итог решения на ровном месте.
+        return { n, sum, avg: paid ? Math.round(sum / paid) : null, perTicket: n ? sum / n : null };
     }
 
     // Норма продаж за окно дней до вылета [dtdTo..dtdFrom] на кресла этого вылета.
@@ -101,8 +103,8 @@ window.PriceMarks = (function () {
         const na = normPickup(base, code, flyDate, d, afterTo);
         const effect = complete && nb && na ? (after.n - na.value) - (before.n - nb.value) : null;
         // Тариф «до»: средний за 3 дня до решения, а если тогда не продали ни одного — по всем более ранним продажам.
-        const fareBefore = before.avg != null ? before.avg : (archived ? null : windowStats(list, flyDate, 400, d + 1).avg);
-        const fareAfter = after.n ? after.avg : 0;
+        const fareBefore = before.perTicket != null && before.avg != null ? before.perTicket : (archived ? null : windowStats(list, flyDate, 400, d + 1).perTicket);
+        const fareAfter = after.n ? after.perTicket : 0;
         // Итог в рублях: выручка за 3 дня после решения против той, что была бы без него.
         //   E = max(0, обычно_после + ½·(до − обычно_до)) — столько продали бы по старому тарифу: отклонение от нормы
         //   до решения учитывается наполовину (окна по 3 дня шумные, отклонения обычно возвращаются к норме);

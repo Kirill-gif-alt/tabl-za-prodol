@@ -90,7 +90,7 @@ function getRmsRenderSig() {
         ? rmsActiveConditions.map(c => `${c.field}${c.op}${c.value}`).join(';')
         : '';
     const marks = typeof SalesManagement !== 'undefined' && SalesManagement.markRevision ? SalesManagement.markRevision() : 0;
-    return `${typeof getMetricsCacheSignature === 'function' ? getMetricsCacheSignature() : ''}|${days}|${route}|${alert}|${cond}|${typeof getTodayDate === 'function' ? getTodayDate() : ''}|pm${marks}`;
+    return `${typeof getMetricsCacheSignature === 'function' ? getMetricsCacheSignature() : ''}|${days}|${route}|${alert}|${cond}|${typeof getTodayDate === 'function' ? getTodayDate() : ''}|pm${marks}|a${typeof analyticsRevision === 'function' ? analyticsRevision() : ''}`;
 }
 
 function renderRmsWatchlist() {
@@ -199,7 +199,7 @@ function renderRmsWatchlist() {
                     <th class="rms-col-dtd" title="Дней до вылета">DTD</th>
                     <th class="rms-col-load" title="Загрузка / (AU снимка − спец.брони)">ЗПК</th>
                     <th class="rms-col-remain" title="AU − загрузка − спец.брони">Остаток</th>
-                    <th class="rms-col-fc" title="Прогноз загрузки к вылету — тот же, что в карточке рейса: модель прогноза (если она вам доступна), иначе сколько обычно добирают такие же вылеты в тот же день недели; в скобках — разброс">Прогноз к вылету</th>
+                    <th class="rms-col-fc" title="Прогноз загрузки к вылету — тот же, что в карточке рейса: модель прогноза (если она вам доступна), иначе сколько обычно добирают такие же вылеты в тот же день недели; в скобках — пределы, в которые попадают 8 вылетов из 10">Прогноз к вылету</th>
                     ${hasExpected ? '<th class="rms-col-forecast" title="Ожидаемая загрузка.xlsx">Ожидаемая</th><th class="rms-col-delta">Δ к ожидаемой</th>' : ''}
                     <th class="rms-col-pickup" title="Билеты сегодня+вчера из файла 14д">Pickup 1–2д</th>
                     <th class="rms-col-today" title="Билеты с DEALDATE=сегодня из файла 14д">Сегодня (файл 14д)</th>

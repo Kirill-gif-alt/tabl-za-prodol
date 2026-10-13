@@ -14,7 +14,7 @@ window.SalesAdvice = (function () {
         const epoch = typeof dataEpoch === 'number' ? dataEpoch : 0;
         const today = typeof getTodayDate === 'function' ? getTodayDate() : '';
         const rows = typeof allData !== 'undefined' && allData ? allData.length : 0;
-        return `${epoch}|${today}|${rows}`;
+        return `${epoch}|${today}|${rows}|${typeof analyticsRevision === 'function' ? analyticsRevision() : ''}`;
     }
 
     function daysUntil(date) {
@@ -40,7 +40,8 @@ window.SalesAdvice = (function () {
         const ref = s.refData && s.refData.length ? s.refData[s.refData.length - 1] : null;
         const exp = s.expectedData && s.expectedData.length ? s.expectedData[s.expectedData.length - 1] : null;
         const refs = [];
-        if (ref != null && !isNaN(ref)) refs.push({ label: s.refIsLy ? 'год назад к этому дню' : 'обычно к этому дню', value: Math.round(ref), d: sold - Math.round(ref) });
+        // Прошлый год — не ориентир для решения сегодня (спрос, цены и конкуренты другие): только нынешняя норма и план.
+        if (ref != null && !isNaN(ref) && !s.refIsLy) refs.push({ label: 'обычно к этому дню', value: Math.round(ref), d: sold - Math.round(ref) });
         if (exp != null && !isNaN(exp)) refs.push({ label: 'по плану', value: exp, d: sold - exp });
         if (!refs.length) return null;
         const T = Math.max(3, Math.round((seats || 0) * 0.10));
@@ -50,9 +51,17 @@ window.SalesAdvice = (function () {
         if (behind === refs.length) status = 'down';
         else if (ahead === refs.length) status = 'up';
         else if (behind && ahead) status = 'attn';
+        // Прогноз к вылету (тот же, что в карточке и RMS): темп ниже обычного, но вылет доберёт до 90% — не «снизить»;
+        // темп выше, но прогноз ниже 60% — не «повысить». Тогда «внимание»: решать человеку.
+        const fc = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(code, date) : null;
+        const fcOk = fc && fc.source !== 'flown' && fc.final != null;
+        let conflict = '';
+        if (fcOk && status === 'down' && fc.lf >= 90) { status = 'attn'; conflict = 'продаётся медленнее обычного, но прогноз к вылету высокий'; }
+        if (fcOk && status === 'up' && fc.lf < 60) { status = 'attn'; conflict = 'продаётся быстрее обычного, но прогноз к вылету низкий'; }
         const dtd = daysUntil(date);
         const diff = (d) => (d > 0 ? `+${d}` : String(d));
-        const text = `Продано ${sold} ${dtd === 0 ? 'в день вылета' : `за ${dtd} дн. до вылета`}; ` + refs.map(r => `${r.label} ${r.value} (${diff(r.d)})`).join(', ');
+        const text = `Продано ${sold} ${dtd === 0 ? 'в день вылета' : `за ${dtd} дн. до вылета`}; ` + refs.map(r => `${r.label} ${r.value} (${diff(r.d)})`).join(', ')
+            + (fcOk ? `; прогноз к вылету ${fc.final} из ${fc.seats} (${fc.lf}%)` : '') + (conflict ? ` — ${conflict}` : '');
         return { code, date, base, status, sold, refs, threshold: T, dtd, text, seats };
     }
 

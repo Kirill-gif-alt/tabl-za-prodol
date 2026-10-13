@@ -431,7 +431,7 @@ window.FlightChecks = (function () {
         const chip = document.createElement('span');
         chip.className = 'header-kpi-error';
         chip.textContent = '! ' + flights.size;
-        chip.title = `Проверка рейсов: ${flights.size} рейс(ов) с ошибкой до вылета. Нажмите, чтобы открыть отчёт.`;
+        chip.title = `Проверка рейсов: ${flights.size} ${pluralRu(flights.size, 'рейс', 'рейса', 'рейсов')} с ошибкой до вылета. Нажмите, чтобы открыть отчёт.`;
         if (canOpenReport()) chip.addEventListener('click', openReport);
         return chip;
     }

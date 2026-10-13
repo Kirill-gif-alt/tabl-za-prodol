@@ -269,6 +269,7 @@ window.ThemeSettings = (function () {
         const isDark = hexLuminance(bgHex) < 0.25;
         root.dataset.theme = isDark ? 'dark' : 'light';
         root.style.colorScheme = isDark ? 'dark' : 'light';
+        if (typeof applyChartThemeColors === 'function') setTimeout(applyChartThemeColors, 0);
         const surface = t.surface || DEFAULTS.surface;
         root.style.setProperty('--muted-bg', isDark ? shadeColor(surface, 10) : '#f8fafc');
         root.style.setProperty('--hover-bg', isDark ? shadeColor(surface, 18) : '#f1f5f9');

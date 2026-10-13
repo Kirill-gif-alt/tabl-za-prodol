@@ -107,7 +107,9 @@ function computeRowMetrics(row, base) {
     const ac = getAircraftType(row[4]);
     const cap = getCapacityFromAircraft(ac);
     const wk = getWeekForExpectedLoad(date);
-    const ev = getExpectedLoad(cap, base, dtd, wk);
+    // Продано — на день среза данных; ожидаемую берём на тот же день (данные могут быть не сегодняшние).
+    const dtdData = dtd != null && typeof observedFromDtd === 'function' ? Math.max(dtd, observedFromDtd(date)) : dtd;
+    const ev = getExpectedLoad(cap, base, dtdData, wk);
     // Файл ожидаемой считает от вместимости ВС; если в продаже кресел меньше, ожидать больше них нельзя
     // (иначе почти полный рейс выглядит «отстающим»).
     const evR = ev !== null ? Math.ceil(seatsOnSale > 0 ? Math.min(ev, seatsOnSale) : ev) : null;
@@ -159,10 +161,12 @@ function getRowDelta(row, base) {
     const free = parseInt(row[6] || 0);
     const ac = getAircraftType(row[4]);
     const cap = getCapacityFromAircraft(ac);
-    const du = getDaysUntil(date);
+    const du0 = getDaysUntil(date);
+    const du = du0 != null && typeof observedFromDtd === 'function' ? Math.max(du0, observedFromDtd(date)) : du0;
     const wk = getWeekForExpectedLoad(date);
     const ev = getExpectedLoad(cap, base, du, wk);
-    const evR = ev !== null ? Math.ceil(ev) : null;
+    const seatsOnSale = typeof getSeatsOnSale === 'function' ? getSeatsOnSale(row) : 0;
+    const evR = ev !== null ? Math.ceil(seatsOnSale > 0 ? Math.min(ev, seatsOnSale) : ev) : null;   // как в getRowMetrics
     const { delta } = getDeltaFromExpected(free, evR);
     return delta !== null ? delta : 999;
 }

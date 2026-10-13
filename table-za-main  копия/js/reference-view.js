@@ -215,7 +215,7 @@ window.ReferenceView = (function () {
         return `
             <div class="ref-import">
                 <div><strong>Перенести из файлов</strong>
-                    <div class="rp-sub-line">Не перенесено: периоды — ${leftP} рейс(ов), маршрутов — ${leftA}. Перенесите один раз — после этого файлы «Период субсидии» и «Расходы» можно удалить из папки.</div></div>
+                    <div class="rp-sub-line">Не перенесено: периоды — ${leftP} ${pluralRu(leftP, 'рейс', 'рейса', 'рейсов')}, маршрутов — ${leftA}. Перенесите один раз — после этого файлы «Период субсидии» и «Расходы» можно удалить из папки.</div></div>
                 <label class="rp-check"><input type="checkbox" id="ref-import-overwrite"> заменить уже внесённое</label>
                 <button type="button" class="btn-primary rp-btn" data-ref-import>Перенести</button>
             </div>`;
@@ -703,7 +703,7 @@ window.ReferenceView = (function () {
                 <div class="rp-scroll"><table class="rp-table rp-refs-table"><tbody>${items.map(row).join('')}</tbody></table></div>
             </div>` : '';
         const routeCell = (e) => `<td class="rp-left"><strong>${esc(e.from)} — ${esc(e.to)}</strong> · ${esc(e.ac || 'тип ВС?')}</td>`;
-        const usage = (e) => `<td class="rp-left rp-muted">${e.n} вылет(ов), ближайший ${esc(e.first)} · ${esc(flightsText(e.flights))}</td>`;
+        const usage = (e) => `<td class="rp-left rp-muted">${e.n} ${pluralRu(e.n, 'вылет', 'вылета', 'вылетов')}, ближайший ${esc(e.first)} · ${esc(flightsText(e.flights))}</td>`;
         const fix = (attr, label) => (can ? `<td class="rp-nowrap"><button type="button" class="filter-btn rp-open" ${attr}>${label}</button></td>` : '');
         const body = [
             block('Рейсы без периодов субсидии', 'Записи в «Периодах субсидии» нет, в файле тоже — сейчас рейс считается субсидируемым во все даты. Если коммерции нет, сохраните пустой список — и рейс уйдёт из проверки.',

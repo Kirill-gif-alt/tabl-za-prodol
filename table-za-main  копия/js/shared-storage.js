@@ -10,7 +10,8 @@ window.SharedStorage = (function () {
     const ALLOWED_FILES = new Set([
         'profiles.json', 'snapshot.json', 'activity.json', 'flight-comments.json',
         'subsidy-overrides.json', 'pkz-nav.json', 'sales-management.json',
-        'creative-layouts.json', 'subsidy-fares.json', 'subsidy-ref.json', 'calendar.json', 'flights.json'
+        'creative-layouts.json', 'subsidy-fares.json', 'subsidy-ref.json', 'calendar.json', 'flights.json',
+        'forecast-now.json'   // прогноз к вылету по всем рейсам — один для всех (пишет тот, у кого модель обучена)
     ]);
 
     // Резервные копии перед перезаписью — та же политика, что в scripts/local-server.py.
