@@ -19,6 +19,7 @@ SHARED_WRITABLE = {
     "profiles.json", "snapshot.json", "activity.json", "flight-comments.json",
     "subsidy-overrides.json", "pkz-nav.json", "sales-management.json",
     "creative-layouts.json", "subsidy-fares.json", "subsidy-ref.json", "calendar.json", "flights.json",
+    "forecast-now.json",
 }
 # Резервные копии перед перезаписью: shared/_history/<имя>/<имя>__ГГГГ-ММ-ДД_ЧЧ-ММ-СС.json.
 # every — не чаще раза в столько секунд, keep — сколько последних копий хранить.

@@ -35,7 +35,8 @@ window.MorningSummary = (function () {
 
     function sig() {
         return [typeof dataEpoch === 'number' ? dataEpoch : 0, today(), profile() ? profile().id : '',
-            typeof allData !== 'undefined' && allData ? allData.length : 0, salesDepartures().size].join('|');
+            typeof allData !== 'undefined' && allData ? allData.length : 0, salesDepartures().size,
+            typeof analyticsRevision === 'function' ? analyticsRevision() : ''].join('|');
     }
 
     function hasData() {
@@ -124,7 +125,7 @@ window.MorningSummary = (function () {
         const chip = document.createElement('span');
         chip.className = 'header-kpi-morning';
         chip.textContent = '☀ ' + n;
-        chip.title = `Сводка: ${n} вылет(ов) на ${aheadDays()} дней ждут решения сегодня. Нажмите, чтобы открыть.`;
+        chip.title = `Сводка: ${n} ${pluralRu(n, 'вылет', 'вылета', 'вылетов')} на ${aheadDays()} дней ждут решения сегодня. Нажмите, чтобы открыть.`;
         chip.addEventListener('click', open);
         return chip;
     }

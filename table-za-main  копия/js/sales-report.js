@@ -352,6 +352,18 @@ function weekdayNormSeries(cohort, dtds, targetSeats) {
             lf: Math.round(mean * 100)
         };
     });
+    // Накопленные продажи к вылету не убывают: на ближних днях учтено меньше вылетов (только те, у кого день прошёл),
+    // и среднее по ним могло «проседать». Линия нормы — не ниже, чем днём раньше.
+    let mv = -Infinity;
+    let ml = -Infinity;
+    let mh = -Infinity;
+    points.forEach(p => {
+        if (p.value == null) return;
+        mv = Math.max(mv, p.value); p.value = mv;
+        ml = Math.max(ml, p.lo); p.lo = ml;
+        mh = Math.max(mh, p.hi, p.value); p.hi = mh;
+        if (scale) p.lf = Math.round(p.value / scale * 100);
+    });
     return { points, curves };
 }
 
@@ -431,7 +443,8 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
         }
         const prep = weekdayRuPrep(dowName);
         const lyNote = lyData ? ` Тонкая серая линия — как продавался этот рейс год назад в тот же день недели (${dowName} ${swlyDate}).` : '';
-        if (norm.points.some(p => p.value != null)) {
+        const lastVal = norm.points.length ? norm.points[norm.points.length - 1].value : null;
+        if (norm.points.some(p => p.value != null) && (lastVal != null || !lyData)) {
             refData = norm.points.map(p => p.value);
             refBand = { lo: norm.points.map(p => p.lo), hi: norm.points.map(p => p.hi), n: norm.points.map(p => p.n), lf: norm.points.map(p => p.lf) };
             const nowN = last && last.value != null && windowed ? last.n : norm.points[norm.points.length - 1].n;
@@ -482,7 +495,7 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
         const d = nowVal - refVal;
         const nNote = refBand ? `по ${refBand.n[refBand.n.length - 1]} прошлым вылетам в этот день недели` : 'по прошлым вылетам';
         if (refIsLy) lines.push({ label: 'Год назад к этому дню', value: refVal, d, title: `Этот рейс год назад (${swlyDate}) — нынешней нормы пока нет` });
-        else lines.push({ label: 'Обычно к этому дню', value: refVal, d, title: `Норма ${nNote} (±8 недель)` });
+        else lines.push({ label: 'Обычно к этому дню', value: refVal, d, title: `Норма ${nNote}${normInfo && !normInfo.windowed ? ' (весь период данных: за ±8 недель вылетов мало)' : ' (±8 недель)'}` });
         mainDelta = d;
     }
     if (expVal != null && !isNaN(expVal)) {
@@ -490,12 +503,18 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
         lines.push({ label: 'По плану к этому дню', value: expVal, d, title: 'Из файла ожидаемой загрузки — сколько должно быть продано к этому дню' });
         if (mainDelta == null) mainDelta = d;
     }
-    const head = `Продано ${nowVal} · за ${axisMin} дн. до вылета`;
+    // Данные продаж не сегодняшние — так и пишем: иначе «за 13 дн.» спорит с «DTD 7» в шапке карточки.
+    let dataNote = '';
+    if (asOf != null && axisMin > Math.max(0, asOf) && typeof salesDataCutoffTime === 'function') {
+        const cd = new Date(salesDataCutoffTime());
+        dataNote = ` (данные на ${String(cd.getDate()).padStart(2, '0')}.${String(cd.getMonth() + 1).padStart(2, '0')})`;
+    }
+    const head = `Продано ${nowVal} · за ${axisMin} дн. до вылета${dataNote}`;
     const verdict = [head].concat(lines.map(l => `${l.label} ${l.value} — ${diffText(l.d)}`)).join('\n');
     const esc = typeof escHtml === 'function' ? escHtml : String;
     const anchorNote = thisCurve.anchored
         ? ` title="По загрузке. В файле продаж ${thisCurve.salesTotal} — разница из-за возвратов или обменов, которых нет в файле продаж"` : '';
-    const verdictHtml = `<div class="vd-head"${anchorNote}><strong>Продано ${nowVal}</strong> <span class="vd-muted">· за ${axisMin} дн. до вылета${thisCurve.anchored ? ` · по загрузке (в продажах ${thisCurve.salesTotal})` : ''}</span></div>`
+    const verdictHtml = `<div class="vd-head"${anchorNote}><strong>Продано ${nowVal}</strong> <span class="vd-muted">· за ${axisMin} дн. до вылета${dataNote}${thisCurve.anchored ? ` · по загрузке (в продажах ${thisCurve.salesTotal})` : ''}</span></div>`
         + lines.map(l => `<div class="vd-line" title="${esc(l.title)}">${esc(l.label)} <strong>${l.value}</strong> — <span class="${diffCls(l.d)}">${diffText(l.d)}</span></div>`).join('');
     const verdictCls = mainDelta == null || mainDelta === 0 ? 'booking-curve-verdict-neutral'
         : (mainDelta > 0 ? 'booking-curve-verdict-up' : 'booking-curve-verdict-down');
@@ -870,7 +889,7 @@ function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode)
                 maintainAspectRatio: false,
                 interaction: { mode: 'index', intersect: false },
                 plugins: {
-                    legend: { labels: { boxWidth: 12, font: { size: 11 }, color: '#0f172a', filter: (item, data) => !data.datasets[item.datasetIndex]._hideLegend } },
+                    legend: { labels: { boxWidth: 12, font: { size: 11 }, color: (getComputedStyle(document.documentElement).getPropertyValue('--text') || '').trim() || '#0f172a', filter: (item, data) => !data.datasets[item.datasetIndex]._hideLegend } },
                     priceMarks: {
                         items: typeof PriceMarks !== 'undefined'
                             ? PriceMarks.chartItems(salesFlight, flyDateStr, m => cumulativeData.findIndex(pt => pt.date === m.check))

@@ -140,18 +140,26 @@ window.FlightInsights = (function () {
     // по честной проверке как самая точная. Простой расчёт по прошлым вылетам остаётся запасным и для подсказки.
     function computeForecast(code, date) {
         const simple = computeSimple(code, date);
-        if (!simple || simple.source === 'flown') return simple;
+        if (simple && simple.source === 'flown') return simple;
         let ml = null;
-        try { ml = typeof ForecastLab !== 'undefined' && ForecastLab.canView() ? ForecastLab.predict(code, date) : null; } catch (e) { ml = null; }
-        if (!ml || ml.final == null || ml.seats !== simple.seats) return simple;
-        const final = Math.max(simple.load, Math.min(simple.seats, ml.final));
-        let soldOutDtd = simple.soldOutDtd;
-        if (final < simple.seats) soldOutDtd = simple.load >= simple.seats ? simple.dtd : null;
+        try { ml = typeof ForecastLab !== 'undefined' && ForecastLab.forecastFor ? ForecastLab.forecastFor(code, date) : null; } catch (e) { ml = null; }
+        if (!ml || ml.final == null) return simple;
+        // Простого прогноза нет (мало прошлых вылетов, нет файла) — модель всё равно даёт число.
+        const row = rowOf(code, date);
+        if (!row) return simple;
+        const seats = getSeatsOnSale(row);
+        if (!(seats > 0) || ml.seats !== seats) return simple;
+        const load = getSoldFromRow(row);
+        const dtd = typeof getDaysUntil === 'function' ? getDaysUntil(date) : null;
+        const final = Math.max(load, Math.min(seats, ml.final));
+        let soldOutDtd = simple ? simple.soldOutDtd : null;
+        if (final < seats) soldOutDtd = load >= seats ? dtd : null;
         else if (soldOutDtd == null) soldOutDtd = 0;
         return {
-            ...simple, final, lo: ml.lo, hi: ml.hi, lf: Math.round(final / simple.seats * 100), soldOutDtd,
-            source: 'model', model: { method: ml.method, err: ml.err, h: ml.h, team: ml.team || [], cover: ml.cover },
-            simple: { final: simple.final, source: simple.source, n: simple.n }
+            final, lo: ml.lo, hi: ml.hi, lf: Math.round(final / seats * 100), seats, load, dtd, n: simple ? simple.n : 0, soldOutDtd,
+            groups: simple ? simple.groups : groupSeats(code, date),
+            source: 'model', model: { method: ml.method, err: ml.err, h: ml.h, team: ml.team || [], shared: !!ml.shared },
+            simple: simple ? { final: simple.final, source: simple.source, n: simple.n } : null
         };
     }
 

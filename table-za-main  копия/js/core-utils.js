@@ -191,6 +191,17 @@ function applyChartRuLocale() {
     if (typeof Chart === 'undefined') return;
     Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
     Chart.defaults.locale = 'ru-RU';
+    applyChartThemeColors();
+}
+
+// Подписи осей и легенд графиков — цветом текста темы (в тёмной теме тёмные подписи не читались).
+function applyChartThemeColors() {
+    if (typeof Chart === 'undefined' || typeof getComputedStyle !== 'function') return;
+    const cs = getComputedStyle(document.documentElement);
+    const muted = (cs.getPropertyValue('--text-muted') || '').trim();
+    const border = (cs.getPropertyValue('--border') || '').trim();
+    if (muted) Chart.defaults.color = muted;
+    if (border) Chart.defaults.borderColor = border;
 }
 
 function showToast(message, type = 'success') {
@@ -367,6 +378,23 @@ function cleanFlight(s) {
 function normalizeDate(d){d=String(d||'').replace(/[^0-9.]/g,'');if(d.length===8)return d.slice(0,2)+'.'+d.slice(2,4)+'.'+d.slice(4);return d}
 let CACHED_TODAY = null;
 let CACHED_YESTERDAY = null;
+
+// Что меняет норму, прогноз и подсказки без новых данных: архив продаж, календарь событий, обученная модель.
+// Добавляется в подписи кэшей (RMS, «Сегодня», подсказки, сводка), чтобы они пересчитывались.
+function analyticsRevision() {
+    return [typeof SalesArchive !== 'undefined' && SalesArchive.revision ? SalesArchive.revision() : 0,
+        typeof CalendarEvents !== 'undefined' && CalendarEvents.revision ? CalendarEvents.revision() : 0,
+        typeof ForecastLab !== 'undefined' && ForecastLab.modelRevision ? ForecastLab.modelRevision() : 0].join('.');
+}
+
+// «1 вылет», «3 вылета», «7 вылетов»: pluralRu(n, 'вылет', 'вылета', 'вылетов').
+function pluralRu(n, one, few, many) {
+    const a = Math.abs(n) % 100;
+    const b = a % 10;
+    if (a > 10 && a < 20) return many;
+    if (b > 1 && b < 5) return few;
+    return b === 1 ? one : many;
+}
 
 function getTodayDate(){
     const today = formatDateRu(new Date());

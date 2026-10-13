@@ -10,6 +10,7 @@
 window.SalesArchive = (function () {
     const MONTHS_BACK = 3;           // норма берёт вылеты ±8 недель — хватает трёх месяцев
     const MAX_DTD = 365;
+    const STD_SEATS = [48, 72, 120];   // ёмкость ВС парка: ATR-42 (до 48), ATR-72, 120 кресел
     const DONE_KEY = 'krasavia_archive_done';
 
     let curves = Object.create(null);   // 'дд.мм.гггг|KV-107' → запись
@@ -253,7 +254,12 @@ window.SalesArchive = (function () {
             Object.keys(additions).forEach(k => {
                 const prev = flights[k] && normalizeCurve(flights[k]);
                 const next = additions[k];
-                if (!prev || prev.h) { flights[k] = next; changed = true; return; }
+                if (!prev || prev.h) {
+                    // Рейса сейчас нет в данных (сезонный, приостановлен) — кресла и ВС не знаем: прежние не затираем.
+                    flights[k] = keepSeats(next, prev);
+                    changed = true;
+                    return;
+                }
                 const extra = {};
                 ['r', 'g', 'k'].forEach(f => { if (next[f] && prev[f] == null) extra[f] = next[f]; });
                 if (Object.keys(extra).length) { flights[k] = { ...flights[k], ...extra }; changed = true; }
@@ -320,6 +326,11 @@ window.SalesArchive = (function () {
 
     // ---------- загрузка истории (SalesHistory.csv) ----------
 
+    function keepSeats(next, prev) {
+        if (!prev || next.s > 0 || !(prev.s > 0) || prev.s < next.sold) return next;
+        return { ...next, s: prev.s, ac: next.ac || prev.ac };
+    }
+
     function typicalOf(code) {
         const C = {};
         const A = {};
@@ -331,6 +342,16 @@ window.SalesArchive = (function () {
             const ac = typeof getAircraftType === 'function' ? getAircraftType(row[4]) : '';
             if (ac) A[ac] = (A[ac] || 0) + 1;
         });
+        // Рейса нет в нынешних данных — кресла по его вылетам, уже записанным в архив по живым данным (не из истории).
+        if (!Object.keys(C).length) {
+            Object.keys(curves).forEach(k => {
+                if (k.slice(k.lastIndexOf('|') + 1) !== code) return;
+                const e = curves[k];
+                if (e.h || !(e.s > 0)) return;
+                C[e.s] = (C[e.s] || 0) + 1;
+                if (e.ac) A[e.ac] = (A[e.ac] || 0) + 1;
+            });
+        }
         const top = (o) => Object.keys(o).sort((a, b) => o[b] - o[a])[0];
         return { s: parseInt(top(C), 10) || 0, ac: top(A) || '' };
     }
@@ -350,6 +371,7 @@ window.SalesArchive = (function () {
 
     // Какой файл истории загружен последним (history/import.json): тот же файл повторно не загружается.
     const IMPORT_FILE = 'history/import.json';
+    const IMPORT_LOCAL_KEY = 'krasavia_hist_import_sig';
     let lastImport = null;
 
     function fileSig(file) {
@@ -368,7 +390,11 @@ window.SalesArchive = (function () {
             version: 1, sig: fileSig(file), file: file ? String(file.name || '').slice(0, 80) : '', at: new Date().toISOString(),
             flights: r.flights, from: r.from ? formatDateRu(r.from) : '', to: r.to ? formatDateRu(r.to) : ''
         };
-        await SharedStorage.writeJsonFile(IMPORT_FILE, lastImport).catch(() => false);
+        const ok = await SharedStorage.writeJsonFile(IMPORT_FILE, lastImport).catch(() => false);
+        // Отметку не записали (старый локальный сервер, нет доступа) — помним хотя бы на этом компьютере,
+        // иначе история перезагружалась бы при каждой загрузке данных.
+        try { localStorage.setItem(IMPORT_LOCAL_KEY, lastImport.sig); } catch (e) { /* ignore */ }
+        return ok;
     }
 
     // SalesHistory.csv из папки данных (её пишет Export-SalesHistory.ps1, например каждую ночь по расписанию):
@@ -379,7 +405,9 @@ window.SalesArchive = (function () {
         if (!(await SharedStorage.canWrite())) return null;
         const read = await readLastImport();
         if (!read.ok) return null;   // не прочитали отметку — не грузим вслепую
-        if (lastImport && lastImport.sig === fileSig(file)) return { ok: true, same: true };
+        let localSig = '';
+        try { localSig = localStorage.getItem(IMPORT_LOCAL_KEY) || ''; } catch (e) { /* ignore */ }
+        if ((lastImport && lastImport.sig === fileSig(file)) || localSig === fileSig(file)) return { ok: true, same: true };
         const r = await importHistory(await file.text(), file);
         if (r.ok && typeof ForecastLab !== 'undefined' && ForecastLab.afterHistoryImport) ForecastLab.afterHistoryImport();
         return r;
@@ -419,7 +447,10 @@ window.SalesArchive = (function () {
             const ty = typical[code];
             // Кресла прошлых вылетов не записаны — берём по нынешнему рейсу. Рейса нет в данных — кресел не знаем (s: 0):
             // такой вылет идёт в норму и «прошлый год», но не в обучение модели (иначе загрузка была бы 100% по построению).
-            const e = { c, s: ty.s >= sold ? ty.s : 0, ac: ty.ac, sold, rev: Math.round(Number(r[col('REVENUE')]) || 0), h: 1 };
+            // Продано больше нынешних кресел — тогда летал ВС больше: берём наименьшую стандартную ёмкость, которая вмещает
+            // проданное (иначе такие вылеты выпали бы из обучения, и модель училась бы только на недогруженных).
+            const seats = ty.s >= sold ? ty.s : (ty.s > 0 ? (STD_SEATS.find(x => x >= sold) || 0) : 0);
+            const e = { c, s: seats, ac: ty.s >= sold ? ty.ac : '', sold, rev: Math.round(Number(r[col('REVENUE')]) || 0), h: 1 };
             e.se = 1;   // кресел прошлых вылетов в истории продаж нет — оценка по нынешнему ВС рейса
             ['REFUNDED', 'GROUP', 'CORP'].forEach((n, j) => { const v = parseInt(r[col(n)], 10); if (v > 0) e[['r', 'g', 'k'][j]] = v; });
             estimated++;
@@ -438,7 +469,7 @@ window.SalesArchive = (function () {
             loadedMonths.delete(m);
             await readMonth(m).catch(() => null);
             // Повторная загрузка заменяет историю и в памяти (readMonth берёт запись, только если в ней больше билетов).
-            Object.entries(byMonth[m]).forEach(([k, e]) => { const prev = curves[k]; if (!prev || prev.h) { const n = normalizeCurve(e); if (n) curves[k] = n; } });
+            Object.entries(byMonth[m]).forEach(([k, e]) => { const prev = curves[k]; if (!prev || prev.h) { const n = normalizeCurve(keepSeats(e, prev)); if (n) curves[k] = n; } });
         }
         rev++;
         if (typeof ActivityLog !== 'undefined') ActivityLog.log('import', `История продаж: ${flights} вылетов`);

@@ -69,8 +69,9 @@ function isSalesHistoryName(name) {
     return /^saleshistory.*\.csv$/i.test(String(name || ''));
 }
 
+// Несколько копий (SalesHistory (1).csv и т.п.) — берём самую свежую, иначе старая затёрла бы новую историю.
 function findSalesHistoryFile(files) {
-    return (files || []).find(f => isSalesHistoryName(f.name)) || null;
+    return getLatestFilesFromList((files || []).filter(f => isSalesHistoryName(f.name)), 1)[0] || null;
 }
 
 function findSalesCsvFile(files) {
@@ -260,7 +261,7 @@ async function scanDirectoryHandle(dir) {
     let costsName = '';
     let subsidyHandle = null;
     let subsidyName = '';
-    let historyHandle = null;
+    const historyHandles = [];
 
     for await (const [name, h] of dir.entries()) {
         if (h.kind === 'directory') {
@@ -269,7 +270,7 @@ async function scanDirectoryHandle(dir) {
             for await (const [fn, fh] of h.entries()) {
                 if (fh.kind !== 'file') continue;
                 const fl = fn.toLowerCase();
-                if (isSalesHistoryName(fn)) historyHandle = { name: fn, handle: fh };
+                if (isSalesHistoryName(fn)) historyHandles.push({ name: fn, handle: fh });
                 else if (fl.endsWith('.csv')) csvHandles.push({ name: fn, handle: fh });
                 else if (fl.endsWith('.xlsx') && lname.includes('весов') && fl.includes('весов')) {
                     weightsHandle = fh;
@@ -288,7 +289,7 @@ async function scanDirectoryHandle(dir) {
             }
             folderEntries[lname] = csvHandles;
         } else if (h.kind === 'file') {
-            if (isSalesHistoryName(name)) historyHandle = { name, handle: h };
+            if (isSalesHistoryName(name)) historyHandles.push({ name, handle: h });
             else rootEntries.push({ name, handle: h });
         }
     }
@@ -332,7 +333,7 @@ async function scanDirectoryHandle(dir) {
         children: typeof findChildrenCsvFile === 'function' ? findChildrenCsvFile(rootReady) : null,
         costs: costsFile,
         subsidyPeriods: subsidyFile,
-        history: historyHandle ? await fileFromHandle(historyHandle.handle, historyHandle.name) : null
+        history: historyHandles.length ? findSalesHistoryFile((await Promise.all(historyHandles.map(x => fileFromHandle(x.handle, x.name)))).filter(Boolean)) : null
     };
 }
 
@@ -352,6 +353,7 @@ async function loadFromDirectoryPicker() {
 
 // История продаж из папки данных: дописывается в архив сама, если файл новый (в фоне, после загрузки данных).
 function importSalesHistorySoon(file) {
+    if (typeof ForecastLab !== 'undefined' && ForecastLab.afterDataLoad) ForecastLab.afterDataLoad();
     if (!file || typeof SalesArchive === 'undefined' || !SalesArchive.autoImport) return;
     setTimeout(() => {
         SalesArchive.autoImport(file).then(r => {

@@ -82,7 +82,8 @@ window.TodayView = (function () {
     }
 
     function sig() {
-        return [typeof dataEpoch === 'number' ? dataEpoch : 0, today(), typeof allData !== 'undefined' && allData ? allData.length : 0, aheadDays()].join('|');
+        return [typeof dataEpoch === 'number' ? dataEpoch : 0, today(), typeof allData !== 'undefined' && allData ? allData.length : 0, aheadDays(),
+            typeof analyticsRevision === 'function' ? analyticsRevision() : ''].join('|');
     }
 
     async function buildAdvice() {
@@ -142,9 +143,9 @@ window.TodayView = (function () {
 
     function leadText(p, errs, gaps) {
         const parts = [];
-        if (canTab('sales')) parts.push(p ? `${p} вылет(ов) ждут решения` : `все вылеты на ${aheadDays()} дн. в норме или уже отмечены`);
-        if (typeof FlightChecks !== 'undefined' && FlightChecks.enabled()) parts.push(errs ? `${errs} рейс(ов) с ошибкой тарифа` : 'ошибок тарифов нет');
-        if (gaps) parts.push(`в справочнике ${gaps} пропуск(ов)`);
+        if (canTab('sales')) parts.push(p ? `${p} ${pluralRu(p, 'вылет ждёт', 'вылета ждут', 'вылетов ждут')} решения` : `все вылеты на ${aheadDays()} дн. в норме или уже отмечены`);
+        if (typeof FlightChecks !== 'undefined' && FlightChecks.enabled()) parts.push(errs ? `${errs} ${pluralRu(errs, 'рейс', 'рейса', 'рейсов')} с ошибкой тарифа` : 'ошибок тарифов нет');
+        if (gaps) parts.push(`в справочнике ${gaps} ${pluralRu(gaps, 'пропуск', 'пропуска', 'пропусков')}`);
         return parts.length ? parts.join(', ') + '.' : '';
     }
 
@@ -169,7 +170,7 @@ window.TodayView = (function () {
             const calEv = typeof CalendarEvents !== 'undefined' ? CalendarEvents.on(date)[0] : null;
             const calName = calEv ? CalendarEvents.label(date) : '';
             cells.push(`
-                <button type="button" class="td-day${pickDay === date && tab === 'day' ? ' td-day-on' : ''}${wk ? ' td-day-wk' : ''}" data-td-day="${esc(date)}" title="${esc(date)}${calName ? ' · ' + esc(calName) : ''}: ${deps.length} вылет(ов)${lf != null ? `, загрузка ${lf}%` : ''}${dec ? `, ждут решения: ${dec}` : ''}">
+                <button type="button" class="td-day${pickDay === date && tab === 'day' ? ' td-day-on' : ''}${wk ? ' td-day-wk' : ''}" data-td-day="${esc(date)}" title="${esc(date)}${calName ? ' · ' + esc(calName) : ''}: ${deps.length} ${pluralRu(deps.length, 'вылет', 'вылета', 'вылетов')}${lf != null ? `, загрузка ${lf}%` : ''}${dec ? `, ждут решения: ${dec}` : ''}">
                     <span class="td-dow">${calEv ? `<span class="cal-dot cal-dot-${esc(calEv.type)}"></span>` : ''}${esc(i === 0 ? 'сегодня' : i === 1 ? 'завтра' : dow)}</span>
                     <span class="td-date">${esc(date.slice(0, 5))}</span>
                     <span class="td-bar"><i class="${cls}" style="width:${lf || 0}%"></i></span>
@@ -246,14 +247,14 @@ window.TodayView = (function () {
     function tableHtml(pend, errs) {
         let rows = '';
         let empty = '';
-        let head = '<th>Рейс</th><th>Маршрут</th><th>Вылет</th><th>Загрузка</th><th title="Прогноз загрузки к вылету; в скобках — разброс">Прогноз</th><th>Обычно / план</th><th>Подсказка</th><th></th>';
+        let head = '<th>Рейс</th><th>Маршрут</th><th>Вылет</th><th>Загрузка</th><th title="Прогноз загрузки к вылету (тот же, что в карточке и RMS); в скобках — пределы, в которые попадают 8 вылетов из 10">Прогноз</th><th>Обычно / план</th><th>Подсказка</th><th></th>';
         if (tab === 'advice') {
             const order = { down: 0, attn: 1, up: 2 };
             const list = pend.slice().sort((a, b) => order[a.status] - order[b.status] || a.dtd - b.dtd);
             rows = list.slice(0, 200).map(a => rowHtml({ code: a.code, date: a.date, adv: a })).join('');
             empty = canTab('sales') ? `Все вылеты на ${aheadDays()} дн. в норме или уже отмечены сегодня.` : 'Нет доступа к «Управлению продажами».';
         } else if (tab === 'errors') {
-            head = '<th>Рейс</th><th>Маршрут</th><th>Вылет</th><th>Загрузка</th><th title="Прогноз загрузки к вылету; в скобках — разброс">Прогноз</th><th>Обычно / план</th><th>Ошибка</th><th></th>';
+            head = '<th>Рейс</th><th>Маршрут</th><th>Вылет</th><th>Загрузка</th><th title="Прогноз загрузки к вылету (тот же, что в карточке и RMS); в скобках — пределы, в которые попадают 8 вылетов из 10">Прогноз</th><th>Обычно / план</th><th>Ошибка</th><th></th>';
             rows = errs.map(e => rowHtml({ code: e.code, date: e.date }, `<span class="td-err">${esc(e.items.map(i => i.title).join(', '))}</span>`)).join('');
             empty = 'Ошибок тарифов нет.';
         } else {

@@ -304,17 +304,18 @@ window.FlightCard = (function () {
             const histNote = (s) => (s.source === 'history'
                 ? `по ${s.n} ${FI.plural(s.n, 'прошлому вылету', 'прошлым вылетам', 'прошлым вылетам')} в этот день недели`
                 : 'по файлу ожидаемой загрузки');
-            const src = isModel ? 'модель: продажи и темп, норма дня недели, план, календарь' : histNote(f);
+            const errTxt = isModel && f.model.err ? `обычно ошибается на ±${String(f.model.err).replace('.', ',')}` : '';
+            const src = isModel ? `модель прогноза: ${f.model.method}${errTxt ? ' · ' + errTxt : ''}` : histNote(f);
             // Один прогноз. Из чего он сложен — в подсказке (без второго числа рядом).
             const tip = isModel ? [
+                'Прогноз модели — тот же у всех сотрудников и во всех вкладках. Она учитывает продажи и их темп, вылеты в тот же день недели, файл ожидаемой загрузки, прошлый год, календарь и сама доучивается на каждом улетевшем вылете.',
                 f.lo != null ? `В 8 случаях из 10 итог будет от ${f.lo} до ${f.hi}.` : '',
-                `Способ: ${f.model.method}; за ${f.model.h} дн. до вылета ошибается в среднем на ${String(f.model.err).replace('.', ',')} пасс.`,
+                f.model.h ? `Способ: ${f.model.method}; за ${f.model.h} дн. до вылета ошибается в среднем на ${String(f.model.err).replace('.', ',')} пасс.` : '',
                 f.model.method === 'комитет моделей' && f.model.team && f.model.team.length > 1 ? `Веса на этом рейсе: ${f.model.team.slice(0, 4).map(x => `${x.label} ${x.w}%`).join(', ')}.` : '',
                 f.simple ? `Только ${histNote(f.simple)} было бы ${f.simple.final} — это один из способов внутри модели.` : ''
             ].filter(Boolean).join('\n') : '';
             const tone = f.lf >= 90 ? 'up' : (f.lf < 60 ? 'down' : '');
             tiles.push(`<div class="fc-it fc-it-${tone || 'plain'}"${tip ? ` title="${attr(tip)}"` : ''}>
-                <div class="fc-it-label">Прогноз к вылету</div>
                 <div class="fc-it-value">${f.final} <span class="fc-it-of">из ${f.seats}</span></div>
                 <div class="fc-it-sub"><strong>${f.lf}%</strong>${range ? ' · ' + esc(range) : ''}</div>
                 <div class="fc-it-note">${esc(src)}</div>
@@ -339,7 +340,7 @@ window.FlightCard = (function () {
             <button type="button" class="fc-ins-head" data-fc="insights" aria-expanded="${open}" title="${open ? 'Свернуть' : 'Показать прогноз'}">
                 <span class="fc-ins-caret">${open ? '▾' : '▸'}</span>
                 <span class="fc-ins-title">Прогноз к вылету</span>
-                <span class="fc-ins-chips">${summary.join('')}</span>
+                ${open ? '' : `<span class="fc-ins-chips">${summary.join('')}</span>`}
             </button>
             ${open ? `<div class="fc-ins-body">
                 ${tiles.length ? `<div class="fc-it-grid">${tiles.join('')}</div>` : ''}

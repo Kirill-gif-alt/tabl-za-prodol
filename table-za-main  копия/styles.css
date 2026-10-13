@@ -2056,6 +2056,7 @@ body, .app-body {
 .pair-col-toggles .pair-col-toggle {
     font-size: 0.72rem;
     white-space: nowrap;
+    max-width: none;
 }
 
 .pair-expenses-head,
@@ -3917,7 +3918,7 @@ table.pair-table button {
 .chart-expand-body canvas { width: 100% !important; height: 100% !important; }
 
 .export-excel-btn {
-    position: absolute; top: 12px; right: 12px; z-index: 20;
+    position: absolute; top: 12px; right: 12px; z-index: 30;
     padding: 7px 14px; font-size: 12px;
     background: var(--surface); border: 1px solid var(--border);
     color: #047857; border-radius: 10px;
@@ -5172,7 +5173,7 @@ html[data-theme="dark"] textarea {
 .rms-hero-note {
     margin: 6px 0 0;
     font-size: 0.72rem;
-    color: var(--text-muted);
+    color: rgba(255, 255, 255, 0.75);
     max-width: 72ch;
 }
 .rms-problem-strip {
@@ -5560,6 +5561,12 @@ html[data-theme="dark"] textarea {
 
 .sm-flight-on {
     background: #e0f2fe;
+}
+html[data-theme="dark"] .sm-flight-on {
+    background: color-mix(in srgb, var(--accent) 32%, var(--surface));
+}
+html.no-cmix[data-theme="dark"] .sm-flight-on {
+    background: #1e3a5f;
 }
 
 .sm-grid {
@@ -7853,6 +7860,12 @@ html[data-theme="dark"] .fc-ins-group, html[data-theme="dark"] .fc-groups-title 
 
 .dr-sum-table td, .dr-sum-table th {
     white-space: nowrap;
+}
+
+/* Числа и их заголовки — по правому краю: «—» и значения стоят под своим заголовком. */
+.dr-sum-table th:not(:first-child),
+.dr-sum-table td:not(:first-child) {
+    text-align: right;
 }
 
 .dr-sum-table td:first-child {
