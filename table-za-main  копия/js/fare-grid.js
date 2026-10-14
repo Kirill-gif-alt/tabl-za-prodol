@@ -2,13 +2,15 @@
 // Код тарифа: первая буква — класс бронирования, дальше — семейство и условия: VLHOW = класс V, семейство LH, OW.
 // У одного класса бывает несколько семейств с разной ценой: лайт (LH) дешевле стандарта (ST), оптимум (OP) — дороже.
 // Цена класса для ценового советника — самое дешёвое из «лайт / стандарт» (что есть), оптимум — надбавка к классу.
-// Сетка собирается из продаж (самый частый взрослый тариф кода), правки хранятся в shared/fare-grid.json — для всех.
+// Главный источник — официальная сетка тарифов (Excel «Тарифы»: маршрут, КБТ, УПТ, тариф ВЗР по периодам действия),
+// её загружают в «Справочник» → «Сетка тарифов». Нет официальной сетки по направлению — сетка из продаж.
+// Всё хранится в shared/fare-grid.json — для всех.
 window.FareGrid = (function () {
     const FILE = 'fare-grid.json';
     const FAMILY = { lite: 'Лайт', standard: 'Стандарт', optimum: 'Оптимум', other: 'Другое' };
     const AUTO_FAMILY = { LH: 'lite', LT: 'lite', ST: 'standard', OP: 'optimum' };   // по продажам: LH < ST < OP у одного класса
 
-    let store = { version: 1, routes: {} };
+    let store = { version: 1, routes: {}, official: null };
     let rev = 0;
     let memo = { sig: '', grids: new Map() };
 
@@ -92,8 +94,146 @@ window.FareGrid = (function () {
         return rows;
     }
 
-    // Лестница классов для советника: класс → цена (лайт, иначе стандарт, иначе самый дешёвый код класса).
-    function ladderFor(code) {
+    // ---------- официальная сетка тарифов (Excel) ----------
+
+    function norm(t) { return String(t || '').toLowerCase().replace(/ё/g, 'е').replace(/[\s.]+/g, '').replace(/[—–]/g, '-'); }
+
+    function parseDate(t) {
+        const m = String(t || '').match(/(\d{1,2})\.(\d{1,2})\.(\d{2,4})/);
+        if (!m) return '';
+        const y = m[3].length === 2 ? '20' + m[3] : m[3];
+        return `${m[1].padStart(2, '0')}.${m[2].padStart(2, '0')}.${y}`;
+    }
+
+    // Период действия из шапки таблицы: «Период действия с 02.09.2026 по 20.12.2026» / «Дата начала действия с 07.07.2026».
+    function parsePeriod(t) {
+        const s0 = String(t || '').replace(/\s+/g, ' ');
+        const m = s0.match(/действия\s*с\s*([\d.]+)(?:\s*по\s*([\d.]+))?/i);
+        if (!m) return null;
+        return { from: parseDate(m[1]), to: m[2] ? parseDate(m[2]) : '' };
+    }
+
+    function fareNum(v) {
+        if (typeof v === 'number') return v > 0 ? Math.round(v) : null;
+        const t = String(v == null ? '' : v).replace(/[\s\u00a0]/g, '').replace(',', '.');
+        const n = Number(t);
+        return t && isFinite(n) && n > 0 ? Math.round(n) : null;
+    }
+
+    // Направления сайта («Красноярск — Абакан»), которые упомянуты в названии маршрута таблицы («Красноярск-Абакан, Абакан-Красноярск»).
+    function matchDirections(routeText) {
+        const t = norm(routeText);
+        const out = new Set();
+        Object.values(window.FLIGHT_DIRECTIONS || {}).forEach(d => {
+            const parts = String(d).split(/\s+[—–-]\s+/);
+            if (parts.length !== 2) return;
+            if (t.includes(norm(parts[0]) + '-' + norm(parts[1]))) out.add(String(d).replace(/\s+/g, ' ').trim());
+        });
+        return [...out];
+    }
+
+    // Разбор файла: листы с таблицами «Маршрут | КБТ | УПТ | Тариф ВЗР», несколько таблиц рядом — разные периоды действия.
+    // Интерлайн, «по северной прописке», чартеры, льготы, ТНДМР/ЭМР и международные — не сетка RMS, пропускаются.
+    const SKIP_SHEET = /интерлайн|чартер|льгот|тндмр|эмр|монгол/i;
+    const SKIP_TABLE = /интерлайн|прописк/i;
+    function parseWorkbook(lib, wb) {
+        const routes = Object.create(null);
+        const unmatched = new Set();
+        let tables = 0;
+        wb.SheetNames.forEach(name => {
+            if (SKIP_SHEET.test(name)) return;
+            const rows = lib.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: '' });
+            const cell = (r, c) => (rows[r] && rows[r][c] != null ? rows[r][c] : '');
+            for (let hr = 0; hr < rows.length; hr++) {
+                const kbt = [];
+                (rows[hr] || []).forEach((v, c) => { if (String(v).trim() === 'КБТ') kbt.push(c); });
+                if (!kbt.length) continue;
+                // Строка периодов — ближайшая выше; таблица — от своей ячейки периода до следующей.
+                let pr = -1;
+                for (let k = hr - 1; k >= Math.max(0, hr - 3); k--) if ((rows[k] || []).some(v => /период|дата начала/i.test(String(v)))) { pr = k; break; }
+                const pcs = pr >= 0 ? (rows[pr] || []).map((v, c) => (/период|дата начала/i.test(String(v)) ? c : -1)).filter(c => c >= 0) : [kbt[0]];
+                pcs.forEach((pc, ti) => {
+                    const next = pcs[ti + 1] != null ? pcs[ti + 1] : Infinity;
+                    const cols = kbt.filter(c => c >= pc && c < next);
+                    if (!cols.length) return;
+                    // Заголовок таблицы — выше строки периодов, в её колонках («Тарифы на Краевых рейсах по Северной прописке»).
+                    let title = '';
+                    for (let k = (pr >= 0 ? pr : hr) - 1; k >= 0 && !title; k--) {
+                        for (let c = Math.max(0, pc - 1); c < Math.min(next, pc + 3); c++) { const v = String(cell(k, c)); if (/тариф/i.test(v) && !/ВЗР/.test(v)) { title = v; break; } }
+                    }
+                    if (SKIP_TABLE.test(title)) return;
+                    const per = parsePeriod(pr >= 0 ? cell(pr, pc) : '') || { from: '', to: '' };
+                    let route = '';
+                    const byRoute = Object.create(null);
+                    for (let r = hr + 1; r < rows.length; r++) {
+                        const a = String(cell(r, 0)).trim();
+                        const rowText = (rows[r] || []).map(String).join(' ');
+                        if (a === 'Маршрут' || /период|дата начала|приказ|тип рейсов/i.test(rowText) && !cols.some(c => /^[A-Z]{3,}/.test(String(cell(r, c))))) break;
+                        if (a) route = a.replace(/\s+/g, ' ');
+                        if (!route) continue;
+                        cols.forEach(c => {
+                            const code = String(cell(r, c)).trim().toUpperCase();
+                            if (!/^[A-Z][A-Z0-9]{3,8}$/.test(code)) return;
+                            const fare = fareNum(cell(r, c + 2));
+                            if (fare == null) return;   // «-» — не продаётся
+                            (byRoute[route] || (byRoute[route] = [])).push({ code, fare });
+                        });
+                    }
+                    Object.keys(byRoute).forEach(rt => {
+                        const dirs = matchDirections(rt);
+                        if (!dirs.length) { unmatched.add(rt); return; }
+                        tables++;
+                        dirs.forEach(d => { (routes[d] || (routes[d] = [])).push({ from: per.from, to: per.to, sheet: name, rows: byRoute[rt] }); });
+                    });
+                });
+            }
+        });
+        return { routes, unmatched: [...unmatched], tables };
+    }
+
+    function ts(d) { const x = typeof parseLocalDate === 'function' ? parseLocalDate(d) : null; return x ? x.getTime() : null; }
+
+    // Период официальной сетки на дату вылета: действующий (последний начавшийся), иначе ближайший.
+    function officialFor(dir, date) {
+        const list = store.official && store.official.routes && store.official.routes[dir];
+        if (!list || !list.length) return null;
+        const t = ts(date || (typeof getTodayDate === 'function' ? getTodayDate() : '')) || Date.now();
+        const ok = list.filter(p => (!p.from || ts(p.from) <= t) && (!p.to || t <= ts(p.to) + 86399999));
+        const pool = ok.length ? ok : list.filter(p => !p.from || ts(p.from) <= t);
+        const pick = (pool.length ? pool : list).slice().sort((a, b) => (ts(b.from) || 0) - (ts(a.from) || 0))[0];
+        return pick || null;
+    }
+
+    function familyOf(code) { return AUTO_FAMILY[code.slice(1, 3)] || 'other'; }
+
+    // Лестница по официальной сетке: класс → лайт, иначе стандарт, иначе самый дешёвый код; оптимум отдельно.
+    function officialLadder(dir, date) {
+        const per = officialFor(dir, date);
+        if (!per) return null;
+        const saved = (store.routes && store.routes[dir]) || {};
+        const byCls = Object.create(null);
+        per.rows.forEach(x => {
+            const sv = saved[x.code];
+            if (sv && sv.off) return;
+            const fare = sv && sv.fare > 0 ? sv.fare : x.fare;
+            const fam = (sv && sv.family) || familyOf(x.code);
+            (byCls[x.code[0]] || (byCls[x.code[0]] = [])).push({ code: x.code, fare, family: fam });
+        });
+        const ladder = Object.keys(byCls).map(cls => {
+            const l = byCls[cls];
+            const pick = l.find(r => r.family === 'lite') || l.find(r => r.family === 'standard') || l.slice().sort((a, b) => a.fare - b.fare)[0];
+            const opt = l.find(r => r.family === 'optimum');
+            return { cls, price: pick.fare, code: pick.code, family: pick.family, optimum: opt ? opt.fare : null };
+        });
+        ladder.sort((a, b) => a.price - b.price);
+        return { ladder, period: per };
+    }
+
+    // Лестница классов для советника: официальная сетка на дату вылета, иначе — по продажам
+    // (класс → лайт, иначе стандарт, иначе самый дешёвый код класса).
+    function ladderFor(code, date) {
+        const off = officialLadder(direction(code), date);
+        if (off && off.ladder.length >= 2) return off.ladder;
         const rows = grid(direction(code)).filter(r => !r.off && r.n >= (typeof PV !== 'undefined' ? PV.PA_MIN_CLASS_TICKETS : 3) || (r.source === 'ref' && !r.off));
         const byCls = Object.create(null);
         rows.forEach(r => { (byCls[r.cls] || (byCls[r.cls] = [])).push(r); });
@@ -110,7 +250,7 @@ window.FareGrid = (function () {
     async function load() {
         if (typeof SharedStorage === 'undefined') return;
         const r = await SharedStorage.readJsonFileStrict(FILE).catch(() => ({ ok: false }));
-        if (r.ok && r.data && typeof r.data === 'object') { store = { version: 1, routes: r.data.routes || {} }; rev++; }
+        if (r.ok && r.data && typeof r.data === 'object') { store = { version: 1, routes: r.data.routes || {}, official: r.data.official || null }; rev++; }
     }
 
     async function saveRoute(dir, entries) {
@@ -120,10 +260,36 @@ window.FareGrid = (function () {
         if (!r.ok) return false;
         const routes = (r.data && r.data.routes) || {};
         routes[dir] = entries;
+        const official = (r.data && r.data.official) || null;
         const by = typeof ProfileAuth !== 'undefined' ? (ProfileAuth.getCurrentProfile() || {}).name || '' : '';
-        const ok = await SharedStorage.writeJsonFile(FILE, { version: 1, updatedAt: new Date().toISOString(), by, routes });
-        if (ok) { store = { version: 1, routes }; rev++; }
+        const ok = await SharedStorage.writeJsonFile(FILE, { version: 1, updatedAt: new Date().toISOString(), by, routes, official });
+        if (ok) { store = { version: 1, routes, official }; rev++; }
         return ok;
+    }
+
+    async function saveOfficial(official) {
+        if (!canEdit()) return false;
+        const r = typeof SharedStorage !== 'undefined' ? await SharedStorage.readJsonFileStrict(FILE).catch(() => ({ ok: false })) : { ok: true, data: null };
+        if (!r.ok) return false;
+        const routes = (r.data && r.data.routes) || {};
+        const by = typeof ProfileAuth !== 'undefined' ? (ProfileAuth.getCurrentProfile() || {}).name || '' : '';
+        const ok = await SharedStorage.writeJsonFile(FILE, { version: 1, updatedAt: new Date().toISOString(), by, routes, official });
+        if (ok) { store = { version: 1, routes, official }; rev++; }
+        return ok;
+    }
+
+    async function importFile(file, rerender) {
+        const lib = typeof loadStyledXlsx === 'function' ? await loadStyledXlsx() : (typeof XLSX !== 'undefined' ? XLSX : null);
+        if (!lib) { if (typeof showToast === 'function') showToast('Библиотека Excel не загружена', 'error'); return; }
+        let wb;
+        try { wb = lib.read(await file.arrayBuffer(), { type: 'array' }); } catch (e) { if (typeof showToast === 'function') showToast('Не удалось прочитать файл', 'error'); return; }
+        const res = parseWorkbook(lib, wb);
+        const nDir = Object.keys(res.routes).length;
+        if (!nDir) { if (typeof showToast === 'function') showToast('В файле не нашлось таблиц «Маршрут — КБТ — Тариф ВЗР» по нашим направлениям', 'error'); return; }
+        const by = typeof ProfileAuth !== 'undefined' ? (ProfileAuth.getCurrentProfile() || {}).name || '' : '';
+        const ok = await saveOfficial({ file: String(file.name || '').slice(0, 120), at: new Date().toISOString(), by, routes: res.routes, unmatched: res.unmatched.slice(0, 50) });
+        if (typeof showToast === 'function') showToast(ok ? `Сетка тарифов загружена: ${nDir} направлений` : 'Не удалось записать сетку', ok ? 'success' : 'error');
+        if (rerender) rerender();
     }
 
     // ---------- раздел справочника ----------
@@ -142,14 +308,37 @@ window.FareGrid = (function () {
             <td>${r.n || '—'}</td>
             <td>${edit ? `<label><input type="checkbox" data-fg-off="${esc(r.code)}"${r.off ? ' checked' : ''}> не продаётся</label>` : (r.off ? 'не продаётся' : '')}</td>
             <td class="rp-muted">${r.source === 'ref' ? 'справочник' : 'по продажам'}</td></tr>`).join('');
-        const lad = ladderFor([...(directions().get(current) || [])][0] || current);
+        const anyCode = [...(directions().get(current) || [])][0] || current;
+        const lad = ladderFor(anyCode);
+        const off = store.official;
+        const offDir = officialLadder(current, null);
+        const per = offDir ? offDir.period : null;
+        const fmtP = (p) => `${p.from ? 'с ' + p.from : ''}${p.to ? ' по ' + p.to : ''}` || 'без срока';
+        const offList = off && off.routes && off.routes[current] ? off.routes[current] : [];
+        const famCell = (rows, cls, fam) => { const x = rows.find(r => r.code[0] === cls && familyOf(r.code) === fam); return x ? `${x.fare.toLocaleString('ru-RU')} <span class="rp-muted">${esc(x.code)}</span>` : '—'; };
+        const offTable = (p) => {
+            const classes = [...new Set(p.rows.map(r => r.code[0]))];
+            const cheapest = (c) => Math.min(...p.rows.filter(r => r.code[0] === c).map(r => r.fare));
+            classes.sort((a, b) => cheapest(a) - cheapest(b));
+            const other = (c) => p.rows.filter(r => r.code[0] === c && familyOf(r.code) === 'other').map(r => `${r.fare.toLocaleString('ru-RU')} <span class="rp-muted">${esc(r.code)}</span>`).join(', ') || '—';
+            return `<div class="rp-scroll"><table class="rp-table"><thead><tr><th>Класс</th><th>Лайт</th><th>Стандарт</th><th>Оптимум</th><th>Другие</th></tr></thead><tbody>${classes.map(c => `<tr><td><strong>${esc(c)}</strong></td><td>${famCell(p.rows, c, 'lite')}</td><td>${famCell(p.rows, c, 'standard')}</td><td>${famCell(p.rows, c, 'optimum')}</td><td>${other(c)}</td></tr>`).join('')}</tbody></table></div>`;
+        };
+        const offHtml = offList.length
+            ? offList.map(p => `<h4 class="rp-subhead">Действует ${esc(fmtP(p))}${p === per ? ' — сейчас' : ''}</h4>${offTable(p)}`).join('')
+            : '<p class="rp-note">По этому направлению официальной сетки нет — советник берёт уровни из продаж (таблица ниже).</p>';
+        const offInfo = off ? `Загружена: ${esc(off.file || 'файл')}${off.at ? `, ${esc(new Date(off.at).toLocaleDateString('ru-RU'))}` : ''}${off.by ? `, ${esc(off.by)}` : ''} · направлений: ${Object.keys(off.routes || {}).length}${off.unmatched && off.unmatched.length ? ` · не сопоставлены с рейсами: ${esc(off.unmatched.slice(0, 6).join('; '))}${off.unmatched.length > 6 ? '…' : ''}` : ''}` : 'Официальная сетка не загружена.';
         return `<section class="rp-card">
             <div class="rp-card-head"><h3 class="rp-card-title">Сетка тарифов</h3></div>
+            <p class="rp-card-text"><strong>Официальная сетка.</strong> ${offInfo}
+                ${edit ? '<button type="button" class="btn-primary rp-btn" id="fg-upload">Загрузить сетку тарифов (Excel)</button><input type="file" id="fg-file" accept=".xlsx,.xls" hidden>' : ''}</p>
+            <div class="ref-toolbar"><label>Направление <select id="fg-dir">${dirs.map(d => `<option${d === current ? ' selected' : ''}>${esc(d)}</option>`).join('')}</select></label></div>
+            ${offHtml}
+            <p class="rp-note">Лестница для советника сейчас (класс — цена): ${lad.map(l => `${esc(l.cls)} ${l.price.toLocaleString('ru-RU')} ₽${l.optimum ? ` (оптимум ${l.optimum.toLocaleString('ru-RU')})` : ''}`).join(' · ') || '—'}</p>
+            <h4 class="rp-subhead">По продажам</h4>
             <p class="rp-card-text">Класс — первая буква кода. У одного класса бывают семейства: лайт, стандарт и дороже — оптимум. Ценовой советник считает ценой класса лайт (если есть) или стандарт. Сетка собрана из продаж (самый частый взрослый тариф кода); поправьте семейство или тариф и сохраните — действует у всех.</p>
-            <div class="ref-toolbar"><label>Направление <select id="fg-dir">${dirs.map(d => `<option${d === current ? ' selected' : ''}>${esc(d)}</option>`).join('')}</select></label>
+            <div class="ref-toolbar">
                 ${edit ? '<button type="button" class="btn-primary rp-btn" id="fg-save">Сохранить сетку направления</button><button type="button" class="btn-secondary rp-btn" id="fg-reset">Вернуть как в продажах</button>' : ''}</div>
             <div class="rp-scroll"><table class="rp-table"><thead><tr><th>Класс</th><th>Код</th><th>Семейство</th><th>Тариф</th><th>Билетов</th><th></th><th>Источник</th></tr></thead><tbody>${body || '<tr><td colspan="7">Нет продаж по направлению</td></tr>'}</tbody></table></div>
-            <p class="rp-note">Лестница для советника (класс — цена): ${lad.map(l => `${esc(l.cls)} ${l.price.toLocaleString('ru-RU')} ₽${l.optimum ? ` (оптимум ${l.optimum.toLocaleString('ru-RU')})` : ''}`).join(' · ') || '—'}</p>
         </section>`;
     }
 
@@ -159,6 +348,14 @@ window.FareGrid = (function () {
     }
 
     async function handleClick(btn, rerender) {
+        if (btn.id === 'fg-upload') {
+            const input = document.getElementById('fg-file');
+            if (!input) return true;
+            input.value = '';
+            input.onchange = () => { const f = input.files && input.files[0]; if (f) importFile(f, rerender).catch(e => { console.error(e); if (typeof showToast === 'function') showToast('Ошибка загрузки сетки', 'error'); }); };
+            input.click();
+            return true;
+        }
         if (btn.id !== 'fg-save' && btn.id !== 'fg-reset') return false;
         if (btn.id === 'fg-reset') {
             if (!confirm('Убрать правки сетки этого направления и вернуть тарифы по продажам?')) return true;
@@ -186,5 +383,5 @@ window.FareGrid = (function () {
         return true;
     }
 
-    return { grid, ladderFor, load, sectionHtml, handleClick, handleChange, canEdit, revision: () => rev, FAMILY };
+    return { grid, ladderFor, officialLadder, parseWorkbook, load, sectionHtml, handleClick, handleChange, canEdit, revision: () => rev, FAMILY };
 })();

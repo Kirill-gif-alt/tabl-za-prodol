@@ -268,7 +268,10 @@ window.PriceAdvisor = (function () {
         if (!(C > 0) || dtd0 == null || dtd0 < 1) return null;
         const dtd = Math.min(PV.PA_HORIZON, Math.max(dtd0, typeof observedFromDtd === 'function' ? observedFromDtd(date) : dtd0));
         if (!histReady) { ensureHistory(); return null; }
-        const info = routeInfo(code);
+        const info0 = routeInfo(code);
+        // Уровни тарифов — по официальной сетке на дату вылета (периоды действия), иначе по продажам.
+        const offL = typeof FareGrid !== 'undefined' && FareGrid.officialLadder ? FareGrid.officialLadder(direction(code) || base(code), date) : null;
+        const info = offL && offL.ladder.length >= 2 ? Object.assign({}, info0, { ladder: offL.ladder }) : info0;
         if (!info.a || !info.pRef || info.ladder.length < 2) return null;
         const cap = capFor(code, date);
         // Нынешний класс — по полной лестнице (до потолка): класс выше потолка — нарушение, а не «ближайший под потолком».
