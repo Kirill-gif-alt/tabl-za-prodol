@@ -49,6 +49,8 @@ function timeToMinutes(val) {
     return parseInt(s.slice(0, 2), 10) * 60 + parseInt(s.slice(3, 5), 10);
 }
 
+let availabilityKeepClosed = false;   // loadAvailabilityFiles: закрытые строки нужны до слияния файлов
+
 function isSalesStatusOpen(status) {
     const s = String(status || '').toLowerCase().trim();
     if (!s) return true;
@@ -247,9 +249,13 @@ function parseAvailabilityChunk(chunk) {
     }
 
     if (!route) route = parseSegmentField(segment).route;
-    if (status && !isSalesStatusOpen(status)) return null;
-
-    return [flight, date, segment, route, config, total, free, totalSeg, avs, totalAv, status, dep, arr];
+    const rec = [flight, date, segment, route, config, total, free, totalSeg, avs, totalAv, status, dep, arr];
+    if (status && !isSalesStatusOpen(status)) {
+        // При слиянии двух файлов «загрузка таб» закрытая строка нового файла должна перекрыть открытую строку старого.
+        if (!availabilityKeepClosed) return null;
+        rec.closedRow = true;
+    }
+    return rec;
 }
 
 function parseAvailabilityLine(line) {

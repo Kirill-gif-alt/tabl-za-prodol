@@ -12,7 +12,7 @@ window.Security = (function () {
     const DATE_RE = /^\d{2}\.\d{2}\.\d{4}$/;
     const TIME_RE = /^\d{2}:\d{2}$/;
     /** Админ может задавать себе/сбрасывать пароли от 3 символов */
-    const MIN_PASSWORD_LEN_ADMIN = 3;
+    const MIN_PASSWORD_LEN_ADMIN = 8;   // и при сбросе администратором — не короче 8 (короткий пароль подбирается по хешу)
 
     let loginState = { fails: 0, lockUntil: 0 };
 

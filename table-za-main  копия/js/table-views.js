@@ -260,13 +260,16 @@ function actuallyRenderTable(base,targetDate=null){
                 openTable: tableHtmlCache.openTable,
                 rows: tableHtmlCache.rows,
                 rowHeight: 40,
-                scrollIndex: scrollDateIndex
+                scrollIndex: scrollDateIndex,
+                // Отметка «!» комментария — по текущим комментариям, а не из кэша строк.
+                onPaint() { if (typeof FlightComments !== 'undefined') FlightComments.markRows(cont); }
             });
         } else {
             cont.innerHTML = tableHtmlCache.openTable + tableHtmlCache.rows.join('') + '</tbody></table>';
         }
         cont.dataset.renderSig = tableCacheSig;
         addExportButtonToTable(cont, 'table');
+        if (typeof FlightComments !== 'undefined') FlightComments.markRows(cont);
         if (typeof SessionStore !== 'undefined') SessionStore.saveUiSession();
         tabPanelState.table = { flight: base, date: targetDate, sig: getTableRenderSig() };
         return;
@@ -371,7 +374,8 @@ function actuallyRenderTable(base,targetDate=null){
             openTable,
             rows: rowHtmls,
             rowHeight: 40,
-            scrollIndex: scrollDateIndex
+            scrollIndex: scrollDateIndex,
+            onPaint() { if (typeof FlightComments !== 'undefined') FlightComments.markRows(cont); }
         });
     } else {
         cont.innerHTML = openTable + rowHtmls.join('') + '</tbody></table>';

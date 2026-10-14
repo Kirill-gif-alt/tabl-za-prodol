@@ -119,7 +119,8 @@ window.ReportsView = (function () {
                     routeType: routeTypeOf(code),
                     seats,
                     sold,
-                    plan: withPlan ? planLoad(row, base) : null
+                    // План — не больше кресел в продаже (как в RMS и карточке рейса).
+                    plan: withPlan ? ((p) => (p != null && seats > 0 ? Math.min(p, seats) : p))(planLoad(row, base)) : null
                 });
             });
         });
@@ -780,12 +781,12 @@ window.ReportsView = (function () {
         const wsJ = j.finish([12, 18, 10, 30, 12, 14, 10, 11, 11, 13, 15, 16, 11, 18, 18, 13, 44], 2);
         const s = sheetWriter(lib);
         const sec = style(SECTION, 'FFFFFF', true, 'left');
-        const pct = (v) => (v == null ? '' : v + '%');
+        const pct = (v) => (v == null ? '' : v);   // число, а не «67%»: в Excel его можно сортировать и складывать
         const block = (r, title, groups, keyLabel, noMoney) => {
             s.title(r++, title, 8, sec);
             const head = [keyLabel, 'Решений', 'С итогом', 'Можно судить', 'Сработало', 'Сработало, %', 'Средний итог, бил.'].concat(noMoney ? [] : ['Выручка к «без решений», ₽']);
             return s.table(r, head,
-                groups.map(g => ({ cells: [g.key, g.n, g.done, g.judged, g.good, pct(g.share), g.avg == null ? '' : (g.avg > 0 ? '+' : '') + String(g.avg).replace('.', ',')].concat(noMoney ? [] : [g.money == null ? '' : g.money]) }))) + 1;
+                groups.map(g => ({ cells: [g.key, g.n, g.done, g.judged, g.good, pct(g.share), g.avg == null ? '' : g.avg].concat(noMoney ? [] : [g.money == null ? '' : g.money]) }))) + 1;
         };
         let r = 0;
         s.title(r++, head, 8, style('FFFFFF', NAVY, true, 'left'));

@@ -43,7 +43,7 @@ window.SessionStore = (function () {
                 dataShowLocalTimes: typeof dataShowLocalTimes !== 'undefined' ? !!dataShowLocalTimes : false,
                 showSpecBookings: typeof showSpecBookings !== 'undefined' ? !!showSpecBookings : false,
                 rmsConditions: typeof rmsActiveConditions !== 'undefined' ? rmsActiveConditions : [],
-                rmsRouteTypeFilter: document.getElementById('rms-route-type-filter')?.value || 'all',
+                rmsUiFilters: typeof rmsUiFilters !== 'undefined' ? { ...rmsUiFilters } : null,
                 dataRouteTypeFilter: typeof dataRouteTypeFilter !== 'undefined' ? dataRouteTypeFilter : 'all',
                 dataSort: typeof dataSort !== 'undefined' ? dataSort : 'route-asc',
                 dataHideFlew: typeof dataHideFlew !== 'undefined' ? !!dataHideFlew : false,
@@ -113,9 +113,16 @@ window.SessionStore = (function () {
             if (Array.isArray(s.rmsConditions) && typeof normalizeRmsConditions === 'function') {
                 rmsActiveConditions = normalizeRmsConditions(s.rmsConditions);
             }
-            if (s.rmsRouteTypeFilter) {
-                const el = document.getElementById('rms-route-type-filter');
-                if (el) el.value = s.rmsRouteTypeFilter;
+            if (typeof rmsUiFilters !== 'undefined') {
+                const f = s.rmsUiFilters && typeof s.rmsUiFilters === 'object' ? s.rmsUiFilters : {};
+                if (['7', '14', '30'].includes(f.days)) rmsUiFilters.days = f.days;
+                const route = f.route || s.rmsRouteTypeFilter;   // старый формат сессии — только тип рейса
+                if (['all', 'krai', 'interregional'].includes(route)) rmsUiFilters.route = route;
+                if (['all', 'alerts'].includes(f.alert)) rmsUiFilters.alert = f.alert;
+                ['days', 'route', 'alert'].forEach(k => {
+                    const el = document.getElementById({ days: 'rms-days-filter', route: 'rms-route-type-filter', alert: 'rms-alert-filter' }[k]);
+                    if (el) el.value = rmsUiFilters[k];
+                });
             }
             if (s.dataRouteTypeFilter && typeof dataRouteTypeFilter !== 'undefined') {
                 dataRouteTypeFilter = s.dataRouteTypeFilter;
@@ -222,7 +229,8 @@ window.SessionStore = (function () {
                 tx.onerror = () => reject(tx.error);
                 tx.objectStore(IDB_STORE).put(payload, SNAPSHOT_KEY);
             });
-            localStorage.setItem('krasavia_snapshot_at', String(payload.savedAt));
+            // Метка времени — отдельно: снимок уже записан, переполненный localStorage не должен его «отменять».
+            try { localStorage.setItem('krasavia_snapshot_at', String(payload.savedAt)); } catch (e) { /* ignore */ }
             lastSavedSignature = signature;
             updateRestoreButtonVisibility(true);
             return true;
@@ -379,7 +387,7 @@ window.SessionStore = (function () {
         // Младенцы без места (…/IN00) — не проданные места; в старых снимках они ещё есть.
         const rawDetails = {};
         Object.keys(snap.salesDetails || {}).forEach(k => {
-            const list = (snap.salesDetails[k] || []).filter(x => !/\/(IN|ID)\d/i.test(String(x && x.basicFareStr || '')));
+            const list = (snap.salesDetails[k] || []).filter(x => !(/\/(IN|ID)\d/i.test(String(x && x.basicFareStr || '')) && !((x && x.fare) > 0)));
             if (list.length) rawDetails[k] = list;
         });
         // Размер заказа считается по PNR до того, как PNR скроется у тех, кому он не положен.
@@ -438,7 +446,7 @@ window.SessionStore = (function () {
             tx.onerror = () => reject(tx.error);
             tx.objectStore(IDB_STORE).put({ version: 2, savedAt: snap.savedAt, sharedText: snap.sharedText }, SNAPSHOT_KEY);
         });
-        localStorage.setItem('krasavia_snapshot_at', String(snap.savedAt));
+        try { localStorage.setItem('krasavia_snapshot_at', String(snap.savedAt)); } catch (e) { /* ignore */ }
         lastSavedSignature = getSnapshotSignature();
         updateRestoreButtonVisibility(true);
         return true;

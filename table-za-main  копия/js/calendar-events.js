@@ -103,7 +103,9 @@ window.CalendarEvents = (function () {
         BUILTIN.forEach(b => {
             const own = custom[b.id];
             if (own && own.deleted) return;
-            out.push(own ? { ...b, ...own, id: b.id, builtin: true, edited: true } : b);
+            // «Как было» записывает копию исходной записи — такая правка не считается правкой.
+            const same = own && ['from', 'to', 'type', 'name'].every(k => String(own[k] ?? '') === String(b[k] ?? '')) && (own.norm ?? null) === (b.norm ?? null);
+            out.push(own && !same ? { ...b, ...own, id: b.id, builtin: true, edited: true } : b);
         });
         Object.keys(custom).forEach(id => {
             if (BUILTIN.some(b => b.id === id)) return;

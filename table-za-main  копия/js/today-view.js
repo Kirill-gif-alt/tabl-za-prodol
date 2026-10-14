@@ -298,7 +298,7 @@ window.TodayView = (function () {
                     ${dayStripHtml(pend)}
                     <div class="td-tabs" role="tablist">${tabs.map(t => `<button type="button" role="tab" class="td-tab${t.id === tab ? ' td-tab-on' : ''}" data-td-tab="${t.id}">${esc(t.label)}</button>`).join('')}
                         ${canTab('sales') ? `<label class="td-ahead" title="За сколько дней вперёд искать вылеты, где стоит повысить или снизить тариф">Вперёд на
-                            <select data-td-ahead>${AHEAD_OPTIONS.map(n => `<option value="${n}"${n === aheadDays() ? ' selected' : ''}>${n} дн.</option>`).join('')}</select></label>` : ''}</div>
+                            <select data-td-ahead>${[...new Set(AHEAD_OPTIONS.concat(aheadDays()))].sort((x, y) => x - y).map(n => `<option value="${n}"${n === aheadDays() ? ' selected' : ''}>${n} дн.</option>`).join('')}</select></label>` : ''}</div>
                     ${tableHtml(pend, errs)}
                 </section>
             </div>`;

@@ -48,6 +48,8 @@ const TableVirtual = (function () {
                 + rows.slice(start, end).join('')
                 + `<tr class="tv-pad" aria-hidden="true"><td colspan="32" style="height:${padBot}px;padding:0;border:0"></td></tr>`;
             if (onPaint) onPaint();
+            // Строки перерисованы — выделение (сумма в строке состояния) по старым строкам больше не верно.
+            tbody.dispatchEvent(new CustomEvent('tv-repaint', { bubbles: true }));
         }
 
         function onScroll() {

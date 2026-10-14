@@ -332,9 +332,10 @@ window.FlightInsights = (function () {
         let s = `Безубыточность: ${e.breakeven} пасс.${e.belowCost ? ' — больше кресел, при этом тарифе рейс не окупается' : ''} · средний тариф ${rubFull(e.fare)}${fareNote}`;
         if (e.finResult != null) {
             s += ` · прогноз результата ${e.finResult >= 0 ? '+' : ''}${rub(e.finResult)}`;
-            if (e.finResult < 0 && !e.belowCost) {
+            if (e.finResult < 0) {
                 const parts = [];
-                if (e.need) parts.push(`+${e.need} ${plural(e.need, 'билет', 'билета', 'билетов')}`);
+                // Кресел не хватает — выйти в ноль можно только тарифом: его и показываем.
+                if (e.need && !e.belowCost) parts.push(`+${e.need} ${plural(e.need, 'билет', 'билета', 'билетов')}`);
                 if (e.needFare != null && e.needFare > 0) parts.push(`тариф +${rubFull(e.needFare)}`);
                 if (parts.length) s += ` (чтобы выйти в ноль: ${parts.join(' или ')})`;
             }

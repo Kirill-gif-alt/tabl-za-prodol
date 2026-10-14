@@ -65,7 +65,42 @@ function initSelectionStatusBar() {
         return out;
     };
 
-    const bodyRows = (table) => Array.from(table.tBodies?.[0]?.rows || []);
+    // Строки-распорки виртуальной прокрутки (tv-pad) — не данные.
+    const bodyRows = (table) => Array.from(table.tBodies?.[0]?.rows || []).filter(tr => !tr.classList.contains('tv-pad'));
+
+    // Номер ячейки строки, покрывающей логический столбец col (с учётом colspan); null — нет такой.
+    const cellAtCol = (tr, col) => {
+        let acc = 0;
+        for (let i = 0; i < tr.cells.length; i++) {
+            const span = tr.cells[i].colSpan || 1;
+            if (col >= acc && col < acc + span) return i;
+            acc += span;
+        }
+        return null;
+    };
+
+    // Логический столбец ячейки шапки: в многорядной шапке объединённые ячейки (rowspan/colspan) сдвигают номера.
+    const headerCol = (th) => {
+        const thead = th.closest('thead');
+        const taken = [];   // taken[row] = Set занятых столбцов
+        const rows = Array.from(thead.rows);
+        for (let ri = 0; ri < rows.length; ri++) {
+            taken[ri] = taken[ri] || new Set();
+            let col = 0;
+            for (const cell of rows[ri].cells) {
+                while (taken[ri].has(col)) col++;
+                const cs = cell.colSpan || 1;
+                const rs = cell.rowSpan || 1;
+                if (cell === th) return col;
+                for (let dr = 0; dr < rs; dr++) {
+                    taken[ri + dr] = taken[ri + dr] || new Set();
+                    for (let dc = 0; dc < cs; dc++) taken[ri + dr].add(col + dc);
+                }
+                col += cs;
+            }
+        }
+        return th.cellIndex;
+    };
 
     const cellKey = (r, c) => `${r}:${c}`;
 
@@ -199,7 +234,8 @@ function initSelectionStatusBar() {
         }
         const set = getSet(table);
         bodyRows(table).forEach((tr, r) => {
-            if (tr.cells[colIndex]) set.add(cellKey(r, colIndex));
+            const c = cellAtCol(tr, colIndex);
+            if (c != null) set.add(cellKey(r, c));
         });
         activeTable = table;
         paint(table);
@@ -281,7 +317,7 @@ function initSelectionStatusBar() {
         const table = th.closest(TABLE_SEL);
         if (!table || !th.closest('thead')) return null;
         // для многорядных шапок: берём cellIndex; если colspan — выделяем все покрытые столбцы
-        const start = th.cellIndex;
+        const start = headerCol(th);
         const span = th.colSpan || 1;
         return { table, start, span, th };
     };
@@ -292,6 +328,14 @@ function initSelectionStatusBar() {
         if (td.classList.contains('col-date')) return true;
         return td.cellIndex === 0;
     };
+
+    document.addEventListener('tv-repaint', (e) => {
+        if (activeTable && activeTable.contains(e.target)) {
+            clearTable(activeTable);
+            updateBar(null);
+            activeTable = null;
+        }
+    });
 
     document.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return;

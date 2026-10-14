@@ -361,9 +361,13 @@ function renderHeaderKpi() {
 // Наступил новый день — продажи «за сегодня» пересчитываются от новой даты (иначе в шапке вчерашние).
 function refreshHeaderForToday() {
     if (document.hidden) return;
+    // Идёт загрузка продаж — пересчёт по недогруженным билетам испортил бы счётчики.
+    if ((typeof salesLoadLock !== 'undefined' && salesLoadLock) || window.ingestQuiet) return;
     if (typeof salesAggregatesFresh === 'function' && typeof rebuildSalesAggregatesFromDetails === 'function'
         && Object.keys(typeof salesDetails !== 'undefined' && salesDetails ? salesDetails : {}).length && !salesAggregatesFresh()) {
         rebuildSalesAggregatesFromDetails();
+        if (typeof invalidateMetricsCache === 'function') invalidateMetricsCache();
+        if (typeof refreshCurrentView === 'function') refreshCurrentView();   // новый день — таблицы тоже на новую дату
         return;
     }
     if (typeof updateHeaderStatus === 'function') updateHeaderStatus();
@@ -443,7 +447,11 @@ function rebuildSalesAggregatesFromDetails() {
 
         list.forEach(sale => {
             const deal = sale?.dealDate;
-            if (!deal) return;
+            if (typeof PerfCache !== 'undefined') {
+                const adj = sale.adjustedFare != null ? sale.adjustedFare : (sale.fare || 0);
+                PerfCache.recordSaleStat(k, deal || '', adj, sale.fare || 0, sale.basicFareStr || '', dates.today, dates.yesterday);
+            }
+            if (!deal) return;   // без даты продажи — только в выручку и средний тариф, не в «сегодня/вчера»
             if (deal === dates.today) bucket.today++;
             else if (deal === dates.yesterday) bucket.yesterday++;
             else if (deal === dates.day2) bucket.day2++;
@@ -455,11 +463,6 @@ function rebuildSalesAggregatesFromDetails() {
                 if (daysAgo < 30) bucket.d30++;
             }
 
-            if (typeof PerfCache !== 'undefined') {
-                const adj = sale.adjustedFare != null ? sale.adjustedFare : (sale.fare || 0);
-                const nf = sale.fare || 0;
-                PerfCache.recordSaleStat(k, deal, adj, nf, sale.basicFareStr || '', dates.today, dates.yesterday);
-            }
         });
     });
 

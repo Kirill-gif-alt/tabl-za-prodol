@@ -168,11 +168,17 @@ window.FareGrid = (function () {
             return true;
         }
         const entries = {};
+        const byCode = new Map(grid(current).map(r => [r.code, r]));
         document.querySelectorAll('[data-fg-fare]').forEach(inp => {
             const code = inp.dataset.fgFare;
             const fam = document.querySelector(`[data-fg-family="${CSS.escape(code)}"]`);
             const off = document.querySelector(`[data-fg-off="${CSS.escape(code)}"]`);
-            entries[code] = { fare: Math.max(0, Math.round(Number(inp.value) || 0)), family: fam ? fam.value : familyAuto(code), off: !!(off && off.checked) };
+            const e = { fare: Math.max(0, Math.round(Number(inp.value) || 0)), family: fam ? fam.value : familyAuto(code), off: !!(off && off.checked) };
+            // В справочник — только правки: строка «как в продажах» остаётся по продажам (и под порогом числа билетов),
+            // иначе одно «Сохранить» превратило бы редкие коды (1–2 билета) в ступени лестницы советника.
+            const r = byCode.get(code);
+            const changed = !r || e.off || e.family !== familyAuto(code) || (r.autoFare == null ? e.fare > 0 : e.fare !== r.autoFare);
+            if (changed) entries[code] = e;
         });
         const ok = await saveRoute(current, entries);
         if (typeof showToast === 'function') showToast(ok ? 'Сетка тарифов сохранена' : 'Не удалось записать сетку', ok ? 'success' : 'error');

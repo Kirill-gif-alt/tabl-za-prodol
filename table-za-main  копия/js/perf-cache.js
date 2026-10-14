@@ -178,6 +178,7 @@ window.PerfCache = (function () {
         if (!st) {
             st = salesStatsByKey[key] = {
                 count: 0,
+                paidCount: 0,
                 fareSum: 0,
                 lastFare: 0,
                 lastBasicFare: '',
@@ -185,15 +186,17 @@ window.PerfCache = (function () {
             };
         }
         st.count++;
+        if ((adj || 0) > 0) st.paidCount++;
         st.fareSum += adj || 0;
         if (dealDate === today) {
             salesTodayKpi.sales++;
             salesTodayKpi.revenue += adj || 0;
         }
         const ts = dateTsMemo(dealDate) || 0;
-        if (ts >= st.lastDealTs) {
+        // Последний тариф — последний оплаченный (0 ₽ и служебные билеты его не затирают), как без кэша.
+        if ((adj || 0) > 0 && ts >= st.lastDealTs) {
             st.lastDealTs = ts;
-            st.lastFare = nf || 0;
+            st.lastFare = adj;
             st.lastBasicFare = basicFareStr || '';
         }
     }

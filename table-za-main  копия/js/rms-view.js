@@ -2,6 +2,17 @@
 // Globals on purpose: no bundler; onclick and other files call by name.
 
 let rmsVirtualHandle = null;
+// Фильтры RMS живут здесь, а не только в выпадающих списках: вкладка строится позже восстановления сессии.
+let rmsUiFilters = { days: '30', route: 'all', alert: 'all' };
+
+function rmsFilterChanged(el) {
+    const key = { 'rms-days-filter': 'days', 'rms-route-type-filter': 'route', 'rms-alert-filter': 'alert' }[el.id];
+    if (key) rmsUiFilters[key] = el.value;
+    if (typeof SessionStore !== 'undefined') SessionStore.saveUiSession();
+    renderRmsWatchlist();
+}
+
+function rmsSel(key, v) { return rmsUiFilters[key] === v ? ' selected' : ''; }
 
 function createRmsView(c) {
     c.innerHTML = `
@@ -26,25 +37,25 @@ function createRmsView(c) {
                         </div>
                         <div class="table-sort-wrap">
                             <span class="table-sort-label">Период</span>
-                            <select id="rms-days-filter" aria-label="Период" onchange="renderRmsWatchlist()" class="table-sort-select">
-                                <option value="7">7 дней</option>
-                                <option value="14">14 дней</option>
-                                <option value="30" selected>30 дней</option>
+                            <select id="rms-days-filter" aria-label="Период" onchange="rmsFilterChanged(this)" class="table-sort-select">
+                                <option value="7"${rmsSel('days', '7')}>7 дней</option>
+                                <option value="14"${rmsSel('days', '14')}>14 дней</option>
+                                <option value="30"${rmsSel('days', '30')}>30 дней</option>
                             </select>
                         </div>
                         <div class="table-sort-wrap">
                             <span class="table-sort-label">Тип рейса</span>
-                            <select id="rms-route-type-filter" aria-label="Тип рейса" onchange="renderRmsWatchlist()" class="table-sort-select">
-                                <option value="all">Все</option>
-                                <option value="krai">Краевые</option>
-                                <option value="interregional">Межрегиональные</option>
+                            <select id="rms-route-type-filter" aria-label="Тип рейса" onchange="rmsFilterChanged(this)" class="table-sort-select">
+                                <option value="all"${rmsSel('route', 'all')}>Все</option>
+                                <option value="krai"${rmsSel('route', 'krai')}>Краевые</option>
+                                <option value="interregional"${rmsSel('route', 'interregional')}>Межрегиональные</option>
                             </select>
                         </div>
                         <div class="table-sort-wrap">
                             <span class="table-sort-label">Показать</span>
-                            <select id="rms-alert-filter" aria-label="Показать" onchange="renderRmsWatchlist()" class="table-sort-select">
-                                <option value="all">Все рейсы</option>
-                                <option value="alerts">Только предупреждения</option>
+                            <select id="rms-alert-filter" aria-label="Показать" onchange="rmsFilterChanged(this)" class="table-sort-select">
+                                <option value="all"${rmsSel('alert', 'all')}>Все рейсы</option>
+                                <option value="alerts"${rmsSel('alert', 'alerts')}>Только предупреждения</option>
                             </select>
                         </div>
                         <div class="table-controls-spacer"></div>

@@ -490,10 +490,20 @@ window.ThemeSettings = (function () {
             // Скрытые поиском параметры не трогаем — берём их нынешние значения.
             const vals = {};
             Params.defs().forEach(d => { vals[d.key] = d.value; });
-            wrap.querySelectorAll('[data-param]').forEach(inp => { vals[inp.dataset.param] = inp.value; });
+            let empty = '';
+            wrap.querySelectorAll('[data-param]').forEach(inp => {
+                if (!String(inp.value).trim() || !isFinite(parseFloat(String(inp.value).replace(',', '.')))) {
+                    if (!empty) empty = (Params.defs().find(x => x.key === inp.dataset.param) || {}).label || inp.dataset.param;
+                    return;
+                }
+                vals[inp.dataset.param] = inp.value;
+            });
             const st = wrap.querySelector('#theme-params-status');
+            // Пустое поле не сбрасываем молча к значению по умолчанию — просим заполнить.
+            if (empty) { if (typeof showToast === 'function') showToast(`Заполните: «${empty}»`, 'error'); if (st) st.textContent = ''; return; }
             if (st) st.textContent = 'Сохраняю…';
             const res = await Params.save(vals);
+            if (res.invalid) { if (typeof showToast === 'function') showToast(res.error, 'error'); if (st) st.textContent = ''; return; }
             if (typeof showToast === 'function') showToast(res.ok ? 'Параметры сохранены — действуют у всех' : 'Параметры применены здесь, но не записаны в общую папку', res.ok ? 'success' : 'error');
             if (typeof refreshCurrentView === 'function') refreshCurrentView();
             renderParams(container);
@@ -541,6 +551,9 @@ window.ThemeSettings = (function () {
     }
 
     function bindFormEvents(container) {
+        // Форма пересобирается («Сбросить»), а контейнер тот же — обработчики вешаем один раз.
+        if (container.dataset.eventsBound) return;
+        container.dataset.eventsBound = '1';
         container.addEventListener('click', (e) => {
             const presetBtn = e.target.closest('.theme-preset-btn');
             if (presetBtn) {

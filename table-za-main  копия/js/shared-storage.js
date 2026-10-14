@@ -29,7 +29,9 @@ window.SharedStorage = (function () {
         'flights.json': { every: 600, keep: 30 },
         'pkz-nav.json': { every: 600, keep: 30 },
         'flight-comments.json': { every: 3600, keep: 24 },
-        'creative-layouts.json': { every: 3600, keep: 20 }
+        'creative-layouts.json': { every: 3600, keep: 20 },
+        'params.json': { every: 600, keep: 30 },
+        'fare-grid.json': { every: 600, keep: 30 }
     };
     const lastBackupAt = {};
     let serverHistory = false;

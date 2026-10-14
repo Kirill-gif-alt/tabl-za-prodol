@@ -37,6 +37,8 @@ HISTORY_POLICY = {
     "pkz-nav.json": (600, 30),
     "flight-comments.json": (3600, 24),
     "creative-layouts.json": (3600, 20),
+    "params.json": (600, 30),
+    "fare-grid.json": (600, 30),
 }
 # Архив продаж (js/sales-archive.js): shared/history/curves-ГГГГ-ММ.json.
 ARCHIVE_RE = re.compile(r"^history/(curves-\d{4}-\d{2}|import)\.json$")
@@ -46,6 +48,7 @@ MARKS_DIR_RE = re.compile(r"^sales-marks/\d{4}-\d{2}$")
 # Журнал прогнозов загрузки (js/forecast-lab.js): shared/forecast-log/ГГГГ-ММ.json.
 FCLOG_RE = re.compile(r"^forecast-log/\d{4}-\d{2}\.json$")
 MAX_BODY = 64 * 1024 * 1024
+SOCKET_TIMEOUT = 30   # зависший клиент не держит поток и память бесконечно
 WRITE_LOCK = threading.Lock()
 ALLOWED_HOSTS = {"127.0.0.1:%d" % PORT, "localhost:%d" % PORT}
 
@@ -58,10 +61,10 @@ def _history_base(name):
 def _policy_for(name):
     if name in HISTORY_POLICY:
         return HISTORY_POLICY[name]
-    if FCLOG_RE.match(name):
+    if FCLOG_RE.fullmatch(name):
         return (6 * 3600, 10)
     # Архив продаж (кривые по месяцам) — копия раз в сутки, три последних: загрузка истории переписывает все месяцы.
-    if ARCHIVE_RE.match(name):
+    if ARCHIVE_RE.fullmatch(name):
         return (24 * 3600, 3)
     return None
 
@@ -114,6 +117,7 @@ def backup_if_due(name, force=False):
 
 
 class Handler(SimpleHTTPRequestHandler):
+    timeout = SOCKET_TIMEOUT
     protocol_version = "HTTP/1.1"
     # Типы заданы явно: на Windows Python берёт их из реестра, и .js там бывает text/plain.
     extensions_map = {
@@ -178,7 +182,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._send_json(403, {"error": "forbidden"})
             from urllib.parse import parse_qs, urlparse
             folder = (parse_qs(urlparse(self.path).query).get("dir") or [""])[0]
-            if not MARKS_DIR_RE.match(folder):
+            if not MARKS_DIR_RE.fullmatch(folder):
                 return self._send_json(404, {"error": "not allowed"})
             full = os.path.join(SHARED_DIR, *folder.split("/"))
             names = []
@@ -194,7 +198,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.close_connection = True
         if not self._same_origin():
             return self._send_json(403, {"error": "forbidden"})
-        if name not in SHARED_WRITABLE and not ARCHIVE_RE.match(name) and not MARKS_RE.match(name) and not FCLOG_RE.match(name):
+        if name not in SHARED_WRITABLE and not ARCHIVE_RE.fullmatch(name) and not MARKS_RE.fullmatch(name) and not FCLOG_RE.fullmatch(name):
             return self._send_json(404, {"error": "not allowed"})
         if not self.headers.get("Content-Type", "").startswith("application/json"):
             return self._send_json(415, {"error": "json only"})
@@ -233,7 +237,8 @@ class Handler(SimpleHTTPRequestHandler):
                         pass
                     raise
         except OSError as e:
-            return self._send_json(500, {"error": str(e)})
+            sys.stderr.write("write %s failed: %s\n" % (name, e))
+            return self._send_json(500, {"error": "write failed"})   # без путей к файлам в ответе
         return self._send_json(200, {"ok": True})
 
     def end_headers(self):
