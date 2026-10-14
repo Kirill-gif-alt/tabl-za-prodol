@@ -482,6 +482,11 @@ function rebuildSalesAggregatesFromDetails() {
 
 
 function toggleReturnFlight() {
+    // Вкладка показала рейс по умолчанию (ещё ничего не выбирали) — берём показанный рейс.
+    if (!currentFlight && typeof tabPanelState !== 'undefined') {
+        const shown = ['table', 'pkz', 'pair'].map(k => tabPanelState[k] && tabPanelState[k].flight).find(Boolean);
+        if (shown) currentFlight = shown;
+    }
     if (!currentFlight) return;
     const pair = getFlightPair(currentFlight);
     if (!pair?.inbound || !pair?.outbound) return;

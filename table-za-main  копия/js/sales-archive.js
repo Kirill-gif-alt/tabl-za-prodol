@@ -63,7 +63,7 @@ window.SalesArchive = (function () {
             sold: Math.max(0, parseInt(e.sold, 10) || 0),
             rev: Math.max(0, Math.round(Number(e.rev) || 0))
         };
-        ['h', 'se', 'r', 'g', 'k'].forEach(f => { const v = parseInt(e[f], 10); if (v > 0) out[f] = v; });
+        ['h', 'se', 's0', 'r', 'g', 'k'].forEach(f => { const v = parseInt(e[f], 10); if (v > 0) out[f] = v; });
         return out;
     }
 
@@ -451,6 +451,8 @@ window.SalesArchive = (function () {
             const seats = ty.s >= sold ? ty.s : (ty.s > 0 ? (STD_SEATS.find(x => x >= sold) || 0) : 0);
             const e = { c, s: seats, ac: ty.s >= sold ? ty.ac : '', sold, rev: Math.round(Number(r[col('REVENUE')]) || 0), h: 1 };
             e.se = 1;   // кресел прошлых вылетов в истории продаж нет — оценка по нынешнему ВС рейса
+            // Ёмкость «по проданному» знает итог вылета — модели как признак её давать нельзя: s0 — обычные кресла рейса.
+            if (ty.s > 0 && ty.s < sold) e.s0 = ty.s;
             ['REFUNDED', 'GROUP', 'CORP'].forEach((n, j) => { const v = parseInt(r[col(n)], 10); if (v > 0) e[['r', 'g', 'k'][j]] = v; });
             estimated++;
             const m = monthOf(date);
@@ -477,7 +479,11 @@ window.SalesArchive = (function () {
         return res;
     }
 
+    // Обычные кресла рейса (по нынешним данным) — для вылетов истории, где ёмкость подобрана по проданному.
+    function typicalSeats(code) { return typicalOf(code).s || 0; }
+
     return {
+        typicalSeats,
         ensureLoaded,
         ensureMonth,
         ensureMonths,

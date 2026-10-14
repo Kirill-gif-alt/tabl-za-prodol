@@ -5,6 +5,7 @@ window.ActivityLog = (function () {
 
     const ACTION_LABELS = {
         login: 'Вход',
+        import: 'Импорт истории продаж',
         logout: 'Выход',
         tab: 'Вкладка',
         flight: 'Просмотр рейса',

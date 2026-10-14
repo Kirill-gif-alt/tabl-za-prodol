@@ -79,11 +79,13 @@ window.ForecastLab = (function () {
     const HORIZONS = [30, 21, 14, 10, 7, 5, 3, 1];
     const GROUPS = [{ id: 'near', label: '1–3 дня', hs: [1, 3] }, { id: 'mid', label: '5–10 дней', hs: [5, 7, 10] }, { id: 'far', label: '14–30 дней', hs: [14, 21, 30] }];
     const GBM = { get rounds() { return PV.GBM_ROUNDS; }, get depth() { return PV.GBM_DEPTH; }, get rate() { return PV.GBM_RATE; }, get minLeaf() { return PV.GBM_MIN_LEAF; }, get bins() { return PV.GBM_BINS; } };   // «Настройки» → «Параметры расчётов»
-    const VERSION = 2;              // формат журнала; файл новее — не перезаписываем
-    const BACKFILL_V = 3;           // правила восстановления; старее — пересчитываются (3: продажи приведены к загрузке)
+    const VERSION = 3;              // формат журнала; файл новее — не перезаписываем (3: цена/класс, группы, кресла к ВС)
+    const BACKFILL_V = 4;           // правила восстановления; старее — пересчитываются (4: + цена/класс, группы, кресла к ВС)
     const CHOICE_KEY = 'krasavia_fc_choice';
     const DONE_KEY = 'krasavia_fclog_done';
     const DAY = 86400000;
+    const routeTypeMemo = new Map();   // тип рейса по номеру: вызывается миллионы раз за проверку
+    const TRUNC_DAYS = 90;          // вылет раньше чем через 90 дней от начала истории продаж — ранние покупки не попали
     const NODES = [30, 21, 14, 10, 7, 5, 3, 1, 0];   // точки цепочки добора (0 — итог вылета)
     // Линии с конкурентом (для разбивки точности и ранних предупреждений). since — с какой даты вылета.
     const COMPETITION = [{ cities: ['Красноярск', 'Горно-Алтайск'], who: 'S7', since: '01.01.2026' }];
@@ -204,6 +206,10 @@ window.ForecastLab = (function () {
             if (!r || typeof r !== 'object' || num(r.o) == null) return;
             out.h[h] = { d: num(r.d), o: num(r.o), p: num(r.p), q: num(r.q), y: num(r.y), n: num(r.n), m: num(r.m), b: r.b ? 1 : 0, bv: num(r.bv) || 0, s: num(r.s), x: normX(r.x) };
             if (r.ai) out.h[h].ai = String(r.ai).slice(0, 40);
+            // База знаний о вылете на этот день: открытый класс и цена, группы на руках, кресла в продаже к ёмкости ВС.
+            if (r.pi) { out.h[h].pi = 1; out.h[h].pk = num(r.pk) || 0; out.h[h].pf = num(r.pf) || 0; if (r.pc) out.h[h].pc = String(r.pc).slice(0, 2); }
+            if (num(r.gh) > 0) out.h[h].gh = num(r.gh);
+            if (num(r.ss) > 0) out.h[h].ss = num(r.ss);
         });
         return out;
     }
@@ -276,7 +282,7 @@ window.ForecastLab = (function () {
             Object.keys(e.h).forEach(h => {
                 const r = e.h[h];
                 n++;
-                sum += e.f * 7 + r.o * 3 + (r.x ? 1 : 0) + (r.p || 0) * 11 + (r.q || 0) * 13 + (r.y || 0) * 17 + (r.d || 0) * 19 + (r.b ? 23 : 0);
+                sum += e.f * 7 + r.o * 3 + (r.x ? 1 : 0) + (r.p || 0) * 11 + (r.q || 0) * 13 + (r.y || 0) * 17 + (r.d || 0) * 19 + (r.b ? 23 : 0) + (r.pk || 0) * 29 + (r.pf || 0) * 31 + (r.gh || 0) * 37 + (r.ss || 0) * 41;
             });
         });
         const cal = typeof CalendarEvents !== 'undefined' && CalendarEvents.revision ? CalendarEvents.revision() : 0;
@@ -285,6 +291,7 @@ window.ForecastLab = (function () {
 
     function invalidate() {
         rev++;
+        routeTypeMemo.clear();
     }
 
     // Окно журнала: −6…+2 месяца от сегодняшнего. Не прочитанные (нет доступа) — перечитываются при следующем вызове.
@@ -344,14 +351,29 @@ window.ForecastLab = (function () {
                 if (!t || t.getTime() >= now || (from && t < from)) return;
                 const base = typeof getBaseFlight === 'function' ? getBaseFlight(code) : code;
                 if (byKey[date + '|' + base] && base === code) return;
-                const dep = { base, date, ts: t.getTime(), row: null, rowCode: code, code, s: e.s, sold: e.sold, flown: true, arch: true, ac: e.ac || '' };
+                // sF — кресла для признаков: у вылетов истории, где ёмкость подобрана по проданному, — обычные кресла рейса
+                // (иначе признак «ёмкость» знает итог вылета).
+                const sF = e.s0 || (e.se && !e.ac && SalesArchive.typicalSeats ? SalesArchive.typicalSeats(code) : 0) || e.s;
+                const dep = { base, date, ts: t.getTime(), row: null, rowCode: code, code, s: e.s, sF, sold: e.sold, flown: true, arch: true, ac: e.ac || '', hist: !!e.h, c0: e.c };
                 (byBase[base] || (byBase[base] = [])).push(dep);
                 byKey[date + '|' + code] = dep;
                 if (!byKey[date + '|' + base]) byKey[date + '|' + base] = dep;
             });
         }
         Object.keys(byBase).forEach(b => byBase[b].sort((a, c) => a.ts - c.ts));
-        ctxMemo = { sig, v: { byBase, byKey, now } };
+        // Начало истории продаж: самая ранняя покупка в загруженной истории. Вылеты в первые месяцы после неё
+        // без ранних продаж («обрезаны слева») — продано на 30/21/14 дней занижено, их добор ложно большой.
+        let histStart = null;
+        Object.keys(byKey).forEach(k => {
+            const d = byKey[k];
+            if (!d.arch || !d.hist || !d.c0) return;
+            let mx = 0;
+            for (let i = d.c0.length - 1; i >= 0; i--) if (d.c0[i]) { mx = i; break; }
+            const st = d.ts - mx * DAY;
+            if (histStart == null || st < histStart) histStart = st;
+        });
+        if (histStart != null) Object.keys(byKey).forEach(k => { const d = byKey[k]; if (d.arch && d.hist) d.trunc = d.ts - TRUNC_DAYS * DAY < histStart; });
+        ctxMemo = { sig, v: { byBase, byKey, now, histStart } };
         return ctxMemo.v;
     }
 
@@ -391,9 +413,11 @@ window.ForecastLab = (function () {
             // 5+ билетов одного кода тарифа, купленных в один день.
             const hasGrp = list.some(s => s.grp != null);
             const sameDay = Object.create(null);
-            if (!hasGrp) list.forEach(s => { const k = s.dealDate + '|' + (s.basicFareStr || ''); sameDay[k] = (sameDay[k] || 0) + 1; });
+            // Без PNR: один день, один код и одна цена (иначе 5 разных людей, купивших самый дешёвый класс, — «группа»).
+            const gk = (s) => s.dealDate + '|' + (s.basicFareStr || '') + '|' + Math.round(Number(s.fare) || 0);
+            if (!hasGrp) list.forEach(s => { const k = gk(s); sameDay[k] = (sameDay[k] || 0) + 1; });
             list.forEach(s => {
-                const size = hasGrp ? (Number(s.grp) || 0) : sameDay[s.dealDate + '|' + (s.basicFareStr || '')];
+                const size = hasGrp ? (Number(s.grp) || 0) : sameDay[gk(s)];
                 if (!(size >= PV.GROUP_MIN)) return;
                 const d = parseLocalDate(s.dealDate);
                 if (!d || !fly) return;
@@ -432,6 +456,8 @@ window.ForecastLab = (function () {
             if (!e || !(e.s > 0) || !(e.sold > 0)) continue;
             const cv = SalesArchive.curveFor(ds, cd);
             if (!cv) continue;
+            const hs = context().histStart;
+            if (e.h && hs != null && (ts - back * DAY) - TRUNC_DAYS * DAY < hs) continue;   // прошлогодний вылет обрезан историей
             const pick = Math.max(0, (e.sold - at(cv, h)) / e.s);
             return Math.max(o, Math.min(s, Math.round(o + pick * s)));
         }
@@ -675,7 +701,8 @@ window.ForecastLab = (function () {
     }
 
     function routeFeatures(base, s) {
-        const t = typeof getFlightRouteType === 'function' ? getFlightRouteType(base) : '';
+        let t = routeTypeMemo.get(base);
+        if (t === undefined) { t = typeof getFlightRouteType === 'function' ? getFlightRouteType(base) : ''; routeTypeMemo.set(base, t); }
         return [t === 'interregional' ? 1 : 0, Math.min(2, (s || 0) / 70)];
     }
 
@@ -684,7 +711,8 @@ window.ForecastLab = (function () {
         ['Продано на сейчас', 1], ['Файл ожидаемой загрузки', 3], ['Прогноз по дням недели', 2], ['Дней до вылета', 1],
         ['Темп продаж за 7 дней', 1], ['Соседние даты рейса', 1], ['Добор рейса за 4 недели', 1], ['Обратный рейс', 2], ['Есть признаки соседей', 1],
         ['День недели', 7], ['Выходной / пятница–воскресенье', 2], ['Праздник', 1], ['Каникулы', 1], ['Событие', 1], ['Канун / после праздника', 2], ['Сезон', 2],
-        ['Тип рейса и ВС', 2], ['Добор этого рейса (сглаж.)', 3]
+        ['Тип рейса и ВС', 2], ['Добор этого рейса (сглаж.)', 3],
+        ['Открытый класс и цена', 3], ['Группы на руках', 1], ['Кресла в продаже к ёмкости ВС', 1]
     ];
 
     function features(smp) {
@@ -700,7 +728,9 @@ window.ForecastLab = (function () {
             r.y != null ? 1 : 0,
             Math.min(1, (r.d != null ? r.d : h) / 30),
             x[0], x[1], x[2], x[3], x[4], r.x ? 1 : 0
-        ].concat(calFeatures(smp.date), routeFeatures(smp.base, s), smp.eb || [0, 0, 0]);
+        ].concat(calFeatures(smp.date), routeFeatures(smp.base, smp.sF || s), smp.eb || [0, 0, 0],
+            // Нет данных о цене (история) — 0 и признак «нет»: модель учится на тех, где есть, и не путает «нет» с «дёшево».
+            [r.pi ? 1 : 0, r.pi ? r.pk || 0 : 0, r.pi ? r.pf || 0 : 0, r.gh || 0, r.ss || 1]);
     }
 
     // ---------- линейная модель ----------
@@ -873,6 +903,7 @@ window.ForecastLab = (function () {
     // Записи с известным фактом, по дате вылета.
     function samples() {
         const out = [];
+        const C = context();
         Object.keys(log).forEach(key => {
             const e = log[key];
             if (e.f == null) return;
@@ -883,7 +914,9 @@ window.ForecastLab = (function () {
                 const r = e.h[h];
                 const s = r.s || e.s;
                 if (!(s > 0)) return;
-                out.push({ key, base: e.b, date, ts: d.getTime(), h: Number(h), s, r, f: e.f, grpAfter: grpAfterOf(key, Number(h)) });
+                const dep = C.byKey[key];
+                if (dep && dep.trunc) return;   // ранние продажи вылета не попали в историю — добор ложный
+                out.push({ key, base: e.b, date, ts: d.getTime(), h: Number(h), s, sF: dep && dep.sF ? dep.sF : s, r, f: e.f, grpAfter: grpAfterOf(key, Number(h)) });
             });
         });
         out.sort((a, b) => a.ts - b.ts || a.h - b.h || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
@@ -895,7 +928,7 @@ window.ForecastLab = (function () {
         byT.forEach(x => {
             const T = x.ts - x.h * DAY;
             while (ptr < out.length && out[ptr].ts + DAY <= T) ebAdd(acc, out[ptr++]);
-            x.eb = ebFeature(acc, x.base, x.h, x.s);
+            x.eb = ebFeature(acc, x.base, x.h, x.sF || x.s);
         });
         while (ptr < out.length) ebAdd(acc, out[ptr++]);
         ebLive = acc;
@@ -913,7 +946,8 @@ window.ForecastLab = (function () {
     // Группа похожих рейсов: тип (межрегиональный / краевой) × ёмкость (до 50 / до 80 / больше кресел).
     // Добор редкого рейса сжимается сначала к своей группе, а не ко всем рейсам сразу.
     function ebGroup(base, s) {
-        const t = typeof getFlightRouteType === 'function' ? getFlightRouteType(base) : '';
+        let t = routeTypeMemo.get(base);
+        if (t === undefined) { t = typeof getFlightRouteType === 'function' ? getFlightRouteType(base) : ''; routeTypeMemo.set(base, t); }
         return (t === 'interregional' ? 'i' : 'k') + (s <= 50 ? 46 : (s <= 80 ? 72 : 120));
     }
 
@@ -922,7 +956,7 @@ window.ForecastLab = (function () {
         if (x.grpAfter >= PV.GROUP_MIN) return;
         const t = target(x);
         const H = acc.H[x.h] || (acc.H[x.h] = { s: 0, n: 0 });
-        const gk = ebGroup(x.base, x.s) + '|' + x.h;
+        const gk = ebGroup(x.base, x.sF || x.s) + '|' + x.h;
         const G = acc.G[gk] || (acc.G[gk] = { s: 0, n: 0 });
         const R = acc.R[x.base + '|' + x.h] || (acc.R[x.base + '|' + x.h] = { s: 0, n: 0 });
         H.s += t; H.n++;
@@ -960,6 +994,27 @@ window.ForecastLab = (function () {
         list.forEach(x => ebAdd(eb, x));
         Object.defineProperty(out, 'eb', { value: eb, enumerable: false });
         return out;
+    }
+
+    // Тот же poolOf, но по нарастающей: срезы идут по времени, к прошлому срезу добавляются только новые вылеты
+    // (раньше на каждый срез всё пересчитывалось заново — квадратично, ~7 с на слабом ПК). Снимок eb — копия.
+    function poolStream() {
+        const acc = {};
+        const eb = ebEmpty();
+        let done = 0;
+        const copy = (m) => { const o = Object.create(null); Object.keys(m).forEach(k => { o[k] = { s: m[k].s, n: m[k].n }; }); return o; };
+        return (all, len) => {
+            for (; done < len; done++) {
+                const x = all[done];
+                const a = acc[x.h] || (acc[x.h] = { sum: 0, n: 0 });
+                a.sum += target(x); a.n++;
+                ebAdd(eb, x);
+            }
+            const out = {};
+            Object.keys(acc).forEach(h => { if (acc[h].n >= 10) out[h] = acc[h].sum / acc[h].n; });
+            Object.defineProperty(out, 'eb', { value: { H: copy(eb.H), G: copy(eb.G), R: copy(eb.R) }, enumerable: false });
+            return out;
+        };
     }
 
     // Вес записи по давности вылета: wᵢ = 2^(−(T − tsᵢ)/τ½), T — последний вылет в наборе.
@@ -1067,6 +1122,42 @@ window.ForecastLab = (function () {
         return Math.max(dtd, typeof observedFromDtd === 'function' ? observedFromDtd(date) : dtd);
     }
 
+    // Что было на вылете в день T (за h дней): открытый класс и цена, группы на руках, кресла в продаже к ёмкости ВС.
+    // Только для вылетов из текущего файла продаж (в истории по дням цены и класса нет) — у остальных pi = 0.
+    function isAdultPaidSale(x) {
+        const f = x.adjustedFare || x.fare || 0;
+        const b = String(x.basicFareStr || '').toUpperCase();
+        return f > 0 && !/\/(CN|IN|ID|WO|DA)\d*/.test(b) && !/IDB$/.test(b);
+    }
+    function stateAt(dep, h, T, s) {
+        const out = {};
+        if (dep.arch) return out;
+        if (dep.row && s > 0) {
+            const cap = getCapacityFromAircraft(getAircraftType(dep.row[4]));
+            if (cap > 0) out.ss = Math.round(Math.min(1.5, s / cap) * 1000) / 1000;
+        }
+        const held = groupsBetween(dep, h - 1, 400);
+        if (held > 0 && s > 0) out.gh = Math.round(held / s * 1000) / 1000;
+        const list = typeof getFlightSalesList === 'function' ? getFlightSalesList(dep.date, dep.code) : [];
+        let last = -Infinity;
+        const tsOf = (x) => { const dd = parseLocalDate(x.dealDate); return dd ? dd.getTime() : null; };
+        const paid = list.filter(x => { const t = tsOf(x); if (t == null || t > T || !isAdultPaidSale(x)) return false; if (t > last) last = t; return true; });
+        if (!paid.length) return out;
+        const day = paid.filter(x => tsOf(x) === last);
+        const ladder = typeof FareGrid !== 'undefined' ? FareGrid.ladderFor(dep.code) : [];
+        if (ladder.length < 2) return out;
+        const prices = ladder.map(l => l.price).sort((a, b) => a - b);
+        const mid = prices[prices.length >> 1];
+        let best = -1;
+        day.forEach(x => { const i = ladder.findIndex(l => l.cls === String(x.basicFareStr || '').trim().charAt(0).toUpperCase()); if (i > best) best = i; });
+        const price = best >= 0 ? ladder[best].price : Math.max(...day.map(x => x.adjustedFare || x.fare));
+        out.pi = 1;
+        out.pc = best >= 0 ? ladder[best].cls : '';
+        out.pk = best >= 0 ? Math.round(best / (ladder.length - 1) * 1000) / 1000 : 0.5;
+        out.pf = Math.round(Math.max(-0.6, Math.min(0.8, price / mid - 1)) * 1000) / 1000;
+        return out;
+    }
+
     function liveRecord(dep, d) {
         const s = dep.s;
         if (!(s > 0)) return null;
@@ -1078,7 +1169,7 @@ window.ForecastLab = (function () {
         const T = dep.ts - d * DAY;   // день среза данных
         const hy = histAsOf(dep, d, T, o);
         const x = neighborFeatures(dep, d, T, true, o).map(v => Math.round(v * 1000) / 1000);
-        return { d, o, p: num(p), q: num(q), y: hy.y, n: hy.n || null, m: null, b: 0, s, x };
+        return Object.assign({ d, o, p: num(p), q: num(q), y: hy.y, n: hy.n || null, m: null, b: 0, s, x }, stateAt(dep, d, T, s));
     }
 
     const METHOD_LABEL = {
@@ -1101,6 +1192,10 @@ window.ForecastLab = (function () {
         const h = horizonFor(d);
         const r = liveRecord(dep, d);
         if (!r || !h) return null;
+        // Продажи закрыты — добора не будет: итог = продано.
+        if (dep.row && typeof closedFlights !== 'undefined' && typeof getSalesLookupKey === 'function' && closedFlights.has(getSalesLookupKey(dep.row))) {
+            return { final: r.o, lo: r.o, hi: r.o, hiRaw: r.o, sold: r.o, d, plan: r.p, team: [], cover: null, seats: r.s, lf: Math.round(r.o / r.s * 100), method: 'продажи закрыты', err: 0, trainedOn: 0, h, closed: true };
+        }
         const pick = ev.choice[h + '|' + segOf(r)] || ev.choice[h];
         if (!pick) return null;
         // Все способы на сейчас — для комитета и для показа, кто на этом рейсе весит больше.
@@ -1189,7 +1284,7 @@ window.ForecastLab = (function () {
             const o = Math.round(rawAt(dep, h, T));
             const hy = histAsOf(dep, h, T, o);
             const x = neighborFeatures(dep, h, T, false, o).map(v => Math.round(v * 1000) / 1000);
-            e.h[h] = { d: h, o, p: num(p), q: planOk ? num(getExpectedLoad(cap, dep.base, h, wk)) : null, y: hy.y, n: hy.n || null, m: null, b: 1, bv: BACKFILL_V, ai: historyStamp(), s, x };
+            e.h[h] = Object.assign({ d: h, o, p: num(p), q: planOk ? num(getExpectedLoad(cap, dep.base, h, wk)) : null, y: hy.y, n: hy.n || null, m: null, b: 1, bv: BACKFILL_V, ai: historyStamp(), s, x }, stateAt(dep, h, T, s));
         });
         return e;
     }
@@ -1447,7 +1542,7 @@ window.ForecastLab = (function () {
         const all = samples();
         await tick();
         const cum = [0];
-        all.forEach((x, i) => { cum.push(cum[i] + x.f * 7 + x.r.o * 3 + (x.r.y || 0) * 5 + (x.r.p || 0) * 11 + (x.r.x ? 1 : 0)); });
+        all.forEach((x, i) => { cum.push(cum[i] + x.f * 7 + x.r.o * 3 + (x.r.y || 0) * 5 + (x.r.p || 0) * 11 + (x.r.x ? 1 : 0) + (x.r.pk || 0) * 29 + (x.r.pf || 0) * 31 + (x.r.gh || 0) * 37 + (x.sF || 0) * 43); });
         const weeks = [...new Set(all.map(x => weekOf(x.ts)))].sort((a, b) => a - b).slice(-PV.EVAL_WEEKS);
         const firstWeek = weeks.length ? weeks[0] : Infinity;
         const test = all.filter(x => weekOf(x.ts) >= firstWeek);
@@ -1461,15 +1556,17 @@ window.ForecastLab = (function () {
         });
         let lastModel = null;
         let lastLen = 0;
+        const poolAt = poolStream();
         for (const [cut, list] of [...byCut.entries()].sort((a, b) => a[0] - b[0])) {
             let len = 0;
             while (len < all.length && all[len].ts + DAY <= cut) len++;
-            const pool = poolOf(all.slice(0, len));
+            const pool = poolAt(all, len);
             list.forEach(x => pools.set(x, pool));
             if (len < PV.MIN_TRAIN) continue;
             // Новая модель — только когда данных прибавилось на 15%; иначе прежняя (она знает меньше — проверка остаётся честной).
             let m = lastModel;
-            if (!lastModel || len >= lastLen * 1.15) { m = await cachedTrain(all, len, cum); lastModel = m; lastLen = len; }
+            // Переобучение при +7% данных (раньше +15%): модель на проверке не отстаёт от недель на 1–2 месяца.
+            if (!lastModel || len >= lastLen * 1.07) { m = await cachedTrain(all, len, cum); lastModel = m; lastLen = len; }
             if (m) list.forEach(x => pred.set(x, predictAll(m, x)));
             await pause();
         }
@@ -2282,7 +2379,7 @@ window.ForecastLab = (function () {
     // Точность по группам вылетов (за 7 и за 3 дня): где модель ошибается сильнее.
     function groupsHtml(ev) {
         if (!ev.groups) return '';
-        const cell = (c) => (c && c.n ? `${fmt(c.sum / c.n)}<div class="rp-muted">WAPE ${c.f ? Math.round(c.sum / c.f * 100) : '—'}% · ${c.bias > 0 ? '↑' : '↓'}${fmt(Math.abs(c.bias / c.n))}</div>` : '—');
+        const cell = (c) => (c && c.n ? `${fmt(c.sum / c.n)}<div class="rp-muted">ошибка ${c.f ? Math.round(c.sum / c.f * 100) : '—'}% · ${c.bias > 0 ? '↑' : '↓'}${fmt(Math.abs(c.bias / c.n))}</div>` : '—');
         const table = (h) => {
             const skipped = (ev.groups[h] || []).filter(g => g.note).map(g => g.note)[0] || 0;
             const rows = (ev.groups[h] || []).filter(g => !g.note).map(g => {
@@ -2300,8 +2397,8 @@ window.ForecastLab = (function () {
                 <p class="rp-muted">Каждый способ проверялся так же честно — на прошлых неделях, по вылетам, которые к моменту прогноза ещё не улетели.</p>
                 <ul class="fl-tested">
                     <li><b>Мультипликативный добор</b> (итог = продано × коэффициент) — хуже аддитивного на 1–2 пасс. за 5–10 дней: при малых продажах коэффициент «взрывается». Как и в исследованиях RMS (круизы, отели), аддитивный точнее.</li>
-                    <li><b>Восстановление спроса распроданных рейсов</b> (unconstraining) — точность не выросла: прогноз и так не больше кресел. Вернёмся, когда понадобится прогноз спроса сверх ёмкости.</li>
-                    <li><b>Подбор весов моделей по МНК (stacking)</b> — выигрыш в пределах шума на нынешних 3 неделях; комитет с весами по ошибкам надёжнее на малых данных («загадка комбинирования прогнозов»: простые веса часто не хуже сложных).</li>
+                    <li><b>Восстановление спроса распроданных рейсов</b> — точность не выросла: прогноз и так не больше кресел. Вернёмся, когда понадобится прогноз спроса сверх ёмкости.</li>
+                    <li><b>Подбор весов моделей по МНК</b> — выигрыш в пределах шума на нынешних 3 неделях; комитет с весами по ошибкам надёжнее на малых данных («загадка комбинирования прогнозов»: простые веса часто не хуже сложных).</li>
                     <li><b>«Забывание» старых ошибок в комитете</b> (свежие ошибки весят больше) — на годе истории разницы нет: комитет и так судит по последним 12 неделям.</li>
                     <li><b>Взято:</b> обучение на годе истории со свежими вылетами весомее (вес вдвое меньше каждые 120 дней) — модель точнее на 2%, комитет на 1% (12 недель проверки на реальной истории).</li>
                 </ul></details>`;
@@ -2317,7 +2414,7 @@ window.ForecastLab = (function () {
             ${f('<i>f̂</i> = min(<i>s</i>, max(<i>o<sub>h</sub></i>, <i>o<sub>h</sub></i> + <i>s</i>·<i>t̂</i>))', 'Итог: не меньше уже проданного и не больше кресел.')}
             ${f('<i>f̂</i> = <i>o<sub>h</sub></i> + (<i>p</i> − <i>q<sub>h</sub></i>)', '«Продано + добор по файлу»: сколько файл ожидаемой ещё добирает от этого дня до вылета.')}
             ${f('<i>f̂</i> = <i>o<sub>h</sub></i> + <i>s</i>·<span class="fl-bar">π</span><sub>h</sub>, &nbsp; <span class="fl-bar">π</span><sub>h</sub> = среднее <i>t</i> всех улетевших рейсов на горизонте <i>h</i>', '«Средний добор всех рейсов» — запасной способ, когда нет ни файла, ни истории.')}
-            ${f('<i>ℓ</i><sub>a→b</sub> = Σ<i>w</i>·(<i>o<sub>b</sub></i> − <i>o<sub>a</sub></i>)/<i>s</i> ⁄ Σ<i>w</i>, &nbsp; <i>w</i> = e<sup>−возраст/28</sup>, &nbsp; <i>f̂</i> = <i>o<sub>h</sub></i> + <i>s</i>·Σ<i>ℓ</i>', '«Цепочка добора» (advanced pickup, как в RMS авиакомпаний): добор между соседними точками 30→21→…→1→вылет считается и по ещё не улетевшим рейсам, свежие недели весят больше. Для рейса и дня недели звено сглаживается к общему.')}
+            ${f('<i>ℓ</i><sub>a→b</sub> = Σ<i>w</i>·(<i>o<sub>b</sub></i> − <i>o<sub>a</sub></i>)/<i>s</i> ⁄ Σ<i>w</i>, &nbsp; <i>w</i> = e<sup>−возраст/28</sup>, &nbsp; <i>f̂</i> = <i>o<sub>h</sub></i> + <i>s</i>·Σ<i>ℓ</i>', '«Цепочка добора» (как в RMS авиакомпаний): добор между соседними точками 30→21→…→1→вылет считается и по ещё не улетевшим рейсам, свежие недели весят больше. Для рейса и дня недели звено сглаживается к общему.')}
             ${f('<i>t̂</i><sub>рейс</sub> = (Σ<i>t</i><sub>рейс</sub> + 10·<i>t̄</i>) / (<i>n</i><sub>рейс</sub> + 10)', '«Добор этого рейса»: средний добор рейса, подтянутый к среднему всех рейсов, пока вылетов мало (эмпирический Байес). Он же — признак для моделей.')}
             ${f('<i>w<sub>k</sub></i> ∝ exp(−4·(<i>L<sub>k</sub></i>/<i>L</i><sub>min</sub> − 1)), &nbsp; <i>L</i><sub>рейс</sub> = (Σ|<i>e</i>| + 8·<i>L</i><sub>все</sub>) / (<i>n</i> + 8)', '«Комитет моделей»: все способы считают прогноз, вес каждого — по его ошибкам именно на этом рейсе (пока вылетов мало — по всем рейсам). Лучший на рейсе весит больше, остальные страхуют; способ с ошибкой больше двух лучших не голосует.')}
             ${f('<i>a<sub>i</sub></i> = 2<sup>−давность/120 дн.</sup>', 'Постоянное дообучение: каждый день модели заново учатся на всех улетевших вылетах за год (загруженная история + новые вылеты). Свежие вылеты весят больше: полугодовой — в 3 раза меньше вчерашнего, годовой — в 8 раз.')}
@@ -2326,7 +2423,7 @@ window.ForecastLab = (function () {
             ${f('<i>t̂</i> = ½(<i>t̂</i><sub>лин</sub> + <i>t̂</i><sub>дер</sub>) + <i>c</i><sub>рейс</sub>, &nbsp; <i>c</i><sub>рейс</sub> = <i>n</i>/(<i>n</i> + 10) · средний остаток рейса', 'Среднее двух моделей и поправка по рейсу: при малом числе вылетов поправка почти ноль, при большом — равна средней ошибке рейса.')}
             ${f('[<i>f̂</i> + <i>q</i><sub>0,1</sub>·<i>s</i>; &nbsp;<i>f̂</i> + <i>q</i><sub>0,9</sub>·<i>s</i>], &nbsp; <i>q</i> — квантили остатков (<i>f</i> − <i>f̂</i>)/<i>s</i> прошлых прогнозов', 'Интервал 80% (конформный): по тому, как этот же способ ошибался раньше на таком же горизонте и таких же вылетах. Несимметричный — вниз и вверх ошибаются по-разному. В карточке: «44 из 72 (40–47, 80%)».')}
             ${f('недобор: P50/<i>s</i> &lt; 60%; &nbsp; перегруз: P50/<i>s</i> ≥ 95% или (P90 &gt; <i>s</i> и P50/<i>s</i> ≥ 90%); &nbsp; темп: |<i>z</i>| ≥ 2, <i>z</i> = (<i>o</i>/<i>s</i> − <i>m</i>)/σ', 'Ранние предупреждения. P50 — прогноз, P10–P90 — интервал 80%; <i>m</i> и σ — сколько обычно продано к этому дню у того же рейса в тот же день недели. Срочность = сила отклонения / √дней до вылета. Пороги меняются в отчёте.')}
-            ${f('WAPE = Σ|<i>f̂</i> − <i>f</i>| / Σ<i>f</i>', 'Ошибка в процентах от всех перевезённых пассажиров — не «взрывается» на рейсах с малой загрузкой, в отличие от MAPE.')}
+            ${f('Ошибка, % = Σ|<i>f̂</i> − <i>f</i>| / Σ<i>f</i>', 'Ошибка в процентах от всех перевезённых пассажиров — не «взрывается» на рейсах с малой загрузкой, в отличие от средней ошибки в процентах по рейсам.')}
             ${f('обучение: вылеты с датой ≤ понедельник(дата − <i>h</i>) − 1 день', 'Честная проверка: прогноз за <i>h</i> дней модель делает, зная только вылеты, улетевшие к тому моменту.')}
             ${f('MAE = (1/<i>N</i>)·Σ|<i>f̂</i> − <i>f</i>|, &nbsp; смещение = (1/<i>N</i>)·Σ(<i>f̂</i> − <i>f</i>)', 'Средняя ошибка в пассажирах и в какую сторону ошибается (↑ завышает, ↓ занижает).')}
             ${f('<i>t</i> = −<i>d̄</i> / (<i>s<sub>d</sub></i>/√<i>n</i>) &gt; 1, &nbsp; <i>d<sub>i</sub></i> = |<i>e</i><sub>новый</sub>| − |<i>e</i><sub>прежний</sub>|', 'Способ меняется, только если новый надёжно точнее на тех же вылетах, а не случайно.')}
@@ -2392,7 +2489,7 @@ window.ForecastLab = (function () {
             if (!b || !b.n) return '—';
             const hn = ev.byH[h].honest;
             const rb = ev.rubErr && ev.rubErr[h];
-            return `<strong>±${fmt(b.sum / b.n)}</strong> <span class="rp-muted">· WAPE ${pct(b.f ? b.sum / b.f : null)} · ${b.bias > 0 ? '↑' : '↓'}${fmt(Math.abs(b.bias / b.n))}</span>`
+            return `<strong>±${fmt(b.sum / b.n)}</strong> <span class="rp-muted">· ошибка ${pct(b.f ? b.sum / b.f : null)} · ${b.bias > 0 ? '↑' : '↓'}${fmt(Math.abs(b.bias / b.n))}</span>`
                 + (hn && hn.n ? `<div class="rp-muted" title="Способ выбран по ранним неделям проверки, ошибка — на последних 4 (их выбор не видел)">честно, вне выборки: ±${fmt(hn.sum / hn.n)} (${hn.n})</div>` : '')
                 + (rb ? `<div class="rp-muted" title="Ошибка × средний взрослый тариф рейса: ошибка на дорогом рейсе дороже">в рублях ≈ ${Math.round(rb.avg).toLocaleString('ru-RU')} ₽ на вылет</div>` : '')
                 + (C && C.n ? `<div class="rp-muted" title="Интервал строится только по вылетам, улетевшим до недели прогноза">в интервал 80% попало ${pct(C.in / C.n)} из ${C.n}, ширина ≈ ${fmt(C.width / C.n)}</div>` : '<div class="rp-muted">покрытие проверить пока не на чем</div>');
@@ -2453,7 +2550,7 @@ window.ForecastLab = (function () {
                 ${chartHtml(ev)}
                 <div class="dr-list-title">Ошибка по горизонтам, пасс.</div>
                 <div class="rp-scroll"><table class="rp-table">
-                    <thead><tr><th>До вылета</th>${cols.map(([, l]) => `<th>${esc(l)}</th>`).join('')}<th title="Этот способ показывается в карточке рейса">Что берём</th><th title="Способ выбран по этим же неделям — поэтому оценка «что берём» немного оптимистична; столбцы отдельных способов честные">Итог: ошибка, WAPE, интервал</th></tr></thead>
+                    <thead><tr><th>До вылета</th>${cols.map(([, l]) => `<th>${esc(l)}</th>`).join('')}<th title="Этот способ показывается в карточке рейса">Что берём</th><th title="Способ выбран по этим же неделям — поэтому оценка «что берём» немного оптимистична; столбцы отдельных способов честные">Итог: ошибка, ошибка в %, интервал</th></tr></thead>
                     <tbody>${rowsH}</tbody></table></div>
                 <div class="dr-sums">
                     <div class="dr-sum"><div class="dr-sum-title">Что влияет на прогноз (модель «деревья»)</div>

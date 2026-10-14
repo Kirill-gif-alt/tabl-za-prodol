@@ -973,7 +973,7 @@ function exportRmsToExcel() {
     const salesReady = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(typeof dataLoadStatus !== 'undefined' && dataLoadStatus.sales);
     const headers = ['Код рейса', 'Тип рейса', 'Направление', 'Дата вылета', 'Дней до вылета', 'ЗПК %', 'Загрузка', 'Остаток', 'Прогноз к вылету', 'Прогноз ЗПК %'];
     if (hasExpected) headers.push('Ожидаемая', 'Δ к ожидаемой');
-    headers.push('Pickup 1–2д (файл 14д)', 'Сегодня (файл 14д)', 'Ср. тариф 14д', 'Уровень предупреждения', 'Причина');
+    headers.push('Продано за 1–2 дн. (файл 14д)', 'Сегодня (файл 14д)', 'Ср. тариф 14д', 'Уровень предупреждения', 'Причина');
 
     const rows = flights.map(f => {
         const row = [

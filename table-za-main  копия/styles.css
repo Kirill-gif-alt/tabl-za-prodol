@@ -1370,7 +1370,10 @@ body, .app-body {
 }
 
 /* Блок маршрута — таблица как на вкладке «Экономическая» */
+/* Карточки маршрутов за экраном не рисуются, пока до них не прокрутили: вкладка открывается быстрее. */
 .data-route-block {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 600px;
     flex: 0 0 auto;
     display: flex;
     flex-direction: column;
@@ -4846,6 +4849,8 @@ table.pair-table button {
 
 .stats-refresh-btn {
     font-size: 0.8rem;
+    color: #fff;   /* кнопка на тёмной шапке «Статистики» — была почти не видна */
+    border-color: rgba(255, 255, 255, 0.55);
 }
 
 .stats-toolbar {

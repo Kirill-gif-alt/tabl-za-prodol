@@ -441,7 +441,7 @@ window.FlightSearch = (function () {
             }
         });
         renderPalette();
-        requestAnimationFrame(() => input.focus());
+        requestAnimationFrame(() => input.focus({ preventScroll: true }));
     }
 
     function closePalette() {
