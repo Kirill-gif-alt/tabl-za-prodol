@@ -1144,7 +1144,7 @@ window.ForecastLab = (function () {
         const paid = list.filter(x => { const t = tsOf(x); if (t == null || t > T || !isAdultPaidSale(x)) return false; if (t > last) last = t; return true; });
         if (!paid.length) return out;
         const day = paid.filter(x => tsOf(x) === last);
-        const ladder = typeof FareGrid !== 'undefined' ? FareGrid.ladderFor(dep.code) : [];
+        const ladder = typeof FareGrid !== 'undefined' ? FareGrid.ladderFor(dep.code, dep.date) : [];
         if (ladder.length < 2) return out;
         const prices = ladder.map(l => l.price).sort((a, b) => a - b);
         const mid = prices[prices.length >> 1];
