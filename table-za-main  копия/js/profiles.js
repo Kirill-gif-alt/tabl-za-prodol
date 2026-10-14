@@ -36,7 +36,7 @@ window.ProfileAuth = (function () {
         edit_flights: { label: 'Справочник рейсов — менять', group: 'Справочник', hint: 'видят все' },
         edit_calendar: { label: 'Календарь событий — менять', group: 'Справочник', hint: 'праздники, каникулы; видят все' },
         view_forecast: { label: 'Прогноз загрузки и предупреждения', group: 'Отчёты', hint: 'отчёт «Прогноз и предупреждения», строка «Модель» в карточке рейса' },
-        price_advisor: { label: 'Ценовой советник', group: 'Отчёты', hint: 'какой класс держать открытым: строка «Цена» в карточке рейса и таблица в «Прогноз и предупреждения»' },
+        price_advisor: { hidden: true, label: 'Ценовой советник', group: 'Отчёты', hint: 'какой класс держать открытым: строка «Цена» в карточке рейса и таблица в «Прогноз и предупреждения»' },
         manage_profiles: { label: 'Управление профилями', group: 'Админ' }
     };
 
@@ -506,7 +506,7 @@ window.ProfileAuth = (function () {
 
     function renderPermCheckboxes(profileId, permissions, prefix = '') {
         const perms = permissions || [];
-        const keysOf = (group) => Object.keys(PERMISSIONS).filter(k => PERMISSIONS[k].group === group);
+        const keysOf = (group) => Object.keys(PERMISSIONS).filter(k => PERMISSIONS[k].group === group && !PERMISSIONS[k].hidden);
         const tabs = keysOf('Вкладки').map(k => `<label class="pa-chip">${permInput(profileId, k, perms, prefix)}<span>${PERMISSIONS[k].label}</span></label>`).join('');
         const sw = (k) => switchRow(permInput(profileId, k, perms, prefix), PERMISSIONS[k].label, PERMISSIONS[k].hint || '');
         const refs = REF_PAIRS.map(r => `<div class="pa-ref-row" data-pa-ref>

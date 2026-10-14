@@ -370,7 +370,10 @@ window.PriceAdvisor = (function () {
         return `${now}${what}${guardNote}${why}${clamp} · ${bidTxt}${capNote}`;
     }
 
+    // Подсказки по цене на сайте отключены (решение владельца): карточка, отчёты и выгрузки их не показывают.
+    const SHOW = false;
     function canView() {
+        if (!SHOW) return false;
         // Включается в «Профилях» правом «Ценовой советник» (у администратора — всегда).
         return typeof ProfileAuth === 'undefined' || !!(ProfileAuth.getCurrentProfile() || {}).isAdmin || ProfileAuth.hasPermission('price_advisor');
     }
