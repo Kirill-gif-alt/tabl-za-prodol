@@ -132,7 +132,8 @@ window.DecisionsReport = (function () {
         return `<span class="dr-bar" title="Сработало ${share}%"><span class="dr-bar-fill ${share >= 50 ? 'dr-bar-pos' : 'dr-bar-neg'}" style="width:${Math.max(0, Math.min(100, share))}%"></span></span><span class="${share >= 50 ? 'dr-pos' : 'dr-neg'}">${share}%</span>`;
     }
 
-    function summaryTable(title, groups, keyLabel, noMoney) {
+    function summaryTable(title, groups, keyLabel) {
+        const noMoney = true;   // рубли по решениям не считаются
         if (!groups.length) return '';
         const rowsHtml = groups.slice(0, 10).map(g => `
             <tr>
@@ -177,9 +178,9 @@ window.DecisionsReport = (function () {
         const kpis = `<div class="dr-kpis">
             ${kpi('Решений', String(total.n), [`с итогом ${total.done}`, total.waiting ? `ждут итога: ${total.waiting}` : '', total.noNorm ? `не с чем сравнить: ${total.noNorm}` : ''].filter(Boolean).join(' · '))}
             ${kpi('Сработало', total.share == null ? '—' : `<span class="${total.share >= 50 ? 'dr-pos' : 'dr-neg'}">${total.share}%</span>`, total.judged ? `${total.good} из ${total.judged}${total.done - total.judged ? ` · рано судить ${total.done - total.judged}` : ''}` : 'пока нет итогов')}
-            ${kpi('Выручка к «без решений»', total.money == null ? '—' : `<span class="${total.money > 0 ? 'dr-pos' : (total.money < 0 ? 'dr-neg' : '')}">${rubSigned(total.money)}</span>`, total.avg != null ? `билетов к обычному: ${avgTxt(total)} в среднем` : '')}
-            ${!kindFilter ? kpi('▼ Снижения', String(down.n), down.share != null ? `сработало ${down.share}% · ${rubSigned(down.money)}` : '', 'dr-kpi-down') : ''}
-            ${!kindFilter ? kpi('▲ Повышения', String(up.n), up.share != null ? `сработало ${up.share}% · ${rubSigned(up.money)}` : '', 'dr-kpi-up') : ''}
+            ${kpi('Билетов к обычному', total.avg == null ? '—' : avgTxt(total), 'в среднем на решение')}
+            ${!kindFilter ? kpi('▼ Снижения', String(down.n), down.share != null ? `сработало ${down.share}%` : '', 'dr-kpi-down') : ''}
+            ${!kindFilter ? kpi('▲ Повышения', String(up.n), up.share != null ? `сработало ${up.share}%` : '', 'dr-kpi-up') : ''}
         </div>`;
         const body = list.map(r => {
             const e = r.e;
@@ -187,8 +188,6 @@ window.DecisionsReport = (function () {
             const usual = (x) => (x ? `<span class="dr-usual">обычно ${x.value}</span>` : '');
             const fare = e && e.before.avg != null && e.after.avg != null
                 ? `${Math.round(e.before.avg).toLocaleString('ru-RU')} → ${Math.round(e.after.avg).toLocaleString('ru-RU')} ₽` : '—';
-            const m = e && e.complete ? e.money : null;
-            const rev = m ? `${Math.round(m.r0).toLocaleString('ru-RU')} → ${Math.round(m.r1).toLocaleString('ru-RU')} ₽<div class="dr-usual">без решения → с решением</div>` : '—';
             return `
                 <tr>
                     <td class="rp-nowrap"><strong>${esc(r.check.slice(0, 5))}</strong><div class="dr-usual">${esc(r.author || '—')}</div></td>
@@ -198,7 +197,6 @@ window.DecisionsReport = (function () {
                     <td><strong>${e ? e.before.n : '—'}</strong>${e ? usual(e.normBefore) : ''}</td>
                     <td><strong>${e ? e.after.n : '—'}</strong>${e ? usual(e.normAfter) : ''}</td>
                     <td class="rp-nowrap">${fare}</td>
-                    <td class="rp-nowrap">${rev}</td>
                     <td class="rp-left"><span class="dr-verdict dr-verdict-${v.cls}">${esc(v.text)}</span></td>
                 </tr>`;
         }).join('');
@@ -213,20 +211,16 @@ window.DecisionsReport = (function () {
                     ${canExport() ? `<button type="button" class="btn-primary rp-btn" id="dr-export"${list.length ? '' : ' disabled'}>В Excel</button>` : ''}
                 </div>
                 <details class="dr-help"><summary>Как считается</summary>
-                    <p>«▼ Снижение» сравнивается по <strong>выручке</strong> за ${wd()} после решения. «▲ Повышение» — по итогу вылета: выручка с дня решения до вылета против того, что было бы по старому тарифу. Дороже продают медленнее, поэтому за несколько дней повышение не оценить; плохо, только если рейс в итоге недобрал. Заполнился рейс (от 95%) — повышение сработало.</p>
-                    <p><strong>Без решения</strong> продали бы столько билетов, сколько обычно продаётся в эти дни (норма по дням недели), с поправкой на то,
-                    как рейс шёл до решения (отклонение от нормы — наполовину: за несколько дней оно часто случайное), — по старому тарифу. Без повышения билетов было бы не меньше, чем продали после него, без снижения — не больше. <strong>С решением</strong> — сколько продали на самом деле по новому тарифу.
-                    <strong>Итог</strong> = выручка с решением − выручка без решения.</p>
-                    <p>Поэтому повышение, после которого продали чуть меньше, но дороже, — не провал: например, 1 билет за 35 525 ₽ вместо ожидаемых
-                    2 по 20 175 ₽ — это −4 825 ₽, а не «продажи просели». Для повышения видно, со скольких билетов оно окупилось бы.
-                    Если билетов за оба окна меньше 4, вывод делать рано — такие решения в «Сработало» не считаются.
-                    Если после повышения рейс заполнился (от 95%), повышение места не стоило и считается сработавшим.</p>
+                    <p>Решения судятся по <strong>билетам</strong>, а не по рублям: выручка за несколько дней зависит от того, кто купил (группа, дети, лайт или оптимум), сильнее, чем от самого решения.</p>
+                    <p><strong>«▼ Снижение»</strong> — продажи за ${wd()} после решения против обычных для этих дней (норма по тому же дню недели), с поправкой на то, как рейс шёл до решения. Продали больше обычного — сработало.</p>
+                    <p><strong>«▲ Повышение»</strong> — по итогу вылета: дороже продают медленнее, это нормально. Сработало, если рейс заполнился (от 95%) или с дня решения до вылета добрали не меньше обычного (допуск 10%). До вылета — «итог повышения — после вылета».</p>
+                    <p>Если билетов слишком мало для вывода — «рано судить», такие решения в «Сработало» не считаются.</p>
                 </details>
                 ${toolbar}
                 ${kpis}
                 ${sums}
                 ${body ? `<div class="dr-list-title">Все решения <span class="rp-muted">· ${list.length}</span></div><div class="rp-scroll"><table class="rp-table dr-table">
-                    <thead><tr><th>Решение</th><th>Рейс</th><th>Вылет</th><th>Что</th><th title="Билетов за ${wd()} до решения">До</th><th title="Билетов за ${wd()} после решения">После</th><th>Ср. тариф до → после</th><th title="За ${wd()} после решения: сколько было бы без него (билетов, как обычно, по старому тарифу) и сколько вышло">Выручка</th><th>Итог</th></tr></thead>
+                    <thead><tr><th>Решение</th><th>Рейс</th><th>Вылет</th><th>Что</th><th title="Билетов за ${wd()} до решения">До</th><th title="Билетов после решения: для снижения — за ${wd()}, для повышения — до вылета">После</th><th>Ср. тариф до → после</th><th>Итог</th></tr></thead>
                     <tbody>${body}</tbody></table></div>` : '<p class="rp-note">За период решений «снижение/повышение» нет.</p>'}
             </section>`;
     }

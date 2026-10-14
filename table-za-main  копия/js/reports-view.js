@@ -781,14 +781,15 @@ window.ReportsView = (function () {
         const stamp = typeof excelExportStamp === 'function' ? excelExportStamp() : ru(new Date());
         const head = `Журнал решений · ${d.period} дн. · решения: ${d.kind} · выгрузка ${stamp}`;
         const j = sheetWriter(lib);
-        j.title(0, head, 17, style('FFFFFF', NAVY, true, 'left'));
-        j.table(1, ['Решение от', 'Кто', 'Рейс', 'Направление', 'Вылет', 'Решение', 'До, бил.', 'Обычно до', 'После, бил.', 'Обычно после', 'Ср. тариф до, ₽', 'Ср. тариф после, ₽', 'Итог, бил.', 'Выручка без решения, ₽', 'Выручка с решением, ₽', 'Итог, ₽', 'Результат'],
-            d.rows.map(r => ({ leftCols: [1, 3, 16], cells: [r.check, r.author, r.code, r.direction, r.dep, r.kind, r.before, r.normBefore, r.after, r.normAfter, r.fareBefore, r.fareAfter, r.effect, r.revBefore, r.revAfter, r.revDelta, r.text] })));
-        const wsJ = j.finish([12, 18, 10, 30, 12, 14, 10, 11, 11, 13, 15, 16, 11, 18, 18, 13, 44], 2);
+        j.title(0, head, 14, style('FFFFFF', NAVY, true, 'left'));
+        j.table(1, ['Решение от', 'Кто', 'Рейс', 'Направление', 'Вылет', 'Решение', 'До, бил.', 'Обычно до', 'После, бил.', 'Обычно после', 'Ср. тариф до, ₽', 'Ср. тариф после, ₽', 'Итог, бил.', 'Результат'],
+            d.rows.map(r => ({ leftCols: [1, 3, 13], cells: [r.check, r.author, r.code, r.direction, r.dep, r.kind, r.before, r.normBefore, r.after, r.normAfter, r.fareBefore, r.fareAfter, r.effect, r.text] })));
+        const wsJ = j.finish([12, 18, 10, 30, 12, 14, 10, 11, 11, 13, 15, 16, 11, 44], 2);
         const s = sheetWriter(lib);
         const sec = style(SECTION, 'FFFFFF', true, 'left');
         const pct = (v) => (v == null ? '' : v);   // число, а не «67%»: в Excel его можно сортировать и складывать
-        const block = (r, title, groups, keyLabel, noMoney) => {
+        const block = (r, title, groups, keyLabel) => {
+            const noMoney = true;   // рубли по решениям не считаются
             s.title(r++, title, 8, sec);
             const head = [keyLabel, 'Решений', 'С итогом', 'Можно судить', 'Сработало', 'Сработало, %', 'Средний итог, бил.'].concat(noMoney ? [] : ['Выручка к «без решений», ₽']);
             return s.table(r, head,
