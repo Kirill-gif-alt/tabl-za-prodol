@@ -175,7 +175,7 @@ window.DecisionsReport = (function () {
             </div>`;
         const avgTxt = (t) => (t.avg == null ? '—' : `<span class="${t.avg > 0 ? 'dr-pos' : (t.avg < 0 ? 'dr-neg' : '')}">${signed(t.avg)}</span>`);
         const kpis = `<div class="dr-kpis">
-            ${kpi('Решений', String(total.n), [`с итогом ${total.done}`, total.waiting ? `ждут ${wd()}: ${total.waiting}` : '', total.noNorm ? `не с чем сравнить: ${total.noNorm}` : ''].filter(Boolean).join(' · '))}
+            ${kpi('Решений', String(total.n), [`с итогом ${total.done}`, total.waiting ? `ждут итога: ${total.waiting}` : '', total.noNorm ? `не с чем сравнить: ${total.noNorm}` : ''].filter(Boolean).join(' · '))}
             ${kpi('Сработало', total.share == null ? '—' : `<span class="${total.share >= 50 ? 'dr-pos' : 'dr-neg'}">${total.share}%</span>`, total.judged ? `${total.good} из ${total.judged}${total.done - total.judged ? ` · рано судить ${total.done - total.judged}` : ''}` : 'пока нет итогов')}
             ${kpi('Выручка к «без решений»', total.money == null ? '—' : `<span class="${total.money > 0 ? 'dr-pos' : (total.money < 0 ? 'dr-neg' : '')}">${rubSigned(total.money)}</span>`, total.avg != null ? `билетов к обычному: ${avgTxt(total)} в среднем` : '')}
             ${!kindFilter ? kpi('▼ Снижения', String(down.n), down.share != null ? `сработало ${down.share}% · ${rubSigned(down.money)}` : '', 'dr-kpi-down') : ''}
@@ -213,7 +213,7 @@ window.DecisionsReport = (function () {
                     ${canExport() ? `<button type="button" class="btn-primary rp-btn" id="dr-export"${list.length ? '' : ' disabled'}>В Excel</button>` : ''}
                 </div>
                 <details class="dr-help"><summary>Как считается</summary>
-                    <p>Каждое «▼ Снижение» и «▲ Повышение» из «Управления продажами» сравнивается по <strong>выручке</strong> за ${wd()} после решения.</p>
+                    <p>«▼ Снижение» сравнивается по <strong>выручке</strong> за ${wd()} после решения. «▲ Повышение» — по итогу вылета: выручка с дня решения до вылета против того, что было бы по старому тарифу. Дороже продают медленнее, поэтому за несколько дней повышение не оценить; плохо, только если рейс в итоге недобрал. Заполнился рейс (от 95%) — повышение сработало.</p>
                     <p><strong>Без решения</strong> продали бы столько билетов, сколько обычно продаётся в эти дни (норма по дням недели), с поправкой на то,
                     как рейс шёл до решения (отклонение от нормы — наполовину: за несколько дней оно часто случайное), — по старому тарифу. Без повышения билетов было бы не меньше, чем продали после него, без снижения — не больше. <strong>С решением</strong> — сколько продали на самом деле по новому тарифу.
                     <strong>Итог</strong> = выручка с решением − выручка без решения.</p>

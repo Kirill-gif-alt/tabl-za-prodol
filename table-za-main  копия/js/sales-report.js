@@ -416,7 +416,7 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
     // Год назад — отдельной линией на графике для сравнения; в вывод — только если нормы нет.
     let lyData = null;
     let lyLabel = '';
-    if (swlyHasSales) {
+    if (false && swlyHasSales) {   // «Год назад» на графиках отключён по решению владельца
         const swlyRow = typeof getFlightRowForDate === 'function' ? getFlightRowForDate(baseFlight, swlyDate, code) : null;
         const swlyCurve = anchorCurveToLoad(departureCurve(swlyDate, code), swlyRow ? (parseInt(swlyRow[6], 10) || 0) : 0);
         lyData = dtds.map(t => {

@@ -142,16 +142,63 @@ window.PriceMarks = (function () {
             const sold = row && typeof getSoldFromRow === 'function' ? getSoldFromRow(row) : 0;
             if (seats > 0) finalLf = sold / seats;
         }
+        if (mark.status === 'up') return upEffect(base, code, flyDate, d, list, archived, stats, before, nb, fareBefore);
         return { dtd: d, before, after, normBefore: nb, normAfter: na, complete, effect, money, finalLf };
+    }
+
+    // Повышение судится по итогу вылета, а не по 3 дням: дороже продают медленнее — это нормально, места продаются
+    // ближе к вылету. Плохо только если рейс в итоге недобрал. Сравнение — выручка с решения до вылета против того,
+    // что было бы без повышения: обычный добор с этого дня (норма по дню недели, с поправкой на темп до решения),
+    // по старому тарифу, не больше свободных на тот момент мест. Рейс заполнился (от 95%) — места не потеряны.
+    function upEffect(base, code, flyDate, d, list, archived, stats, before, nb, fareBefore) {
+        const afterAll = stats(d, 0);
+        const naAll = normPickup(base, code, flyDate, d, 0);
+        const fly = parseLocalDate(flyDate);
+        const cutoff = typeof salesDataCutoffTime === 'function' ? salesDataCutoffTime() : Date.now();
+        const complete = !!(fly && fly.getTime() < cutoff);   // данные уже охватывают день вылета
+        let seats = 0;
+        let sold = 0;
+        if (typeof getFlightRowForDate === 'function') {
+            const row = getFlightRowForDate(base, flyDate, code);
+            seats = row && typeof getSeatsOnSale === 'function' ? getSeatsOnSale(row) : 0;
+            sold = row && typeof getSoldFromRow === 'function' ? getSoldFromRow(row) : 0;
+        }
+        // Вылет уже выпал из таблицы загрузки — кресла и итог из архива продаж.
+        if (!(seats > 0) && typeof SalesArchive !== 'undefined' && SalesArchive.entryFor) {
+            const ae = SalesArchive.entryFor(flyDate, code);
+            if (ae && ae.s > 0) { seats = ae.s; sold = ae.sold || 0; }
+        }
+        // Кресел не знаем — не знаем, были ли свободные места: не судим (иначе «потеряли» билеты на полном рейсе).
+        if (!(seats > 0)) return { dtd: d, before, after: afterAll, normBefore: nb, normAfter: naAll, complete, effect: null, money: null, finalLf: null, untilDeparture: true, expected: null };
+        const finalLf = complete && seats > 0 ? sold / seats : null;
+        const freeAtDecision = seats > 0 ? Math.max(0, seats - Math.max(0, sold - afterAll.n)) : null;
+        let expected = naAll && nb ? Math.max(0, naAll.value + (before.n - nb.value) / 2) : null;
+        if (expected != null && freeAtDecision != null) expected = Math.min(expected, freeAtDecision);
+        if (expected != null && finalLf != null && finalLf >= 0.95) expected = afterAll.n;   // заполнился — мест не потеряли
+        const effect = complete && expected != null ? Math.round((afterAll.n - expected) * 10) / 10 : null;
+        // Рубли по повышению не считаем: «тариф до» по 2–3 билетам окна случаен, и итог в рублях получался шумом.
+        const money = null;
+        return { dtd: d, before, after: afterAll, normBefore: nb, normAfter: naAll, complete, effect, money, finalLf, untilDeparture: true, expected };
     }
 
     // Итог решения — один для карточки рейса и для журнала решений.
     // worked: true / false, null — вывод делать рано (мало продаж) или не с чем сравнить.
     function judge(e, status) {
-        if (!e || !e.complete) return { cls: 'wait', text: `ещё идут ${winDays()}`, short: 'ждём', worked: null };
+        if (!e || !e.complete) return e && e.untilDeparture
+            ? { cls: 'wait', text: 'итог повышения — после вылета', short: 'ждём вылета', worked: null }
+            : { cls: 'wait', text: `ещё идут ${winDays()}`, short: 'ждём', worked: null };
         if (e.effect == null) return { cls: 'none', text: 'не с чем сравнить', short: '—', worked: null };
         const m = e.money;
         const up = status === 'up';
+        if (e.untilDeparture) {
+            if (e.finalLf != null && e.finalLf >= 0.95) return { cls: 'pos', text: `рейс заполнился (${Math.round(e.finalLf * 100)}%)`, short: 'сработало', worked: true };
+            if (e.effect == null) return { cls: 'none', text: 'не с чем сравнить', short: '—', worked: null };
+            const tol = Math.max(1, Math.round((e.expected || 0) * 0.1));
+            if ((e.expected || 0) + e.after.n < 3) return { cls: 'none', text: 'мало продаж для вывода', short: 'рано судить', worked: null };
+            return e.effect >= -tol
+                ? { cls: 'pos', text: `по новой цене добрали как обычно (${e.after.n} при обычных ${fmtN(Math.round(e.expected * 10) / 10)})`, short: 'сработало', worked: true }
+                : { cls: 'neg', text: `после повышения добрали меньше обычного: ${e.after.n} вместо ${fmtN(Math.round(e.expected * 10) / 10)}, загрузка ${e.finalLf != null ? Math.round(e.finalLf * 100) + '%' : '—'}`, short: 'не сработало', worked: false };
+        }
         if (up && e.finalLf != null && e.finalLf >= 0.95) {
             return { cls: 'pos', text: `рейс заполнился (${Math.round(e.finalLf * 100)}%) — повышение не стоило мест`, short: 'сработало', worked: true };
         }
@@ -206,13 +253,17 @@ window.PriceMarks = (function () {
     function effectLines(e, status) {
         if (!e) return [];
         const usual = (x) => (x ? ` (обычно ${x.value})` : '');
-        const lines = [`До решения: ${tickets(e.before.n)} за ${winDays()}${usual(e.normBefore)} → после: ${tickets(e.after.n)}${usual(e.normAfter)}${e.complete ? '' : ' — дни ещё идут'}`];
+        const lines = e.untilDeparture
+            ? [`До решения: ${tickets(e.before.n)} за ${winDays()}${usual(e.normBefore)} → после решения до вылета: ${tickets(e.after.n)}${e.normAfter ? ` (обычно добирают ${e.normAfter.value})` : ''}${e.complete ? '' : ' — вылет ещё впереди'}`]
+            : [`До решения: ${tickets(e.before.n)} за ${winDays()}${usual(e.normBefore)} → после: ${tickets(e.after.n)}${usual(e.normAfter)}${e.complete ? '' : ' — дни ещё идут'}`];
         if (e.before.avg != null && e.after.avg != null && e.before.avg !== e.after.avg) {
             const d = e.after.avg - e.before.avg;
             lines.push(`Средний тариф: ${rub(e.before.avg)} → ${rub(e.after.avg)} (${d > 0 ? '+' : '−'}${rub(Math.abs(d))})`);
         }
         let verdict;
-        if (!e.complete) verdict = `Итог будет, когда пройдут ${winDays()} после решения`;
+        if (!e.complete) verdict = e.untilDeparture ? 'Итог повышения будет после вылета: важно, заполнится ли рейс' : `Итог будет, когда пройдут ${winDays()} после решения`;
+        else if (e.untilDeparture && e.finalLf != null && e.finalLf >= 0.95) verdict = `Итог: рейс заполнился (${Math.round(e.finalLf * 100)}%) — повышение мест не стоило`;
+        else if (e.untilDeparture && e.effect != null) verdict = e.effect >= 0 ? `Итог: после повышения добрали не меньше обычного (${signedN(e.effect)})` : `Итог: после повышения добрали меньше обычного — на ${tickets(Math.round(-e.effect))}`;
         else if (e.effect == null) verdict = 'Сравнить не с чем: мало прошлых вылетов в этот день недели';
         // В карточке — по билетам (рубли — в отчёте «Решения»).
         else if (e.effect > 0) verdict = `Итог: после решения продаётся лучше обычного — на ${tickets(e.effect)}`;
