@@ -13,6 +13,10 @@ window.SalesArchive = (function () {
     const DONE_KEY = 'krasavia_archive_done';
 
     let curves = Object.create(null);   // 'дд.мм.гггг|KV-107' → запись
+    // История по билетам (SalesTickets.csv): что было на вылете в контрольные дни 30…1 до вылета.
+    // 'дд.мм.гггг|KV-107' → { p: {H: [классы последнего дня продаж, макс. тариф]}, ro: {H: билетов, сданных позже дня H}, gh: {H: групповых на руках} }
+    let tickets = Object.create(null);
+    const T_HORIZONS = [30, 21, 14, 10, 7, 5, 3, 1];
     const loadedMonths = new Set();
     let loading = null;
     let rev = 0;
@@ -42,6 +46,8 @@ window.SalesArchive = (function () {
         if (typeof SharedStorage === 'undefined') return;
         const r = await SharedStorage.readJsonFileStrict(`history/curves-${month}.json`).catch(() => ({ ok: false }));
         if (!r.ok) loadedMonths.delete(month); // нет доступа — перечитаем позже
+        const tr = await SharedStorage.readJsonFileStrict(`history/tickets-${month}.json`).catch(() => ({ ok: false }));
+        if (tr.ok && tr.data && tr.data.flights && typeof tr.data.flights === 'object') Object.assign(tickets, tr.data.flights);
         const c = r.data;
         if (c && c.flights && typeof c.flights === 'object') {
             Object.keys(c.flights).forEach(k => {
@@ -479,11 +485,106 @@ window.SalesArchive = (function () {
         return res;
     }
 
+    // ---------- история по билетам (SalesTickets.csv) ----------
+    async function importTickets(text, file) {
+        if (typeof SharedStorage === 'undefined') return { ok: false, error: 'нет общей папки' };
+        const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/);
+        const split = (l) => l.split(',').map(x => x.replace(/^"|"$/g, '').trim());
+        const head = split(lines[0] || '').map(x => x.toUpperCase());
+        const col = (n) => head.indexOf(n);
+        if (['REIS', 'FLYDATE', 'DTD', 'NFARE', 'BASICFARE', 'REFUND_DTD'].some(n => col(n) < 0)) return { ok: false, error: 'это не файл по билетам (нужны REIS, FLYDATE, DTD, NFARE, BASICFARE, REFUND_DTD)' };
+        if (!(await SharedStorage.canWrite())) return { ok: false, error: 'нет доступа на запись в общую папку' };
+        const today = parseLocalDate(todayStr());
+        const deps = Object.create(null);
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i];
+            if (!line) continue;
+            const v = split(line);
+            const code = cleanFlight(v[col('REIS')] || '');
+            const d = parseLocalDate(v[col('FLYDATE')] || '');
+            if (!code || !d || (today && d >= today)) continue;
+            const date = formatDateRu(d);
+            const key = `${date}|${code}`;
+            const dep = deps[key] || (deps[key] = []);
+            const rd = v[col('REFUND_DTD')];
+            dep.push({
+                dtd: parseInt(v[col('DTD')], 10) || 0,
+                fare: Number(String(v[col('NFARE')] || '').replace(',', '.')) || 0,
+                basis: String(v[col('BASICFARE')] || '').toUpperCase(),
+                rd: rd === '' || rd == null ? null : parseInt(rd, 10),
+                grp: col('GROUP') >= 0 && v[col('GROUP')] === '1'
+            });
+            if (i % 5000 === 0) await new Promise(res => setTimeout(res, 0));
+        }
+        const adultPaid = (t) => t.fare > 0 && !/\/(CN|IN|ID|WO|DA)\d*/.test(t.basis) && !/IDB$/.test(t.basis.split('/')[0]);
+        const byMonth = Object.create(null);
+        let flights = 0;
+        Object.keys(deps).forEach(key => {
+            const list = deps[key];
+            const out = { p: {}, ro: {}, gh: {} };
+            T_HORIZONS.forEach(H => {
+                // На руках в день H: куплены не позже (dtd ≥ H) и не сданы к этому дню (возврат позже или не было).
+                const held = list.filter(t => t.dtd >= H && !(t.rd != null && t.rd >= H));
+                const ro = held.filter(t => t.rd != null).length;   // сданы позже — в истории (за вычетом возвратов) их нет
+                if (ro) out.ro[H] = ro;
+                const g = held.filter(t => t.grp).length;
+                if (g) out.gh[H] = g;
+                const paid = list.filter(t => t.dtd >= H && adultPaid(t));
+                if (!paid.length) return;
+                const last = Math.min(...paid.map(t => t.dtd));   // последний день продаж к дню H
+                const day = paid.filter(t => t.dtd === last);
+                out.p[H] = [[...new Set(day.map(t => t.basis.charAt(0)))].join(''), Math.max(...day.map(t => t.fare))];
+            });
+            const m = monthOf(key.slice(0, key.indexOf('|')));
+            (byMonth[m] || (byMonth[m] = {}))[key] = out;
+            flights++;
+        });
+        if (!flights) return { ok: false, error: 'в файле нет улетевших вылетов' };
+        let ok = true;
+        for (const m of Object.keys(byMonth).sort()) {
+            const w = await SharedStorage.writeJsonFile(`history/tickets-${m}.json`, { version: 1, updatedAt: new Date().toISOString(), flights: byMonth[m] });
+            ok = w && ok;
+            if (w) Object.assign(tickets, byMonth[m]);
+        }
+        rev++;
+        ticketsRev++;
+        if (typeof ActivityLog !== 'undefined') ActivityLog.log('import', `История по билетам: ${flights} вылетов`);
+        if (ok) {
+            const read = await readLastImport().catch(() => null);
+            const base = (read && read.ok && lastImport) ? lastImport : {};
+            lastImport = Object.assign({}, base, { ticketsSig: fileSig(file), ticketsAt: new Date().toISOString(), ticketsFlights: flights });
+            await SharedStorage.writeJsonFile(IMPORT_FILE, lastImport).catch(() => false);
+            try { localStorage.setItem(IMPORT_LOCAL_KEY + '_t', fileSig(file)); } catch (e) { /* ignore */ }
+        }
+        return { ok, flights };
+    }
+
+    let ticketsRev = 0;
+    async function autoImportTickets(file) {
+        if (!file || typeof SharedStorage === 'undefined' || typeof ProfileAuth === 'undefined') return null;
+        if (!ProfileAuth.hasPermission('share_data')) return null;
+        if (!(await SharedStorage.canWrite())) return null;
+        const read = await readLastImport();
+        if (!read.ok) return null;
+        let localSig = '';
+        try { localSig = localStorage.getItem(IMPORT_LOCAL_KEY + '_t') || ''; } catch (e) { /* ignore */ }
+        if ((lastImport && lastImport.ticketsSig === fileSig(file)) || localSig === fileSig(file)) return { ok: true, same: true };
+        const r = await importTickets(await file.text(), file);
+        if (r.ok && typeof ForecastLab !== 'undefined' && ForecastLab.afterHistoryImport) ForecastLab.afterHistoryImport();
+        return r;
+    }
+
+    function ticketsFor(date, code) { return tickets[`${date}|${code}`] || null; }
+
     // Обычные кресла рейса (по нынешним данным) — для вылетов истории, где ёмкость подобрана по проданному.
     function typicalSeats(code) { return typicalOf(code).s || 0; }
 
     return {
         typicalSeats,
+        importTickets,
+        autoImportTickets,
+        ticketsFor,
+        ticketsRevision: () => ticketsRev + Object.keys(tickets).length,
         ensureLoaded,
         ensureMonth,
         ensureMonths,

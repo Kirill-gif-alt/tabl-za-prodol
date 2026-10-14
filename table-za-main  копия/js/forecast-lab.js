@@ -80,7 +80,7 @@ window.ForecastLab = (function () {
     const GROUPS = [{ id: 'near', label: '1–3 дня', hs: [1, 3] }, { id: 'mid', label: '5–10 дней', hs: [5, 7, 10] }, { id: 'far', label: '14–30 дней', hs: [14, 21, 30] }];
     const GBM = { get rounds() { return PV.GBM_ROUNDS; }, get depth() { return PV.GBM_DEPTH; }, get rate() { return PV.GBM_RATE; }, get minLeaf() { return PV.GBM_MIN_LEAF; }, get bins() { return PV.GBM_BINS; } };   // «Настройки» → «Параметры расчётов»
     const VERSION = 3;              // формат журнала; файл новее — не перезаписываем (3: цена/класс, группы, кресла к ВС)
-    const BACKFILL_V = 4;           // правила восстановления; старее — пересчитываются (4: + цена/класс, группы, кресла к ВС)
+    const BACKFILL_V = 5;           // правила восстановления; старее — пересчитываются (4: + цена/класс, группы, кресла к ВС)
     const CHOICE_KEY = 'krasavia_fc_choice';
     const DONE_KEY = 'krasavia_fclog_done';
     const DAY = 86400000;
@@ -227,7 +227,8 @@ window.ForecastLab = (function () {
     // (признаки «те же дни недели», соседние даты, добор рейса зависят от архива).
     function historyStamp() {
         const li = typeof SalesArchive !== 'undefined' && SalesArchive.lastImport ? SalesArchive.lastImport() : null;
-        return li && li.sig ? String(li.sig).slice(0, 40) : '';
+        // История по билетам тоже меняет восстановленные записи (возвраты, цена и класс по дням).
+        return li && (li.sig || li.ticketsSig) ? String((li.sig || '') + (li.ticketsSig ? '|t' + li.ticketsSig : '')).slice(0, 40) : '';
     }
 
     function offDay(r, h) {
@@ -1131,7 +1132,25 @@ window.ForecastLab = (function () {
     }
     function stateAt(dep, h, T, s) {
         const out = {};
-        if (dep.arch) return out;
+        if (dep.arch) {
+            // Вылеты истории: класс и цена, группы — из SalesTickets.csv (если загружен).
+            const tk = typeof SalesArchive !== 'undefined' && SalesArchive.ticketsFor ? SalesArchive.ticketsFor(dep.date, dep.code) : null;
+            if (!tk) return out;
+            if (tk.gh && tk.gh[h] && s > 0) out.gh = Math.round(tk.gh[h] / s * 1000) / 1000;
+            const pv = tk.p && tk.p[h];
+            const ladder = pv && typeof FareGrid !== 'undefined' ? FareGrid.ladderFor(dep.code, dep.date) : [];
+            if (!pv || ladder.length < 2) return out;
+            const prices = ladder.map(l => l.price).sort((a, b) => a - b);
+            const mid = prices[prices.length >> 1];
+            let best = -1;
+            String(pv[0] || '').split('').forEach(c => { const i = ladder.findIndex(l => l.cls === c); if (i > best) best = i; });
+            const price = best >= 0 ? ladder[best].price : Number(pv[1]) || mid;
+            out.pi = 1;
+            out.pc = best >= 0 ? ladder[best].cls : '';
+            out.pk = best >= 0 ? Math.round(best / (ladder.length - 1) * 1000) / 1000 : 0.5;
+            out.pf = Math.round(Math.max(-0.6, Math.min(0.8, price / mid - 1)) * 1000) / 1000;
+            return out;
+        }
         if (dep.row && s > 0) {
             const cap = getCapacityFromAircraft(getAircraftType(dep.row[4]));
             if (cap > 0) out.ss = Math.round(Math.min(1.5, s / cap) * 1000) / 1000;
@@ -1281,7 +1300,10 @@ window.ForecastLab = (function () {
         HORIZONS.forEach(h => {
             const T = dep.ts - h * DAY;
             // Только то, что было в продажах к этому дню (без подсказки итогом вылета).
-            const o = Math.round(rawAt(dep, h, T));
+            // История продаж — за вычетом всех будущих возвратов; живые данные — с ними. Билеты, сданные позже дня h,
+            // на тот день были на руках — добавляем их (SalesTickets.csv), иначе модель учится не на том «продано».
+            const tk = dep.arch && typeof SalesArchive !== 'undefined' && SalesArchive.ticketsFor ? SalesArchive.ticketsFor(dep.date, dep.code) : null;
+            const o = Math.round(rawAt(dep, h, T)) + (tk && tk.ro && tk.ro[h] ? tk.ro[h] : 0);
             const hy = histAsOf(dep, h, T, o);
             const x = neighborFeatures(dep, h, T, false, o).map(v => Math.round(v * 1000) / 1000);
             e.h[h] = Object.assign({ d: h, o, p: num(p), q: planOk ? num(getExpectedLoad(cap, dep.base, h, wk)) : null, y: hy.y, n: hy.n || null, m: null, b: 1, bv: BACKFILL_V, ai: historyStamp(), s, x }, stateAt(dep, h, T, s));

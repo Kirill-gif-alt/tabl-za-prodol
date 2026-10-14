@@ -69,13 +69,22 @@ function isSalesHistoryName(name) {
     return /^saleshistory.*\.csv$/i.test(String(name || ''));
 }
 
+// SalesTickets.csv (Export-SalesTickets.ps1) — история по билетам: класс и цена на каждый день, возвраты, группы.
+function isSalesTicketsName(name) {
+    return /^salestickets.*\.csv$/i.test(String(name || ''));
+}
+
+function findSalesTicketsFile(files) {
+    return getLatestFilesFromList((files || []).filter(f => isSalesTicketsName(f.name)), 1)[0] || null;
+}
+
 // Несколько копий (SalesHistory (1).csv и т.п.) — берём самую свежую, иначе старая затёрла бы новую историю.
 function findSalesHistoryFile(files) {
     return getLatestFilesFromList((files || []).filter(f => isSalesHistoryName(f.name)), 1)[0] || null;
 }
 
 function findSalesCsvFile(files) {
-    const csvs = (files || []).filter(f => String(f.name || '').toLowerCase().endsWith('.csv') && !isSalesHistoryName(f.name));
+    const csvs = (files || []).filter(f => String(f.name || '').toLowerCase().endsWith('.csv') && !isSalesHistoryName(f.name) && !isSalesTicketsName(f.name));
     if (!csvs.length) return null;
     const preferred = csvs.find(f => f.name.toLowerCase().includes('tickets_sale_last14days'));
     if (preferred) return preferred;
@@ -137,6 +146,7 @@ function classifyFilesFromInput(fileList) {
             : null,
         sales: findSalesCsvFile(all) || picked.sales,
         history: findSalesHistoryFile(all),
+        tickets: findSalesTicketsFile(all),
         costs: typeof RouteCosts !== 'undefined' ? RouteCosts.findCostsFile(xlsxAll) : null,
         subsidyPeriods: typeof RouteCosts !== 'undefined' ? RouteCosts.findPeriodsFile(xlsxAll) : null
     };
@@ -270,7 +280,7 @@ async function scanDirectoryHandle(dir) {
             for await (const [fn, fh] of h.entries()) {
                 if (fh.kind !== 'file') continue;
                 const fl = fn.toLowerCase();
-                if (isSalesHistoryName(fn)) historyHandles.push({ name: fn, handle: fh });
+                if (isSalesHistoryName(fn) || isSalesTicketsName(fn)) historyHandles.push({ name: fn, handle: fh });
                 else if (fl.endsWith('.csv')) csvHandles.push({ name: fn, handle: fh });
                 else if (fl.endsWith('.xlsx') && lname.includes('весов') && fl.includes('весов')) {
                     weightsHandle = fh;
@@ -289,7 +299,7 @@ async function scanDirectoryHandle(dir) {
             }
             folderEntries[lname] = csvHandles;
         } else if (h.kind === 'file') {
-            if (isSalesHistoryName(name)) historyHandles.push({ name, handle: h });
+            if (isSalesHistoryName(name) || isSalesTicketsName(name)) historyHandles.push({ name, handle: h });
             else rootEntries.push({ name, handle: h });
         }
     }
@@ -333,7 +343,10 @@ async function scanDirectoryHandle(dir) {
         children: typeof findChildrenCsvFile === 'function' ? findChildrenCsvFile(rootReady) : null,
         costs: costsFile,
         subsidyPeriods: subsidyFile,
-        history: historyHandles.length ? findSalesHistoryFile((await Promise.all(historyHandles.map(x => fileFromHandle(x.handle, x.name)))).filter(Boolean)) : null
+        ...(await (async () => {
+            const hf = historyHandles.length ? (await Promise.all(historyHandles.map(x => fileFromHandle(x.handle, x.name)))).filter(Boolean) : [];
+            return { history: findSalesHistoryFile(hf), tickets: findSalesTicketsFile(hf) };
+        })())
     };
 }
 
@@ -348,17 +361,24 @@ async function loadFromDirectoryPicker() {
         return;
     }
     await processDataFromSources(sources.avail, sources.closed, sources.sales, sources.exp, sources.weights, sources.children, sources.costs, sources.subsidyPeriods);
-    importSalesHistorySoon(sources.history);
+    importSalesHistorySoon(sources.history, sources.tickets);
 }
 
 // История продаж из папки данных: дописывается в архив сама, если файл новый (в фоне, после загрузки данных).
-function importSalesHistorySoon(file) {
+function importSalesHistorySoon(file, ticketsFile) {
     if (typeof ForecastLab !== 'undefined' && ForecastLab.afterDataLoad) ForecastLab.afterDataLoad();
-    if (!file || typeof SalesArchive === 'undefined' || !SalesArchive.autoImport) return;
-    setTimeout(() => {
-        SalesArchive.autoImport(file).then(r => {
-            if (r && r.ok && !r.same && typeof showToast === 'function') showToast(`История продаж обновлена: ${r.flights.toLocaleString('ru-RU')} вылетов — модель прогноза доучивается`);
-        }).catch(e => console.warn('SalesHistory', e));
+    if (typeof SalesArchive === 'undefined') return;
+    setTimeout(async () => {
+        if (file && SalesArchive.autoImport) {
+            await SalesArchive.autoImport(file).then(r => {
+                if (r && r.ok && !r.same && typeof showToast === 'function') showToast(`История продаж обновлена: ${r.flights.toLocaleString('ru-RU')} вылетов — модель прогноза доучивается`);
+            }).catch(e => console.warn('SalesHistory', e));
+        }
+        if (ticketsFile && SalesArchive.autoImportTickets) {
+            await SalesArchive.autoImportTickets(ticketsFile).then(r => {
+                if (r && r.ok && !r.same && typeof showToast === 'function') showToast(`История по билетам загружена: ${r.flights.toLocaleString('ru-RU')} вылетов — модель учит цену, класс, возвраты и группы`);
+            }).catch(e => console.warn('SalesTickets', e));
+        }
     }, 1500);
 }
 
@@ -378,7 +398,7 @@ async function processDataFromFileList(fileList) {
             return;
         }
         await processDataFromSources(sources.avail, sources.closed, sources.sales, sources.exp, sources.weights, sources.children, sources.costs, sources.subsidyPeriods);
-        importSalesHistorySoon(sources.history);
+        importSalesHistorySoon(sources.history, sources.tickets);
     } catch (e) {
         console.error(e);
         const hint = (typeof SessionStore !== 'undefined' && await SessionStore.hasSnapshot())
