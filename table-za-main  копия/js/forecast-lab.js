@@ -293,6 +293,7 @@ window.ForecastLab = (function () {
     function invalidate() {
         rev++;
         routeTypeMemo.clear();
+        lyMemoTrend.clear();
     }
 
     // Окно журнала: −6…+2 месяца от сегодняшнего. Не прочитанные (нет доступа) — перечитываются при следующем вызове.
@@ -374,6 +375,7 @@ window.ForecastLab = (function () {
             if (histStart == null || st < histStart) histStart = st;
         });
         if (histStart != null) Object.keys(byKey).forEach(k => { const d = byKey[k]; if (d.arch && d.hist) d.trunc = d.ts - TRUNC_DAYS * DAY < histStart; });
+        lyMemoTrend.clear();
         ctxMemo = { sig, v: { byBase, byKey, now, histStart } };
         return ctxMemo.v;
     }
@@ -447,22 +449,81 @@ window.ForecastLab = (function () {
 
     // «Прошлый год»: тот же рейс в тот же день недели год назад (364 дня, иначе ±1 неделя) из архива продаж.
     //   добор год назад: π = (итог_пг − продано_пг за h дней) / кресла_пг;   f̂ = clamp(o + π·s, o, s)
+    // «Прошлый год»: сколько этот рейс ДОБРАЛ от дня h до вылета год назад, в пересчёте на нынешние условия.
+    //   • Дата: тот же день недели год назад (364 дня назад: 14.10.2026 ср → 15.10.2025 ср); если там был праздник,
+    //     каникулы или событие, а сейчас нет (или наоборот) — соседняя неделя (−357 / −371 дня) с тем же календарём.
+    //   • Добор берётся в пассажирах (не в доле кресел): если год назад летал самолёт больше и продали 48 —
+    //     сейчас на 46 креслах итог упрётся в кресла. Разница ёмкостей учитывается мягко: √(кресла сейчас / тогда).
+    //   • Частота: в неделю вокруг вылета год назад было n₁ рейсов направления, сейчас n₀ — спрос делится
+    //     на рейсы, добор × n₁/n₀ (0,5…2).
+    //   • Рост к прошлому году: пассажиры направления за 8 недель до дня прогноза против тех же недель год назад
+    //     (только улетевшие к дню прогноза — без подглядывания), сжато к 1 при малом числе вылетов, 0,6…1,6.
+    //   • Добор от дня h до вылета виден в истории целиком, если день (вылет − h) год назад после начала истории.
+    const lyMemoTrend = new Map();
+    const CAL_KEYS = [9, 10, 11, 12, 13];   // праздник, каникулы, событие, канун, после праздника (calFeatures)
+    function calSig(dateStr) { const v = calFeatures(dateStr); return CAL_KEYS.map(i => v[i] ? 1 : 0).join(''); }
+
+    function weekCount(listTs, center) {
+        let n = 0;
+        listTs.forEach(t => { if (Math.abs(t - center) <= 3 * DAY) n++; });
+        return n;
+    }
+
+    function lyTrend(base, T) {
+        const key = base + '|' + weekOf(T);
+        if (lyMemoTrend.has(key)) return lyMemoTrend.get(key);
+        const C = context();
+        let now = 0;
+        let ly = 0;
+        let n = 0;
+        (C.byBase[base] || []).forEach(dep => {
+            if (!(dep.ts < T && dep.ts >= T - 56 * DAY) || !(dep.sold > 0)) return;
+            const e = SalesArchive.entryFor(fmtDate(dep.ts - 364 * DAY), dep.rowCode) || SalesArchive.entryFor(fmtDate(dep.ts - 364 * DAY), base);
+            now += dep.sold;
+            if (e && e.sold > 0) { ly += e.sold; n++; }
+        });
+        // Вылеты прошлого года в те же недели, которых нет в паре (другое расписание), — тоже в «тогда».
+        let r = 1;
+        if (n >= 4 && ly > 0) {
+            const raw = Math.max(0.6, Math.min(1.6, now / ly));
+            r = (n * raw + 6) / (n + 6);
+        }
+        lyMemoTrend.set(key, r);
+        return r;
+    }
+
     function lyPredict(code, base, ts, h, o, s) {
         if (typeof SalesArchive === 'undefined' || !SalesArchive.entryFor || !(s > 0)) return null;
+        const hs = context().histStart;
+        const nowCal = calSig(fmtDate(ts));
+        let pick = null;
         for (const back of [364, 357, 371]) {
-            const ds = fmtDate(ts - back * DAY);
+            const lyTs = ts - back * DAY;
+            const ds = fmtDate(lyTs);
             let cd = code;
             let e = SalesArchive.entryFor(ds, cd);
             if (!e && base && base !== code) { cd = base; e = SalesArchive.entryFor(ds, cd); }
-            if (!e || !(e.s > 0) || !(e.sold > 0)) continue;
+            if (!e || !(e.sold > 0)) continue;
             const cv = SalesArchive.curveFor(ds, cd);
             if (!cv) continue;
-            const hs = context().histStart;
-            if (e.h && hs != null && (ts - back * DAY) - TRUNC_DAYS * DAY < hs) continue;   // прошлогодний вылет обрезан историей
-            const pick = Math.max(0, (e.sold - at(cv, h)) / e.s);
-            return Math.max(o, Math.min(s, Math.round(o + pick * s)));
+            if (e.h && hs != null && lyTs - h * DAY < hs) continue;   // добор от дня h год назад не весь в истории
+            const cand = { e, cv, lyTs, cd, same: calSig(ds) === nowCal };
+            if (!pick || (cand.same && !pick.same)) pick = cand;
+            if (pick.same) break;
         }
-        return null;
+        if (!pick) return null;
+        const { e, cv, lyTs, cd } = pick;
+        let add = Math.max(0, e.sold - at(cv, h));   // добрали год назад, пассажиров
+        const sLy = Math.max(e.sold, e.s0 || e.s || 0);
+        if (sLy > 0) add *= Math.sqrt(Math.max(0.5, Math.min(2, s / sLy)));
+        // Частота рейсов направления в неделю вокруг вылета: тогда и сейчас.
+        const C = context();
+        const nowN = weekCount((C.byBase[base] || []).map(d => d.ts), ts) || 1;
+        const lyDeps = SalesArchive.departuresFor(cd).concat(cd !== base ? SalesArchive.departuresFor(base) : []);
+        const lyN = weekCount(lyDeps.map(d => { const x = parseLocalDate(d.date); return x ? x.getTime() : 0; }), lyTs) || 1;
+        add *= Math.max(0.5, Math.min(2, lyN / nowN));
+        add *= lyTrend(base, ts - h * DAY);
+        return Math.max(o, Math.min(s, Math.round(o + add)));
     }
 
     function at(curve, d) {
