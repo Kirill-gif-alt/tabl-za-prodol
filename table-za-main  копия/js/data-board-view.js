@@ -289,6 +289,31 @@ function renderDataRouteTableRows(pair, todayStart) {
     }).join('');
 }
 
+// Строка «Итого за сутки» над таблицей маршрута (галочка «Продажа за сутки»): сумма столбца «За сутки» по показанным вылетам.
+function buildDataDaySalesSumRow(pair, todayStart) {
+    if (!dataShowDaySales) return '';
+    const entries = getDataPairEntries(pair, todayStart);
+    const ys = (row) => { if (!row || typeof getSalesMapForRow !== 'function') return 0; const s = getSalesMapForRow(row); return (s && s.yesterday) || 0; };
+    let out = 0;
+    let inn = 0;
+    entries.forEach(e => { out += ys(e.outRow); inn += ys(e.inRow); });
+    const leg = (isOut, sum) => {
+        const cls = isOut ? 'pair-leg-out data-block-out' : 'pair-leg-in data-block-in';
+        const cells = [];
+        if (dataShowLocalTimes) cells.push('', '');
+        cells.push('');                                  // крес.
+        if (dataShowSpecBookings) cells.push('');        // спец. брони
+        cells.push('');                                  // загр.
+        cells.push(`<strong>${formatNum(sum)}</strong>`); // за сутки
+        cells.push('');                                  // ЗПК
+        return cells.map((c, i) => `<td class="${cls} data-day-sum-cell${!isOut && i === 0 ? ' pair-split-start' : ''}${isOut && i === cells.length - 1 ? ' pair-split-end' : ''}">${c}</td>`).join('');
+    };
+    return `<tr class="data-day-sum-row" title="Продано за прошлые сутки по всем вылетам в таблице">
+        <td colspan="2" class="data-block-info font-semibold">Итого за сутки</td>
+        ${leg(true, out)}${leg(false, inn)}
+        <td class="data-block-avg pair-split-start"><strong>${formatNum(out + inn)}</strong></td></tr>`;
+}
+
 function buildDataRouteCardHtml(pair, todayStart) {
     const bodyRows = renderDataRouteTableRows(pair, todayStart);
     if (!bodyRows) return '';
@@ -372,7 +397,7 @@ function buildDataRouteCardHtml(pair, todayStart) {
                             <th class="pair-sub-in" title="sold / (AU − спец.брони)">ЗПК</th>
                         </tr>
                     </thead>
-                    <tbody>${bodyRows}</tbody>
+                    <tbody>${buildDataDaySalesSumRow(pair, todayStart)}${bodyRows}</tbody>
                 </table>
             </div>
         </div>`;

@@ -8570,3 +8570,9 @@ html[data-theme="dark"] .cr-table tbody tr:hover td { background: #1f2a37; }
 .theme-param-reset { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 6px; cursor: pointer; height: 28px; }
 .theme-param-reset:disabled { opacity: 0.35; cursor: default; }
 .theme-params-actions { display: flex; gap: 10px; align-items: center; position: sticky; bottom: 0; background: var(--surface); padding: 10px 0; border-top: 1px solid var(--border); }
+
+/* «Загрузка рейсов»: строка «Итого за сутки» над вылетами */
+.data-board-table tr.data-day-sum-row td {
+    font-weight: 700;
+    border-bottom: 2px solid var(--border);
+}
