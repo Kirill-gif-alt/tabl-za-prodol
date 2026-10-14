@@ -323,8 +323,17 @@ window.FareGrid = (function () {
             const other = (c) => p.rows.filter(r => r.code[0] === c && familyOf(r.code) === 'other').map(r => `${r.fare.toLocaleString('ru-RU')} <span class="rp-muted">${esc(r.code)}</span>`).join(', ') || '—';
             return `<div class="rp-scroll"><table class="rp-table"><thead><tr><th>Класс</th><th>Лайт</th><th>Стандарт</th><th>Оптимум</th><th>Другие</th></tr></thead><tbody>${classes.map(c => `<tr><td><strong>${esc(c)}</strong></td><td>${famCell(p.rows, c, 'lite')}</td><td>${famCell(p.rows, c, 'standard')}</td><td>${famCell(p.rows, c, 'optimum')}</td><td>${other(c)}</td></tr>`).join('')}</tbody></table></div>`;
         };
+        // Правка периода: тарифы кодов, новые коды (в том числе новая буква), удаление кода.
+        const editBlock = (p, i) => !edit ? '' : `<details class="fg-edit"><summary>Изменить тарифы этого периода</summary>
+            <div class="rp-scroll"><table class="rp-table"><thead><tr><th>Код (КБТ)</th><th>Тариф ВЗР, ₽</th><th></th></tr></thead><tbody>
+            ${p.rows.slice().sort((a, b) => a.fare - b.fare).map(x => `<tr><td>${esc(x.code)}</td><td><input type="number" min="1" step="1" data-fgo-p="${i}" data-fgo-code="${esc(x.code)}" value="${x.fare}" style="width:110px"></td>
+                <td><label><input type="checkbox" data-fgo-del="${i}" data-fgo-code="${esc(x.code)}"> убрать</label></td></tr>`).join('')}
+            ${[0, 1, 2].map(k => `<tr><td><input type="text" maxlength="9" placeholder="новый код, напр. ULHOW" data-fgo-newcode="${i}" style="width:150px;text-transform:uppercase"></td><td><input type="number" min="1" step="1" placeholder="тариф" data-fgo-newfare="${i}" style="width:110px"></td><td></td></tr>`).join('')}
+            </tbody></table></div>
+            <button type="button" class="btn-primary rp-btn" id="fg-off-save" data-fgo-save="${i}">Сохранить период</button>
+            <span class="rp-muted">Первая буква кода — класс, дальше семейство: LH — лайт, ST — стандарт, OP — оптимум.</span></details>`;
         const offHtml = offList.length
-            ? offList.map(p => `<h4 class="rp-subhead">Действует ${esc(fmtP(p))}${p === per ? ' — сейчас' : ''}</h4>${offTable(p)}`).join('')
+            ? offList.map((p, i) => `<h4 class="rp-subhead">Действует ${esc(fmtP(p))}${p === per ? ' — сейчас' : ''}</h4>${offTable(p)}${editBlock(p, i)}`).join('')
             : '<p class="rp-note">По этому направлению официальной сетки нет — советник берёт уровни из продаж (таблица ниже).</p>';
         const offInfo = off ? `Загружена: ${esc(off.file || 'файл')}${off.at ? `, ${esc(new Date(off.at).toLocaleDateString('ru-RU'))}` : ''}${off.by ? `, ${esc(off.by)}` : ''} · направлений: ${Object.keys(off.routes || {}).length}${off.unmatched && off.unmatched.length ? ` · не сопоставлены с рейсами: ${esc(off.unmatched.slice(0, 6).join('; '))}${off.unmatched.length > 6 ? '…' : ''}` : ''}` : 'Официальная сетка не загружена.';
         return `<section class="rp-card">
@@ -347,7 +356,41 @@ window.FareGrid = (function () {
         return false;
     }
 
+    async function saveOfficialPeriod(i, rerender) {
+        const off = store.official;
+        const list = off && off.routes && off.routes[current];
+        if (!list || !list[i]) return;
+        const rows = [];
+        const bad = [];
+        document.querySelectorAll(`[data-fgo-p="${i}"]`).forEach(inp => {
+            const code = inp.dataset.fgoCode;
+            const del = document.querySelector(`[data-fgo-del="${i}"][data-fgo-code="${CSS.escape(code)}"]`);
+            if (del && del.checked) return;
+            const fare = fareNum(inp.value);
+            if (fare == null) { bad.push(code); return; }
+            rows.push({ code, fare });
+        });
+        const codes = document.querySelectorAll(`[data-fgo-newcode="${i}"]`);
+        const fares = document.querySelectorAll(`[data-fgo-newfare="${i}"]`);
+        codes.forEach((c, k) => {
+            const code = String(c.value || '').trim().toUpperCase();
+            if (!code) return;
+            const fare = fareNum(fares[k] && fares[k].value);
+            if (!/^[A-Z][A-Z0-9]{3,8}$/.test(code) || fare == null) { bad.push(code || '?'); return; }
+            const ex = rows.find(x => x.code === code);
+            if (ex) ex.fare = fare; else rows.push({ code, fare });
+        });
+        if (bad.length) { if (typeof showToast === 'function') showToast(`Проверьте код и тариф: ${bad.join(', ')}`, 'error'); return; }
+        const next = JSON.parse(JSON.stringify(off));
+        next.routes[current][i].rows = rows;
+        next.routes[current][i].edited = { at: new Date().toISOString(), by: typeof ProfileAuth !== 'undefined' ? (ProfileAuth.getCurrentProfile() || {}).name || '' : '' };
+        const ok = await saveOfficial(next);
+        if (typeof showToast === 'function') showToast(ok ? 'Сетка периода сохранена — действует у всех' : 'Не удалось записать', ok ? 'success' : 'error');
+        rerender();
+    }
+
     async function handleClick(btn, rerender) {
+        if (btn.id === 'fg-off-save') { await saveOfficialPeriod(Number(btn.dataset.fgoSave), rerender); return true; }
         if (btn.id === 'fg-upload') {
             const input = document.getElementById('fg-file');
             if (!input) return true;
