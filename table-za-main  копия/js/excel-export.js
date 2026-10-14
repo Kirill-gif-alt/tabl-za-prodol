@@ -826,8 +826,24 @@ function dataBoardPaintCard(lib, ws, merges, origin, card, spec, todayStart, max
             splitLeft: index === 0
         });
     });
+    // «Продажа за сутки»: строка «Итого за сутки» сразу под шапкой карточки — как на экране.
+    const off = dataBoardExcelShowDaySales() ? 1 : 0;
+    if (off) {
+        const ys = (row) => { if (!row || typeof getSalesMapForRow !== 'function') return 0; const s0 = getSalesMapForRow(row); return (s0 && s0.yesterday) || 0; };
+        let so = 0;
+        let si = 0;
+        card.entries.forEach(e => { so += ys(e.outRow); si += ys(e.inRow); });
+        const k = labels.indexOf('ЗА СУТКИ');
+        const look = { fill: 'E2E8F0', color: '012A4A' };
+        dataBoardPaint(lib, ws, merges, 4, origin, 4, origin + 1, 'Итого за сутки', look.fill, look.color, true, 'left', false, { border: true });
+        for (let i = 0; i < legCount; i++) {
+            dataBoardPaint(lib, ws, merges, 4, outStart + i, 4, outStart + i, i === k ? so : '', look.fill, look.color, true, 'center', false, { border: true, splitRight: i === legCount - 1 });
+            dataBoardPaint(lib, ws, merges, 4, inStart + i, 4, inStart + i, i === k ? si : '', look.fill, look.color, true, 'center', false, { border: true, splitLeft: i === 0 });
+        }
+        dataBoardPaint(lib, ws, merges, 4, avgCol, 4, avgCol, so + si, look.fill, look.color, true, 'center', false, { border: true, splitLeft: true });
+    }
     card.entries.forEach((entry, index) => {
-        const r = 4 + index;
+        const r = 4 + off + index;
         const state = dataBoardExcelEntryState(entry, todayStart);
         const info = dataBoardExcelBodyLook('info', state);
         const outLook = dataBoardExcelBodyLook('out', state);
@@ -858,7 +874,7 @@ function dataBoardPaintCard(lib, ws, merges, origin, card, spec, todayStart, max
         dataBoardPaint(lib, ws, merges, r, avgCol, r, avgCol, avgText, avgLook.fill, avgLook.color, avgLook.bold, 'center', false, { border: true, splitLeft: true });
     });
     const blank = dataBoardExcelStyle('FFFFFF', 'FFFFFF', false, 'center', false, { quiet: true });
-    for (let r = 4 + card.entries.length; r <= maxR; r++) {
+    for (let r = 4 + off + card.entries.length; r <= maxR; r++) {
         for (let c = origin; c < origin + cardWidth; c++) dataBoardPutCell(lib, ws, r, c, '', blank);
     }
 }
@@ -887,7 +903,8 @@ function buildDataBoardWorksheet(lib, pairs, todayStart) {
         if (index < prepared.length - 1) cursor += 1;
     });
     const lastCol = origins[origins.length - 1] + cardWidth - 1;
-    const maxR = 3 + maxEntries;
+    const sumRow = dataBoardExcelShowDaySales() ? 1 : 0;   // строка «Итого за сутки»
+    const maxR = 3 + sumRow + maxEntries;
     dataBoardPaint(lib, ws, merges, 0, 0, 0, lastCol, `Дата выгрузки: ${stamp}`, 'FFFFFF', '012A4A', true, 'left', false, { quiet: true });
     prepared.forEach((card, index) => {
         dataBoardPaintCard(lib, ws, merges, origins[index], card, spec, todayStart, maxR);
@@ -914,8 +931,8 @@ function buildDataBoardWorksheet(lib, pairs, todayStart) {
     ws['!views'] = [{
         state: 'frozen',
         xSplit: 0,
-        ySplit: 4,
-        topLeftCell: 'A5',
+        ySplit: 4 + sumRow,
+        topLeftCell: sumRow ? 'A6' : 'A5',
         activePane: 'bottomLeft'
     }];
     return { ws, stamp, cards: prepared.length };
@@ -937,7 +954,30 @@ function exportDataBoardToExcel() {
     });
 }
 
-async function exportDataBoardWorkbook(pairs, todayStart) {
+// «Отчёты» → «Выгрузки в Excel»: два файла — «Загрузка - КК» (краевые) и «Загрузка - Межрегионалка»
+// (межрегиональные и международные). Все направления, без поиска и фильтра типа вкладки.
+async function exportDataBoardSplit() {
+    if (typeof ProfileAuth !== 'undefined' && !ProfileAuth.guardPermission('export_excel', 'Экспорт недоступен для вашего профиля')) return;
+    if (typeof groupedData === 'undefined' || !Object.keys(groupedData).length) { showToast('Нет данных для экспорта', 'error'); return; }
+    if (typeof ActivityLog !== 'undefined') ActivityLog.log('export', 'Загрузка: КК и межрегионалка');
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const keep = { type: dataRouteTypeFilter, q: dataSearchQuery };
+    let pairs = [];
+    try {
+        dataRouteTypeFilter = 'all';
+        dataSearchQuery = '';
+        pairs = typeof getDataRoutePairs === 'function' ? getDataRoutePairs(todayStart) : [];
+    } finally {
+        dataRouteTypeFilter = keep.type;
+        dataSearchQuery = keep.q;
+    }
+    const isKrai = (p) => typeof getFlightRouteType === 'function' && getFlightRouteType(p.outbound) === 'krai';
+    await exportDataBoardWorkbook(pairs.filter(isKrai), todayStart, 'Загрузка - КК');
+    await exportDataBoardWorkbook(pairs.filter(p => !isKrai(p)), todayStart, 'Загрузка - Межрегионалка');
+}
+
+async function exportDataBoardWorkbook(pairs, todayStart, fileBase) {
     const folder = await excelPrepareFolder('data');
     if (!(await loadPlainXlsx())) {
         showToast('Библиотека Excel не загружена', 'error');
@@ -955,8 +995,8 @@ async function exportDataBoardWorkbook(pairs, todayStart) {
     lib.utils.book_append_sheet(wb, built.ws, 'Маршруты');
     if (typeof excelSafeWorkbook === 'function') excelSafeWorkbook(wb);
     const fileDate = typeof getTodayDate === 'function' ? getTodayDate() : built.stamp;
-    const saved = await excelSaveWorkbook(lib, wb, excelDailyFilename('КРАСАВИА_данные', fileDate), folder);
-    excelAnnounceSaved(saved, `Файл готов, дата выгрузки ${built.stamp}`);
+    const saved = await excelSaveWorkbook(lib, wb, excelDailyFilename(fileBase || 'КРАСАВИА_данные', fileDate), folder);
+    excelAnnounceSaved(saved, `${fileBase ? fileBase + ': ф' : 'Ф'}айл готов, дата выгрузки ${built.stamp}`);
 }
 
 function exportRmsToExcel() {
