@@ -194,10 +194,11 @@ window.PriceAdvisor = (function () {
     }
 
     // DP для направления при C креслах и наборе цен (лестница под потолком). act[t][x] — индекс класса, V[t][x].
-    function solve(info, prices, C) {
+    function solve(info, prices, C, scale) {
         const c = cache();
         const beta = betaFor();
-        const key = `${info.dir}|${C}|${prices.join(',')}|${beta}`;
+        const sc = scale > 0 ? Math.round(scale * 20) / 20 : 1;
+        const key = `${info.dir}|${C}|${prices.join(',')}|${beta}|${sc}`;
         if (c.dp.has(key)) return c.dp.get(key);
         const K = prices.length;
         const V = [];
@@ -207,7 +208,7 @@ window.PriceAdvisor = (function () {
             const cur = new Float64Array(C + 1);
             const ak = new Uint8Array(C + 1);
             const dists = prices.map(p => {
-                const lam = Math.max(0, info.a[t] * Math.exp(beta * (p / info.pRef - 1)));
+                const lam = Math.max(0, sc * info.a[t] * Math.exp(beta * (p / info.pRef - 1)));
                 const nMax = Math.min(C, Math.ceil(lam + 5 * Math.sqrt(lam) + 3));
                 return poisson(lam, nMax);
             });
@@ -292,7 +293,21 @@ window.PriceAdvisor = (function () {
         const free = Math.max(0, C - sold);
         if (free === 0) return { code, date, free: 0, dtd, dtdNow: dtd0, cap, action: 'closed', text: 'распродан — продажи закрыты' };
         const cc = Math.min(C, 150);
-        const { V, act } = solve(info, prices, cc);
+        // Спрос этого вылета, а не среднего по направлению: кривую бронирований масштабируем так, чтобы при нынешней
+        // цене до вылета продалось столько, сколько даёт прогноз загрузки (тот же, что в карточке). Иначе рейс,
+        // который идёт лучше нормы, модель считала бы «средним» и советовала снижать.
+        const fc = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(code, date) : null;
+        const fcOk = fc && fc.source !== 'flown' && fc.final != null;
+        let scale = 1;
+        if (fcOk) {
+            const pNow = curFull && !overCap ? curFull.price : prices[0];
+            let base0 = 0;
+            for (let t = 1; t <= dtd; t++) base0 += info.a[t] * Math.exp(betaFor() * (pNow / info.pRef - 1));
+            // Прогноз не больше кресел: если он упёрся в кресла — спрос не меньше, берём верх интервала.
+            const want = Math.max(0, (fc.final >= C && fc.hiRaw != null ? Math.max(fc.final, fc.hiRaw) : fc.final) - sold);
+            if (base0 > 0.2) scale = Math.max(0.25, Math.min(4, want / base0));
+        }
+        const { V, act } = solve(info, prices, cc, scale);
         const x = Math.min(free, cc);
         const kRaw = act[dtd][x];
         // Открытый класс — по букве проданного билета, а не по ближайшей цене (иначе Q путается с G).
@@ -308,15 +323,25 @@ window.PriceAdvisor = (function () {
         // Цель продаж: последний билет — ближе к вылету, а не за месяц. Если по прогнозу (тот же, что в карточке)
         // при нынешней цене рейс распродастся раньше чем за PV.PA_PACE_DAYS дн. до вылета — поднимаем хотя бы на класс.
         let early = null;
-        const fc = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(code, date) : null;
         if (fc && fc.soldOutDtd != null && fc.soldOutDtd >= PV.PA_PACE_DAYS && free > 0 && kCur != null && kCur < prices.length - 1 && k <= kCur) {
             k = kCur + 1;
             early = fc.soldOutDtd;
         }
+        // Согласованность с прогнозом (как у подсказок решений): прогноз к вылету высокий — не снижать, низкий — не повышать.
+        let guard = null;
+        if (fcOk && kCur != null && !overCap) {
+            if (k < kCur && fc.lf >= PV.ADVICE_FC_HIGH) { k = kCur; guard = `прогноз к вылету ${fc.lf}% — снижать не нужно`; }
+            else if (k < kCur) {
+                // Продажи идут не хуже нормы и плана (файла ожидаемой загрузки) на этот день — снижать незачем.
+                const sa = typeof SalesAdvice !== 'undefined' ? SalesAdvice.forDeparture(code, date, PV.PA_HORIZON) : null;
+                if (sa && sa.refs && sa.refs.length && sa.refs.every(r => r.d >= 0)) { k = kCur; guard = 'продажи не отстают от нормы и плана — снижать не нужно'; }
+            }
+            else if (k > kCur && early == null && fc.lf < PV.ADVICE_FC_LOW) { k = kCur; guard = `прогноз к вылету ${fc.lf}% — повышать рано`; }
+        }
         const bid = dtd >= 1 ? Math.max(0, Math.round(V[dtd - 1][x] - V[dtd - 1][x - 1])) : 0;
         const action = overCap ? 'down' : (kCur == null ? 'set' : (k > kCur ? 'up' : (k < kCur ? 'down' : 'hold')));
         return {
-            code, date, dtd, dtdNow: dtd0, free, cap, bid, beta: betaFor(), action, overCap,
+            code, date, dtd, dtdNow: dtd0, free, cap, bid, beta: betaFor(), action, overCap, guard, scale: Math.round(scale * 100) / 100,
             early, cls: ladder[k].cls, price: prices[k], curCls: curFull ? curFull.cls : null, curDeal: cp ? cp.dealDate : null, curPrice: curFull ? curFull.price : null,
             raw: { cls: ladder[kRaw].cls, price: prices[kRaw] }, ladder, route: info.dir, deps: info.deps
         };
@@ -333,11 +358,16 @@ window.PriceAdvisor = (function () {
             : a.action === 'up' ? `поднять: открыть ${a.cls} (${rub(a.price)}), закрыть дешевле`
                 : a.action === 'down' ? `снизить: открыть ${a.cls} (${rub(a.price)})`
                     : `открыть ${a.cls} (${rub(a.price)}), закрыть дешевле`;
+        const guardNote = a.guard ? ` · ${a.guard}` : '';
         const why = a.early != null ? ` · при нынешней цене распродастся за ${a.early} дн. до вылета — рано` : '';
         const now = a.curCls ? `сейчас продаётся ${a.curCls}${a.curDeal ? ` (продажи ${a.curDeal})` : ''}${a.overCap ? ' — выше потолка субсидии' : ''}; ` : '';
         // Совет ограничен коридором — сказать, куда звала модель (иначе «нижняя цена места» выше совета выглядит противоречием).
-        const clamp = a.raw && a.raw.price !== a.price && !a.overCap && a.early == null ? ` · модель: ${a.raw.cls} (${rub(a.raw.price)}), ограничено шагом от нынешнего класса` : '';
-        return `${now}${what}${why}${clamp} · нижняя цена места ${rub(a.bid)}${capNote}`;
+        const clamp = a.raw && a.raw.price !== a.price && !a.overCap && !a.guard && a.early == null ? ` · модель: ${a.raw.cls} (${rub(a.raw.price)}), ограничено шагом от нынешнего класса` : '';
+        // Нижняя цена места: сколько стоит одно свободное место для выручки рейса (дешевле его продавать невыгодно).
+        // Почти ноль — мест с запасом: лишнее место всё равно, скорее всего, улетит пустым.
+        const low = a.ladder && a.ladder.length ? Math.min(...a.ladder.map(l => l.price)) : 0;
+        const bidTxt = low && a.bid < low * 0.1 ? 'мест с запасом' : `нижняя цена места ${rub(a.bid)}`;
+        return `${now}${what}${guardNote}${why}${clamp} · ${bidTxt}${capNote}`;
     }
 
     function canView() {
