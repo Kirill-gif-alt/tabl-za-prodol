@@ -990,7 +990,7 @@ window.ReferenceView = (function () {
     // Клик по кнопке справочника. true — обработано (rerender — перерисовать вкладку).
     function handleClick(btn, rerender) {
         const d = btn.dataset;
-        if (typeof FareGrid !== 'undefined' && (btn.id === 'fg-save' || btn.id === 'fg-reset' || btn.id === 'fg-upload')) { FareGrid.handleClick(btn, rerender); return true; }
+        if (typeof FareGrid !== 'undefined' && (btn.id === 'fg-save' || btn.id === 'fg-reset' || btn.id === 'fg-upload' || btn.id === 'fg-off-save')) { FareGrid.handleClick(btn, rerender); return true; }
         if (d.refSection) {
             section = d.refSection;
             try { localStorage.setItem(SECTION_KEY, section); } catch (e) { /* ignore */ }
