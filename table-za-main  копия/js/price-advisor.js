@@ -21,12 +21,17 @@ window.PriceAdvisor = (function () {
         try {
             const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {};
             const beta = Number(s.beta);
-            return { beta: beta < -0.2 && beta >= -6 ? beta : DEFAULTS.beta, corridor: [0, 1, 2, 9].includes(Number(s.corridor)) ? Number(s.corridor) : DEFAULTS.corridor };
+            // Своё значение — только если пользователь сам выбирал его в отчёте; иначе — значение администратора.
+            const corr = Number(s.corridor);
+            return { beta: s.beta != null && beta < -0.2 && beta >= -6 ? beta : DEFAULTS.beta, corridor: s.corridor != null && corr >= 0 && corr <= 9 ? corr : DEFAULTS.corridor };
         } catch (e) { return { ...DEFAULTS }; }
     }
 
     function saveSettings(s) {
-        try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...settings(), ...s })); } catch (e) { /* ignore */ }
+        try {
+            const own = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {};
+            localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...own, ...s }));   // только изменённое поле
+        } catch (e) { /* ignore */ }
         memo.dp = new Map();
     }
 
@@ -35,7 +40,10 @@ window.PriceAdvisor = (function () {
             typeof SalesArchive !== 'undefined' && SalesArchive.revision ? SalesArchive.revision() : 0,
             typeof getTodayDate === 'function' ? getTodayDate() : '',
             typeof Params !== 'undefined' ? Params.revision() : 0,
-            typeof FareGrid !== 'undefined' ? FareGrid.revision() : 0].join('|');
+            typeof FareGrid !== 'undefined' ? FareGrid.revision() : 0,
+            // Потолок субсидии и коммерческие даты: справочник тарифов и периоды субсидии.
+            typeof FareRefs !== 'undefined' && FareRefs.revision ? FareRefs.revision() : 0,
+            typeof SubsidyRef !== 'undefined' && SubsidyRef.revision ? SubsidyRef.revision() : 0].join('|');
     }
 
     function cache() {
@@ -61,6 +69,7 @@ window.PriceAdvisor = (function () {
     // Предельный тариф субсидии на вылет или null (рейс коммерческий, дата коммерции, исключение или потолок не задан).
     function capFor(code, date) {
         if (typeof FareRefs === 'undefined' || !FareRefs.match) return null;
+        if (typeof FlightChecks !== 'undefined' && FlightChecks.isNeverSubsidized && FlightChecks.isNeverSubsidized(code)) return null;   // KV-247/248
         if (FareRefs.isExcluded && FareRefs.isExcluded(code, date)) return null;
         if (typeof RouteCosts !== 'undefined' && RouteCosts.isCommercialDate && RouteCosts.isCommercialDate(code, date)) return null;
         const e = FareRefs.match(code, date);
@@ -151,6 +160,25 @@ window.PriceAdvisor = (function () {
         return info;
     }
 
+    // Кривая бронирований — по архиву за год. Пока он не дочитан, совет считался бы по 2–3 месяцам и потом «прыгал».
+    let histReady = false;
+    let histLoading = null;
+    function ensureHistory() {
+        if (histReady) return Promise.resolve(true);
+        if (histLoading) return histLoading;
+        if (typeof SalesArchive === 'undefined' || !SalesArchive.ensureMonths) { histReady = true; return Promise.resolve(true); }
+        const months = [];
+        const t = new Date();
+        for (let i = 0; i <= 12; i++) { const d = new Date(t.getFullYear(), t.getMonth() - i, 1); months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`); }
+        histLoading = SalesArchive.ensureMonths(months).catch(() => null).then(() => {
+            histReady = true;
+            histLoading = null;
+            if (typeof FlightCard !== 'undefined' && FlightCard.refresh) FlightCard.refresh();
+            return true;
+        });
+        return histLoading;
+    }
+
     function betaFor() {
         return settings().beta;
     }
@@ -239,29 +267,41 @@ window.PriceAdvisor = (function () {
         const dtd0 = typeof getDaysUntil === 'function' ? getDaysUntil(date) : null;
         if (!(C > 0) || dtd0 == null || dtd0 < 1) return null;
         const dtd = Math.min(PV.PA_HORIZON, Math.max(dtd0, typeof observedFromDtd === 'function' ? observedFromDtd(date) : dtd0));
+        if (!histReady) { ensureHistory(); return null; }
         const info = routeInfo(code);
         if (!info.a || !info.pRef || info.ladder.length < 2) return null;
         const cap = capFor(code, date);
+        // Нынешний класс — по полной лестнице (до потолка): класс выше потолка — нарушение, а не «ближайший под потолком».
+        const cp = currentPrice(code, date);
+        let curFull = null;
+        if (cp) {
+            const idx = cp.classes.map(c => info.ladder.findIndex(l => l.cls === c)).filter(i => i >= 0);
+            curFull = idx.length ? info.ladder[Math.max(...idx)] : info.ladder[nearestIdx(info.ladder.map(l => l.price), cp.price)];
+        }
+        const overCap = cap != null && curFull && curFull.price > cap + 0.5;
         let ladder = info.ladder.filter(l => cap == null || l.price <= cap + 0.5);
+        if (!ladder.length) {
+            return { code, date, dtd, dtdNow: dtd0, cap, action: 'nocap', free: Math.max(0, C - sold), curCls: curFull ? curFull.cls : null,
+                text: `ни один класс не укладывается в потолок субсидии ${rub(cap)}` };
+        }
         if (!ladder.length) ladder = [{ cls: '—', price: cap }];
         const prices = ladder.map(l => l.price);
         const free = Math.max(0, C - sold);
-        if (free === 0) return { code, date, free: 0, dtd, cap, action: 'closed', text: 'распродан — продажи закрыты' };
+        if (free === 0) return { code, date, free: 0, dtd, dtdNow: dtd0, cap, action: 'closed', text: 'распродан — продажи закрыты' };
         const cc = Math.min(C, 150);
         const { V, act } = solve(info, prices, cc);
         const x = Math.min(free, cc);
         const kRaw = act[dtd][x];
-        const cp = currentPrice(code, date);
         // Открытый класс — по букве проданного билета, а не по ближайшей цене (иначе Q путается с G).
         // Если в последний день продано несколько классов — открыт самый дорогой из них (дешёвые закрывали в течение дня).
+        // Открыт класс выше потолка — считаем «выше всех допустимых»: совет будет «снизить».
         let kCur = null;
-        if (cp) {
-            const idx = cp.classes.map(c => ladder.findIndex(l => l.cls === c)).filter(i => i >= 0);
-            kCur = idx.length ? Math.max(...idx) : nearestIdx(prices, cp.price);
-        }
+        if (curFull && !overCap) kCur = ladder.findIndex(l => l.cls === curFull.cls);
+        if (kCur != null && kCur < 0) kCur = nearestIdx(prices, curFull.price);
         const corr = settings().corridor;
         let k = kRaw;
         if (kCur != null && corr < 9) k = Math.max(kCur - corr, Math.min(kCur + corr, kRaw));
+        if (overCap) k = Math.min(kRaw, ladder.length - 1);   // выше потолка нельзя — сразу в допустимое
         // Цель продаж: последний билет — ближе к вылету, а не за месяц. Если по прогнозу (тот же, что в карточке)
         // при нынешней цене рейс распродастся раньше чем за PV.PA_PACE_DAYS дн. до вылета — поднимаем хотя бы на класс.
         let early = null;
@@ -271,10 +311,10 @@ window.PriceAdvisor = (function () {
             early = fc.soldOutDtd;
         }
         const bid = dtd >= 1 ? Math.max(0, Math.round(V[dtd - 1][x] - V[dtd - 1][x - 1])) : 0;
-        const action = kCur == null ? 'set' : (k > kCur ? 'up' : (k < kCur ? 'down' : 'hold'));
+        const action = overCap ? 'down' : (kCur == null ? 'set' : (k > kCur ? 'up' : (k < kCur ? 'down' : 'hold')));
         return {
-            code, date, dtd, free, cap, bid, beta: betaFor(), action,
-            early, cls: ladder[k].cls, price: prices[k], curCls: kCur != null ? ladder[kCur].cls : null, curDeal: cp ? cp.dealDate : null, curPrice: kCur != null ? prices[kCur] : null,
+            code, date, dtd, dtdNow: dtd0, free, cap, bid, beta: betaFor(), action, overCap,
+            early, cls: ladder[k].cls, price: prices[k], curCls: curFull ? curFull.cls : null, curDeal: cp ? cp.dealDate : null, curPrice: curFull ? curFull.price : null,
             raw: { cls: ladder[kRaw].cls, price: prices[kRaw] }, ladder, route: info.dir, deps: info.deps
         };
     }
@@ -284,15 +324,17 @@ window.PriceAdvisor = (function () {
     // Одна строка для карточки и таблиц.
     function text(a) {
         if (!a) return '';
-        if (a.action === 'closed') return a.text;
+        if (a.action === 'closed' || a.action === 'nocap') return a.text;
         const capNote = a.cap != null ? ` · потолок субсидии ${rub(a.cap)}` : '';
         const what = a.action === 'hold' ? `держать класс ${a.cls} (${rub(a.price)})`
             : a.action === 'up' ? `поднять: открыть ${a.cls} (${rub(a.price)}), закрыть дешевле`
                 : a.action === 'down' ? `снизить: открыть ${a.cls} (${rub(a.price)})`
                     : `открыть ${a.cls} (${rub(a.price)}), закрыть дешевле`;
         const why = a.early != null ? ` · при нынешней цене распродастся за ${a.early} дн. до вылета — рано` : '';
-        const now = a.curCls ? `сейчас продаётся ${a.curCls}${a.curDeal ? ` (продажи ${a.curDeal})` : ''}; ` : '';
-        return `${now}${what}${why} · нижняя цена места ${rub(a.bid)}${capNote}`;
+        const now = a.curCls ? `сейчас продаётся ${a.curCls}${a.curDeal ? ` (продажи ${a.curDeal})` : ''}${a.overCap ? ' — выше потолка субсидии' : ''}; ` : '';
+        // Совет ограничен коридором — сказать, куда звала модель (иначе «нижняя цена места» выше совета выглядит противоречием).
+        const clamp = a.raw && a.raw.price !== a.price && !a.overCap && a.early == null ? ` · модель: ${a.raw.cls} (${rub(a.raw.price)}), ограничено шагом от нынешнего класса` : '';
+        return `${now}${what}${why}${clamp} · нижняя цена места ${rub(a.bid)}${capNote}`;
     }
 
     function canView() {
@@ -302,6 +344,7 @@ window.PriceAdvisor = (function () {
 
     // Все вылеты в окне (для отчёта): [{advice}], в фоне порциями.
     async function scanAll(days) {
+        await ensureHistory();
         const out = [];
         const seen = new Set();
         const rows = [];
@@ -345,13 +388,13 @@ window.PriceAdvisor = (function () {
         }
         const list = report.list;
         const shown = onlyChange ? list.filter(a => a.action === 'up' || a.action === 'down') : list;
-        const cnt = { up: 0, down: 0, hold: 0 };
+        const cnt = { up: 0, down: 0, hold: 0, set: 0, closed: 0, nocap: 0 };
         list.forEach(a => { if (cnt[a.action] != null) cnt[a.action]++; });
         const act = (a) => (a.action === 'up' ? '<span class="fl-warn fl-warn-over">поднять</span>' : a.action === 'down' ? '<span class="fl-warn fl-warn-under">снизить</span>'
-            : a.action === 'closed' ? 'распродан' : (a.action === 'set' ? 'открыть' : 'держать'));
+            : a.action === 'closed' ? 'распродан' : a.action === 'nocap' ? 'нет класса под потолок' : (a.action === 'set' ? 'открыть' : 'держать'));
         const rows = shown.slice(0, 80).map(a => `<tr>
             <td class="rp-left"><strong>${esc(a.code)}</strong> <span class="rp-muted">${esc(a.route || '')}</span></td>
-            <td>${esc(a.date)}<div class="rp-muted">через ${a.dtd} дн.</div></td>
+            <td>${esc(a.date)}<div class="rp-muted">через ${a.dtdNow != null ? a.dtdNow : a.dtd} дн.</div></td>
             <td>${a.free}</td>
             <td>${a.curPrice != null ? `${esc(a.curCls || '')} ${rub(a.curPrice)}` : '—'}</td>
             <td>${act(a)}${a.early != null ? `<div class="rp-muted">иначе распродан за ${a.early} дн.</div>` : ''}</td>
@@ -363,15 +406,17 @@ window.PriceAdvisor = (function () {
             <p class="rp-card-text">Какой минимальный класс держать открытым, чтобы выручка вылета была наибольшей (всё дешевле — закрыть). Межрегиональные рейсы и Богучаны, Мотыгино, Кодинск; на субсидируемых — не выше предельного тарифа из «Справочника». Нижняя цена места — дешевле продавать место (и группе) невыгодно.
                 Эластичность спроса по данным пока не измерена — используется сценарий; совет — не дальше выбранного числа классов от нынешнего.</p>
             <div class="fl-warn-cfg">
-                <label>Эластичность <select id="pa-beta">${[-1, -1.5, -2, -3].map(b => `<option value="${b}"${s.beta === b ? ' selected' : ''}>${String(b).replace('.', ',')}${b === -1.5 ? ' (по умолчанию)' : ''}</option>`).join('')}</select></label>
-                <label>Шаг от нынешнего класса <select id="pa-corr">${[[1, '±1 класс'], [2, '±2 класса'], [9, 'без ограничения']].map(([v, l]) => `<option value="${v}"${s.corridor === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+                <label>Эластичность <select id="pa-beta">${[...new Set([-1, -1.5, -2, -3, s.beta])].sort((x, y) => y - x).map(b => `<option value="${b}"${s.beta === b ? ' selected' : ''}>${String(b).replace('.', ',')}${b === DEFAULTS.beta ? ' (по умолчанию)' : ''}</option>`).join('')}</select></label>
+                <label>Шаг от нынешнего класса <select id="pa-corr">${[[0, 'не менять класс'], [1, '±1 класс'], [2, '±2 класса'], ...(s.corridor > 2 && s.corridor < 9 ? [[s.corridor, `±${s.corridor} класса`]] : []), [9, 'без ограничения']].map(([v, l]) => `<option value="${v}"${s.corridor === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
                 <label><input type="checkbox" id="pa-only"${onlyChange ? ' checked' : ''}> только где менять</label>
                 ${typeof ProfileAuth === 'undefined' || ProfileAuth.hasPermission('export_excel') || (ProfileAuth.getCurrentProfile() || {}).isAdmin ? `<button type="button" class="btn-primary rp-btn" id="pa-xlsx"${list.length ? '' : ' disabled'}>В Excel</button>` : ''}
             </div>
             <div class="dr-kpis">
                 <div class="dr-kpi"><div class="dr-kpi-label">Поднять</div><div class="dr-kpi-value">${cnt.up}</div></div>
                 <div class="dr-kpi"><div class="dr-kpi-label">Снизить</div><div class="dr-kpi-value">${cnt.down}</div></div>
-                <div class="dr-kpi"><div class="dr-kpi-label">Держать</div><div class="dr-kpi-value">${cnt.hold}</div><div class="dr-kpi-sub">из ${list.length} вылетов на ${PV.PA_REPORT_DAYS} дн.</div></div>
+                <div class="dr-kpi"><div class="dr-kpi-label">Держать</div><div class="dr-kpi-value">${cnt.hold}</div></div>
+                <div class="dr-kpi"><div class="dr-kpi-label">Открыть (продаж ещё нет)</div><div class="dr-kpi-value">${cnt.set}</div></div>
+                <div class="dr-kpi"><div class="dr-kpi-label">Распродан / нет класса</div><div class="dr-kpi-value">${cnt.closed + cnt.nocap}</div><div class="dr-kpi-sub">всего ${list.length} вылетов на ${PV.PA_REPORT_DAYS} дн.</div></div>
             </div>
             ${rows ? `<div class="rp-scroll"><table class="rp-table"><thead><tr><th>Рейс</th><th>Вылет</th><th>Свободно</th><th>Сейчас от</th><th>Совет</th><th>Класс · цена</th><th>Нижняя цена места</th><th>Потолок</th></tr></thead><tbody>${rows}</tbody></table></div>
                 ${shown.length > 80 ? `<p class="rp-note">Показаны 80 ближайших из ${shown.length} — полный список в Excel.</p>` : ''}` : '<p class="rp-note">Менять сейчас нечего.</p>'}
@@ -383,8 +428,8 @@ window.PriceAdvisor = (function () {
         const lib = typeof loadStyledXlsx === 'function' ? await loadStyledXlsx() : (typeof XLSX !== 'undefined' ? XLSX : null);
         if (!lib) { if (typeof showToast === 'function') showToast('Библиотека Excel не загружена', 'error'); return; }
         const head = ['Рейс', 'Направление', 'Дата вылета', 'Дней до вылета', 'Свободно', 'Сейчас класс', 'Сейчас цена', 'Совет', 'Класс', 'Цена', 'Модель без коридора: класс', 'Модель: цена', 'Нижняя цена места', 'Потолок субсидии', 'Эластичность (сценарий)'];
-        const lab = { up: 'поднять', down: 'снизить', hold: 'держать', set: 'открыть', closed: 'распродан' };
-        const rows = list.map(a => [a.code, a.route || '', a.date, a.dtd, a.free, a.curCls || '', a.curPrice != null ? Math.round(a.curPrice) : '', lab[a.action] || '', a.cls || '', a.price != null ? Math.round(a.price) : '',
+        const lab = { up: 'поднять', down: 'снизить', hold: 'держать', set: 'открыть', closed: 'распродан', nocap: 'нет класса под потолок' };
+        const rows = list.map(a => [a.code, a.route || '', a.date, a.dtdNow != null ? a.dtdNow : a.dtd, a.free, a.curCls || '', a.curPrice != null ? Math.round(a.curPrice) : '', lab[a.action] || '', a.cls || '', a.price != null ? Math.round(a.price) : '',
             a.raw ? a.raw.cls : '', a.raw ? Math.round(a.raw.price) : '', a.bid != null ? a.bid : '', a.cap != null ? Math.round(a.cap) : '', a.beta != null ? a.beta : '']);
         const wb = lib.utils.book_new();
         const ws = lib.utils.aoa_to_sheet([head].concat(rows));

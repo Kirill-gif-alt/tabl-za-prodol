@@ -6,6 +6,9 @@
 // • Быстрая отметка за сегодня (RMS, карточка рейса, детализация «Динамики»): те же права
 //   и тот же файл, что в «Управлении продажами».
 window.PriceMarks = (function () {
+    // «3 дня», «5 дней» — окно решения из «Параметров расчётов».
+    function winDays() { const n = PV.DECISION_WINDOW; const m10 = n % 10, m100 = n % 100; return n + ' ' + (m10 === 1 && m100 !== 11 ? 'день' : (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? 'дня' : 'дней')); }
+
     const GLYPH = { up: '▲', down: '▼', attn: '!' };
     const DECISIONS = new Set(['up', 'down', 'attn']);
 
@@ -145,7 +148,7 @@ window.PriceMarks = (function () {
     // Итог решения — один для карточки рейса и для журнала решений.
     // worked: true / false, null — вывод делать рано (мало продаж) или не с чем сравнить.
     function judge(e, status) {
-        if (!e || !e.complete) return { cls: 'wait', text: 'ещё идут 3 дня', short: 'ждём', worked: null };
+        if (!e || !e.complete) return { cls: 'wait', text: `ещё идут ${winDays()}`, short: 'ждём', worked: null };
         if (e.effect == null) return { cls: 'none', text: 'не с чем сравнить', short: '—', worked: null };
         const m = e.money;
         const up = status === 'up';
@@ -203,13 +206,13 @@ window.PriceMarks = (function () {
     function effectLines(e, status) {
         if (!e) return [];
         const usual = (x) => (x ? ` (обычно ${x.value})` : '');
-        const lines = [`До решения: ${tickets(e.before.n)} за ${PV.DECISION_WINDOW} дня${usual(e.normBefore)} → после: ${tickets(e.after.n)}${usual(e.normAfter)}${e.complete ? '' : ' — дни ещё идут'}`];
+        const lines = [`До решения: ${tickets(e.before.n)} за ${winDays()}${usual(e.normBefore)} → после: ${tickets(e.after.n)}${usual(e.normAfter)}${e.complete ? '' : ' — дни ещё идут'}`];
         if (e.before.avg != null && e.after.avg != null && e.before.avg !== e.after.avg) {
             const d = e.after.avg - e.before.avg;
             lines.push(`Средний тариф: ${rub(e.before.avg)} → ${rub(e.after.avg)} (${d > 0 ? '+' : '−'}${rub(Math.abs(d))})`);
         }
         let verdict;
-        if (!e.complete) verdict = 'Итог будет, когда пройдут 3 дня после решения';
+        if (!e.complete) verdict = `Итог будет, когда пройдут ${winDays()} после решения`;
         else if (e.effect == null) verdict = 'Сравнить не с чем: мало прошлых вылетов в этот день недели';
         // В карточке — по билетам (рубли — в отчёте «Решения»).
         else if (e.effect > 0) verdict = `Итог: после решения продаётся лучше обычного — на ${tickets(e.effect)}`;
@@ -411,5 +414,5 @@ window.PriceMarks = (function () {
         setToday(chip.dataset.pmCode, chip.dataset.pmDate, st);
     });
 
-    return { decisions, todayMark, effectFor, judge, effectText, decisionsHtml, chartItems, chipHtml, buttonsHtml, setToday, canMark, GLYPH };
+    return { winDays, decisions, todayMark, effectFor, judge, effectText, decisionsHtml, chartItems, chipHtml, buttonsHtml, setToday, canMark, GLYPH };
 })();

@@ -576,6 +576,10 @@ function dataBoardExcelShowBooks() {
     return typeof dataShowSpecBookings !== 'undefined' && !!dataShowSpecBookings;
 }
 
+function dataBoardExcelShowDaySales() {
+    return typeof dataShowDaySales !== 'undefined' && !!dataShowDaySales;
+}
+
 function dataBoardExcelRgb(value) {
     const raw = String(value || '').replace('#', '').trim();
     return /^[0-9a-fA-F]{6}$/.test(raw) ? raw.toUpperCase() : '';
@@ -613,8 +617,14 @@ function dataBoardExcelLegSpec() {
         labels.push('СПЕЦ. БРОНИ');
         kinds.push('book');
     }
-    labels.push('ЗАГР.', 'ЗПК');
-    kinds.push('load', 'zpk');
+    labels.push('ЗАГР.');
+    kinds.push('load');
+    if (dataBoardExcelShowDaySales()) {
+        labels.push('ЗА СУТКИ');
+        kinds.push('book');   // ширина — как у «Спец. брони»
+    }
+    labels.push('ЗПК');
+    kinds.push('zpk');
     return { labels, kinds };
 }
 
@@ -757,7 +767,9 @@ function dataBoardExcelLegValues(row, closed) {
         if (showTimes) dashes.push('—', '—');
         dashes.push('—');
         if (showBooks) dashes.push('—');
-        dashes.push('—', '—');
+        dashes.push('—');
+        if (dataBoardExcelShowDaySales()) dashes.push('—');
+        dashes.push('—');
         return dashes;
     }
     const m = typeof getDataLegMetrics === 'function'
@@ -772,6 +784,10 @@ function dataBoardExcelLegValues(row, closed) {
     vals.push(m.seats != null ? m.seats : '—');
     if (showBooks) vals.push(m.bookings != null ? m.bookings : '—');
     vals.push(m.load != null ? m.load : '—');
+    if (dataBoardExcelShowDaySales()) {
+        const ds = typeof getSalesMapForRow === 'function' ? getSalesMapForRow(row) : null;
+        vals.push(ds && ds.yesterday ? ds.yesterday : '—');
+    }
     vals.push(closed ? 'ЗАКРЫТ' : (m.zpk != null ? `${m.zpk}%` : '—'));
     return vals;
 }

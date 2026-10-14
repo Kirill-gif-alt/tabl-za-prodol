@@ -1,7 +1,8 @@
 # Синхронизация продаж из XML в CSV (как HOURLY v2)
 # Планировщик Windows запускает этот файл каждые 30 минут.
 
-$rootPath      = "\\192.168.10.20\files\2026"
+# Папка года берётся по дате: с 1 января скрипт сам переходит в папку нового года.
+$rootBase      = "\\192.168.10.20\files"
 $outputCsv     = "Y:\Отделы\11 КС\ООРП\Загрузка\csv\Tickets_SALE_Last14Days.csv"
 $processedLog  = "Y:\Отделы\11 КС\ООРП\Загрузка\csv\ProcessedFiles.log"
 $activeLog     = "Y:\Отделы\11 КС\ООРП\Загрузка\csv\ActiveSales.log"
@@ -38,17 +39,20 @@ if (Test-Path $outputCsv) {
 
 $today = Get-Date
 $foldersToScan = @()
-$currentMonth = Join-Path $rootPath $today.ToString('MM')
+$currentMonth = Join-Path (Join-Path $rootBase $today.ToString('yyyy')) $today.ToString('MM')
 if (Test-Path $currentMonth) {
     $foldersToScan += Get-ChildItem -Path $currentMonth -Directory -ErrorAction SilentlyContinue |
                       Where-Object { $_.Name -match '^\d{2}$' }
 }
-$prevMonth = Join-Path $rootPath $today.AddMonths(-1).ToString('MM')
+$prevDate  = $today.AddMonths(-1)
+$prevMonth = Join-Path (Join-Path $rootBase $prevDate.ToString('yyyy')) $prevDate.ToString('MM')
 if (Test-Path $prevMonth) {
     $foldersToScan += Get-ChildItem -Path $prevMonth -Directory -ErrorAction SilentlyContinue |
                       Where-Object { $_.Name -match '^\d{2}$' }
 }
-$foldersToScan = $foldersToScan | Sort-Object FullName -Descending | Select-Object -First 14
+# 14 последних дней, но обрабатываем от старых к новым: возврат, пришедший позже продажи, должен её удалить
+# (раньше шли от новых к старым — после выходных возврат обрабатывался раньше продажи, и билет оставался).
+$foldersToScan = $foldersToScan | Sort-Object FullName -Descending | Select-Object -First 14 | Sort-Object FullName
 
 $newFiles = 0
 $added    = 0

@@ -1,10 +1,17 @@
 # Сброс пароля admin (PBKDF2, 120000 итераций, SHA-256) — как в js/profiles.js
 param(
-    [string]$Password = '123',
+    [string]$Password = '',
     [string]$AppRoot = ''
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Пароль не задан в команде — спросить скрыто (не «123» по умолчанию и не в истории команд).
+if (-not $Password) {
+    $sec = Read-Host -AsSecureString 'Новый пароль администратора (не короче 8 символов)'
+    $Password = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
+}
+if ($Password.Length -lt 8) { throw 'Пароль короче 8 символов' }
 
 if (-not $AppRoot) {
     $AppRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
@@ -79,7 +86,7 @@ if ($admin) {
 $data.updatedAt = (Get-Date).ToUniversalTime().ToString('o')
 $data | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $profilesPath -Encoding UTF8
 
-Write-Host "OK: admin password set to '$Password'"
+Write-Host "OK: пароль администратора изменён"
 Write-Host "File: $profilesPath"
 Write-Host "hashVer=2 salt=$salt"
 Write-Host "Сбросьте кэш браузера (Ctrl+Shift+Delete) или откройте в режиме инкогнито."

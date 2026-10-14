@@ -57,9 +57,13 @@ window.SalesAdvice = (function () {
         let conflict = '';
         if (fcOk && status === 'down' && fc.lf >= PV.ADVICE_FC_HIGH) { status = 'attn'; conflict = 'продаётся медленнее обычного, но прогноз к вылету высокий'; }
         if (fcOk && status === 'up' && fc.lf < PV.ADVICE_FC_LOW) { status = 'attn'; conflict = 'продаётся быстрее обычного, но прогноз к вылету низкий'; }
-        const dtd = daysUntil(date);
+        // Продажи — на день среза данных: если файл не сегодняшний, «за N дн.» считаем от него и пишем дату данных.
+        const dtdNow = daysUntil(date);
+        const dtd = typeof observedFromDtd === 'function' && dtdNow != null ? Math.max(dtdNow, observedFromDtd(date)) : dtdNow;
+        const lag = dtd != null && dtdNow != null && dtd > dtdNow && typeof salesDataCutoffTime === 'function'
+            ? ` (данные на ${formatDateRu(new Date(salesDataCutoffTime()))})` : '';
         const diff = (d) => (d > 0 ? `+${d}` : String(d));
-        const text = `Продано ${sold} ${dtd === 0 ? 'в день вылета' : `за ${dtd} дн. до вылета`}; ` + refs.map(r => `${r.label} ${r.value} (${diff(r.d)})`).join(', ')
+        const text = `Продано ${sold} ${dtd === 0 ? 'в день вылета' : `за ${dtd} дн. до вылета`}${lag}; ` + refs.map(r => `${r.label} ${r.value} (${diff(r.d)})`).join(', ')
             + (fcOk ? `; прогноз к вылету ${fc.final} из ${fc.seats} (${fc.lf}%)` : '') + (conflict ? ` — ${conflict}` : '');
         return { code, date, base, status, sold, refs, threshold: T, dtd, text, seats };
     }

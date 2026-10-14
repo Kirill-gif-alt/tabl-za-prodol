@@ -297,7 +297,14 @@ window.ActivityLog = (function () {
     }
 
     async function renderInto(container, state) {
+        const seq = (container._statsSeq = (container._statsSeq || 0) + 1);
         const events = await loadAll(true);
+        if (seq !== container._statsSeq) return;   // пока читали журнал, запущена более новая отрисовка
+        // Поиск набирается во время перерисовки — вернём фокус и курсор в поле.
+        const qEl = container.querySelector('#stats-filter-query');
+        const keepFocus = qEl && document.activeElement === qEl;
+        const caret = keepFocus ? qEl.selectionStart : null;
+        const liveQuery = qEl ? qEl.value : null;
         const filters = state || {
             profileId: '',
             action: '',
@@ -415,6 +422,9 @@ window.ActivityLog = (function () {
                 rerender();
             });
         });
+        const qNew = container.querySelector('#stats-filter-query');
+        if (qNew && liveQuery != null && qNew.value !== liveQuery) qNew.value = liveQuery;
+        if (qNew && keepFocus) { qNew.focus(); try { qNew.setSelectionRange(caret, caret); } catch (e) { /* ignore */ } }
     }
 
     return {

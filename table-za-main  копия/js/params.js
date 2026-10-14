@@ -115,10 +115,30 @@
         return Math.round(x * 1e6) / 1e6;
     }
 
+    // Версия растёт только при настоящей смене значений: иначе каждый вход сбрасывал бы кэши модели и советника.
     function applyObj(obj) {
+        const before = JSON.stringify(overrides());
         DEFS.forEach(d => { values[d[0]] = d[1]; });
         Object.keys(obj || {}).forEach(k => { const v = clean(k, obj[k]); if (v !== undefined) values[k] = v; });
+        if (JSON.stringify(overrides()) === before) return false;
         rev++;
+        // Пороги RMS, вместимости ВС и т.п. — в кэшах таблиц: пересчитать.
+        if (typeof invalidateMetricsCache === 'function') invalidateMetricsCache();
+        return true;
+    }
+
+    // Пары «от — до»: нижняя граница не выше верхней. Возвращает текст ошибки или ''.
+    const PAIRS = [['CHILD_AGE_MIN', 'CHILD_AGE_MAX'], ['WARN_UNDER', 'WARN_OVER'], ['ADVICE_FC_LOW', 'ADVICE_FC_HIGH']];
+    function validate(obj) {
+        const v = (k) => { const x = obj && obj[k] !== undefined ? clean(k, obj[k]) : values[k]; return x === undefined ? values[k] : x; };
+        for (const [lo, hi] of PAIRS) {
+            if (v(lo) > v(hi)) {
+                const L = DEFS.find(d => d[0] === lo)[6];
+                const H = DEFS.find(d => d[0] === hi)[6];
+                return `«${L}» больше, чем «${H}»`;
+            }
+        }
+        return '';
     }
 
     function overrides() {
@@ -145,6 +165,8 @@
     async function save(newValues) {
         const p = typeof ProfileAuth !== 'undefined' ? ProfileAuth.getCurrentProfile() : null;
         if (!p || !p.isAdmin) return { ok: false, error: 'Только администратор' };
+        const bad = validate(newValues);
+        if (bad) return { ok: false, error: bad, invalid: true };
         applyObj(newValues);
         meta = { updatedAt: new Date().toISOString(), by: p.name || '' };
         const ok = typeof SharedStorage !== 'undefined' ? await SharedStorage.writeJsonFile(FILE, { version: 1, ...meta, values: overrides() }) : false;
@@ -160,6 +182,7 @@
         save,
         meta: () => meta,
         revision: () => rev,
+        validate,
         clean
     };
 })();

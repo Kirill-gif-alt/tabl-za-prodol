@@ -629,7 +629,10 @@ window.ReferenceView = (function () {
 
     function checkSig() {
         return [typeof dataEpoch === 'number' ? dataEpoch : 0, typeof getTodayDate === 'function' ? getTodayDate() : '',
-            SubsidyRef.revision(), typeof allData !== 'undefined' && allData ? allData.length : 0].join('|');
+            SubsidyRef.revision(), typeof allData !== 'undefined' && allData ? allData.length : 0,
+            // Ручные суммы субсидии и справочник рейсов тоже меняют пропуски.
+            typeof SharedOverrides !== 'undefined' && SharedOverrides.subsidyRevision ? SharedOverrides.subsidyRevision() : 0,
+            typeof FlightRegistry !== 'undefined' && FlightRegistry.revision ? FlightRegistry.revision() : 0].join('|');
     }
 
     function completeness() {

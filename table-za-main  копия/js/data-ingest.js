@@ -20,7 +20,7 @@ function getSalesAggForKey(key) {
         const st = PerfCache.getSalesStats(key);
         if (st && st.count) {
             return {
-                avg: Math.round(st.fareSum / st.count),
+                avg: st.paidCount ? Math.round(st.fareSum / st.paidCount) : 0,   // средний оплаченный: билеты за 0 ₽ не в счёт
                 last: st.lastFare || 0,
                 lettr: String(st.lastBasicFare || '').trim()[0] || ''
             };
@@ -28,8 +28,8 @@ function getSalesAggForKey(key) {
     }
     const sl = salesDetails[key] || [];
     if (!sl.length) return { avg: 0, last: 0, lettr: '' };
-    let sum = 0;
-    for (let i = 0; i < sl.length; i++) sum += sl[i].adjustedFare || sl[i].fare || 0;
+    let sum = 0, paid = 0;
+    for (let i = 0; i < sl.length; i++) { const v = sl[i].adjustedFare || sl[i].fare || 0; sum += v; if (v > 0) paid++; }
     let last = 0, lettr = '', lastTs = 0;
     for (let i = 0; i < sl.length; i++) {
         const x = sl[i];
@@ -41,7 +41,7 @@ function getSalesAggForKey(key) {
             lettr = String(x.basicFareStr || '').trim()[0] || '';
         }
     }
-    return { avg: Math.round(sum / sl.length), last, lettr };
+    return { avg: paid ? Math.round(sum / paid) : 0, last, lettr };
 }
 
 function getRevenueForRow(row, firstSalesByKey) {
@@ -436,6 +436,8 @@ async function autoLoadLatestFiles() {
 
 async function loadAvailabilityFiles(files){
     allData=[];
+    availabilityKeepClosed = true;
+    try {
     for(const fh of files){
         const file = await toFile(fh);
         const txt = await readCsvText(file);
@@ -444,7 +446,9 @@ async function loadAvailabilityFiles(files){
             : parseAvailabilityText(txt);
         if (parsed.length) allData.push(...parsed);
     }
-    allData = dedupeAvailabilityRows(allData.filter(r => r.length >= 7 && r[0] && r[1]));
+    } finally { availabilityKeepClosed = false; }
+    // Файлы — от нового к старому: первая строка рейса (в том числе закрытая) — актуальная; закрытые потом убираем.
+    allData = dedupeAvailabilityRows(allData.filter(r => r.length >= 7 && r[0] && r[1])).filter(r => !r.closedRow);
     dataLoadStatus.availability = true;
     processData();
     if (!window.ingestQuiet) updateHeaderStatus();
@@ -535,7 +539,9 @@ function loadSalesFile(fh) {
             if ((row[8] || '').toUpperCase() !== 'ETICKET') continue;
             // Младенец без места (тариф …/IN00, …/ID00) — не место в самолёте: в загрузке его нет,
             // поэтому и в продажах не считаем (иначе «продано 25» при загрузке 22).
-            if (/\/(IN|ID)\d/i.test(row[13] || '')) continue;
+            // Младенец с местом (…/IN50) оплачен и занимает кресло — его считаем.
+            const nf = parseFloat(String(row[14] || '').replace(/[\s\u00a0]/g, '').replace(',', '.')) || 0;
+            if (/\/(IN|ID)\d/i.test(row[13] || '') && !(nf > 0)) continue;
 
             const dedupKey = `${row[2] || ''}|${row[8] || ''}|${row[12] || ''}|${row[3] || ''}`.toUpperCase();
             if (seen.has(dedupKey)) continue;
@@ -563,7 +569,6 @@ function loadSalesFile(fh) {
 
             let list = nextSalesDetails[k];
             if (!list) list = nextSalesDetails[k] = [];
-            const nf = parseFloat(String(row[14] || '').replace(',', '.')) || 0;
             const birth = parseSalesDateField(row[16]);
             const adj = getAdjustedFare(nf, row[13], birth || row[16], fly);
             list.push({

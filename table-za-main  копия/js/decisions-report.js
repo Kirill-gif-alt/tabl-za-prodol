@@ -24,10 +24,13 @@ window.DecisionsReport = (function () {
         return typeof SalesManagement !== 'undefined' && SalesManagement.allMarks && typeof PriceMarks !== 'undefined' && PriceMarks.effectFor;
     }
 
+    function wd() { return typeof PriceMarks !== 'undefined' && PriceMarks.winDays ? PriceMarks.winDays() : '3 дня'; }
+
     function sig() {
         return [typeof dataEpoch === 'number' ? dataEpoch : 0, typeof getTodayDate === 'function' ? getTodayDate() : '',
             SalesManagement.markRevision ? SalesManagement.markRevision() : '',
-            typeof SalesArchive !== 'undefined' && SalesArchive.revision ? SalesArchive.revision() : 0, period].join('|');
+            typeof SalesArchive !== 'undefined' && SalesArchive.revision ? SalesArchive.revision() : 0, period,
+            typeof Params !== 'undefined' ? Params.revision() : 0].join('|');
     }
 
     function daysAgo(dateStr) {
@@ -140,7 +143,7 @@ window.DecisionsReport = (function () {
             </tr>`).join('');
         return `<div class="dr-sum">
             <div class="dr-sum-title">${esc(title)}</div>
-            <table class="rp-table dr-sum-table"><thead><tr><th>${esc(keyLabel)}</th><th>Решений</th><th title="Из решений, по которым можно судить: выручка после решения не ниже, чем была бы без него">Сработало</th>${noMoney ? '' : '<th title="Сумма: на сколько рублей выручка после решений больше (+) или меньше (−), чем была бы без них (за 3 дня после каждого)">Итог, ₽</th>'}</tr></thead><tbody>${rowsHtml}</tbody></table>
+            <table class="rp-table dr-sum-table"><thead><tr><th>${esc(keyLabel)}</th><th>Решений</th><th title="Из решений, по которым можно судить: выручка после решения не ниже, чем была бы без него">Сработало</th>${noMoney ? '' : '<th title="Сумма: на сколько рублей выручка после решений больше (+) или меньше (−), чем была бы без них (за ' + wd() + ' после каждого)">Итог, ₽</th>'}</tr></thead><tbody>${rowsHtml}</tbody></table>
             ${groups.length > 10 ? `<div class="rp-muted">и ещё ${groups.length - 10} — полный список в Excel</div>` : ''}
         </div>`;
     }
@@ -172,7 +175,7 @@ window.DecisionsReport = (function () {
             </div>`;
         const avgTxt = (t) => (t.avg == null ? '—' : `<span class="${t.avg > 0 ? 'dr-pos' : (t.avg < 0 ? 'dr-neg' : '')}">${signed(t.avg)}</span>`);
         const kpis = `<div class="dr-kpis">
-            ${kpi('Решений', String(total.n), [`с итогом ${total.done}`, total.waiting ? `ждут 3 дня: ${total.waiting}` : '', total.noNorm ? `не с чем сравнить: ${total.noNorm}` : ''].filter(Boolean).join(' · '))}
+            ${kpi('Решений', String(total.n), [`с итогом ${total.done}`, total.waiting ? `ждут ${wd()}: ${total.waiting}` : '', total.noNorm ? `не с чем сравнить: ${total.noNorm}` : ''].filter(Boolean).join(' · '))}
             ${kpi('Сработало', total.share == null ? '—' : `<span class="${total.share >= 50 ? 'dr-pos' : 'dr-neg'}">${total.share}%</span>`, total.judged ? `${total.good} из ${total.judged}${total.done - total.judged ? ` · рано судить ${total.done - total.judged}` : ''}` : 'пока нет итогов')}
             ${kpi('Выручка к «без решений»', total.money == null ? '—' : `<span class="${total.money > 0 ? 'dr-pos' : (total.money < 0 ? 'dr-neg' : '')}">${rubSigned(total.money)}</span>`, total.avg != null ? `билетов к обычному: ${avgTxt(total)} в среднем` : '')}
             ${!kindFilter ? kpi('▼ Снижения', String(down.n), down.share != null ? `сработало ${down.share}% · ${rubSigned(down.money)}` : '', 'dr-kpi-down') : ''}
@@ -210,9 +213,9 @@ window.DecisionsReport = (function () {
                     ${canExport() ? `<button type="button" class="btn-primary rp-btn" id="dr-export"${list.length ? '' : ' disabled'}>В Excel</button>` : ''}
                 </div>
                 <details class="dr-help"><summary>Как считается</summary>
-                    <p>Каждое «▼ Снижение» и «▲ Повышение» из «Управления продажами» сравнивается по <strong>выручке</strong> за 3 дня после решения.</p>
+                    <p>Каждое «▼ Снижение» и «▲ Повышение» из «Управления продажами» сравнивается по <strong>выручке</strong> за ${wd()} после решения.</p>
                     <p><strong>Без решения</strong> продали бы столько билетов, сколько обычно продаётся в эти дни (норма по дням недели), с поправкой на то,
-                    как рейс шёл до решения (отклонение от нормы — наполовину: за 3 дня оно часто случайное), — по старому тарифу. Без повышения билетов было бы не меньше, чем продали после него, без снижения — не больше. <strong>С решением</strong> — сколько продали на самом деле по новому тарифу.
+                    как рейс шёл до решения (отклонение от нормы — наполовину: за несколько дней оно часто случайное), — по старому тарифу. Без повышения билетов было бы не меньше, чем продали после него, без снижения — не больше. <strong>С решением</strong> — сколько продали на самом деле по новому тарифу.
                     <strong>Итог</strong> = выручка с решением − выручка без решения.</p>
                     <p>Поэтому повышение, после которого продали чуть меньше, но дороже, — не провал: например, 1 билет за 35 525 ₽ вместо ожидаемых
                     2 по 20 175 ₽ — это −4 825 ₽, а не «продажи просели». Для повышения видно, со скольких билетов оно окупилось бы.
@@ -223,7 +226,7 @@ window.DecisionsReport = (function () {
                 ${kpis}
                 ${sums}
                 ${body ? `<div class="dr-list-title">Все решения <span class="rp-muted">· ${list.length}</span></div><div class="rp-scroll"><table class="rp-table dr-table">
-                    <thead><tr><th>Решение</th><th>Рейс</th><th>Вылет</th><th>Что</th><th title="Билетов за 3 дня до решения">До</th><th title="Билетов за 3 дня после решения">После</th><th>Ср. тариф до → после</th><th title="За 3 дня после решения: сколько было бы без него (билетов, как обычно, по старому тарифу) и сколько вышло">Выручка</th><th>Итог</th></tr></thead>
+                    <thead><tr><th>Решение</th><th>Рейс</th><th>Вылет</th><th>Что</th><th title="Билетов за ${wd()} до решения">До</th><th title="Билетов за ${wd()} после решения">После</th><th>Ср. тариф до → после</th><th title="За ${wd()} после решения: сколько было бы без него (билетов, как обычно, по старому тарифу) и сколько вышло">Выручка</th><th>Итог</th></tr></thead>
                     <tbody>${body}</tbody></table></div>` : '<p class="rp-note">За период решений «снижение/повышение» нет.</p>'}
             </section>`;
     }
