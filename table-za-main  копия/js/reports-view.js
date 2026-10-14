@@ -387,6 +387,12 @@ window.ReportsView = (function () {
         if (typeof exportDataBoardToExcel === 'function') exportDataBoardToExcel();
     }
 
+    async function exportDataSplit() {
+        if (!canData()) { toast('Выгрузка «Загрузки рейсов» недоступна для вашего профиля', 'error'); return; }
+        await ensureXlsx();
+        if (typeof exportDataBoardSplit === 'function') await exportDataBoardSplit();
+    }
+
     async function exportSales() {
         if (!canSales()) {
             toast('Выгрузка «Управления продажами» недоступна для вашего профиля', 'error');
@@ -910,6 +916,9 @@ window.ReportsView = (function () {
                 card('rp-data', 'Загрузка рейсов',
                     'Excel с карточками маршрутов, как на вкладке «Загрузка рейсов» (с её текущими фильтрами).',
                     canData(), 'Нужны вкладка «Загрузка рейсов» и право на экспорт Excel.'),
+                card('rp-data-split', 'Загрузка: КК и межрегионалка',
+                    'Два файла с карточками маршрутов: «Загрузка - КК» — только краевые рейсы, «Загрузка - Межрегионалка» — межрегиональные и международные. Все направления, без фильтров вкладки.',
+                    canData(), 'Нужны вкладка «Загрузка рейсов» и право на экспорт Excel.'),
                 card('rp-sales', 'Управление продажами',
                     'Excel вкладки «Управление продажами»: лист на каждый рейс с отметками по дням.',
                     canSales(), 'Нужна вкладка «Управление продажами».')
@@ -1030,6 +1039,7 @@ window.ReportsView = (function () {
                 return;
             }
             const run = btn.id === 'rp-data' ? exportData
+                : btn.id === 'rp-data-split' ? exportDataSplit
                 : (btn.id === 'rp-sales' ? exportSales
                     : (btn.id === 'rp-econ' ? exportEcon
                         : (btn.id === 'rp-checks-export' ? exportChecks
