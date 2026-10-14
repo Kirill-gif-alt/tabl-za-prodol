@@ -322,8 +322,7 @@ window.FlightCard = (function () {
             </div>`);
             summary.push(`<span class="fc-ins-chip fc-ins-${tone || 'plain'}">прогноз ${f.final}/${f.seats} · ${f.lf}%</span>`);
             if (f.load >= f.seats) advice = '<div class="fc-advice fc-advice-up">✓ Уже распродан</div>';
-            else if (f.soldOutDtd != null) advice = `<div class="fc-advice fc-advice-up">▲ ${f.soldOutDtd === 0 ? 'Распродастся к дню вылета' : `Распродастся примерно за ${f.soldOutDtd} дн. до вылета`} — можно поднимать тариф</div>`;
-            else if (f.lf < 60) advice = '<div class="fc-advice fc-advice-down">▼ Не доберёт загрузку — стоит снижать тариф или продвигать</div>';
+            // Подсказки по тарифу отключены (решение владельца) — остаётся только факт распродажи.
         }
         // Ценовой советник (межрегиональные + Богучаны, Мотыгино, Кодинск; потолок субсидии).
         if (typeof PriceAdvisor !== 'undefined' && PriceAdvisor.canView()) {

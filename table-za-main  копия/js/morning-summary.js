@@ -79,7 +79,7 @@ window.MorningSummary = (function () {
     }
 
     function adviceAllowed() {
-        return canTab('sales') && typeof SalesManagement !== 'undefined';
+        return false && canTab('sales') && typeof SalesManagement !== 'undefined';
     }
 
     async function build() {

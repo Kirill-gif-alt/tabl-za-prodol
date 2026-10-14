@@ -69,7 +69,10 @@ window.SalesAdvice = (function () {
     }
 
     // Подсказка для вылета или null (нет данных / вне окна / не о чем подсказывать).
+    // Подсказки решений («снизить / повысить / внимание») отключены по решению владельца — нигде не показываются.
+    const SHOW = false;
     function forDeparture(code, date, maxDays) {
+        if (!SHOW) return null;
         if (!code || !date || !inWindow(date, maxDays)) return null;
         const s = sig();
         if (s !== memoSig) { memo = new Map(); memoSig = s; }
@@ -104,6 +107,7 @@ window.SalesAdvice = (function () {
     // Подсказки по всем вылетам окна (для сводки). Считается порциями, чтобы не подвешивать страницу.
     // only — набор «рейс|дата»: считать только эти вылеты (например, из «Управления продажами»).
     async function scanAll(only, onProgress, maxDays) {
+        if (!SHOW) return [];
         const list = departuresAhead(maxDays).filter(d => !only || only.has(d.code + '|' + d.date));
         const out = [];
         for (let i = 0; i < list.length; i++) {

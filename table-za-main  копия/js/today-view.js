@@ -143,7 +143,7 @@ window.TodayView = (function () {
 
     function leadText(p, errs, gaps) {
         const parts = [];
-        if (canTab('sales')) parts.push(p ? `${p} ${pluralRu(p, 'вылет ждёт', 'вылета ждут', 'вылетов ждут')} решения` : `все вылеты на ${aheadDays()} дн. в норме или уже отмечены`);
+        if (false && canTab('sales')) parts.push(p ? `${p} ${pluralRu(p, 'вылет ждёт', 'вылета ждут', 'вылетов ждут')} решения` : `все вылеты на ${aheadDays()} дн. в норме или уже отмечены`);
         if (typeof FlightChecks !== 'undefined' && FlightChecks.enabled()) parts.push(errs ? `${errs} ${pluralRu(errs, 'рейс', 'рейса', 'рейсов')} с ошибкой тарифа` : 'ошибок тарифов нет');
         if (gaps) parts.push(`в справочнике ${gaps} ${pluralRu(gaps, 'пропуск', 'пропуска', 'пропусков')}`);
         return parts.length ? parts.join(', ') + '.' : '';
@@ -280,7 +280,7 @@ window.TodayView = (function () {
         const dt = parseLocalDate(today());
         const longDate = dt ? dt.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : today();
         const tabs = [
-            canTab('sales') ? { id: 'advice', label: `Ждут решения · ${pend.length}` } : null,
+            false && canTab('sales') ? { id: 'advice', label: `Ждут решения · ${pend.length}` } : null,
             typeof FlightChecks !== 'undefined' && FlightChecks.enabled() ? { id: 'errors', label: `Ошибки тарифов · ${errs.length}` } : null,
             { id: 'day', label: `Вылеты ${pickDay && pickDay !== today() ? pickDay.slice(0, 5) : 'сегодня'} · ${departuresOn(pickDay || today()).length}` }
         ].filter(Boolean);
@@ -297,7 +297,7 @@ window.TodayView = (function () {
                     </div>
                     ${dayStripHtml(pend)}
                     <div class="td-tabs" role="tablist">${tabs.map(t => `<button type="button" role="tab" class="td-tab${t.id === tab ? ' td-tab-on' : ''}" data-td-tab="${t.id}">${esc(t.label)}</button>`).join('')}
-                        ${canTab('sales') ? `<label class="td-ahead" title="За сколько дней вперёд искать вылеты, где стоит повысить или снизить тариф">Вперёд на
+                        ${canTab('sales') ? `<label class="td-ahead" title="Сколько дней вперёд показывать в полосе дней">Вперёд на
                             <select data-td-ahead>${[...new Set(AHEAD_OPTIONS.concat(aheadDays()))].sort((x, y) => x - y).map(n => `<option value="${n}"${n === aheadDays() ? ' selected' : ''}>${n} дн.</option>`).join('')}</select></label>` : ''}</div>
                     ${tableHtml(pend, errs)}
                 </section>
