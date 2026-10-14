@@ -41,7 +41,7 @@ HISTORY_POLICY = {
     "fare-grid.json": (600, 30),
 }
 # Архив продаж (js/sales-archive.js): shared/history/curves-ГГГГ-ММ.json.
-ARCHIVE_RE = re.compile(r"^history/(curves-\d{4}-\d{2}|import)\.json$")
+ARCHIVE_RE = re.compile(r"^history/(curves-\d{4}-\d{2}|tickets-\d{4}-\d{2}|import)\.json$")
 # Отметки «Управления продажами»: свой файл у каждого автора (js/sales-management.js).
 MARKS_RE = re.compile(r"^sales-marks/\d{4}-\d{2}/[a-z0-9_]{1,40}\.json$")
 MARKS_DIR_RE = re.compile(r"^sales-marks/\d{4}-\d{2}$")
