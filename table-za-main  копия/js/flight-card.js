@@ -414,7 +414,7 @@ window.FlightCard = (function () {
                 ${tile('Ожидаемая', m && m.evR != null ? String(m.evR) : '—', '')}
                 ${tile('Δ к ожидаемой', m && m.delta != null ? `<span class="${deltaCls}">${m.delta > 0 ? '+' : ''}${m.delta}</span>` : '—', '')}
                 ${tile('Остаток', m && m.remainder != null ? String(m.remainder) : '—', '')}
-                ${tile('Pickup 1–2 дн.', m && m.pickup != null && salesReady ? String(m.pickup) : '—', '')}
+                ${tile('Продано за 1–2 дн.', m && m.pickup != null && salesReady ? String(m.pickup) : '—', '')}
                 ${tile('Ср. тариф', m && m.avg && salesReady ? esc(formatRub(m.avg)) : '—', '')}
             </div>
             ${insightsHtml(code, date)}

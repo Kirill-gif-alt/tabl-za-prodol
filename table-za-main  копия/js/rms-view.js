@@ -23,7 +23,7 @@ function createRmsView(c) {
                         <h2 class="rms-hero-title">RMS · Сводка по рейсам</h2>
                         <div id="rms-toolbar-stats" class="rms-hero-stats"></div>
                     </div>
-                    <p class="rms-hero-note">ЗПК = загрузка / (AU снимка − спец.брони). Pickup и выручка — только окно файла 14д. Без файла — «—», не ноль.</p>
+                    <p class="rms-hero-note">ЗПК = загрузка / (AU снимка − спец.брони). Продажи за 1–2 дня и выручка — только окно файла 14д. Без файла — «—», не ноль.</p>
                 </div>
             </div>
             <div id="rms-problem-strip" class="rms-problem-strip" hidden></div>
@@ -212,7 +212,7 @@ function renderRmsWatchlist() {
                     <th class="rms-col-remain" title="AU − загрузка − спец.брони">Остаток</th>
                     <th class="rms-col-fc" title="Прогноз загрузки к вылету — тот же, что в карточке рейса: модель прогноза (если она вам доступна), иначе сколько обычно добирают такие же вылеты в тот же день недели; в скобках — пределы, в которые попадают 8 вылетов из 10">Прогноз к вылету</th>
                     ${hasExpected ? '<th class="rms-col-forecast" title="Ожидаемая загрузка.xlsx">Ожидаемая</th><th class="rms-col-delta">Δ к ожидаемой</th>' : ''}
-                    <th class="rms-col-pickup" title="Билеты сегодня+вчера из файла 14д">Pickup 1–2д</th>
+                    <th class="rms-col-pickup" title="Билеты сегодня+вчера из файла 14д">Продано за 1–2 дн.</th>
                     <th class="rms-col-today" title="Билеты с DEALDATE=сегодня из файла 14д">Сегодня (файл 14д)</th>
                     <th class="rms-col-fare" title="Среднее по билетам файла 14д">Ср. тариф 14д</th>
                     <th class="rms-col-reason">Причина</th>
