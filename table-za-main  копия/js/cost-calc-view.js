@@ -68,9 +68,18 @@ function uploadCostsFile() {
                 const form = document.getElementById('cost-calc-form');
                 if (form) form.dataset.built = '';
                 refreshCostCalc();
+                // Записываем в справочник («Суммы субсидии и себестоимость») — он общий для всех и главнее файлов.
+                let saved = false;
+                if (typeof SubsidyRef !== 'undefined' && SubsidyRef.canEdit && SubsidyRef.canEdit() && RouteCosts.pivotEntries) {
+                    const entries = RouteCosts.pivotEntries();
+                    if (entries.length) {
+                        const res = await SubsidyRef.applyImport({ amounts: entries });
+                        saved = !!(res && res.ok);
+                    }
+                }
                 if (typeof SessionStore !== 'undefined' && SessionStore.saveSnapshot) SessionStore.saveSnapshot(true);
                 if (typeof ActivityLog !== 'undefined') ActivityLog.log('costs_upload', file.name);
-                if (typeof showToast === 'function') showToast(`Себестоимость и субсидии загружены: ${r.costs / 2} маршрутов и ВС`);
+                if (typeof showToast === 'function') showToast(`Себестоимость и субсидии загружены (маршрутов и типов ВС: ${r.costs / 2})` + (saved ? ' — записаны в справочник' : ' — в справочник не записаны (нет права на справочник субсидий)'));
                 resolve(true);
             } catch (e) {
                 if (typeof showToast === 'function') showToast('Не удалось прочитать файл', 'error');
