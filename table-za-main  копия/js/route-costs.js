@@ -115,6 +115,7 @@ window.RouteCosts = (function () {
 
     function parseCostsSheet(json) {
         if (!json || json.length < 2) return [];
+        if (isPivotSheet(json)) return parsePivotSheet(json);
         const head = json[0];
         const iScepka = headerIndex(head, ['сцепка']);
         const iFrom = headerIndex(head, ['пункт отправления'], true);
@@ -156,6 +157,70 @@ window.RouteCosts = (function () {
                 acK: acKey(ac)
             };
             rows.push(rec);
+        }
+        return rows;
+    }
+
+    // Краевой маршрут — оба конца в крае (или хаб). Межрегиональные и международные — как в файле.
+    function isKraiPair(from, to) {
+        const cities = [from, to].filter(c => !(typeof isHubCity === 'function' && isHubCity(c)));
+        if (!cities.length || typeof isKraiCity !== 'function') return false;
+        const inter = (c) => (typeof isInterregionalCity === 'function' && isInterregionalCity(c))
+            || (typeof isInternationalCity === 'function' && isInternationalCity(c));
+        return cities.every(c => isKraiCity(c) && !inter(c));
+    }
+
+    // Сводная таблица по месяцам: «Названия строк | Тип ВС | 6 | 6 | 7 | 7 | 8 | 8», во второй строке —
+    // «Максимум по полю Субсидии» / «Среднее по полю Себестоимость рейса». Маршрут «Красноярск-Абакан-Красноярск»,
+    // суммы — тыс. ₽ на рейс туда-обратно (как в прежнем файле). Месяцев сколько угодно, на сайт — последние три.
+    function isPivotSheet(json) {
+        const r0 = (json && json[0]) || [];
+        const r1 = (json && json[1]) || [];
+        return /названия строк/i.test(String(r0[0] || '')) || r1.some(c => /по полю/i.test(String(c || '')));
+    }
+
+    function parsePivotSheet(json) {
+        const r0 = json[0] || [];
+        const r1 = json[1] || [];
+        const iAc = r0.findIndex(c => /тип\s*вс/i.test(String(c || '')));
+        const cols = {};
+        for (let i = 0; i < r1.length; i++) {
+            const m = parseInt(String(r0[i] == null ? '' : r0[i]).replace(/[^0-9]/g, ''), 10);
+            if (!(m >= 1 && m <= 12)) continue;
+            const h = String(r1[i] || '').toLowerCase();
+            const c = cols[m] || (cols[m] = {});
+            if (h.includes('себестоим')) c.cost = i;
+            else if (h.includes('субсид')) c.sub = i;
+        }
+        let months = Object.keys(cols).map(Number).filter(m => cols[m].cost != null);
+        // Порядок месяцев — как в файле; через новый год (11, 12, 1) идёт по порядку столбцов.
+        months.sort((a, b) => cols[a].cost - cols[b].cost);
+        months = months.slice(-3);
+        const rows = [];
+        for (let r = 2; r < json.length; r++) {
+            const row = json[r];
+            if (!row) continue;
+            const name = String(row[0] || '').trim();
+            const ac = String(row[iAc >= 0 ? iAc : 1] || '').trim();
+            const parts = name.split(/\s*-\s*/).map(x => x.trim()).filter(Boolean);
+            if (parts.length < 2 || !ac || /итог/i.test(name)) continue;
+            const from = parts[0];
+            const to = parts.length >= 3 ? parts[parts.length - 2] : parts[1];
+            const krai = isKraiPair(from, to);
+            const byMonth = {};
+            months.forEach(m => {
+                const cost = parseNumber(row[cols[m].cost]);
+                if (cost == null) return;
+                const sub = cols[m].sub != null ? parseNumber(row[cols[m].sub]) : null;
+                byMonth[m] = { cost, sub: krai ? 0 : (sub || 0) };
+            });
+            const have = months.filter(m => byMonth[m]);
+            if (!have.length) continue;
+            const avg = (k) => have.reduce((a, m) => a + byMonth[m][k], 0) / have.length;
+            const base = { scepka: '', from, to, ac, fromKey: cityKey(from), toKey: cityKey(to), acK: acKey(ac), krai, months, byMonth };
+            // Всегда два варианта: с субсидией и без. Себестоимость одна и та же, без субсидии — субсидия 0.
+            rows.push({ ...base, flag: 'да', costPair: avg('cost'), subsidyAmt: krai ? 0 : avg('sub') });
+            rows.push({ ...base, flag: 'нет', costPair: avg('cost'), subsidyAmt: 0 });
         }
         return rows;
     }
@@ -246,6 +311,8 @@ window.RouteCosts = (function () {
         Object.keys(refAmounts).forEach(key => {
             const e = refAmounts[key];
             const base = { from: e.from, to: e.to, ac: e.ac, fromKey: cityKey(e.from), toKey: cityKey(e.to), acK: acKey(e.ac), fromRef: true };
+            const fm = fileByKey[key + '|да'] || fileByKey[key + '|нет'];
+            if (fm && fm.byMonth) { base.months = fm.months; base.byMonth = fm.byMonth; base.krai = fm.krai; }
             const fDa = fileByKey[key + '|да'];
             const fNet = fileByKey[key + '|нет'];
             // Себестоимость одна — и в субсидированные, и в коммерческие даты.
@@ -428,7 +495,20 @@ window.RouteCosts = (function () {
         const subsidy = (subsidized && recDa && recDa.subsidyAmt)
             ? recDa.subsidyAmt * 1000
             : 0;
-        return { found: expenses != null, expenses, subsidy };
+        // По месяцам файла (сводная таблица): расходы и субсидия каждого месяца и среднее за них.
+        const src = rec || recDa;
+        let months = null;
+        if (src && src.byMonth && src.months) {
+            months = src.months.map(m => {
+                const v = src.byMonth[m];
+                return {
+                    m,
+                    expenses: v ? v.cost * 1000 : null,
+                    subsidy: v ? (subsidized ? v.sub * 1000 : 0) : null
+                };
+            });
+        }
+        return { found: expenses != null, expenses, subsidy, months, krai: !!(src && src.krai) };
     }
 
     function citiesForRow(row, flightCode) {
@@ -499,7 +579,7 @@ window.RouteCosts = (function () {
         return list.find(f => {
             const n = String(f.name || '').toLowerCase();
             return (n.endsWith('.xlsx') || n.endsWith('.xls'))
-                && n.includes('расход') && !n.startsWith('~$')
+                && (n.includes('расход') || n.includes('себестоим')) && !n.startsWith('~$')
                 && !n.includes('период');
         }) || null;
     }

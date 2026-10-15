@@ -8576,3 +8576,8 @@ html[data-theme="dark"] .cr-table tbody tr:hover td { background: #1f2a37; }
     font-weight: 700;
     border-bottom: 2px solid var(--border);
 }
+
+/* Расчёт расходов: строки по месяцам файла себестоимости */
+.cost-calc-month { margin-bottom: 14px; }
+.cost-calc-month-title { font-size: 13px; font-weight: 600; color: #334155; margin: 0 0 6px 2px; }
+.cost-calc-note { font-size: 13px; color: #64748b; margin: 4px 2px 0; }

@@ -49,6 +49,56 @@ function createCostCalcView(c) {
     refreshCostCalc();
 }
 
+// Загрузка файла себестоимости и субсидий (кнопка в «Отчётах»): выбор файла → разбор → общий снимок для всех ПК.
+function uploadCostsFile() {
+    return new Promise((resolve) => {
+        const inp = document.createElement('input');
+        inp.type = 'file';
+        inp.accept = '.xlsx,.xls';
+        inp.id = 'cost-calc-file';
+        inp.hidden = true;
+        document.body.appendChild(inp);
+        inp.addEventListener('change', async () => {
+            const file = inp.files && inp.files[0];
+            inp.remove();
+            if (!file || typeof RouteCosts === 'undefined') return resolve(false);
+            try {
+                const r = await RouteCosts.loadFiles(file, null);
+                if (!r.costs) { if (typeof showToast === 'function') showToast('В файле не нашлось маршрутов с себестоимостью', 'error'); return resolve(false); }
+                const form = document.getElementById('cost-calc-form');
+                if (form) form.dataset.built = '';
+                refreshCostCalc();
+                if (typeof SessionStore !== 'undefined' && SessionStore.saveSnapshot) SessionStore.saveSnapshot(true);
+                if (typeof ActivityLog !== 'undefined') ActivityLog.log('costs_upload', file.name);
+                if (typeof showToast === 'function') showToast(`Себестоимость и субсидии загружены: ${r.costs / 2} маршрутов и ВС`);
+                resolve(true);
+            } catch (e) {
+                if (typeof showToast === 'function') showToast('Не удалось прочитать файл', 'error');
+                resolve(false);
+            }
+        });
+        inp.addEventListener('cancel', () => { inp.remove(); resolve(false); });
+        inp.click();
+    });
+}
+
+const COST_CALC_MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+
+function costCalcKpiRow(title, expenses, subsidy, revenue, subsidized) {
+    const fin = revenue == null || expenses == null ? null : (revenue - expenses + (subsidy || 0));
+    const finCls = fin == null ? '' : (fin > 0 ? ' cost-calc-pos' : (fin < 0 ? ' cost-calc-neg' : ''));
+    const cell = (label, val, extra = '') => `<div class="cost-calc-kpi${extra}"><span class="cost-calc-kpi-label">${label}</span><span class="cost-calc-kpi-val">${val}</span></div>`;
+    return `<div class="cost-calc-month">
+            ${title ? `<div class="cost-calc-month-title">${escHtml(title)}</div>` : ''}
+            <div class="cost-calc-kpis">
+                ${cell('Расходы', expenses == null ? 'нет данных' : formatRub(expenses))}
+                ${cell('Субсидия', expenses == null ? '—' : (subsidized ? (subsidy ? formatRub(subsidy) : '0 ₽') : '—'))}
+                ${cell('Доход', revenue == null ? '—' : formatRub(revenue))}
+                ${cell('Фин. рез.', fin == null ? '—' : formatRubSigned(fin), ' cost-calc-kpi-fin' + finCls)}
+            </div>
+        </div>`;
+}
+
 function refreshCostCalc() {
     const form = document.getElementById('cost-calc-form');
     const result = document.getElementById('cost-calc-result');
@@ -167,29 +217,15 @@ function paintCostCalcResult(st) {
         return;
     }
 
-    const expenses = q.expenses;
-    const subsidy = q.subsidy || 0;
-    const fin = revenue == null ? null : (revenue - expenses + subsidy);
-    const finCls = fin == null ? '' : (fin > 0 ? ' cost-calc-pos' : (fin < 0 ? ' cost-calc-neg' : ''));
-
-    box.innerHTML = `
-        <div class="cost-calc-kpis">
-            <div class="cost-calc-kpi">
-                <span class="cost-calc-kpi-label">Расходы</span>
-                <span class="cost-calc-kpi-val">${formatRub(expenses)}</span>
-            </div>
-            <div class="cost-calc-kpi">
-                <span class="cost-calc-kpi-label">Субсидия</span>
-                <span class="cost-calc-kpi-val">${st.subsidized ? formatRub(subsidy) : '—'}</span>
-            </div>
-            <div class="cost-calc-kpi">
-                <span class="cost-calc-kpi-label">Доход</span>
-                <span class="cost-calc-kpi-val">${revenue == null ? '—' : formatRub(revenue)}</span>
-            </div>
-            <div class="cost-calc-kpi cost-calc-kpi-fin${finCls}">
-                <span class="cost-calc-kpi-label">Фин. рез.</span>
-                <span class="cost-calc-kpi-val">${fin == null ? '—' : formatRubSigned(fin)}</span>
-            </div>
-        </div>
-`;
+    // Файл по месяцам: строка на каждый месяц и средняя за них. Старый файл — одна строка.
+    if (q.months && q.months.length) {
+        const have = q.months.filter(x => x.expenses != null);
+        const avg = (k) => have.reduce((a, x) => a + x[k], 0) / have.length;
+        const rows = q.months.map(x => costCalcKpiRow(COST_CALC_MONTHS[x.m - 1] ? COST_CALC_MONTHS[x.m - 1][0].toUpperCase() + COST_CALC_MONTHS[x.m - 1].slice(1) : `Месяц ${x.m}`, x.expenses, x.subsidy, revenue, !!st.subsidized));
+        rows.push(costCalcKpiRow(`Среднее за ${have.length === q.months.length ? q.months.length : have.length + ' из ' + q.months.length} мес.`, have.length ? avg('expenses') : null, have.length ? avg('subsidy') : null, revenue, !!st.subsidized));
+        box.innerHTML = rows.join('') + (q.krai ? '<p class="cost-calc-note">Краевой маршрут: субсидия 0 при любом выборе.</p>' : '');
+        return;
+    }
+    box.innerHTML = costCalcKpiRow('', q.expenses, q.subsidy || 0, revenue, !!st.subsidized);
 }
+
