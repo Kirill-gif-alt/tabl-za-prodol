@@ -256,14 +256,15 @@ window.ReferenceView = (function () {
         // Новый формат (файл по месяцам): по каждому месяцу субсидия и себестоимость, затем среднее.
         const MN = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
         const months = (all.find(e => e.months && e.months.length) || {}).months || [];
-        const pairCell = (sub, cost) => cost == null ? '<span class="rp-muted">нет данных</span>'
-            : `<div>${sub ? `<strong>${fmtK(sub)}</strong>` : '0'}</div><div class="rp-sub-line">${fmtK(cost)}</div>`;
+        const pairCell = (sub, cost, n) => cost == null ? '<span class="rp-muted">нет данных</span>'
+            : `<div>${sub ? `<strong>${fmtK(sub)}</strong>` : '0'}</div><div class="rp-sub-line">${fmtK(cost)}</div>${n != null ? `<div class="rp-sub-line">${n} рейс.</div>` : ''}`;
+        const nSum = (e) => { const v = e.byMonth ? Object.values(e.byMonth).filter(x => x.n != null) : []; return v.length ? v.reduce((a, x) => a + x.n, 0) : null; };
         const rows = list.map(e => `
             <tr>
                 <td class="rp-left"><strong>${esc(e.from)} — ${esc(e.to)}</strong>${e.krai ? '<div class="rp-sub-line">краевой: субсидия 0</div>' : ''}</td>
                 <td>${esc(e.acLabel)}</td>
-                ${months.map(m => { const v = e.byMonth && e.byMonth[m]; return `<td>${pairCell(v ? v.sub : 0, v ? v.cost : null)}</td>`; }).join('')}
-                <td>${pairCell(e.subsidy, e.cost)}</td>
+                ${months.map(m => { const v = e.byMonth && e.byMonth[m]; return `<td>${pairCell(v ? v.sub : 0, v ? v.cost : null, v ? v.n : null)}</td>`; }).join('')}
+                <td>${pairCell(e.subsidy, e.cost, nSum(e))}</td>
                 <td>${e.source === 'file+ref' ? `${sourceBadge('file')} <span class="rp-sub-line">субсидия — справочник</span>` : sourceBadge(e.source)}</td>
                 ${can ? `<td class="rp-nowrap">
                     <button type="button" class="filter-btn rp-open" data-refa-edit="${esc(e.key)}">Изменить</button>
@@ -295,10 +296,11 @@ window.ReferenceView = (function () {
                         <label>Субсидия во все месяцы<input id="ref-a-suball" class="cr-input" type="number" min="0" step="0.001" placeholder="например, 312,5"></label>
                         <button type="button" class="filter-btn" data-refa-suball>Вписать во все месяцы</button>
                     </div>`}
-                    <table class="rp-table rp-ref-mtable"><thead><tr><th>Месяц</th><th>Субсидия</th><th>Себестоимость</th></tr></thead><tbody>
+                    <table class="rp-table rp-ref-mtable"><thead><tr><th>Месяц</th><th>Субсидия</th><th>Себестоимость</th><th>Рейсов</th></tr></thead><tbody>
                     ${aeMonths.map(m => { const v = (ae.byMonth || {})[m] || {}; return `<tr><td class="rp-left">${esc(monthCap(m))}</td>
                         <td><input class="cr-input ref-a-msub" data-m="${m}" type="number" min="0" step="0.001" value="${esc(aeKrai ? 0 : (v.sub != null ? Math.round(v.sub * 1000) / 1000 : ''))}"${aeKrai ? ' disabled' : ''}></td>
-                        <td><input class="cr-input ref-a-mcost" data-m="${m}" type="number" min="0" step="0.001" value="${esc(v.cost != null ? Math.round(v.cost * 1000) / 1000 : '')}"></td></tr>`; }).join('')}
+                        <td><input class="cr-input ref-a-mcost" data-m="${m}" type="number" min="0" step="0.001" value="${esc(v.cost != null ? Math.round(v.cost * 1000) / 1000 : '')}"></td>
+                        <td><input class="cr-input ref-a-mn" data-m="${m}" type="number" min="0" step="1" value="${esc(v.n != null ? v.n : '')}"></td></tr>`; }).join('')}
                     </tbody></table>
                 </div>` : ''}
                 <div class="rp-ref-actions">
@@ -311,7 +313,7 @@ window.ReferenceView = (function () {
             <section class="rp-card">
                 <div class="rp-card-head"><h3 class="rp-card-title">Суммы субсидии и себестоимость по маршрутам</h3>
                     ${can && !ae ? '<button type="button" class="btn-primary rp-btn" data-refa-new>Добавить маршрут</button>' : ''}</div>
-                <p class="rp-card-text">В каждой ячейке: сверху <strong>субсидия</strong>, снизу себестоимость — тыс. ₽ за пару рейсов туда-обратно (на один рейс — половина).
+                <p class="rp-card-text">В каждой ячейке: сверху <strong>субсидия</strong>, ниже себестоимость и на скольких рейсах она посчитана — тыс. ₽ за пару рейсов туда-обратно (на один рейс — половина).
                     Месяцы — из файла себестоимости и субсидий («Отчёты» → «Себестоимость и субсидии»), «Среднее» идёт в экономическую таблицу.
                     Краевым направлениям субсидия всегда 0. Если у межрегионального направления в файле нет субсидии ни в одном месяце — берётся субсидия из этого справочника.
                     Маршрут, которого нет в файле, — целиком из справочника.</p>
@@ -787,7 +789,7 @@ window.ReferenceView = (function () {
     }
     function sheetHead(id) {
         if (id !== 'amounts') return SHEETS[id].head;
-        return SHEETS.amounts.head.concat(...amountMonths().map(m => [`${monthCap(m)}: субсидия`, `${monthCap(m)}: себестоимость`]));
+        return SHEETS.amounts.head.concat(...amountMonths().map(m => [`${monthCap(m)}: субсидия`, `${monthCap(m)}: себестоимость`, `${monthCap(m)}: рейсов`]));
     }
 
     function sheetRows(id) {
@@ -807,7 +809,7 @@ window.ReferenceView = (function () {
         if (id === 'amounts') {
             const months = amountMonths();
             return RouteCosts.amountRows().map(e => [e.from, e.to, e.acLabel, e.subsidy != null ? e.subsidy : (e.byMonth ? 0 : ''), e.cost != null ? e.cost : '']
-                .concat(...months.map(m => { const v = e.byMonth && e.byMonth[m]; return v ? [v.sub, v.cost] : ['', '']; })));
+                .concat(...months.map(m => { const v = e.byMonth && e.byMonth[m]; return v ? [v.sub, v.cost, v.n != null ? v.n : ''] : ['', '', '']; })));
         }
         if (id === 'nav') {
             return Object.values(SubsidyRef.pkzRules()).map(r => [r.from, r.to, r.direction, r.ac || '', r.value]);
@@ -897,17 +899,23 @@ window.ReferenceView = (function () {
             const head = (lib.utils.sheet_to_json(wb.Sheets[SHEETS.amounts.name], { header: 1, raw: true, defval: '' })[0] || []).map(h => String(h || '').trim().toLowerCase());
             const mcols = {};
             head.forEach((h, i) => {
-                const mm = h.match(/^([а-яё]+)\s*:\s*(субсидия|себестоимость)/);
+                const mm = h.match(/^([а-яё]+)\s*:\s*(субсидия|себестоимость|рейсов)/);
                 const m = mm ? MONTHS_RU.indexOf(mm[1]) + 1 : 0;
                 if (!m) return;
-                (mcols[m] || (mcols[m] = {}))[mm[2] === 'субсидия' ? 'sub' : 'cost'] = i;
+                (mcols[m] || (mcols[m] = {}))[mm[2] === 'субсидия' ? 'sub' : (mm[2] === 'рейсов' ? 'n' : 'cost')] = i;
             });
             const months = Object.keys(mcols).map(Number).filter(m => mcols[m].cost != null).sort((a, b) => mcols[a].cost - mcols[b].cost).slice(-3);
             amounts.forEach((r, i) => {
                 const e = { from: String(r[0] || '').trim(), to: String(r[1] || '').trim(), ac: String(r[2] || '').trim(), subsidy: cellNum(r[3]), cost: cellNum(r[4]) };
                 if (months.length) {
                     const byMonth = {};
-                    months.forEach(m => { const c = cellNum(r[mcols[m].cost]); if (c != null) byMonth[m] = { cost: c, sub: mcols[m].sub != null ? cellNum(r[mcols[m].sub]) || 0 : 0 }; });
+                    months.forEach(m => {
+                        const c = cellNum(r[mcols[m].cost]);
+                        if (c == null) return;
+                        byMonth[m] = { cost: c, sub: mcols[m].sub != null ? cellNum(r[mcols[m].sub]) || 0 : 0 };
+                        const fn = mcols[m].n != null ? cellNum(r[mcols[m].n]) : null;
+                        if (fn != null) byMonth[m].n = Math.round(fn);
+                    });
                     if (Object.keys(byMonth).length) {
                         e.months = months;
                         e.byMonth = byMonth;
@@ -1174,7 +1182,11 @@ window.ReferenceView = (function () {
                     months.push(m);
                     const c = n(inp.value);
                     const sEl = document.querySelector(`.ref-a-msub[data-m="${m}"]`);
-                    if (c != null) byMonth[m] = { cost: c, sub: krai ? 0 : (n(sEl && sEl.value) || 0) };
+                    const nEl = document.querySelector(`.ref-a-mn[data-m="${m}"]`);
+                    if (c != null) {
+                        byMonth[m] = { cost: c, sub: krai ? 0 : (n(sEl && sEl.value) || 0) };
+                        if (n(nEl && nEl.value) != null) byMonth[m].n = Math.round(n(nEl.value));
+                    }
                 });
                 const have = Object.values(byMonth);
                 if (!have.length) { const el = document.getElementById('ref-a-error'); if (el) el.textContent = 'Впишите себестоимость хотя бы за один месяц'; return true; }

@@ -82,7 +82,10 @@ window.SubsidyRef = (function () {
             const byMonth = {};
             months.forEach(m => {
                 const v = e.byMonth[m];
-                if (v && num(v.cost) != null) byMonth[m] = { cost: num(v.cost), sub: num(v.sub) || 0 };
+                if (v && num(v.cost) != null) {
+                    byMonth[m] = { cost: num(v.cost), sub: num(v.sub) || 0 };
+                    if (num(v.n) != null) byMonth[m].n = Math.round(num(v.n));   // сколько вылетов за месяц в расчёте
+                }
             });
             if (months.length && Object.keys(byMonth).length) { out.months = months; out.byMonth = byMonth; out.krai = !!e.krai; }
         }
