@@ -75,7 +75,18 @@ window.SubsidyRef = (function () {
         if (!amountKey(from, to, ac)) return null;
         // Себестоимость одна (раньше было две — «при субсидии» и «коммерческая»: берём любую заданную).
         const cost = num(e.cost) != null ? num(e.cost) : (num(e.costCom) != null ? num(e.costCom) : num(e.costSub));
-        return { from, to, ac, subsidy: num(e.subsidy), cost, at, by: cleanText(e.by, 60) };
+        const out = { from, to, ac, subsidy: num(e.subsidy), cost, at, by: cleanText(e.by, 60) };
+        // Файл себестоимости и субсидий по месяцам: до трёх месяцев, в каждом себестоимость и субсидия (тыс. ₽ за пару).
+        if (Array.isArray(e.months) && e.byMonth && typeof e.byMonth === 'object') {
+            const months = e.months.map(m => parseInt(m, 10)).filter(m => m >= 1 && m <= 12).slice(-3);
+            const byMonth = {};
+            months.forEach(m => {
+                const v = e.byMonth[m];
+                if (v && num(v.cost) != null) byMonth[m] = { cost: num(v.cost), sub: num(v.sub) || 0 };
+            });
+            if (months.length && Object.keys(byMonth).length) { out.months = months; out.byMonth = byMonth; out.krai = !!e.krai; }
+        }
+        return out;
     }
 
     // Направление «в одну сторону»: «Красноярск — Абакан» ≠ «Абакан — Красноярск».

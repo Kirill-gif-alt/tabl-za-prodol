@@ -179,6 +179,24 @@ window.RouteCosts = (function () {
         return /названия строк/i.test(String(r0[0] || '')) || r1.some(c => /по полю/i.test(String(c || '')));
     }
 
+    // «Красноярск-Горно-алтайск-Красноярск» → [Красноярск, Горно-алтайск]: город отправления — то, чем название
+    // начинается и заканчивается (в названиях городов бывает свой дефис), назначение — между ними.
+    function splitRoute(name) {
+        const n = String(name || '').replace(/\s*-\s*/g, '-').trim();
+        const idx = [];
+        for (let i = 0; i < n.length; i++) if (n[i] === '-') idx.push(i);
+        for (const i of idx) {
+            const a = n.slice(0, i);
+            if (n.length > 2 * a.length + 2 && n.endsWith('-' + a)) {
+                const mid = n.slice(i + 1, n.length - a.length - 1);
+                if (mid) return [a, mid];
+            }
+        }
+        // Без возврата в начало: «А-Б» — первый и последний участок.
+        if (idx.length) return [n.slice(0, idx[0]), n.slice(idx[idx.length - 1] + 1)];
+        return null;
+    }
+
     function parsePivotSheet(json) {
         const r0 = json[0] || [];
         const r1 = json[1] || [];
@@ -202,10 +220,10 @@ window.RouteCosts = (function () {
             if (!row) continue;
             const name = String(row[0] || '').trim();
             const ac = String(row[iAc >= 0 ? iAc : 1] || '').trim();
-            const parts = name.split(/\s*-\s*/).map(x => x.trim()).filter(Boolean);
-            if (parts.length < 2 || !ac || /итог/i.test(name)) continue;
-            const from = parts[0];
-            const to = parts.length >= 3 ? parts[parts.length - 2] : parts[1];
+            if (!ac || /итог/i.test(name)) continue;
+            const ends = splitRoute(name);
+            if (!ends) continue;
+            const [from, to] = ends;
             const krai = isKraiPair(from, to);
             const byMonth = {};
             months.forEach(m => {
@@ -307,8 +325,36 @@ window.RouteCosts = (function () {
         const refKeys = new Set(Object.keys(refAmounts));
         const fileByKey = {};
         fileCostRows.forEach(r => { fileByKey[routePairKey(r.fromKey, r.toKey, r.acK) + '|' + r.flag] = r; });
-        const rows = fileCostRows.filter(r => !refKeys.has(routePairKey(r.fromKey, r.toKey, r.acK)));
+        // Справочник главнее файлов. Файл по месяцам при загрузке сам записывается в справочник (pivotEntries):
+        // субсидия межрегионального направления, которой нет в файле ни в одном месяце, берётся из справочника.
+        const subFromRef = (r) => {
+            const e = refAmounts[routePairKey(r.fromKey, r.toKey, r.acK)];
+            return e && e.subsidy > 0 ? e.subsidy : 0;
+        };
+        const rows = fileCostRows.filter(r => !refKeys.has(routePairKey(r.fromKey, r.toKey, r.acK))).map(r => {
+            if (!r.byMonth || r.flag !== 'да' || r.krai) return r;
+            const hasSub = r.months.some(m => r.byMonth[m] && r.byMonth[m].sub > 0);
+            const ref = hasSub ? 0 : subFromRef(r);
+            if (!ref) return r;
+            const byMonth = {};
+            Object.keys(r.byMonth).forEach(m => { byMonth[m] = { ...r.byMonth[m], sub: ref }; });
+            return { ...r, byMonth, subsidyAmt: ref, subRef: true };
+        });
         Object.keys(refAmounts).forEach(key => {
+            const e0 = refAmounts[key];
+            if (e0.byMonth) {
+                const krai = !!e0.krai;
+                const months = e0.months;
+                const have = months.filter(m => e0.byMonth[m]);
+                if (!have.length) return;
+                const avg = (k) => have.reduce((a, m) => a + e0.byMonth[m][k], 0) / have.length;
+                const byMonth = {};
+                have.forEach(m => { byMonth[m] = { cost: e0.byMonth[m].cost, sub: krai ? 0 : e0.byMonth[m].sub }; });
+                const base = { scepka: '', from: e0.from, to: e0.to, ac: e0.ac, fromKey: cityKey(e0.from), toKey: cityKey(e0.to), acK: acKey(e0.ac), fromRef: true, krai, months, byMonth };
+                rows.push({ ...base, flag: 'да', costPair: avg('cost'), subsidyAmt: krai ? 0 : avg('sub') });
+                rows.push({ ...base, flag: 'нет', costPair: avg('cost'), subsidyAmt: 0 });
+                return;
+            }
             const e = refAmounts[key];
             const base = { from: e.from, to: e.to, ac: e.ac, fromKey: cityKey(e.from), toKey: cityKey(e.to), acK: acKey(e.ac), fromRef: true };
             const fm = fileByKey[key + '|да'] || fileByKey[key + '|нет'];
@@ -376,7 +422,10 @@ window.RouteCosts = (function () {
         const map = {};
         costRows.forEach(r => {
             const key = routePairKey(r.fromKey, r.toKey, r.acK);
-            const e = map[key] || (map[key] = { key, from: r.from, to: r.to, ac: r.ac, acLabel: acDisplay(r.acK, r.ac), subsidy: null, cost: null, source: refAmounts[key] ? 'ref' : 'file' });
+            const e = map[key] || (map[key] = { key, from: r.from, to: r.to, ac: r.ac, acLabel: acDisplay(r.acK, r.ac), subsidy: null, cost: null,
+                source: r.fromRef ? 'ref' : (r.byMonth ? (r.subRef ? 'file+ref' : 'file') : (refAmounts[key] ? 'ref' : 'file')), months: r.months || null, byMonth: null, krai: !!r.krai });
+            if (r.byMonth && r.flag === 'да') { e.byMonth = r.byMonth; if (r.subRef) e.source = 'file+ref'; }
+            if (r.byMonth && !e.byMonth) e.byMonth = r.byMonth;
             if (r.flag === 'да') {
                 if (e.cost == null) e.cost = r.costPair;
                 e.subsidy = r.subsidyAmt || null;
@@ -385,6 +434,29 @@ window.RouteCosts = (function () {
             }
         });
         return Object.values(map).sort((a, b) => (a.from + a.to).localeCompare(b.from + b.to, 'ru') || a.acLabel.localeCompare(b.acLabel, 'ru'));
+    }
+
+    // Что записать в справочник после загрузки файла по месяцам: итог (с субсидией из справочника там,
+    // где у межрегионального направления в файле её нет), по одной записи на маршрут и ВС.
+    function pivotEntries() {
+        const out = [];
+        fileCostRows.forEach(r => {
+            if (!r.byMonth || r.flag !== 'да') return;
+            const key = routePairKey(r.fromKey, r.toKey, r.acK);
+            let byMonth = r.byMonth;
+            let subsidy = r.subsidyAmt || 0;
+            if (!r.krai && !r.months.some(m => r.byMonth[m] && r.byMonth[m].sub > 0)) {
+                const old = refAmounts[key];
+                const ref = old && old.subsidy > 0 ? old.subsidy : 0;
+                if (ref) {
+                    byMonth = {};
+                    Object.keys(r.byMonth).forEach(m => { byMonth[m] = { ...r.byMonth[m], sub: ref }; });
+                    subsidy = ref;
+                }
+            }
+            out.push({ from: r.from, to: r.to, ac: r.ac, subsidy, cost: r.costPair, months: r.months, byMonth, krai: !!r.krai });
+        });
+        return out;
     }
 
     function fileData() {
@@ -598,6 +670,8 @@ window.RouteCosts = (function () {
         applySnapshot,
         toSnapshot,
         fileData,
+        pivotEntries,
+        isKraiPair,
         applyRef,
         amountRows,
         periodsFor: (code) => periodsForFlight(code),
