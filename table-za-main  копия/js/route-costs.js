@@ -197,6 +197,14 @@ window.RouteCosts = (function () {
         return null;
     }
 
+    // Субсидия направления одна на все месяцы: есть хотя бы в одном месяце — во всех (наибольшая из месяцев).
+    function evenSubsidy(byMonth, krai) {
+        const vals = Object.values(byMonth);
+        const top = krai ? 0 : vals.reduce((a, v) => Math.max(a, v.sub || 0), 0);
+        vals.forEach(v => { v.sub = top; });
+        return top;
+    }
+
     function parsePivotSheet(json) {
         const r0 = json[0] || [];
         const r1 = json[1] || [];
@@ -237,6 +245,7 @@ window.RouteCosts = (function () {
             });
             const have = months.filter(m => byMonth[m]);
             if (!have.length) continue;
+            evenSubsidy(byMonth, krai);
             const avg = (k) => have.reduce((a, m) => a + byMonth[m][k], 0) / have.length;
             const base = { scepka: '', from, to, ac, fromKey: cityKey(from), toKey: cityKey(to), acK: acKey(ac), krai, months, byMonth };
             // Всегда два варианта: с субсидией и без. Себестоимость одна и та же, без субсидии — субсидия 0.
@@ -363,6 +372,7 @@ window.RouteCosts = (function () {
                 const avg = (k) => have.reduce((a, m) => a + e0.byMonth[m][k], 0) / have.length;
                 const byMonth = {};
                 have.forEach(m => { byMonth[m] = { cost: e0.byMonth[m].cost, sub: krai ? 0 : e0.byMonth[m].sub, n: e0.byMonth[m].n }; });
+                evenSubsidy(byMonth, krai);
                 const base = { scepka: '', from: e0.from, to: e0.to, ac: e0.ac, fromKey: cityKey(e0.from), toKey: cityKey(e0.to), acK: acKey(e0.ac), fromRef: true, krai, months, byMonth };
                 rows.push({ ...base, flag: 'да', costPair: avg('cost'), subsidyAmt: krai ? 0 : avg('sub') });
                 rows.push({ ...base, flag: 'нет', costPair: avg('cost'), subsidyAmt: 0 });

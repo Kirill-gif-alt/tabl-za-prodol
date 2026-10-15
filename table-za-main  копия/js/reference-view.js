@@ -293,12 +293,10 @@ window.ReferenceView = (function () {
                 <div class="rp-ref-months">
                     <div class="rp-ref-months-head">Суммы по месяцам, тыс. ₽ за пару рейсов туда-обратно${aeKrai ? ' — <strong>краевой маршрут: субсидия всегда 0</strong>' : ''}</div>
                     ${aeKrai ? '' : `<div class="rp-ref-allsub">
-                        <label>Субсидия во все месяцы<input id="ref-a-suball" class="cr-input" type="number" min="0" step="0.001" placeholder="например, 312,5"></label>
-                        <button type="button" class="filter-btn" data-refa-suball>Вписать во все месяцы</button>
+                        <label>Субсидия, тыс. ₽ — одна на все месяцы<input id="ref-a-suball" class="cr-input" type="number" min="0" step="0.001" value="${esc((() => { const t = Object.values(ae.byMonth || {}).reduce((a, v) => Math.max(a, v.sub || 0), 0); return t ? Math.round(t * 1000) / 1000 : (ae.subsidy || ''); })())}"></label>
                     </div>`}
-                    <table class="rp-table rp-ref-mtable"><thead><tr><th>Месяц</th><th>Субсидия</th><th>Себестоимость</th><th>Рейсов</th></tr></thead><tbody>
+                    <table class="rp-table rp-ref-mtable"><thead><tr><th>Месяц</th><th>Себестоимость</th><th>Рейсов</th></tr></thead><tbody>
                     ${aeMonths.map(m => { const v = (ae.byMonth || {})[m] || {}; return `<tr><td class="rp-left">${esc(monthCap(m))}</td>
-                        <td><input class="cr-input ref-a-msub" data-m="${m}" type="number" min="0" step="0.001" value="${esc(aeKrai ? 0 : (v.sub != null ? Math.round(v.sub * 1000) / 1000 : ''))}"${aeKrai ? ' disabled' : ''}></td>
                         <td><input class="cr-input ref-a-mcost" data-m="${m}" type="number" min="0" step="0.001" value="${esc(v.cost != null ? Math.round(v.cost * 1000) / 1000 : '')}"></td>
                         <td><input class="cr-input ref-a-mn" data-m="${m}" type="number" min="0" step="1" value="${esc(v.n != null ? v.n : '')}"></td></tr>`; }).join('')}
                     </tbody></table>
@@ -315,7 +313,7 @@ window.ReferenceView = (function () {
                     ${can && !ae ? '<button type="button" class="btn-primary rp-btn" data-refa-new>Добавить маршрут</button>' : ''}</div>
                 <p class="rp-card-text">В каждой ячейке: сверху <strong>субсидия</strong>, ниже себестоимость и на скольких рейсах она посчитана — тыс. ₽ за пару рейсов туда-обратно (на один рейс — половина).
                     Месяцы — из файла себестоимости и субсидий («Отчёты» → «Себестоимость и субсидии»), «Среднее» идёт в экономическую таблицу.
-                    Краевым направлениям субсидия всегда 0. Если у межрегионального направления в файле нет субсидии ни в одном месяце — берётся субсидия из этого справочника.
+                    Краевым направлениям субсидия всегда 0. Субсидия одна на все месяцы: если она есть хотя бы в одном месяце файла, ставится во все. Если у межрегионального направления в файле нет субсидии ни в одном месяце — берётся субсидия из этого справочника.
                     Маршрут, которого нет в файле, — целиком из справочника.</p>
                 ${importHtml()}
                 ${form}
@@ -1163,11 +1161,6 @@ window.ReferenceView = (function () {
             return true;
         }
         if (d.refaCancel != null) { amountEdit = null; rerender(); return true; }
-        if (d.refaSuball != null) {
-            const v = document.getElementById('ref-a-suball')?.value ?? '';
-            if (String(v).trim() !== '') document.querySelectorAll('.ref-a-msub').forEach(inp => { if (!inp.disabled) inp.value = v; });
-            return true;
-        }
         if (d.refaSave != null) {
             const val = (id) => document.getElementById(id)?.value ?? '';
             const entry = { from: val('ref-a-from'), to: val('ref-a-to'), ac: val('ref-a-ac'), subsidy: val('ref-a-sub'), cost: val('ref-a-cost') };
@@ -1181,10 +1174,9 @@ window.ReferenceView = (function () {
                     const m = parseInt(inp.dataset.m, 10);
                     months.push(m);
                     const c = n(inp.value);
-                    const sEl = document.querySelector(`.ref-a-msub[data-m="${m}"]`);
                     const nEl = document.querySelector(`.ref-a-mn[data-m="${m}"]`);
                     if (c != null) {
-                        byMonth[m] = { cost: c, sub: krai ? 0 : (n(sEl && sEl.value) || 0) };
+                        byMonth[m] = { cost: c, sub: krai ? 0 : (n(document.getElementById('ref-a-suball')?.value) || 0) };
                         if (n(nEl && nEl.value) != null) byMonth[m].n = Math.round(n(nEl.value));
                     }
                 });
