@@ -850,7 +850,7 @@ window.ReportsView = (function () {
             <section class="rp-card">
                 <div class="rp-card-head">
                     <h3 class="rp-card-title">${esc(title)}</h3>
-                    <button type="button" class="btn-primary rp-btn" id="${id}"${allowed ? '' : ' disabled'}>Выгрузить</button>
+                    <button type="button" class="btn-primary rp-btn" id="${id}"${allowed ? '' : ' disabled'}>${id === 'rp-costs-upload' ? 'Загрузить' : 'Выгрузить'}</button>
                 </div>
                 <p class="rp-card-text">${esc(text)}</p>
                 ${allowed ? '' : `<p class="rp-note rp-warn">${esc(denyText)}</p>`}
@@ -922,7 +922,10 @@ window.ReportsView = (function () {
                     canData(), 'Нужны вкладка «Загрузка рейсов» и право на экспорт Excel.'),
                 card('rp-sales', 'Управление продажами',
                     'Excel вкладки «Управление продажами»: лист на каждый рейс с отметками по дням.',
-                    canSales(), 'Нужна вкладка «Управление продажами».')
+                    canSales(), 'Нужна вкладка «Управление продажами».'),
+                card('rp-costs-upload', 'Себестоимость и субсидии',
+                    'Загрузить файл по месяцам (маршрут, тип ВС, субсидия и себестоимость за каждый месяц). На сайт идут последние три месяца и среднее — вкладка «Расчёт расходов». Краевые рейсы — субсидия 0, межрегиональные — как в файле.',
+                    true, '')
             ].join('')}</div>
             ${card('rp-econ', 'Для экономистов',
                 `Факт кресел в продаже за прошлую неделю (${weekLabel(weeks.past)}) и план загрузки на следующую (${weekLabel(weeks.next)}), отдельно ВВЛ и МВЛ. Листы: сводка, факт по рейсам, план по рейсам.`,
@@ -1039,7 +1042,8 @@ window.ReportsView = (function () {
                 saveRef().catch(e => { console.error(e); toast('Не удалось сохранить', 'error'); }).finally(() => { btn.disabled = false; });
                 return;
             }
-            const run = btn.id === 'rp-data' ? exportData
+            const run = btn.id === 'rp-costs-upload' ? (typeof uploadCostsFile === 'function' ? uploadCostsFile : null)
+                : btn.id === 'rp-data' ? exportData
                 : btn.id === 'rp-data-split' ? exportDataSplit
                 : (btn.id === 'rp-sales' ? exportSales
                     : (btn.id === 'rp-econ' ? exportEcon
