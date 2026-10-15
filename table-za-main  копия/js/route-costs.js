@@ -341,7 +341,17 @@ window.RouteCosts = (function () {
             return { ...r, byMonth, subsidyAmt: ref, subRef: true };
         });
         Object.keys(refAmounts).forEach(key => {
-            const e0 = refAmounts[key];
+            let e0 = refAmounts[key];
+            // Запись справочника одним числом, а в файле маршрут по месяцам: число справочника — во все месяцы
+            // (пустое поле — значение месяца из файла).
+            const fp = !e0.byMonth && (fileByKey[key + '|да'] || fileByKey[key + '|нет']);
+            if (fp && fp.byMonth) {
+                const byMonth = {};
+                Object.keys(fp.byMonth).forEach(m => {
+                    byMonth[m] = { cost: e0.cost != null ? e0.cost : fp.byMonth[m].cost, sub: e0.subsidy != null ? e0.subsidy : (fileByKey[key + '|да'] ? fileByKey[key + '|да'].byMonth[m].sub : 0) };
+                });
+                e0 = { ...e0, months: fp.months, byMonth, krai: fp.krai };
+            }
             if (e0.byMonth) {
                 const krai = !!e0.krai;
                 const months = e0.months;

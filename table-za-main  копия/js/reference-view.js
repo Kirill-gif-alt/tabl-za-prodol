@@ -274,6 +274,9 @@ window.ReferenceView = (function () {
         const acs = Object.values(RouteCosts.acLabels ? RouteCosts.acLabels() : {});
         all.forEach(e => { if (!acs.includes(e.acLabel)) acs.push(e.acLabel); });
         const ae = amountEdit;
+        // Месяцы формы: у записи свои или, для нового маршрута, — из последнего файла.
+        const aeMonths = ae ? (ae.months && ae.months.length ? ae.months : months) : [];
+        const aeKrai = !!(ae && ae.from && ae.to && RouteCosts.isKraiPair && RouteCosts.isKraiPair(ae.from, ae.to));
         const form = can && ae ? `
             <div class="rp-ref-form" id="ref-amount-form">
                 <div class="rp-ref-form-title">${ae.key ? 'Изменить маршрут' : 'Новый маршрут'}</div>
@@ -282,9 +285,22 @@ window.ReferenceView = (function () {
                     <label>Город 1<input id="ref-a-from" class="cr-input" list="ref-cities" maxlength="60" value="${esc(ae.from || '')}"></label>
                     <label>Город 2<input id="ref-a-to" class="cr-input" list="ref-cities" maxlength="60" value="${esc(ae.to || '')}"></label>
                     <label>Тип ВС<select id="ref-a-ac" class="cr-input">${acs.map(a => `<option${a === (ae.acLabel || ae.ac) ? ' selected' : ''}>${esc(a)}</option>`).join('')}</select></label>
-                    <label>Субсидия, тыс. ₽<input id="ref-a-sub" class="cr-input" type="number" min="0" step="0.001" value="${esc(ae.subsidy != null ? ae.subsidy : '')}"></label>
-                    <label>Себестоимость, тыс. ₽<input id="ref-a-cost" class="cr-input" type="number" min="0" step="0.001" value="${esc(ae.cost != null ? ae.cost : '')}"></label>
+                    ${aeMonths.length ? '' : `<label>Субсидия, тыс. ₽<input id="ref-a-sub" class="cr-input" type="number" min="0" step="0.001" value="${esc(ae.subsidy != null ? ae.subsidy : '')}"></label>
+                    <label>Себестоимость, тыс. ₽<input id="ref-a-cost" class="cr-input" type="number" min="0" step="0.001" value="${esc(ae.cost != null ? ae.cost : '')}"></label>`}
                 </div>
+                ${aeMonths.length ? `
+                <div class="rp-ref-months">
+                    <div class="rp-ref-months-head">Суммы по месяцам, тыс. ₽ за пару рейсов туда-обратно${aeKrai ? ' — <strong>краевой маршрут: субсидия всегда 0</strong>' : ''}</div>
+                    ${aeKrai ? '' : `<div class="rp-ref-allsub">
+                        <label>Субсидия во все месяцы<input id="ref-a-suball" class="cr-input" type="number" min="0" step="0.001" placeholder="например, 312,5"></label>
+                        <button type="button" class="filter-btn" data-refa-suball>Вписать во все месяцы</button>
+                    </div>`}
+                    <table class="rp-table rp-ref-mtable"><thead><tr><th>Месяц</th><th>Субсидия</th><th>Себестоимость</th></tr></thead><tbody>
+                    ${aeMonths.map(m => { const v = (ae.byMonth || {})[m] || {}; return `<tr><td class="rp-left">${esc(monthCap(m))}</td>
+                        <td><input class="cr-input ref-a-msub" data-m="${m}" type="number" min="0" step="0.001" value="${esc(aeKrai ? 0 : (v.sub != null ? Math.round(v.sub * 1000) / 1000 : ''))}"${aeKrai ? ' disabled' : ''}></td>
+                        <td><input class="cr-input ref-a-mcost" data-m="${m}" type="number" min="0" step="0.001" value="${esc(v.cost != null ? Math.round(v.cost * 1000) / 1000 : '')}"></td></tr>`; }).join('')}
+                    </tbody></table>
+                </div>` : ''}
                 <div class="rp-ref-actions">
                     <button type="button" class="btn-primary rp-btn" data-refa-save>Сохранить</button>
                     <button type="button" class="filter-btn" data-refa-cancel>Отмена</button>
@@ -1133,14 +1149,39 @@ window.ReferenceView = (function () {
             if (!e) return true;
             const own = SubsidyRef.amounts()[e.key];
             amountEdit = own ? { ...own, key: e.key, acLabel: e.acLabel } : { ...e };
+            if (!amountEdit.byMonth && e.byMonth) { amountEdit.months = e.months; amountEdit.byMonth = e.byMonth; }
             rerender();
             document.getElementById('ref-amount-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
             return true;
         }
         if (d.refaCancel != null) { amountEdit = null; rerender(); return true; }
+        if (d.refaSuball != null) {
+            const v = document.getElementById('ref-a-suball')?.value ?? '';
+            if (String(v).trim() !== '') document.querySelectorAll('.ref-a-msub').forEach(inp => { if (!inp.disabled) inp.value = v; });
+            return true;
+        }
         if (d.refaSave != null) {
             const val = (id) => document.getElementById(id)?.value ?? '';
             const entry = { from: val('ref-a-from'), to: val('ref-a-to'), ac: val('ref-a-ac'), subsidy: val('ref-a-sub'), cost: val('ref-a-cost') };
+            const mcost = [...document.querySelectorAll('.ref-a-mcost')];
+            if (mcost.length) {
+                const krai = RouteCosts.isKraiPair ? RouteCosts.isKraiPair(entry.from, entry.to) : false;
+                const n = (x) => { const v = parseFloat(String(x || '').replace(',', '.')); return isFinite(v) ? v : null; };
+                const byMonth = {};
+                const months = [];
+                mcost.forEach(inp => {
+                    const m = parseInt(inp.dataset.m, 10);
+                    months.push(m);
+                    const c = n(inp.value);
+                    const sEl = document.querySelector(`.ref-a-msub[data-m="${m}"]`);
+                    if (c != null) byMonth[m] = { cost: c, sub: krai ? 0 : (n(sEl && sEl.value) || 0) };
+                });
+                const have = Object.values(byMonth);
+                if (!have.length) { const el = document.getElementById('ref-a-error'); if (el) el.textContent = 'Впишите себестоимость хотя бы за один месяц'; return true; }
+                Object.assign(entry, { months, byMonth, krai,
+                    cost: have.reduce((a, v) => a + v.cost, 0) / have.length,
+                    subsidy: krai ? 0 : have.reduce((a, v) => a + v.sub, 0) / have.length });
+            }
             run(btn, () => SubsidyRef.setAmount(entry, amountEdit && amountEdit.key), 'ref-a-error', () => {
                 amountEdit = null;
                 toast('Маршрут сохранён');

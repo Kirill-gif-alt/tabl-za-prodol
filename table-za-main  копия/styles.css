@@ -8581,3 +8581,11 @@ html[data-theme="dark"] .cr-table tbody tr:hover td { background: #1f2a37; }
 .cost-calc-month { margin-bottom: 14px; }
 .cost-calc-month-title { font-size: 13px; font-weight: 600; color: #334155; margin: 0 0 6px 2px; }
 .cost-calc-note { font-size: 13px; color: #64748b; margin: 4px 2px 0; }
+
+/* Справочник сумм: правка по месяцам */
+.rp-ref-months { margin-top: 12px; }
+.rp-ref-months-head { font-size: 13px; color: #334155; margin-bottom: 8px; }
+.rp-ref-allsub { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.rp-ref-allsub label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.rp-ref-mtable { max-width: 520px; }
+.rp-ref-mtable input { width: 140px; }
