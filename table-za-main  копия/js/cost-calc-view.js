@@ -91,6 +91,12 @@ function uploadCostsFile() {
     });
 }
 
+function costCalcFlightsWord(n) {
+    const a = n % 10, b = n % 100;
+    if (a === 1 && b !== 11) return 'вылету';
+    return 'вылетам';
+}
+
 const COST_CALC_MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
 
 function costCalcKpiRow(title, expenses, subsidy, revenue, subsidized) {
@@ -230,8 +236,10 @@ function paintCostCalcResult(st) {
     if (q.months && q.months.length) {
         const have = q.months.filter(x => x.expenses != null);
         const avg = (k) => have.reduce((a, x) => a + x[k], 0) / have.length;
-        const rows = q.months.map(x => costCalcKpiRow(COST_CALC_MONTHS[x.m - 1] ? COST_CALC_MONTHS[x.m - 1][0].toUpperCase() + COST_CALC_MONTHS[x.m - 1].slice(1) : `Месяц ${x.m}`, x.expenses, x.subsidy, revenue, !!st.subsidized));
-        rows.push(costCalcKpiRow(`Среднее за ${have.length === q.months.length ? q.months.length : have.length + ' из ' + q.months.length} мес.`, have.length ? avg('expenses') : null, have.length ? avg('subsidy') : null, revenue, !!st.subsidized));
+        const fl = (n) => (n == null ? '' : ` · по ${n} ${costCalcFlightsWord(n)}`);
+        const rows = q.months.map(x => costCalcKpiRow((COST_CALC_MONTHS[x.m - 1] ? COST_CALC_MONTHS[x.m - 1][0].toUpperCase() + COST_CALC_MONTHS[x.m - 1].slice(1) : `Месяц ${x.m}`) + fl(x.flights), x.expenses, x.subsidy, revenue, !!st.subsidized));
+        const nAll = have.some(x => x.flights != null) ? have.reduce((a, x) => a + (x.flights || 0), 0) : null;
+        rows.push(costCalcKpiRow(`Среднее за ${have.length === q.months.length ? q.months.length : have.length + ' из ' + q.months.length} мес.` + fl(nAll), have.length ? avg('expenses') : null, have.length ? avg('subsidy') : null, revenue, !!st.subsidized));
         box.innerHTML = rows.join('') + (q.krai ? '<p class="cost-calc-note">Краевой маршрут: субсидия 0 при любом выборе.</p>' : '');
         return;
     }

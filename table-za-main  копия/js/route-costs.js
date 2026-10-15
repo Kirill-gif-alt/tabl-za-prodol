@@ -209,6 +209,7 @@ window.RouteCosts = (function () {
             const c = cols[m] || (cols[m] = {});
             if (h.includes('себестоим')) c.cost = i;
             else if (h.includes('субсид')) c.sub = i;
+            else if (h.includes('рейс') || h.includes('кол-во') || h.includes('количество')) c.n = i;
         }
         let months = Object.keys(cols).map(Number).filter(m => cols[m].cost != null);
         // Порядок месяцев — как в файле; через новый год (11, 12, 1) идёт по порядку столбцов.
@@ -230,7 +231,9 @@ window.RouteCosts = (function () {
                 const cost = parseNumber(row[cols[m].cost]);
                 if (cost == null) return;
                 const sub = cols[m].sub != null ? parseNumber(row[cols[m].sub]) : null;
+                const n = cols[m].n != null ? parseNumber(row[cols[m].n]) : null;
                 byMonth[m] = { cost, sub: krai ? 0 : (sub || 0) };
+                if (n != null) byMonth[m].n = Math.round(n);
             });
             const have = months.filter(m => byMonth[m]);
             if (!have.length) continue;
@@ -348,7 +351,7 @@ window.RouteCosts = (function () {
             if (fp && fp.byMonth) {
                 const byMonth = {};
                 Object.keys(fp.byMonth).forEach(m => {
-                    byMonth[m] = { cost: e0.cost != null ? e0.cost : fp.byMonth[m].cost, sub: e0.subsidy != null ? e0.subsidy : (fileByKey[key + '|да'] ? fileByKey[key + '|да'].byMonth[m].sub : 0) };
+                    byMonth[m] = { n: fp.byMonth[m].n, cost: e0.cost != null ? e0.cost : fp.byMonth[m].cost, sub: e0.subsidy != null ? e0.subsidy : (fileByKey[key + '|да'] ? fileByKey[key + '|да'].byMonth[m].sub : 0) };
                 });
                 e0 = { ...e0, months: fp.months, byMonth, krai: fp.krai };
             }
@@ -359,7 +362,7 @@ window.RouteCosts = (function () {
                 if (!have.length) return;
                 const avg = (k) => have.reduce((a, m) => a + e0.byMonth[m][k], 0) / have.length;
                 const byMonth = {};
-                have.forEach(m => { byMonth[m] = { cost: e0.byMonth[m].cost, sub: krai ? 0 : e0.byMonth[m].sub }; });
+                have.forEach(m => { byMonth[m] = { cost: e0.byMonth[m].cost, sub: krai ? 0 : e0.byMonth[m].sub, n: e0.byMonth[m].n }; });
                 const base = { scepka: '', from: e0.from, to: e0.to, ac: e0.ac, fromKey: cityKey(e0.from), toKey: cityKey(e0.to), acK: acKey(e0.ac), fromRef: true, krai, months, byMonth };
                 rows.push({ ...base, flag: 'да', costPair: avg('cost'), subsidyAmt: krai ? 0 : avg('sub') });
                 rows.push({ ...base, flag: 'нет', costPair: avg('cost'), subsidyAmt: 0 });
@@ -586,7 +589,8 @@ window.RouteCosts = (function () {
                 return {
                     m,
                     expenses: v ? v.cost * 1000 : null,
-                    subsidy: v ? (subsidized ? v.sub * 1000 : 0) : null
+                    subsidy: v ? (subsidized ? v.sub * 1000 : 0) : null,
+                    flights: v && v.n != null ? v.n : null
                 };
             });
         }
