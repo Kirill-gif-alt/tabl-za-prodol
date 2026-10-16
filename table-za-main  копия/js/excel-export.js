@@ -973,11 +973,53 @@ async function exportDataBoardSplit() {
         dataSearchQuery = keep.q;
     }
     const isKrai = (p) => typeof getFlightRouteType === 'function' && getFlightRouteType(p.outbound) === 'krai';
-    await exportDataBoardWorkbook(pairs.filter(isKrai), todayStart, 'Загрузка - КК');
-    await exportDataBoardWorkbook(pairs.filter(p => !isKrai(p)), todayStart, 'Загрузка - Межрегионалка');
+    await exportDataBoardWorkbook(pairs.filter(isKrai), todayStart, 'Загрузка - КК', true);
+    await exportDataBoardWorkbook(pairs.filter(p => !isKrai(p)), todayStart, 'Загрузка - Межрегионалка', true);
 }
 
-async function exportDataBoardWorkbook(pairs, todayStart, fileBase) {
+// История выгрузок «КК / Межрегионалка»: лист каждого дня хранится в браузере (IndexedDB), файл всегда один
+// и пересобирается целиком — старые вкладки сохраняют оформление (при чтении xlsx оно бы потерялось).
+const DATA_HIST_MAX = 30;   // вкладок в файле не больше 30 — самые старые уходят
+
+function dataHistDb() {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open('krasavia_excel_hist', 1);
+        req.onerror = () => reject(req.error);
+        req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains('sheets')) req.result.createObjectStore('sheets'); };
+        req.onsuccess = () => resolve(req.result);
+    });
+}
+
+async function dataHistLoad(key) {
+    try {
+        const db = await dataHistDb();
+        return await new Promise((resolve) => {
+            const req = db.transaction('sheets', 'readonly').objectStore('sheets').get(key);
+            req.onsuccess = () => resolve(req.result || {});
+            req.onerror = () => resolve({});
+        });
+    } catch (e) { return {}; }
+}
+
+async function dataHistSave(key, map) {
+    try {
+        const db = await dataHistDb();
+        await new Promise((resolve) => {
+            const tx = db.transaction('sheets', 'readwrite');
+            tx.objectStore('sheets').put(map, key);
+            tx.oncomplete = resolve;
+            tx.onerror = resolve;
+        });
+    } catch (e) { /* без истории — просто файл за сегодня */ }
+}
+
+// «16.10.26» → число для сортировки (ГГММДД).
+function dataHistOrder(name) {
+    const m = String(name).match(/^(\d{2})\.(\d{2})\.(\d{2})$/);
+    return m ? +(m[3] + m[2] + m[1]) : 0;
+}
+
+async function exportDataBoardWorkbook(pairs, todayStart, fileBase, history) {
     const folder = await excelPrepareFolder('data');
     if (!(await loadPlainXlsx())) {
         showToast('Библиотека Excel не загружена', 'error');
@@ -992,9 +1034,28 @@ async function exportDataBoardWorkbook(pairs, todayStart, fileBase) {
         return;
     }
     const wb = lib.utils.book_new();
+    const fileDate = typeof getTodayDate === 'function' ? getTodayDate() : built.stamp;
+    if (history) {
+        // Один файл, вкладка на каждый день выгрузки («15.10.26», «16.10.26»…); повторная выгрузка за день — заменяет её.
+        const d = new Date();
+        const tab = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getFullYear()).slice(-2)}`;
+        const key = (typeof excelProfileId === 'function' ? excelProfileId() : '') + ':' + fileBase;
+        const map = await dataHistLoad(key);
+        map[tab] = built.ws;
+        const names = Object.keys(map).sort((a, b) => dataHistOrder(a) - dataHistOrder(b));
+        while (names.length > DATA_HIST_MAX) delete map[names.shift()];
+        await dataHistSave(key, map);
+        names.forEach(n => lib.utils.book_append_sheet(wb, map[n], n));
+        if (typeof excelSafeWorkbook === 'function') excelSafeWorkbook(wb);
+        // Последняя вкладка (сегодня) открывается первой.
+        wb.Workbook = wb.Workbook || {};
+        wb.Workbook.Views = [{ activeTab: names.length - 1 }];
+        const saved = await excelSaveWorkbook(lib, wb, excelSafeFilename(`${fileBase}.xlsx`), folder);
+        excelAnnounceSaved(saved, `${fileBase}: вкладка ${tab} (всего вкладок: ${names.length})`);
+        return;
+    }
     lib.utils.book_append_sheet(wb, built.ws, 'Маршруты');
     if (typeof excelSafeWorkbook === 'function') excelSafeWorkbook(wb);
-    const fileDate = typeof getTodayDate === 'function' ? getTodayDate() : built.stamp;
     const saved = await excelSaveWorkbook(lib, wb, excelDailyFilename(fileBase || 'КРАСАВИА_данные', fileDate), folder);
     excelAnnounceSaved(saved, `${fileBase ? fileBase + ': ф' : 'Ф'}айл готов, дата выгрузки ${built.stamp}`);
 }
