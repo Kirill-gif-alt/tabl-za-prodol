@@ -3,7 +3,7 @@
 //    соседние недели, без праздников — см. calendar-events.js) от этого дня до вылета; разброс — между ними;
 //    когда рейс распродастся;
 //  • точка безубыточности и прогноз финрезультата: себестоимость − субсидия против среднего тарифа;
-//  • групповые брони: заказ (PNR) от 5 билетов: сколько человек и когда куплено.
+//  • групповые брони: заказ (PNR) от порога групп (параметры расчётов): сколько человек и когда куплено.
 // Всё считается лениво — только для показанных рейсов — и кэшируется до новых данных.
 window.FlightInsights = (function () {
 
@@ -149,7 +149,7 @@ window.FlightInsights = (function () {
         const dtd = typeof getDaysUntil === 'function' ? getDaysUntil(date) : null;
         const final = Math.max(load, Math.min(seats, ml.final));
         let soldOutDtd = simple ? simple.soldOutDtd : null;
-        if (final < seats) soldOutDtd = load >= seats ? dtd : null;
+        if (final < seats) soldOutDtd = null;
         else if (soldOutDtd == null) soldOutDtd = 0;
         return {
             final, lo: ml.lo, hi: ml.hi, lf: Math.round(final / seats * 100), seats, load, dtd, n: simple ? simple.n : 0, soldOutDtd,
@@ -218,7 +218,7 @@ window.FlightInsights = (function () {
         return (list || []).map(s => s.adjustedFare || s.fare || 0).filter(v => v > 0);
     }
 
-    // Средний тариф: свой (если продано хотя бы 5 платных), иначе по рейсу за последние 60 дней.
+    // Средний тариф: свой (если платных билетов не меньше порога), иначе по рейсу за окно дней из параметров расчётов.
     function avgFare(code, date) {
         const m = cache();
         const key = code + '|' + date;
@@ -292,18 +292,6 @@ window.FlightInsights = (function () {
         return many;
     }
 
-    function rub(v) {
-        if (v == null) return '—';
-        const abs = Math.abs(v);
-        const sign = v < 0 ? '−' : '';
-        if (abs >= 1000) return sign + Math.round(abs / 1000).toLocaleString('ru-RU') + ' тыс. ₽';
-        return sign + Math.round(abs).toLocaleString('ru-RU') + ' ₽';
-    }
-
-    function rubFull(v) {
-        return v == null ? '—' : Math.round(v).toLocaleString('ru-RU') + ' ₽';
-    }
-
     // Короткая подпись прогноза: «38 (34–41) · 83%».
     function forecastShort(f) {
         if (!f) return '—';
@@ -313,44 +301,16 @@ window.FlightInsights = (function () {
 
     function forecastText(f) {
         if (!f || f.source === 'flown') return '';
-        const range = f.lo != null && f.hi != null && f.lo !== f.hi ? `, ${f.source === 'model' ? '8 из 10 —' : 'разброс'} ${f.lo}–${f.hi}` : '';
+        const range = f.lo != null && f.hi != null && f.lo !== f.hi ? `, ${f.source === 'model' ? `${Math.round(PV.CONF_LEVEL * 10)} из 10 —` : 'разброс'} ${f.lo}–${f.hi}` : '';
         const src = f.source === 'model' ? 'модель прогноза (все способы вместе)' : f.source === 'history'
             ? `по ${f.n} ${plural(f.n, 'прошлому вылету', 'прошлым вылетам', 'прошлым вылетам')} в этот день недели`
             : 'по файлу ожидаемой загрузки (своей истории пока мало)';
         let tail = '';
         if (f.load >= f.seats) tail = ' · уже распродан';
         else if (f.soldOutDtd != null) tail = f.soldOutDtd === 0 ? ' · распродастся к дню вылета' : ` · распродастся примерно за ${f.soldOutDtd} дн. до вылета — можно поднимать`;
-        else if (f.lf < 60) tail = ' · не доберёт: стоит снижать или продвигать';
+        else if (f.lf < PV.ADVICE_FC_LOW) tail = ' · не доберёт: стоит снижать или продвигать';
         return `Прогноз к вылету: ${f.final} из ${f.seats} (${f.lf}%)${range} — ${src}${tail}`;
     }
 
-    function economicsText(e) {
-        if (!e) return '';
-        if (e.fare == null) return `Себестоимость ${rub(e.cost)}${e.subsidy ? `, субсидия ${rub(e.subsidy)}` : ''} — нет продаж для среднего тарифа.`;
-        const fareNote = e.fareSource === 'route' ? ' (средний по рейсу)' : '';
-        if (e.breakeven === 0) return `Безубыточность: субсидия покрывает себестоимость · средний тариф ${rubFull(e.fare)}${fareNote}${e.finResult != null ? ` · прогноз результата ${e.finResult >= 0 ? '+' : ''}${rub(e.finResult)}` : ''}`;
-        let s = `Безубыточность: ${e.breakeven} пасс.${e.belowCost ? ' — больше кресел, при этом тарифе рейс не окупается' : ''} · средний тариф ${rubFull(e.fare)}${fareNote}`;
-        if (e.finResult != null) {
-            s += ` · прогноз результата ${e.finResult >= 0 ? '+' : ''}${rub(e.finResult)}`;
-            if (e.finResult < 0) {
-                const parts = [];
-                // Кресел не хватает — выйти в ноль можно только тарифом: его и показываем.
-                if (e.need && !e.belowCost) parts.push(`+${e.need} ${plural(e.need, 'билет', 'билета', 'билетов')}`);
-                if (e.needFare != null && e.needFare > 0) parts.push(`тариф +${rubFull(e.needFare)}`);
-                if (parts.length) s += ` (чтобы выйти в ноль: ${parts.join(' или ')})`;
-            }
-        }
-        return s;
-    }
-
-    function groupsText(code, date) {
-        const g = groupsFor(code, date);
-        if (!g.length) return '';
-        const total = g.reduce((a, x) => a + x.n, 0);
-        const pnrOk = typeof ProfileAuth === 'undefined' || (ProfileAuth.hasPermission('sales_detail') && ProfileAuth.hasPermission('load_data'));
-        const items = g.slice(0, 3).map(x => `${x.n} ${plural(x.n, 'человек', 'человека', 'человек')}${x.dealDate ? ' от ' + String(x.dealDate).slice(0, 5) : ''}${x.pnr && pnrOk ? ' (' + x.pnr + ')' : ''}`).join(', ');
-        return g.length === 1 ? `Группа: ${items}` : `Группы (${g.length}): ${items}${g.length > 3 ? ' и др.' : ''} — всего ${total} ${plural(total, 'человек', 'человека', 'человек')}`;
-    }
-
-    return { forecast, economics, groupsFor, groupSeats, annotateGroups, forecastShort, forecastText, economicsText, groupsText, canEconomy, get GROUP_MIN() { return PV.GROUP_MIN; }, rub, rubFull, plural };
+    return { forecast, economics, groupsFor, groupSeats, annotateGroups, forecastShort, forecastText, get GROUP_MIN() { return PV.GROUP_MIN; } };
 })();

@@ -321,10 +321,6 @@ function bindGlobalZoomControls() {
     syncGlobalZoomUi();
 }
 
-// совместимость: старые вызовы bindViewZoomButtons игнорируем
-function bindViewZoomButtons() { /* zoom в шапке */ }
-function buildViewZoomHtml() { return ''; }
-
 const DAYS_RU = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
 
 const MAX_WEEK = 52;

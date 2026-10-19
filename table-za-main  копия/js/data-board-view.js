@@ -1,4 +1,4 @@
-// js\data-board-view.js - extracted from script.js, logic unchanged.
+// js\data-board-view.js - вкладка «Загрузка рейсов».
 // Globals on purpose: no bundler; onclick and other files call by name.
 
 function invalidateDataBoardCache() {
@@ -337,7 +337,6 @@ function buildDataRouteCardHtml(pair, todayStart) {
     const bookThIn = dataShowSpecBookings
         ? `<th class="pair-sub-in data-col-bookings">Спец. брони</th>`
         : '';
-    const seatsThOutSplit = dataShowLocalTimes ? '' : '';
     const seatsThInSplit = dataShowLocalTimes ? '' : ' pair-split-start';
     const tableMods = [
         dataShowSpecBookings || dataShowDaySales ? 'data-board-with-bookings' : '',
@@ -384,7 +383,7 @@ function buildDataRouteCardHtml(pair, todayStart) {
                         </tr>
                         <tr class="pair-head-sub data-board-head-sub">
                             ${timeThOut}
-                            <th class="pair-sub-out${seatsThOutSplit}" title="AU снимка − спец.брони">Крес.</th>
+                            <th class="pair-sub-out" title="AU снимка − спец.брони">Крес.</th>
                             ${bookThOut}
                             <th class="pair-sub-out" title="sold из снимка, не свободные места">Загр.</th>
                             ${dataShowDaySales ? '<th class="pair-sub-out data-col-bookings" title="Продано за прошлые сутки">За сутки</th>' : ''}
@@ -401,13 +400,6 @@ function buildDataRouteCardHtml(pair, todayStart) {
                 </table>
             </div>
         </div>`;
-}
-
-function buildDataBoardHtml(pairs, todayStart) {
-    _dataBoardRowAcc = 0;
-    const cards = pairs.map(pair => buildDataRouteCardHtml(pair, todayStart)).filter(Boolean);
-    if (!cards.length) return { html: '', rowCount: 0 };
-    return { html: cards.join(''), rowCount: _dataBoardRowAcc };
 }
 
 function syncDataBoardToolbar() {
@@ -671,10 +663,6 @@ function renderDataBoard() {
 function applyDataBoardZoom() {
     VIEW_ZOOM.data = dataBoardZoom;
     applyViewZoom('data');
-}
-
-function setDataBoardZoom(delta) {
-    setViewZoom('data', delta);
 }
 
 function createDataView(c) {

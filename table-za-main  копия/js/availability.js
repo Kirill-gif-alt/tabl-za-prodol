@@ -154,11 +154,6 @@ function shouldAttachSalesToRowCached(row, firstByKey) {
     return firstByKey.get(key) === row;
 }
 
-function hasMultiSegmentDates(rows) {
-    const counts = countRowsByDateFlight(rows);
-    return Object.values(counts).some(c => c >= 2);
-}
-
 /**
  * Row layout (stable indices for rest of app):
  * [0]flight [1]date [2]segment [3]route [4]config
@@ -278,29 +273,6 @@ function parseAvailabilityLine(line) {
 
 /** Лимит строк загрузки — защита от чрезмерного потребления памяти */
 const MAX_AVAILABILITY_ROWS = 120000;
-
-function parseAvailabilityText(text, fromLine, into) {
-    const lines = String(text || '').split(/\r?\n/);
-    const rows = into || [];
-    let headerPassed = fromLine > 0;
-    const start = fromLine || 0;
-
-    for (let i = start; i < lines.length; i++) {
-        if (rows.length >= MAX_AVAILABILITY_ROWS) break;
-        const trimmed = lines[i].trim();
-        if (!trimmed) continue;
-        if (!headerPassed) {
-            if (/^KV-\d/i.test(trimmed)) headerPassed = true;
-            else continue;
-        }
-        if (!/^KV-\d/i.test(trimmed)) continue;
-        const recs = parseAvailabilityLine(trimmed);
-        for (let r = 0; r < recs.length && rows.length < MAX_AVAILABILITY_ROWS; r++) {
-            rows.push(recs[r]);
-        }
-    }
-    return rows;
-}
 
 /** Крупный CSV загрузки: отдаём UI каждые N строк */
 async function parseAvailabilityTextAsync(text, onProgress) {

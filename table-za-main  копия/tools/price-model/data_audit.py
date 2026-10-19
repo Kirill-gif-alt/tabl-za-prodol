@@ -1,7 +1,7 @@
 """Аудит данных для модели «спрос от цены» (роль: аналитик).
 Запуск: PM_DATA=... python3 data_audit.py   → печать + CSV в $PM_OUT (по умолчанию <PM_DATA>/../out/analyst)."""
-import json, os, re
-import numpy as np, pandas as pd
+import os
+import pandas as pd
 from common import load, data_dir
 
 D = data_dir(); OUT = os.environ.get("PM_OUT") or os.path.join(os.path.dirname(os.path.abspath(D)), "out", "analyst")

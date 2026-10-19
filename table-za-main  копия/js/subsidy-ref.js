@@ -207,7 +207,7 @@ window.SubsidyRef = (function () {
             shared = await SharedStorage.writeJsonFile(FILE, cache);
         }
         if (typeof FlightChecks !== 'undefined' && FlightChecks.refreshViews) FlightChecks.refreshViews();
-        return shared ? { ok: true } : { ok: false, error: 'Не удалось записать общий файл справочника' };
+        return shared ? { ok: true } : { ok: false, error: 'Не удалось записать общий файл справочника — изменение сохранено только на этом компьютере' };
     }
 
     function author() {
@@ -403,7 +403,6 @@ window.SubsidyRef = (function () {
     // ---------- история изменений ----------
     // Версии — резервные копии файла справочника (shared/_history) и нынешний. По соседним версиям видно,
     // что менялось; у записи есть автор и время (at, by). Откат — одной записи, а не всего файла.
-    const MONTHS_RU = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
     const k1 = (v) => (v == null ? '—' : String(Math.round(v * 10) / 10).replace('.', ','));
     function sigOf(e) {
         if (!e) return 'x';

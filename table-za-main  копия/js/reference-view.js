@@ -19,10 +19,6 @@ window.ReferenceView = (function () {
         return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     }
 
-    function has(perm) {
-        return typeof ProfileAuth !== 'undefined' && ProfileAuth.hasPermission(perm);
-    }
-
     function toast(msg, type) {
         if (typeof showToast === 'function') showToast(msg, type);
     }
@@ -40,10 +36,6 @@ window.ReferenceView = (function () {
     function fmtK(v) {
         if (v == null || v === '') return '—';
         return Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 1 });
-    }
-
-    function fmtRub(v) {
-        return typeof formatRub === 'function' ? formatRub(v) : Math.round(v).toLocaleString('ru-RU') + ' ₽';
     }
 
     function when(at) {
@@ -524,11 +516,11 @@ window.ReferenceView = (function () {
     function extrasOf(c) {
         // Доп. номера, которые сейчас сводятся к этому рейсу (встроенные правила и справочник).
         const out = [];
-        for (let n = 100; n < 1000; n++) {
-            const x = 'KV-' + n;
-            if (x !== c && typeof getBaseFlight === 'function' && getBaseFlight(x) === c && window.FLIGHT_DIRECTIONS && !window.FLIGHT_DIRECTIONS[x]) {
-                if (typeof groupedData !== 'undefined' && groupedData[c] && groupedData[c].some(r => cleanFlight(r[0]) === x)) out.push(x);
-            }
+        if (typeof getBaseFlight === 'function' && window.FLIGHT_DIRECTIONS && typeof groupedData !== 'undefined' && groupedData[c]) {
+            groupedData[c].forEach(r => {
+                const x = cleanFlight(r[0]);
+                if (x && x !== c && !out.includes(x) && getBaseFlight(x) === c && !window.FLIGHT_DIRECTIONS[x]) out.push(x);
+            });
         }
         const own = FlightRegistry.get(c);
         if (own) own.extras.concat(own.backExtras).forEach(x => { if (!out.includes(x)) out.push(x); });
@@ -1189,7 +1181,7 @@ window.ReferenceView = (function () {
                 if (typeof ActivityLog !== 'undefined') ActivityLog.log('fare_refs', 'Откат: ' + it.title);
                 refreshAll();
                 loadHist(rerender);
-            });
+            }).catch(e => { console.error(e); toast('Не удалось вернуть', 'error'); btn.disabled = false; });
             return true;
         }
         if (d.refXlExport != null) {

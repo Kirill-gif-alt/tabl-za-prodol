@@ -181,7 +181,6 @@
     window.PV = values;
     window.Params = {
         defs: () => DEFS.map(d => ({ key: d[0], def: d[1], min: d[2], max: d[3], step: d[4], group: d[5], label: d[6], hint: d[7], value: values[d[0]] })),
-        get: (k) => values[k],
         load,
         save,
         meta: () => meta,

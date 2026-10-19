@@ -2,6 +2,7 @@
 chcp 65001 >nul
 title КРАСАВИА · Аналитика
 cd /d "%~dp0"
+if "%KRASAVIA_PORT%"=="" set "KRASAVIA_PORT=8765"
 
 echo.
 echo  ========================================
@@ -11,28 +12,28 @@ echo  ========================================
 echo.
 echo  Рекомендуется Chrome/Edge + этот сервер
 echo  (не file://) — для shared/ и FS Access API.
-echo  Адрес: http://127.0.0.1:8765
+echo  Адрес: http://127.0.0.1:%KRASAVIA_PORT%
 echo  Закройте окно, чтобы остановить сервер.
 echo.
 
 where py >nul 2>&1
 if %ERRORLEVEL%==0 (
-  start "" cmd /c "timeout /t 1 /nobreak >nul & start http://127.0.0.1:8765/index.html"
+  start "" cmd /c "timeout /t 1 /nobreak >nul & start http://127.0.0.1:%KRASAVIA_PORT%/index.html"
   if exist "%~dp0scripts\local-server.py" (
     py -3 "%~dp0scripts\local-server.py"
   ) else (
-    py -3 -m http.server 8765 --bind 127.0.0.1
+    py -3 -m http.server %KRASAVIA_PORT% --bind 127.0.0.1
   )
   goto :eof
 )
 
 where python >nul 2>&1
 if %ERRORLEVEL%==0 (
-  start "" cmd /c "timeout /t 1 /nobreak >nul & start http://127.0.0.1:8765/index.html"
+  start "" cmd /c "timeout /t 1 /nobreak >nul & start http://127.0.0.1:%KRASAVIA_PORT%/index.html"
   if exist "%~dp0scripts\local-server.py" (
     python "%~dp0scripts\local-server.py"
   ) else (
-    python -m http.server 8765 --bind 127.0.0.1
+    python -m http.server %KRASAVIA_PORT% --bind 127.0.0.1
   )
   goto :eof
 )

@@ -45,10 +45,13 @@ window.SharedStorage = (function () {
     // которое Chrome сбрасывает после перезапуска. null — ещё не проверяли.
     let serverWrite = null;
 
+    let capsFailedAt = 0;
     async function detectServerWrite() {
         if (serverWrite !== null) return serverWrite;
+        if (typeof location === 'undefined' || location.protocol !== 'http:') { serverWrite = false; return serverWrite; }
+        // Разовый сбой сети не отключает запись через сервер на всю сессию: повторяем не чаще раза в 30 с.
+        if (capsFailedAt && Date.now() - capsFailedAt < 30000) return false;
         serverWrite = false;
-        if (typeof location === 'undefined' || location.protocol !== 'http:') return serverWrite;
         try {
             const res = await fetch('./__krasavia/caps', { cache: 'no-store' });
             if (res.ok) {
@@ -56,7 +59,8 @@ window.SharedStorage = (function () {
                 serverWrite = !!caps.sharedWrite;
                 serverHistory = !!caps.history;
             }
-        } catch { serverWrite = false; }
+            capsFailedAt = 0;
+        } catch { serverWrite = null; capsFailedAt = Date.now(); return false; }
         if (serverWrite && !rootHandle) linkStatus = 'server';
         return serverWrite;
     }
@@ -82,16 +86,24 @@ window.SharedStorage = (function () {
         return typeof window.showDirectoryPicker === 'function' && window.isSecureContext;
     }
 
+    let idbPromise = null;
     function openIdb() {
-        return new Promise((resolve, reject) => {
+        if (idbPromise) return idbPromise;
+        idbPromise = new Promise((resolve, reject) => {
             const req = indexedDB.open(IDB_NAME, 1);
             req.onerror = () => reject(req.error);
             req.onupgradeneeded = () => {
                 const db = req.result;
                 if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
             };
-            req.onsuccess = () => resolve(req.result);
+            req.onsuccess = () => {
+                const db = req.result;
+                db.onversionchange = () => { db.close(); idbPromise = null; };
+                resolve(db);
+            };
         });
+        idbPromise.catch(() => { idbPromise = null; });
+        return idbPromise;
     }
 
     async function saveRootHandle(handle) {
@@ -515,14 +527,10 @@ window.SharedStorage = (function () {
         return ok;
     }
 
-    function buildSnapshotPayload(forShared = false) {
+    function buildSnapshotPayload() {
         if (!Object.keys(groupedData || {}).length) return null;
-        const canSharePii = typeof ProfileAuth !== 'undefined'
-            && ProfileAuth.hasPermission('share_data')
-            && ProfileAuth.hasPermission('sales_detail');
-        const salesDetailsOut = (forShared || !canSharePii)
-            ? (typeof Security !== 'undefined' ? Security.stripSalesPii(salesDetails) : {})
-            : salesDetails;
+        // В общий файл ПДн не попадают никогда.
+        const salesDetailsOut = typeof Security !== 'undefined' ? Security.stripSalesPii(salesDetails) : {};
         return {
             version: 1,
             savedAt: Date.now(),
@@ -564,7 +572,7 @@ window.SharedStorage = (function () {
     }
 
     async function saveSnapshot(announce) {
-        const payload = buildSnapshotPayload(true);
+        const payload = buildSnapshotPayload();
         if (!payload) return false;
         const ok = await writeViaHandle(SNAPSHOT_FILE, payload);
         if (announce && ok && typeof showToast === 'function') {
@@ -723,7 +731,6 @@ window.SharedStorage = (function () {
         saveActivity,
         loadActivityFromDataRoot,
         saveActivityToDataRoot,
-        mergeActivityEvents,
         ensureWritableLink,
         isLinked,
         needsLinkPrompt,

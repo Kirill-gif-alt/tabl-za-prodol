@@ -21,7 +21,7 @@
 // ═══════════════════════ МАТЕМАТИКА МОДЕЛИ ═══════════════════════
 // Обозначения (вылет i, горизонт h — дней до вылета):
 //   sᵢ — кресла, oᵢₕ — продано за h дней, fᵢ — итог (факт), pᵢ / qᵢₕ — файл ожидаемой: итог и значение на день h,
-//   yᵢₕ — прогноз по тем же дням недели, xᵢₕ ∈ ℝ³⁴ — признаки (см. features / FEATURE_GROUPS).
+//   yᵢₕ — прогноз по тем же дням недели, xᵢₕ — вектор признаков (см. features / FEATURE_GROUPS).
 //
 // (1) Цель — добор в долях кресел:      tᵢₕ = (fᵢ − oᵢₕ) / sᵢ
 //     Итог из прогноза добора:           f̂ᵢₕ = clamp(round(oᵢₕ + sᵢ·t̂ᵢₕ), oᵢₕ, sᵢ)   — не меньше проданного, не больше кресел.
@@ -42,9 +42,9 @@
 // (4) Градиентный бустинг деревьев с потерями Хьюбера:
 //     F₀ = median(t);   δ = max(0,02; Q₀,₉ |tᵢ − F₀|)
 //     для m = 1..M:  rᵢ = clip(tᵢ − Fₘ₋₁(xᵢ), −δ, δ)              (антиградиент Хьюбера: выбросы обрезаются)
-//                    hₘ = дерево глубины 3 по МНК на rᵢ, лист ≥ 12, пороги — 16 квантилей признака
+//                    hₘ = дерево по МНК на rᵢ (глубина, минимум записей в листе и число порогов — из параметров расчётов)
 //                    разбиение по максимуму  G = S_L²/A_L + S_R²/A_R − S²/A   (S = Σaᵢrᵢ, A = Σaᵢ в узле; лист = S/A)
-//                    Fₘ = Fₘ₋₁ + η·hₘ,    η = 0,08, M = 120
+//                    Fₘ = Fₘ₋₁ + η·hₘ,    η и число деревьев M — из параметров расчётов
 //     Важность признака: доля Σ G всех его разбиений во всех деревьях.
 //
 // (5) Ансамбль: t̂ = ½·(t̂_lin + t̂_gbm). Отдельной поправки рейса нет: она бралась по остаткам на тех же данных
@@ -96,8 +96,7 @@ window.ForecastLab = (function () {
     let loading = null;
     let loaded = false;
     let models = null;              // обученные на всём журнале (для карточки)
-    let evalState = { sig: '', ev: null, run: 0, busy: false, waiters: [] };
-    let rev = 0;
+    let evalState = { sig: '', ev: null, busy: false, waiters: [] };
     let modelRev = 0;               // растёт после каждого обучения — карточка, RMS и «Сегодня» берут новый прогноз
     let loadMonth = '';             // месяц, от которого считали окно журнала
     let failedMonths = 0;
@@ -127,13 +126,7 @@ window.ForecastLab = (function () {
 
     function pad(n) { return String(n).padStart(2, '0'); }
 
-    function plural(n, one, few, many) {
-        const a = Math.abs(n) % 100;
-        const b = a % 10;
-        if (a > 10 && a < 20) return many;
-        if (b > 1 && b < 5) return few;
-        return b === 1 ? one : many;
-    }
+    const plural = pluralRu;   // core-utils.js
 
     function monthOf(dateStr) {
         const d = parseLocalDate(dateStr);
@@ -290,7 +283,6 @@ window.ForecastLab = (function () {
     }
 
     function invalidate() {
-        rev++;
         routeTypeMemo.clear();
         lyMemoTrend.clear();
     }
@@ -351,7 +343,6 @@ window.ForecastLab = (function () {
                 const t = parseLocalDate(date);
                 if (!t || t.getTime() >= now || (from && t < from)) return;
                 const base = typeof getBaseFlight === 'function' ? getBaseFlight(code) : code;
-                if (byKey[date + '|' + base] && base === code) return;
                 // sF — кресла для признаков: у вылетов истории, где ёмкость подобрана по проданному, — обычные кресла рейса
                 // (иначе признак «ёмкость» знает итог вылета).
                 const sF = e.s0 || (e.se && !e.ac && SalesArchive.typicalSeats ? SalesArchive.typicalSeats(code) : 0) || e.s;
@@ -609,7 +600,6 @@ window.ForecastLab = (function () {
     // Признаки соседей на момент T (h — дней до вылета): [темп 7 дн., соседние даты, добор рейса за 4 недели, обратный, есть обратный].
     // T — начало дня прогноза: для живой записи — день среза данных, для восстановленной — день за h до вылета.
     function neighborFeatures(dep, h, T, live, o) {
-        const C = context();
         const s = dep.s || 1;
         // Темп за 7 дней — без групп: одна групповая бронь не значит, что рейс «вдруг пошёл».
         const v7 = Math.max(0, (rawAt(dep, h, T) - rawAt(dep, h + 7, T) - groupsBetween(dep, h, h + 7)) / s);
@@ -971,6 +961,7 @@ window.ForecastLab = (function () {
             const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
             const n = Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 2) - 1));
             for (let i = 0; i < n; i++) { const slot = { w: new Worker(url) }; gbmPool.slots.push(slot); gbmPool.free.push(slot); }
+            URL.revokeObjectURL(url);   // воркеры уже стартовали, ссылка больше не нужна
         } catch (e) { gbmPoolOff(); }
         return gbmPool;
     }
@@ -1630,9 +1621,13 @@ window.ForecastLab = (function () {
 
     // Прежний выбор способа — общий (из forecast-now.json), чтобы у всех администраторов был один и тот же прогноз;
     // нет общего — свой из браузера.
+    function loadChoiceLocal() {
+        try { return JSON.parse(localStorage.getItem(CHOICE_KEY) || '{}') || {}; } catch (e) { return {}; }
+    }
+
     function loadChoicePrev() {
         if (published.choice && typeof published.choice === 'object') return published.choice;
-        try { return JSON.parse(localStorage.getItem(CHOICE_KEY) || '{}') || {}; } catch (e) { return {}; }
+        return loadChoiceLocal();
     }
 
     function saveChoice(c) {
@@ -1799,7 +1794,7 @@ window.ForecastLab = (function () {
             const pool = poolAt(all, len);
             list.forEach(x => pools.set(x, pool));
             if (len < PV.MIN_TRAIN) continue;
-            // Новая модель — только когда данных прибавилось на 15%; иначе прежняя (она знает меньше — проверка остаётся честной).
+            // Новая модель — только когда данных прибавилось на 7%; иначе прежняя (она знает меньше — проверка остаётся честной).
             let m = lastModel;
             // Переобучение при +7% данных (раньше +15%): модель на проверке не отстаёт от недель на 1–2 месяца.
             if (!lastModel || len >= lastLen * 1.07) { m = await cachedTrain(all, len, cum); lastModel = m; lastLen = len; }
@@ -2189,10 +2184,8 @@ window.ForecastLab = (function () {
         };
         if (evalState.ev && evalState.sig === sig && !evalState.busy) { flush(); return; }
         if (evalState.busy) return;
-        const run = ++evalState.run;
         evalState.busy = true;
         evaluate().then(ev => {
-            if (run !== evalState.run) return;
             evalState.busy = false;
             if (trainSig() !== sig) { startEvaluation(); return; }
             evalState.ev = ev;
@@ -2204,7 +2197,7 @@ window.ForecastLab = (function () {
             flush();
         }).catch(e => {
             console.warn('ForecastLab.evaluate', e);
-            if (run === evalState.run) evalState.busy = false;
+            evalState.busy = false;
             flush();
         });
     }
@@ -2216,9 +2209,6 @@ window.ForecastLab = (function () {
     const NOW_FILE = 'forecast-now.json';
     let published = { token: '', flights: null, choice: null, at: '' };
 
-    function loadChoiceLocal() {
-        try { return JSON.parse(localStorage.getItem(CHOICE_KEY) || '{}') || {}; } catch (e) { return {}; }
-    }
     let publishedText = '';
     let publishTimer = 0;
 
@@ -2305,8 +2295,16 @@ window.ForecastLab = (function () {
     //   аномальный темп:  z = (o/s − m)/max(σ, 0,05),  |z| ≥ 2 и |o − m·s| ≥ 3 пасс., где m, σ — доля проданных к этому дню
     //   у вылетов того же рейса в тот же день недели за 8 недель (день уже наступил к моменту среза).
     //   Срочность: тяжесть / √(дней до вылета) — чем ближе вылет и сильнее отклонение, тем выше в списке.
+    // Свои пороги читаются из браузера один раз (predict вызывается по каждому вылету); сброс — при «Применить» и смене параметров.
+    let warnCache = null;
+    let warnCacheRev = -1;
     function warnSettings() {
-        try { return Object.assign({}, WARN_DEFAULT, JSON.parse(localStorage.getItem(WARN_KEY) || '{}') || {}); } catch (e) { return Object.assign({}, WARN_DEFAULT); }
+        const pr = typeof Params !== 'undefined' ? Params.revision() : 0;
+        if (!warnCache || warnCacheRev !== pr) {
+            warnCacheRev = pr;
+            try { warnCache = Object.assign({}, WARN_DEFAULT, JSON.parse(localStorage.getItem(WARN_KEY) || '{}') || {}); } catch (e) { warnCache = Object.assign({}, WARN_DEFAULT); }
+        }
+        return Object.assign({}, warnCache);
     }
 
     function paceNorm(dep, d, T) {
@@ -2423,7 +2421,7 @@ window.ForecastLab = (function () {
             if (p.team && p.team[0] && p.team[0].w >= 35) why.push(`на этом рейсе точнее всего: ${p.team[0].label} (${p.team[0].w}%)`);
             const comp = competitorOf(base, dep.ts);
             if (comp) why.push(`на линии ${comp}`);
-            const ev2 = typeof CalendarEvents !== 'undefined' && CalendarEvents.on ? CalendarEvents.on(dep.date).map(e => e.title || e.name || e.type).filter(Boolean) : [];
+            const ev2 = typeof CalendarEvents !== 'undefined' && CalendarEvents.on ? CalendarEvents.on(dep.date).map(e => e.name || e.type).filter(Boolean) : [];
             if (ev2.length) why.push(`календарь: ${ev2.slice(0, 2).join(', ')}`);
             if (!why.length) why.push(`прогноз: ${p.method}, обычно ошибается на ±${String(p.err).replace('.', ',')} пасс.`);
             // Что сделать.
@@ -2433,7 +2431,7 @@ window.ForecastLab = (function () {
             flags.forEach(g => {
                 if (g.kind === 'under') {
                     act.push('снизить цену / открыть дешёвые классы');
-                    const smaller = CAPS.filter(c => c < cap - 4 && c >= hiTop).pop();
+                    const smaller = CAPS.filter(c => c < cap - 4 && c >= hiTop)[0];   // наименьший подходящий тип ВС
                     if (smaller && dtd >= 5) act.push(`ВС на ${smaller} кресел вместит даже верхнюю оценку (${hiTop})`);
                 }
                 if (g.kind === 'over' && p.sold >= s) {
@@ -2803,7 +2801,7 @@ window.ForecastLab = (function () {
             ${f('Ошибка, % = Σ|<i>f̂</i> − <i>f</i>| / Σ<i>f</i>', 'Ошибка в процентах от всех перевезённых пассажиров — не «взрывается» на рейсах с малой загрузкой, в отличие от средней ошибки в процентах по рейсам.')}
             ${f('обучение: вылеты с датой ≤ понедельник(дата − <i>h</i>) − 1 день', 'Честная проверка: прогноз за <i>h</i> дней модель делает, зная только вылеты, улетевшие к тому моменту.')}
             ${f('MAE = (1/<i>N</i>)·Σ|<i>f̂</i> − <i>f</i>|, &nbsp; смещение = (1/<i>N</i>)·Σ(<i>f̂</i> − <i>f</i>)', 'Средняя ошибка в пассажирах и в какую сторону ошибается (↑ завышает, ↓ занижает).')}
-            ${f('<i>t</i> = −<i>d̄</i> / (<i>s<sub>d</sub></i>/√<i>n</i>) &gt; 1, &nbsp; <i>d<sub>i</sub></i> = |<i>e</i><sub>новый</sub>| − |<i>e</i><sub>прежний</sub>|', 'Способ меняется, только если новый надёжно точнее на тех же вылетах, а не случайно.')}
+            ${f('<i>t</i> = −<i>d̄</i> / (<i>s<sub>d</sub></i>/√<i>n</i>) &gt; порога (параметр «Смена способа»), &nbsp; <i>d<sub>i</sub></i> = |<i>e</i><sub>новый</sub>| − |<i>e</i><sub>прежний</sub>|', 'Способ меняется, только если новый надёжно точнее на тех же вылетах, а не случайно.')}
         </details>`;
     }
 
@@ -2959,6 +2957,7 @@ window.ForecastLab = (function () {
             const num = (id, lo, hi, def) => { const v = parseInt(document.getElementById(id) && document.getElementById(id).value, 10); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : def; };
             const cfg = { under: num('fl-w-under', 10, 95, WARN_DEFAULT.under), over: num('fl-w-over', 50, 100, WARN_DEFAULT.over), days: num('fl-w-days', 3, 30, WARN_DEFAULT.days) };
             try { localStorage.setItem(WARN_KEY, JSON.stringify(cfg)); } catch (e) { /* ignore */ }
+            warnCache = null;
             rerender();
             return true;
         }
@@ -2973,5 +2972,5 @@ window.ForecastLab = (function () {
         return true;
     }
 
-    return { canView, html, handleClick, capture, afterStart, afterDataLoad, afterHistoryImport, ensureLoaded, predict, warnings, warningsAsync, revision: () => rev, HORIZONS, evaluation: () => evalState.ev, modelRevision: () => modelRev, forecastFor, startEvaluation };
+    return { canView, html, handleClick, afterStart, afterDataLoad, afterHistoryImport, modelRevision: () => modelRev, forecastFor, ensureLoaded, capture, startEvaluation, evaluation: () => evalState.ev, predict, HORIZONS };
 })();

@@ -134,7 +134,10 @@ window.SharedOverrides = (function () {
             localStorage.setItem(localKey, JSON.stringify(payload));
         } catch { /* ignore */ }
         if (read.ok && typeof SharedStorage !== 'undefined' && SharedStorage.writeJsonFile) {
-            await SharedStorage.writeJsonFile(filename, payload);
+            const written = await SharedStorage.writeJsonFile(filename, payload);
+            if (!written && typeof showToast === 'function') showToast('Правка не записана в общую папку — видна только на этом ПК', 'error');
+        } else if (typeof showToast === 'function') {
+            showToast('Общий файл недоступен — правка видна только на этом ПК', 'error');
         }
         if (typeof SalesSync !== 'undefined') {
             try {

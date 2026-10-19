@@ -349,9 +349,6 @@ window.DataBoardFilters = (function () {
     }
 
     return {
-        load,
-        getRules,
-        setRules,
         restore,
         toSession,
         signature,

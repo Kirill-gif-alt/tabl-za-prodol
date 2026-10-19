@@ -21,7 +21,7 @@ function invalidateMetricsCache() {
         tabPanelState.pair = { flight: null, date: null, sig: '' };
     }
     if (typeof tableHtmlCache !== 'undefined') {
-        try { tableHtmlCache = { sig: '', html: '' }; } catch (_) { /* ignore */ }
+        try { tableHtmlCache = { sig: '', html: '' }; } catch { /* ignore */ }
     }
     // Данные поменялись — шапка тоже (обновление отложенное и одно на серию вызовов).
     if (typeof updateHeaderStatus === 'function') updateHeaderStatus();
@@ -117,14 +117,8 @@ function computeRowMetrics(row, base) {
     const salesReady = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(typeof dataLoadStatus !== 'undefined' && dataLoadStatus.sales);
     const s = typeof getSalesMapForRow === 'function' ? getSalesMapForRow(row) : (salesMap[k] || { today: 0, yesterday: 0 });
     const pickup = salesReady ? ((s.today || 0) + (s.yesterday || 0)) : null;
-    let avg = 0;
     const salesKey = typeof resolveSalesKey === 'function' ? resolveSalesKey(row) : k;
-    if (typeof getSalesAggForKey === 'function') {
-        avg = getSalesAggForKey(salesKey).avg;
-    } else {
-        const sl = typeof getSalesDetailsForRow === 'function' ? getSalesDetailsForRow(row) : (salesDetails[k] || []);
-        if (sl.length) avg = Math.round(sl.reduce((a, x) => a + (x.adjustedFare || x.fare), 0) / sl.length);
-    }
+    const avg = getSalesAggForKey(salesKey).avg;
 
     let alertLevel = 0;
     let alertReason = '';
@@ -157,18 +151,8 @@ function isFlightNeedsAttention(row, base) {
 }
 
 function getRowDelta(row, base) {
-    const date = row[1];
-    const free = parseInt(row[6] || 0);
-    const ac = getAircraftType(row[4]);
-    const cap = getCapacityFromAircraft(ac);
-    const du0 = getDaysUntil(date);
-    const du = du0 != null && typeof observedFromDtd === 'function' ? Math.max(du0, observedFromDtd(date)) : du0;
-    const wk = getWeekForExpectedLoad(date);
-    const ev = getExpectedLoad(cap, base, du, wk);
-    const seatsOnSale = typeof getSeatsOnSale === 'function' ? getSeatsOnSale(row) : 0;
-    const evR = ev !== null ? Math.ceil(seatsOnSale > 0 ? Math.min(ev, seatsOnSale) : ev) : null;   // как в getRowMetrics
-    const { delta } = getDeltaFromExpected(free, evR);
-    return delta !== null ? delta : 999;
+    const d = getRowMetrics(row, base).delta;
+    return d !== null && d !== undefined ? d : 999;
 }
 
 function getAllUpcomingFlights(daysAhead = 30) {
@@ -195,22 +179,9 @@ function getGlobalKPIs() {
     const key = `${getTodayDate()}|${metricsCacheKey}`;
     if (globalKpiCache && globalKpiCacheKey === key) return globalKpiCache;
 
-    const today = getTodayDate();
-    let todaySales = 0, todayRevenue = 0;
-    if (typeof PerfCache !== 'undefined') {
-        const kpi = PerfCache.getTodayKpi();
-        todaySales = kpi.sales;
-        todayRevenue = kpi.revenue;
-    } else {
-        Object.values(salesDetails).forEach(list => {
-            list.forEach(sale => {
-                if (sale.dealDate === today) {
-                    todaySales++;
-                    todayRevenue += (sale.adjustedFare || sale.fare || 0);
-                }
-            });
-        });
-    }
+    const kpi = PerfCache.getTodayKpi();
+    const todaySales = kpi.sales;
+    const todayRevenue = kpi.revenue;
     const upcoming = getAllUpcomingFlights(30);
     const alerts = upcoming.filter(f => f.alertLevel >= 2);
     const avgFare = todaySales > 0 ? Math.round(todayRevenue / todaySales) : 0;

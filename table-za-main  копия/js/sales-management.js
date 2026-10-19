@@ -918,13 +918,13 @@ window.SalesManagement = (function () {
         }
     }
 
-    // Месяцы, за которые нужны отметки: от начала столбцов до сегодня (не больше трёх).
+    // Месяцы, за которые нужны отметки: от начала столбцов до сегодня (не больше четырёх: 90 дней журнала решений).
     function neededMonths() {
         const out = [];
         const today = typeof parseLocalDate === 'function' ? parseLocalDate(columnTodayStr()) : null;
         if (!today) return out;
         const from = parseLocalDate(colsFromValue()) || today;
-        const start = new Date(Math.max(from.getTime(), new Date(today.getFullYear(), today.getMonth() - 2, 1).getTime()));
+        const start = new Date(Math.max(from.getTime(), new Date(today.getFullYear(), today.getMonth() - 3, 1).getTime()));
         for (let d = new Date(start.getFullYear(), start.getMonth(), 1); d <= today; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) {
             out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
         }
@@ -1281,18 +1281,6 @@ function repaintSalesCell(flight, dep, check) {
     if (td) paintSalesCellList(td, SalesManagement.getMarks(flight, dep, check));
 }
 
-function paintSalesCell(td, mark) {
-    td.classList.remove('sm-st-keep', 'sm-st-attn', 'sm-st-down', 'sm-st-up');
-    if (mark && SalesManagement.STATUSES[mark.status]) {
-        td.classList.add('sm-st-' + mark.status);
-        td.textContent = salesCellText(mark);
-        td.title = SalesManagement.STATUSES[mark.status].label + (mark.author ? ' · ' + mark.author : '');
-    } else {
-        td.textContent = '';
-        td.title = td.dataset.edit === '1' ? 'Не проверен — нажмите, чтобы отметить' : 'Не проверен';
-    }
-}
-
 let salesGridStale = false;
 
 function closeSalesPopover() {
@@ -1373,6 +1361,14 @@ function openSalesPopover(td) {
     }, 0);
 }
 
+// Отметка из окна УП: журнал действий и событие для карточки рейса, RMS и отчётов (как у быстрой отметки).
+function salesAnnounceMark(flight, dep, status) {
+    if (typeof ActivityLog !== 'undefined') {
+        ActivityLog.log('sales_mark', `${flight} ${dep}: ${status ? SalesManagement.STATUSES[status].label : 'снята'}`);
+    }
+    document.dispatchEvent(new CustomEvent('krasavia:mark', { detail: { code: flight, date: dep, status } }));
+}
+
 function currentPopoverStatus() {
     const on = document.querySelector('#sm-pop [data-status].sm-status-on');
     return on ? on.dataset.status : '';
@@ -1408,6 +1404,7 @@ function applySalesPopover(closeAfter) {
         else localStorage.removeItem(SALES_SIG_KEY);
     } catch { /* ignore */ }
     repaintSalesCell(flight, dep, check);
+    salesAnnounceMark(flight, dep, status);
     if (typeof updateHeaderStatus === 'function') updateHeaderStatus(); // счётчик «☀» в шапке
     const clearBtn = document.getElementById('sm-pop-clear');
     if (clearBtn) clearBtn.hidden = false;
@@ -1457,6 +1454,7 @@ function ensureSalesPopover() {
             const author = authorInput && authorInput.dataset.touched === '1' ? (authorInput.value || '') : '';
             SalesManagement.clearMark(flight, dep, check, author);
             repaintSalesCell(flight, dep, check);
+            salesAnnounceMark(flight, dep, null);
             if (typeof updateHeaderStatus === 'function') updateHeaderStatus();
             closeSalesPopover();
             return;
@@ -1589,7 +1587,7 @@ function renderSalesGrid() {
     }).join('');
     const editable = SalesManagement.canEdit();
     // Администратор отмечает вылеты для вкладки «Запрос на понижение» (галочка у номера рейса).
-    const lrOn = typeof LowerRequest !== 'undefined' && LowerRequest.isAdmin();
+    const lrOn = typeof LowerRequest !== 'undefined' && LowerRequest.canUse();
     if (lrOn && !salesLrReady) { salesLrReady = true; LowerRequest.ensureLoaded().then(() => renderSalesGrid()); }
     const body = flight.departures.map(dep => {
         const cells = flight.checks.map(check => {
@@ -2182,8 +2180,7 @@ function salesFlightWorksheet(lib, flight, stamp, colored) {
         for (let r = range.s.r; r <= range.e.r; r++) {
             const kindRow = kinds[r] || [];
             const lastCol = r < legend.count ? 1 : (r === stampRow ? 4 : tableCols - 1);
-            for (let c = 0; c <= Math.max(range.e.c, lastCol); c++) {
-                if (c > lastCol) continue;
+            for (let c = 0; c <= lastCol; c++) {
                 const addr = lib.utils.encode_cell({ r, c });
                 const cell = ws[addr] || { t: 's', v: '' };
                 const kind = kindRow[c] || (r === stampRow ? 'title' : 'empty');

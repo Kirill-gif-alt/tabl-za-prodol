@@ -11,7 +11,6 @@ window.FlightRegistry = (function () {
     const TYPES = { auto: 'по городам', krai: 'краевой', interregional: 'межрегиональный', international: 'международный (МВЛ)' };
 
     let entries = {};     // код туда → { code, from, to, back, extras[], backExtras[], type, deleted, at, by }
-    let loaded = false;
     let rev = 0;
 
     function profileName() {
@@ -122,7 +121,6 @@ window.FlightRegistry = (function () {
         const r = await SharedStorage.readJsonFileStrict(FILE).catch(() => ({ ok: false }));
         if (!r.ok) return;
         entries = mergeInto({}, r.data && r.data.flights);
-        loaded = true;
         applyAll();
         regroup();
     }
@@ -139,7 +137,6 @@ window.FlightRegistry = (function () {
         const okWrite = await SharedStorage.writeJsonFile(FILE, { version: 1, updatedAt: new Date().toISOString(), flights: merged });
         if (!okWrite) return { ok: false, error: 'Не удалось записать flights.json' };
         entries = mergeInto({}, merged);
-        loaded = true;
         applyAll();
         regroup();
         return { ok: true };
@@ -203,5 +200,5 @@ window.FlightRegistry = (function () {
         return !!BUILTIN_DIRS[c];
     }
 
-    return { TYPES, list, load, save, remove, suggestBack, builtinPairs, isBuiltin, canEdit, codes, isLoaded: () => loaded, revision: () => rev, get: (c) => entries[c] && !entries[c].deleted ? entries[c] : null };
+    return { TYPES, list, load, save, remove, suggestBack, builtinPairs, isBuiltin, canEdit, codes, revision: () => rev, get: (c) => entries[c] && !entries[c].deleted ? entries[c] : null };
 })();

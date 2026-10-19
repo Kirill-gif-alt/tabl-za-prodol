@@ -23,11 +23,6 @@ window.FareRefs = (function () {
         return /^KV-\d{1,6}$/.test(code) ? code : '';
     }
 
-    function cleanDate(v) {
-        const d = typeof normalizeDate === 'function' ? normalizeDate(v) : String(v || '');
-        return d && typeof parseLocalDate === 'function' && parseLocalDate(d) ? d : '';
-    }
-
     function cleanText(v, max) {
         const raw = typeof Security !== 'undefined' && Security.sanitizeTextInput
             ? Security.sanitizeTextInput(v, max)
@@ -221,7 +216,7 @@ window.FareRefs = (function () {
 
     // Запись для рейса (по базовому номеру). Даты не смотрятся: проверка и так идёт только по
     // субсидированным датам из «Периодов субсидии». Если записей несколько — самая свежая.
-    function find(code, date, mode) {
+    function find(code, mode) {
         const fl = cleanCode(code);
         if (!fl) return null;
         let best = null;
@@ -234,12 +229,12 @@ window.FareRefs = (function () {
 
     // Предельный тариф для рейса на дату.
     function match(code, date) {
-        return find(code, date, 'limit');
+        return find(code, 'limit');
     }
 
     // Исключение: рейс на эту дату не считается субсидированным.
     function isExcluded(code, date) {
-        return find(code, date, 'exclude');
+        return find(code, 'exclude');
     }
 
     function list() {

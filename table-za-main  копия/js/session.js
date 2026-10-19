@@ -12,8 +12,10 @@ window.SessionStore = (function () {
     let snapshotSaving = false;
     let snapshotQueued = false;
 
+    let idbPromise = null;
     function openDb() {
-        return new Promise((resolve, reject) => {
+        if (idbPromise) return idbPromise;
+        idbPromise = new Promise((resolve, reject) => {
             const req = indexedDB.open(IDB_NAME, 1);
             req.onerror = () => reject(req.error);
             req.onupgradeneeded = () => {
@@ -22,8 +24,14 @@ window.SessionStore = (function () {
                     db.createObjectStore(IDB_STORE);
                 }
             };
-            req.onsuccess = () => resolve(req.result);
+            req.onsuccess = () => {
+                const db = req.result;
+                db.onversionchange = () => { db.close(); idbPromise = null; };
+                resolve(db);
+            };
         });
+        idbPromise.catch(() => { idbPromise = null; });
+        return idbPromise;
     }
 
     let uiSessionSaveTimer = null;
@@ -90,12 +98,6 @@ window.SessionStore = (function () {
                     if (typeof s.pairColVisibility[k] === 'boolean') pairColVisibility[k] = s.pairColVisibility[k];
                 });
                 // старое expenses = один суммарный столбец → теперь totalExpenses
-                if (typeof s.pairColVisibility.totalExpenses !== 'boolean'
-                    && typeof s.pairColVisibility.expenses === 'boolean'
-                    && !('expenses' in s.pairColVisibility && 'totalExpenses' in s.pairColVisibility)) {
-                    // если в снимке только старый ключ expenses — переносим в общие
-                    // (новый expenses по ноге по умолчанию выкл.)
-                }
                 if (s.pairColVisibility.totalExpenses === undefined
                     && s.pairColVisibility.expenses === true
                     && s.pairColVisibility._expensesIsLeg !== true) {
@@ -345,17 +347,6 @@ window.SessionStore = (function () {
         }
     }
 
-    async function flushSnapshotSave(announceShared = false) {
-        if (snapshotTimer) {
-            clearTimeout(snapshotTimer);
-            snapshotTimer = null;
-        }
-        if (announceShared) snapshotAnnounce = true;
-        const announce = snapshotAnnounce;
-        snapshotAnnounce = false;
-        return runQueuedSnapshotSave(announce);
-    }
-
     async function loadSnapshot() {
         try {
             const db = await openDb();
@@ -552,22 +543,14 @@ window.SessionStore = (function () {
                 uiSessionSaveTimer = null;
                 saveUiSessionNow();
             }
-            if (snapshotTimer || snapshotSaving || snapshotQueued) {
-                flushSnapshotSave(false).catch(() => {});
-            }
         });
     }
 
     return {
         saveUiSession,
-        restoreUiSession,
         hasSnapshot,
         saveSnapshot,
         scheduleSnapshotSave,
-        flushSnapshotSave,
-        saveLocalSnapshot,
-        publishSharedSnapshot,
-        loadSnapshot,
         applySnapshot,
         restoreLastData,
         initOnStartup,

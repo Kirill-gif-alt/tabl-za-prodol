@@ -1,7 +1,7 @@
 // Журнал действий пользователей (локально + shared/activity.json)
 window.ActivityLog = (function () {
     const LOCAL_KEY = 'krasavia_activity_v1';
-    const MAX_EVENTS = 800;
+    const MAX_EVENTS = 2000;   // как в общем файле (shared-storage.js)
 
     const ACTION_LABELS = {
         login: 'Вход',
@@ -101,14 +101,16 @@ window.ActivityLog = (function () {
 
         let shared = [];
         if (typeof SharedStorage !== 'undefined') {
-            shared = await SharedStorage.loadActivity() || [];
-            if (typeof SalesSync !== 'undefined') {
-                const dataDir = SalesSync.getDataRootHandle?.() || await SalesSync.restoreDataFolderHandle?.();
-                if (dataDir && SharedStorage.loadActivityFromDataRoot) {
-                    const extra = await SharedStorage.loadActivityFromDataRoot(dataDir);
-                    shared = mergeEvents(shared, extra);
+            try {
+                shared = await SharedStorage.loadActivity() || [];
+                if (typeof SalesSync !== 'undefined') {
+                    const dataDir = SalesSync.getDataRootHandle?.() || await SalesSync.restoreDataFolderHandle?.();
+                    if (dataDir && SharedStorage.loadActivityFromDataRoot) {
+                        const extra = await SharedStorage.loadActivityFromDataRoot(dataDir);
+                        shared = mergeEvents(shared, extra);
+                    }
                 }
-            }
+            } catch (e) { console.warn('ActivityLog.loadAll', e); }
         }
 
         // Пока ждали сеть, log() мог дописать событие в cache — сохраняем и его.
@@ -431,10 +433,7 @@ window.ActivityLog = (function () {
 
     return {
         log,
-        loadAll,
-        syncWithShared,
         startBackgroundSync,
-        ACTION_LABELS,
         TAB_LABELS,
         renderInto
     };

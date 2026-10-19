@@ -463,5 +463,5 @@ window.FlightSearch = (function () {
         }
     });
 
-    return { attach, search, open, openPalette, closePalette, remember, recent };
+    return { attach, remember };
 })();

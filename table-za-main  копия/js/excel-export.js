@@ -1,4 +1,4 @@
-// js\excel-export.js - extracted from script.js, logic unchanged.
+// js\excel-export.js - выгрузки в Excel.
 // Globals on purpose: no bundler; onclick and other files call by name.
 
 /** Не давать Excel исполнять =cmd| и формулы из ячеек-текста. Числа не трогаем. */
@@ -1040,11 +1040,13 @@ async function dataHistLoad(key) {
     }
     try {
         const db = await dataHistDb();
-        return await new Promise((resolve) => {
-            const req = db.transaction('sheets', 'readonly').objectStore('sheets').get(key);
-            req.onsuccess = () => resolve(req.result || {});
-            req.onerror = () => resolve({});
-        });
+        try {
+            return await new Promise((resolve) => {
+                const req = db.transaction('sheets', 'readonly').objectStore('sheets').get(key);
+                req.onsuccess = () => resolve(req.result || {});
+                req.onerror = () => resolve({});
+            });
+        } finally { db.close(); }
     } catch (e) { return {}; }
 }
 
@@ -1058,12 +1060,14 @@ async function dataHistSave(key, map) {
     }
     try {
         const db = await dataHistDb();
-        await new Promise((resolve) => {
-            const tx = db.transaction('sheets', 'readwrite');
-            tx.objectStore('sheets').put(map, key);
-            tx.oncomplete = resolve;
-            tx.onerror = resolve;
-        });
+        try {
+            await new Promise((resolve) => {
+                const tx = db.transaction('sheets', 'readwrite');
+                tx.objectStore('sheets').put(map, key);
+                tx.oncomplete = resolve;
+                tx.onerror = resolve;
+            });
+        } finally { db.close(); }
     } catch (e) { /* без истории — просто файл за сегодня */ }
 }
 
@@ -1221,7 +1225,6 @@ async function exportTableToExcel(tableElement, filename = 'КРАСАВИА_э�
         const aoa = [[`Дата выгрузки: ${stamp}`]].concat(body);
         const ws = lib.utils.aoa_to_sheet(aoa.map(excelSafeRow));
         const leftCols = new Set();
-        const head = body[0] || [];
         for (let r = 0; r < parsed.headerRows; r++) {
             (body[r] || []).forEach((label, index) => {
                 if (excelLeftHeader(label)) leftCols.add(index);
@@ -1236,8 +1239,9 @@ async function exportTableToExcel(tableElement, filename = 'КРАСАВИА_э�
                 freezeCols: 1
             });
         }
-        const wb = excelSafeWorkbook(lib.utils.book_new());
+        const wb = lib.utils.book_new();
         lib.utils.book_append_sheet(wb, ws, 'Данные');
+        excelSafeWorkbook(wb);
         const saved = await excelSaveWorkbook(lib, wb, filename, folder);
         excelAnnounceSaved(saved, `Файл готов, дата выгрузки ${stamp}`);
     } catch (e) {
@@ -1263,12 +1267,9 @@ function addExportButtonToTable(container, kind) {
         const live = container.querySelector('table.data-table');
         const table = (handle && typeof handle.getExportTable === 'function' && handle.getExportTable()) || live;
         if (table) {
-            const wasExpanded = table.classList.contains('table-extra-expanded');
             const isPair = table.classList.contains('pair-table');
-            if (isPair && !wasExpanded) table.classList.add('table-extra-expanded');
             const day = typeof getTodayDate === 'function' ? getTodayDate() : excelExportStamp();
             exportTableToExcel(table, excelDailyFilename(`КРАСАВИА_${currentFlight || 'рейсы'}`, day), kind || (isPair ? 'pair' : 'table'));
-            if (isPair && !wasExpanded) table.classList.remove('table-extra-expanded');
         }
     };
     const bar = document.createElement('div');

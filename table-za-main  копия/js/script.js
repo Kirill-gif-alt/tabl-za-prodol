@@ -32,108 +32,6 @@ let pairColVisibility = {
     finResult: false       // фин. рез — последний столбец
 };
 
-// Избранные рейсы — отдельно для каждого профиля (localStorage)
-let pinnedFlights = new Set();
-
-function getPinnedStorageKey() {
-    const id = (typeof ProfileAuth !== 'undefined' && ProfileAuth.getCurrentProfile()?.id) || 'guest';
-    return `krasavia_pinned_${id}`;
-}
-
-function loadPinnedFlights() {
-    try {
-        pinnedFlights = new Set(JSON.parse(localStorage.getItem(getPinnedStorageKey()) || '[]'));
-    } catch {
-        pinnedFlights = new Set();
-    }
-}
-
-let flightOpenMode = 'table';
-
-function getFlightOpenModeStorageKey() {
-    const id = (typeof ProfileAuth !== 'undefined' && ProfileAuth.getCurrentProfile()?.id) || 'guest';
-    return `krasavia_open_mode_${id}`;
-}
-
-function loadFlightOpenMode() {
-    try {
-        const saved = localStorage.getItem(getFlightOpenModeStorageKey());
-        flightOpenMode = saved === 'pair' ? 'pair' : 'table';
-    } catch {
-        flightOpenMode = 'table';
-    }
-    if (typeof updateFlightOpenModeUI === 'function') updateFlightOpenModeUI();
-}
-
-function saveFlightOpenMode() {
-    try {
-        localStorage.setItem(getFlightOpenModeStorageKey(), flightOpenMode);
-    } catch { /* ignore */ }
-}
-
-function setFlightOpenMode(mode, persist = true) {
-    if (mode !== 'table' && mode !== 'pair') return;
-    flightOpenMode = mode;
-    if (persist) saveFlightOpenMode();
-    updateFlightOpenModeUI();
-}
-
-function updateFlightOpenModeUI() {
-    const wrap = document.getElementById('flight-open-mode');
-    if (!wrap) return;
-
-    const canTable = typeof ProfileAuth === 'undefined' || ProfileAuth.canAccessTab('table');
-    const canPair = typeof ProfileAuth === 'undefined' || ProfileAuth.canAccessTab('pair');
-
-    if (!canTable && !canPair) {
-        wrap.style.display = 'none';
-        return;
-    }
-    wrap.style.display = '';
-
-    const btnTable = document.getElementById('flight-open-mode-table');
-    const btnPair = document.getElementById('flight-open-mode-pair');
-    if (btnTable) btnTable.style.display = canTable ? '' : 'none';
-    if (btnPair) btnPair.style.display = canPair ? '' : 'none';
-
-        if (flightOpenMode === 'pair' && !canPair) {
-        flightOpenMode = canTable ? 'table' : 'pair';
-        saveFlightOpenMode();
-    } else if (flightOpenMode === 'table' && !canTable) {
-        flightOpenMode = 'pair';
-        saveFlightOpenMode();
-    }
-
-    btnTable?.classList.toggle('active', flightOpenMode === 'table');
-    btnPair?.classList.toggle('active', flightOpenMode === 'pair');
-}
-
-function resolveFlightOpenTab() {
-    let mode = flightOpenMode;
-    if (typeof ProfileAuth !== 'undefined') {
-        const canTable = ProfileAuth.canAccessTab('table');
-        const canPair = ProfileAuth.canAccessTab('pair');
-        if (mode === 'pair' && !canPair) mode = canTable ? 'table' : null;
-        if (mode === 'table' && !canTable) mode = canPair ? 'pair' : null;
-        if (!mode) return ProfileAuth.getFirstAllowedTab() || 'main';
-    }
-    return mode === 'pair' ? 'pair' : 'table';
-}
-
-function initFlightOpenModeUI() {
-    const btnTable = document.getElementById('flight-open-mode-table');
-    const btnPair = document.getElementById('flight-open-mode-pair');
-    if (btnTable && !btnTable.dataset.bound) {
-        btnTable.dataset.bound = '1';
-        btnTable.addEventListener('click', () => setFlightOpenMode('table'));
-    }
-    if (btnPair && !btnPair.dataset.bound) {
-        btnPair.dataset.bound = '1';
-        btnPair.addEventListener('click', () => setFlightOpenMode('pair'));
-    }
-}
-
-
 let dataRouteTypeFilter = 'all';
 let dataSort = 'route-asc';
 let dataHideFlew = false;
@@ -225,15 +123,7 @@ function appendPkzAdjustPanel(resultDiv, baseFlight, flyDateStr, flightCode) {
 /** Скрыть плашку «кол-во / сумма / среднее» (например при детализации) */
 function hideSelectionStatusBar() {
     document.getElementById('selection-status-bar')?.classList.remove('is-visible');
-    if (typeof clearActiveTableSelection === 'function') {
-        clearActiveTableSelection();
-        return;
-    }
-    const marked = document.getElementsByClassName('tbl-sel');
-    if (!marked.length) return;
-    Array.from(marked).forEach((el) => {
-        el.classList.remove('tbl-sel', 'tbl-sel-col', 'tbl-sel-row', 'tbl-sel-cell');
-    });
+    if (typeof clearActiveTableSelection === 'function') clearActiveTableSelection();
 }
 
 function getExpectedLoadForFlightDate(baseFlight, flyDateStr, aircraftCode) {
@@ -245,7 +135,6 @@ function getExpectedLoadForFlightDate(baseFlight, flyDateStr, aircraftCode) {
 }
 
 let dataLoadStatus = { availability: false, closed: false, sales: false, expected: false, weights: false, children: false, costs: false, subsidy: false };
-let tableFlightSearchQuery = '';
 let salesChartPeriodDays = 30;
 
 // Липкие шапки таблиц из нескольких строк: каждая нижняя строка прилипает ровно под верхней —
@@ -283,7 +172,6 @@ let salesChartPeriodDays = 30;
 
 function updateHeaderStatus() {
     const statusBar = document.getElementById('data-status-bar');
-    const kpiBar = document.getElementById('header-kpi');
     if (statusBar) {
         const ready = !!dataLoadStatus.availability && Object.keys(groupedData || {}).length > 0;
         statusBar.hidden = !ready;
@@ -376,23 +264,6 @@ function refreshHeaderForToday() {
 document.addEventListener('visibilitychange', refreshHeaderForToday);
 setInterval(refreshHeaderForToday, 5 * 60 * 1000);
 
-function savePinnedFlights() {
-    try {
-        localStorage.setItem(getPinnedStorageKey(), JSON.stringify([...pinnedFlights]));
-    } catch (e) { /* ignore */ }
-}
-
-function togglePinFlight(base, event) {
-    event.stopImmediatePropagation();
-    if (pinnedFlights.has(base)) {
-        pinnedFlights.delete(base);
-    } else {
-        pinnedFlights.add(base);
-    }
-    savePinnedFlights();
-}
-
-
 let tableHtmlCache = { sig: '', html: '' };
 
 function getExpectedLoad(cap,fl,du,wk){if(du===null||du<0)return null;let k=`${cap}|${fl}|${du}|${wk}`;if(expectedLoadData[k]!==undefined)return expectedLoadData[k];for(let o of[-1,1]){if(expectedLoadData[`${cap}|${fl}|${du+o}|${wk}`]!==undefined)return expectedLoadData[`${cap}|${fl}|${du+o}|${wk}`]}for(let o of[-1,1]){if(expectedLoadData[`${cap}|${fl}|${du}|${wk+o}`]!==undefined)return expectedLoadData[`${cap}|${fl}|${du}|${wk+o}`]}return null}
@@ -402,10 +273,6 @@ function emptySalesBucket() {
     return { today: 0, yesterday: 0, day2: 0, d7: 0, d14: 0, d30: 0 };
 }
 
-/**
- * Пересчёт salesMap / KPI из salesDetails по текущей дате.
- * Нужен после восстановления снимка: «сегодня/вчера» в snapshot устаревают на следующий день.
- */
 let salesAggregatesBuiltFor = null;
 
 // Агрегаты уже посчитаны по этим же продажам и на эту же дату — повторный пересчёт не нужен.
@@ -415,6 +282,10 @@ function salesAggregatesFresh() {
         && salesAggregatesBuiltFor.today === getTodayDate();
 }
 
+/**
+ * Пересчёт salesMap / KPI из salesDetails по текущей дате.
+ * Нужен после восстановления снимка: «сегодня/вчера» в snapshot устаревают на следующий день.
+ */
 function rebuildSalesAggregatesFromDetails() {
     const details = salesDetails || {};
     salesAggregatesBuiltFor = { details: salesDetails, today: getTodayDate() };
@@ -470,7 +341,6 @@ function rebuildSalesAggregatesFromDetails() {
     salesMap = nextMap;
     const hasSales = Object.keys(salesMap).length > 0;
     if (typeof dataLoadStatus !== 'undefined') {
-        dataLoadStatus.sales = hasSales || !!dataLoadStatus.sales;
         if (hasSales) dataLoadStatus.sales = true;
     }
     tableHtmlCache = { sig: '', html: '' };
@@ -492,28 +362,12 @@ function toggleReturnFlight() {
     const pair = getFlightPair(currentFlight);
     if (!pair?.inbound || !pair?.outbound) return;
     const next = currentFlight === pair.outbound ? pair.inbound : pair.outbound;
-    if (!isValidFlightBase(next) && !groupedData[getBaseFlight(next)]) {
-        // still try open if data under base bucket
-    }
-    const target = (groupedData[getBaseFlight(next)] || []).length ? next
-        : ((groupedData[getBaseFlight(pair.outbound)] || []).length ? (currentFlight === pair.outbound ? pair.inbound : pair.outbound) : null);
+    const target = (groupedData[getBaseFlight(next)] || []).length ? next : null;
     if (!target) {
         if (typeof showToast === 'function') showToast('Обратный рейс не найден в данных', 'error');
         return;
     }
     selectFlight(target, lastSelectedDate);
-}
-
-function switchToTableFlightBySearch(query) {
-    const q = String(query || '').trim().toLowerCase().replace(/[^\d]/g, '');
-    if (!q) return;
-    const want = 'KV-' + parseInt(q, 10);
-    if (!want || want === 'KV-NaN') return;
-    const bases = getValidFlightBases();
-    const hit = bases.find(b => b === want || b.replace('KV-', '') === q)
-        || bases.find(b => getBaseFlight(b) === getBaseFlight(want));
-    if (hit) selectFlight(hit, lastSelectedDate);
-    else if (typeof showToast === 'function') showToast('Рейс не найден: ' + want, 'error');
 }
 
 
@@ -740,16 +594,7 @@ function refreshCurrentView(){
         } else {
             refreshTabPanel(currentTab);
         }
-    } else if(currentTab==='main'){
-        if(typeof renderTimeline==='function')renderTimeline();
     }
-    else if(currentTab==='rms')renderRmsWatchlist();
-    else if(currentTab==='home'&&typeof NetworkMap!=='undefined')NetworkMap.refresh();
-    else if(currentTab==='pair'&&currentFlight)actuallyRenderPairTable(currentFlight,lastSelectedDate);
-    else if(currentTab==='table'&&currentFlight)actuallyRenderTable(currentFlight,lastSelectedDate);
-    else if(currentTab==='pkz'&&currentFlight)actuallyRenderPkzTable(currentFlight,lastSelectedDate);
-    else if(currentTab==='data'&&typeof renderDataBoard==='function')renderDataBoard();
-    else if(currentTab==='costs'&&typeof refreshCostCalc==='function')refreshCostCalc();
     updateHeaderStatus();
 }
 
@@ -841,7 +686,6 @@ async function startAppAfterLogin() {
 window.onload=()=>{
     setTimeout(async ()=>{
         applyChartRuLocale();
-        initFlightOpenModeUI();
         initKeyboardShortcuts();
         initSelectionStatusBar();
         bindGlobalZoomControls();

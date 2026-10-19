@@ -475,16 +475,6 @@ window.ReportsView = (function () {
     let refEditId = '';
     let refPrefill = '';
 
-    function isoOf(ruDate) {
-        const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(String(ruDate || ''));
-        return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
-    }
-
-    function ruOf(isoDate) {
-        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(isoDate || ''));
-        return m ? `${m[3]}.${m[2]}.${m[1]}` : '';
-    }
-
     function pairOf(code) {
         if (typeof getFlightPair !== 'function') return '';
         const p = getFlightPair(code);
@@ -789,11 +779,10 @@ window.ReportsView = (function () {
         const sec = style(SECTION, 'FFFFFF', true, 'left');
         const pct = (v) => (v == null ? '' : v);   // число, а не «67%»: в Excel его можно сортировать и складывать
         const block = (r, title, groups, keyLabel) => {
-            const noMoney = true;   // рубли по решениям не считаются
             s.title(r++, title, 8, sec);
-            const head = [keyLabel, 'Решений', 'С итогом', 'Можно судить', 'Сработало', 'Сработало, %', 'Средний итог, бил.'].concat(noMoney ? [] : ['Выручка к «без решений», ₽']);
+            const head = [keyLabel, 'Решений', 'С итогом', 'Можно судить', 'Сработало', 'Сработало, %', 'Средний итог, бил.'];
             return s.table(r, head,
-                groups.map(g => ({ cells: [g.key, g.n, g.done, g.judged, g.good, pct(g.share), g.avg == null ? '' : g.avg].concat(noMoney ? [] : [g.money == null ? '' : g.money]) }))) + 1;
+                groups.map(g => ({ cells: [g.key, g.n, g.done, g.judged, g.good, pct(g.share), g.avg == null ? '' : g.avg] }))) + 1;
         };
         let r = 0;
         s.title(r++, head, 8, style('FFFFFF', NAVY, true, 'left'));
@@ -802,7 +791,7 @@ window.ReportsView = (function () {
         r = block(r, 'Итого', [{ key: 'Все решения', ...t }], 'Решения');
         r = block(r, 'По типу решения', d.byKind, 'Решение');
         r = block(r, 'По направлениям', d.byDir, 'Направление');
-        block(r, 'По людям', d.byAuthor, 'Кто', true);
+        block(r, 'По людям', d.byAuthor, 'Кто');
         const wsS = s.finish([34, 10, 10, 13, 11, 13, 17, 24], 0);
         const wb = lib.utils.book_new();
         lib.utils.book_append_sheet(wb, wsJ, 'Журнал');
@@ -973,7 +962,6 @@ window.ReportsView = (function () {
         const page = panel.querySelector('#rp-page');
         page.addEventListener('change', (event) => {
             if (typeof ReferenceView !== 'undefined' && ReferenceView.handleChange(event.target, renderBody)) return;
-            if (typeof DecisionsReport !== 'undefined' && DecisionsReport.handleChange(event.target, renderBody)) return;
             if (typeof SalesReconcile !== 'undefined' && SalesReconcile.handleChange(event.target, renderBody)) return;
             if (typeof PriceAdvisor !== 'undefined' && PriceAdvisor.handleChange(event.target, renderBody)) return;
             if (event.target.id === 'rp-ref-flight') { syncPairLabel(); return; }
@@ -1081,7 +1069,7 @@ window.ReportsView = (function () {
         if (document.getElementById('rp-page')) renderBody();
     }
 
-    return { create, refresh, showSubtab, buildEconReport, weekBounds, exportEcon, exportData, exportSales, exportChecks };
+    return { create, refresh, showSubtab };
 })();
 
 function createReportsView(panel) {

@@ -3,7 +3,6 @@ window.FlightComments = (function () {
     const FILE = 'flight-comments.json';
     const LOCAL_KEY = 'krasavia_flight_comments';
     let cache = { version: 1, updatedAt: null, comments: {} };
-    let loaded = false;
 
     function commentKey(flight, date) {
         const fl = typeof cleanFlight === 'function' ? cleanFlight(flight) : String(flight || '');
@@ -43,7 +42,6 @@ window.FlightComments = (function () {
                 comments: merged
             };
         }
-        loaded = true;
         return cache;
     }
 
@@ -55,23 +53,6 @@ window.FlightComments = (function () {
 
     function has(flight, date) {
         return !!String(get(flight, date) || '').trim();
-    }
-
-    function hasAnyForFlight(flightBase) {
-        const base = String(flightBase || '');
-        if (!base) return false;
-        const prefix = base + '|';
-        const n = parseInt(base.replace('KV-', ''), 10);
-        return Object.keys(cache.comments).some(k => {
-            if (!cache.comments[k]?.text?.trim()) return false;
-            if (k.startsWith(prefix)) return true;
-            if (n) {
-                const fl = k.split('|')[0] || '';
-                const fn = parseInt(String(fl).replace('KV-', ''), 10);
-                return fn === n || (typeof getBaseFlight === 'function' && getBaseFlight(fl) === getBaseFlight(base));
-            }
-            return false;
-        });
     }
 
     async function set(flight, date, text, author) {
@@ -101,7 +82,10 @@ window.FlightComments = (function () {
         } catch { /* ignore */ }
 
         if (read.ok && typeof SharedStorage.writeJsonFile === 'function') {
-            await SharedStorage.writeJsonFile(FILE, cache);
+            const written = await SharedStorage.writeJsonFile(FILE, cache);
+            if (!written && typeof showToast === 'function') showToast('Комментарий не записан в общую папку — виден только на этом ПК', 'error');
+        } else if (typeof showToast === 'function') {
+            showToast('Общий файл комментариев недоступен — комментарий виден только на этом ПК', 'error');
         }
         return true;
     }
@@ -128,5 +112,5 @@ window.FlightComments = (function () {
         });
     }
 
-    return { load, get, has, hasAnyForFlight, set, markRows, commentKey };
+    return { load, get, has, set, markRows, commentKey };
 })();

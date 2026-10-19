@@ -61,8 +61,7 @@ window.TabOrder = (function () {
     }
 
     function getStorageKey() {
-        const id = (typeof ProfileAuth !== 'undefined' && ProfileAuth.getCurrentProfile()?.id) || 'guest';
-        return STORAGE_PREFIX + id;
+        return STORAGE_PREFIX + profileId();
     }
 
     function load() {
@@ -116,14 +115,10 @@ window.TabOrder = (function () {
     }
 
     function canShowTab(id) {
-        if (id === 'home') {
-            return typeof ProfileAuth !== 'undefined' && ProfileAuth.canAccessTab('home');
+        if (id === 'home' || id === 'stats' || id === 'lowreq') {
+            return typeof ProfileAuth !== 'undefined' && !!ProfileAuth.canAccessTab(id);
         }
-        if (id === 'stats' || id === 'lowreq') {
-            return !!(typeof ProfileAuth !== 'undefined' && ProfileAuth.canAccessTab(id));
-        }
-        if (typeof ProfileAuth !== 'undefined') return ProfileAuth.canAccessTab(id);
-        return true;
+        return typeof ProfileAuth === 'undefined' || ProfileAuth.canAccessTab(id);
     }
 
     function getEditableTabs() {
@@ -166,7 +161,7 @@ window.TabOrder = (function () {
             `;
 
             container.querySelector('.tab-order-reset-btn')?.addEventListener('click', () => {
-                order = DEFAULT_ORDER.filter(id => (id !== 'stats' && id !== 'home' && id !== 'lowreq') || canShowTab(id));
+                order = DEFAULT_ORDER.filter(canShowTab);
                 names = {};
                 if (typeof onChange === 'function') onChange(order);
                 if (typeof onNames === 'function') onNames(names);

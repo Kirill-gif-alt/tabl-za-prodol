@@ -2,13 +2,14 @@
 let baggageWeightsData = {};
 /** key: "dd.mm.yyyy|KV-101" → count of children ages 2–12 from Дети.csv */
 let childrenByFlightDate = {};
+let childrenFileCount = 0;
 
 // Старый формат: A/B — города, D–O — багаж по месяцам (янв–дек)
 const BAGGAGE_MONTH_COL_DO = { 1: 3, 2: 4, 3: 5, 4: 6, 5: 7, 6: 8, 7: 9, 8: 10, 9: 11, 10: 12, 11: 13, 12: 14 };
 // Актуальный формат (Весовые.о): A — «Красноярск-Байкит», B–M — багаж (1–12)
 const BAGGAGE_MONTH_COL_BM = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11, 12: 12 };
 const BAGGAGE_HUB = 'Красноярск';
-/** Дети 2–12 лет — 30 кг (без багажа по ТЗ — только 30) */
+/** Дети 2–12 лет: PV.CHILD_WEIGHT_FIXED_KG + багаж по маршруту */
 
 const BAGGAGE_SECTION_MARKERS = new Set([
     'краевые',
@@ -251,10 +252,6 @@ function getAdultBaseWeightKg(month) {
     return isSummerWeightMonth(month) ? PV.ADULT_WEIGHT_SUMMER : PV.ADULT_WEIGHT_WINTER;
 }
 
-function getChildBaseWeightKg(_month) {
-    return PV.CHILD_WEIGHT_FIXED_KG;
-}
-
 function isPkzHorizonDate(dateStr) {
     if (typeof getDaysUntil !== 'function') return true;
     const d = getDaysUntil(dateStr);
@@ -283,11 +280,7 @@ function parseChildrenCsvText(text) {
         // skip header / period lines
         if (i < 4 && !/^\d+[;,]/.test(line.trim())) continue;
 
-        const row = typeof parseCSVLine === 'function'
-            ? parseCSVLine(line.includes(';') ? line.replace(/;/g, ',') : line)
-            : line.split(/[;,]/);
         // Format: №;FIO;category;gender;birth;flight;flyDate;...
-        // After semicolon-split with parseCSVLine on commas — re-split by ;
         const cols = line.split(';');
         if (cols.length < 7) continue;
 
@@ -345,6 +338,7 @@ async function loadChildrenFile(fh) {
             });
         }
         childrenByFlightDate = parseChildrenCsvText(text);
+        childrenFileCount = Object.keys(childrenByFlightDate).length;
         if (typeof dataLoadStatus !== 'undefined') {
             dataLoadStatus.children = Object.keys(childrenByFlightDate).length > 0;
         }
@@ -353,6 +347,7 @@ async function loadChildrenFile(fh) {
     } catch (e) {
         console.error('loadChildrenFile', e);
         childrenByFlightDate = {};
+        childrenFileCount = 0;
         return 0;
     }
 }
@@ -370,7 +365,7 @@ function isChildSaleRecord(sale) {
     if (typeof extractDiscountPercent === 'function' && extractDiscountPercent(sale.basicFareStr) > 0) return true;
     if (sale.birthDate && sale.flyDate && typeof calculateAgeAtFly === 'function') {
         const age = calculateAgeAtFly(sale.birthDate, sale.flyDate);
-        return age !== null && age < 12;
+        return age !== null && age >= PV.CHILD_AGE_MIN && age <= PV.CHILD_AGE_MAX;
     }
     return false;
 }
@@ -382,7 +377,7 @@ function resolvePassengerSplit(totalPax, salesList, showSales, options = {}) {
     // Приоритет: Дети.csv (точное число детей 2–12)
     if (options.dateStr && options.flight) {
         const fromFile = getChildrenCountFromFile(options.dateStr, options.flight);
-        if (fromFile > 0 || Object.keys(childrenByFlightDate).length > 0) {
+        if (childrenFileCount > 0) {
             const children = Math.min(fromFile, total);
             return { adults: total - children, children };
         }
@@ -491,11 +486,6 @@ function formatBaggageTimesLoadKg(details) {
     }
     const text = Number.isInteger(total) ? String(total) : total.toFixed(1);
     return (typeof formatNum === 'function' ? formatNum(Math.round(total)) : text) + ' кг';
-}
-
-/** @deprecated имя оставлено для совместимости — теперь «багаж × загрузка» */
-function formatAvgBagUnitKg(details) {
-    return formatBaggageTimesLoadKg(details);
 }
 
 function buildPkzAdjustPanelHtml(details, opts = {}) {

@@ -205,11 +205,6 @@ window.PerfCache = (function () {
         return salesStatsByKey[key] || null;
     }
 
-    function getSalesAvg(key) {
-        const st = salesStatsByKey[key];
-        return st && st.count ? Math.round(st.fareSum / st.count) : 0;
-    }
-
     function getTodayKpi() {
         return salesTodayKpi;
     }
@@ -229,7 +224,6 @@ window.PerfCache = (function () {
         parseCsvLineFast,
         recordSaleStat,
         getSalesStats,
-        getSalesAvg,
         getTodayKpi
     };
 })();

@@ -96,13 +96,6 @@ def build_panel(t, dep, cutoff, t_max=T_MAX):
     return panel.reset_index(drop=True)
 
 
-def baseline_final(dep, d=None):
-    """Текущая модель: прогноз загрузки к вылету = файл ожидаемой при dtd = 0 (ёмкость, основной рейс, неделя)."""
-    e = pd.read_csv(os.path.join(data_dir(d), "expected.csv"))
-    f = e[e.dtd == 0].set_index(["cap", "flight", "week"]).expected
-    return pd.Series([f.get((c, b, w)) for c, b, w in zip(dep.cap_class, dep.base, dep.week)], index=dep.index, dtype=float)
-
-
 if __name__ == "__main__":
     t, dep, cutoff, meta = load()
     p = build_panel(t, dep, cutoff)

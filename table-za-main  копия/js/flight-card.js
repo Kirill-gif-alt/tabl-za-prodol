@@ -38,10 +38,6 @@ window.FlightCard = (function () {
         return allowed() && shownSaved();
     }
 
-    function enabled() {
-        return isShown();
-    }
-
     // Кнопка ▤ рядом с именем: видна тем, кому админ включил карточку; нажали — показать, ещё раз — скрыть.
     function syncToggle() {
         const chip = document.getElementById('profile-user-chip');
@@ -439,7 +435,6 @@ window.FlightCard = (function () {
             fill: true, tension: 0.15, pointRadius: 0, pointHoverRadius: 3, borderWidth: 2, spanGaps: true
         }];
         if (c.refData) datasets.push({ label: c.refLabel || 'Норма', data: c.refData, borderColor: '#64748b', borderDash: [5, 4], fill: false, pointRadius: 0, borderWidth: 2, spanGaps: true });
-        if (c.lyData) datasets.push({ label: 'Год назад (' + (c.lyLabel.match(/\(([^)]+)\)/) || [, ''])[1] + ')', data: c.lyData, borderColor: '#94a3b8', borderDash: [2, 3], fill: false, pointRadius: 0, borderWidth: 1.5, spanGaps: true });
         if (c.expectedData) datasets.push({ label: 'Ожидаемая', data: c.expectedData, borderColor: '#d97706', borderDash: [6, 4], fill: false, pointRadius: 0, borderWidth: 2, spanGaps: true });
         const fly = parseLocalDate(date);
         chart = new Chart(canvas, {
@@ -559,5 +554,5 @@ window.FlightCard = (function () {
         return isShown();
     }
 
-    return { open, close, maybeOpen, syncToggle, setShown, enabled, resolve, isOpen: () => isShown(), mode: () => mode, refresh: () => { if (state && isShown()) render(); } };
+    return { maybeOpen, syncToggle, isOpen: () => isShown(), refresh: () => { if (state && isShown()) render(); } };
 })();

@@ -10,8 +10,7 @@ window.Security = (function () {
     /** Номер рейса: KV- + 1–6 цифр (защита от мусорных значений) */
     const FLIGHT_BASE_RE = /^KV-\d{1,6}$/;
     const DATE_RE = /^\d{2}\.\d{2}\.\d{4}$/;
-    const TIME_RE = /^\d{2}:\d{2}$/;
-    /** Админ может задавать себе/сбрасывать пароли от 3 символов */
+    /** Минимальная длина пароля при сбросе администратором */
     const MIN_PASSWORD_LEN_ADMIN = 8;   // и при сбросе администратором — не короче 8 (короткий пароль подбирается по хешу)
 
     let loginState = { fails: 0, lockUntil: 0 };
@@ -80,11 +79,6 @@ window.Security = (function () {
 
     function isFlightDate(date) {
         return typeof date === 'string' && DATE_RE.test(date.trim());
-    }
-
-    /** HH:MM после normalizeTimeStr (без +1 и мусора) */
-    function isFlightTime(t) {
-        return typeof t === 'string' && TIME_RE.test(t.trim());
     }
 
     function checkLoginAllowed() {
@@ -175,7 +169,6 @@ window.Security = (function () {
         transliterateProfileSlug,
         isFlightBase,
         isFlightDate,
-        isFlightTime,
         checkLoginAllowed,
         recordLoginFailure,
         resetLoginFailures,

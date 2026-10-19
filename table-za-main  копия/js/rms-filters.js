@@ -43,7 +43,7 @@ function normalizeRmsConditions(conditions) {
     return (conditions || [])
         .filter(c => c && c.field)
         .map(c => ({
-            id: c.id || `c_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            id: /^c_\w+$/.test(String(c.id || '')) ? c.id : `c_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
             field: c.field,
             op: c.op || 'gte',
             value: c.value === undefined || c.value === null ? '' : String(c.value)
@@ -85,9 +85,8 @@ function getActiveRmsConditions() {
     return rmsActiveConditions.filter(c => c.field && String(c.value).trim() !== '' && !isNaN(parseFloat(c.value)));
 }
 
-function applyRmsConditions(flights, conditions) {
-    const active = getActiveRmsConditions();
-    const list = conditions ? normalizeRmsConditions(conditions).filter(c => c.field && String(c.value).trim() !== '' && !isNaN(parseFloat(c.value))) : active;
+function applyRmsConditions(flights) {
+    const list = getActiveRmsConditions();
     if (!list.length) return flights;
     return flights.filter(f => list.every(c => evaluateRmsCondition(f, c)));
 }
@@ -222,7 +221,7 @@ function saveRmsPreset() {
         showToast('Добавьте хотя бы одно условие с числом', 'error');
         return;
     }
-    const presets = loadRmsPresets();
+    const presets = loadRmsPresets().filter(p => p.name !== name.trim());
     presets.push({ name: name.trim(), conditions: active.map(c => ({ field: c.field, op: c.op, value: c.value })) });
     saveRmsPresets(presets);
     renderRmsConditionsModalContent();

@@ -74,11 +74,23 @@ window.TodayView = (function () {
         return out.sort((a, b) => String(a.row[11] || '').localeCompare(String(b.row[11] || '')) || (parseInt(a.code.slice(3), 10) - parseInt(b.code.slice(3), 10)));
     }
 
+    // Список УП кэшируется в SalesManagement: набор вылетов пересобираем, только когда сменился сам список.
+    let depCache = { list: null, set: new Set() };
     function salesDepartures() {
-        const set = new Set();
-        if (typeof SalesManagement === 'undefined' || !SalesManagement.listFlights) return set;
-        try { SalesManagement.listFlights().forEach(f => (f.departures || []).forEach(d => set.add(d.code + '|' + d.date))); } catch (e) { /* ignore */ }
-        return set;
+        if (typeof SalesManagement === 'undefined' || !SalesManagement.listFlights) return new Set();
+        try {
+            const list = SalesManagement.listFlights();
+            if (depCache.list === list) return depCache.set;
+            const set = new Set();
+            list.forEach(f => (f.departures || []).forEach(d => set.add(d.code + '|' + d.date)));
+            depCache = { list, set };
+            return set;
+        } catch (e) { return new Set(); }
+    }
+
+    // Подсказки посчитаны под нынешние данные и окно дней (иначе «0 ждут решения» — это ещё не итог).
+    function adviceReady() {
+        return typeof SalesAdvice === 'undefined' || adviceSig === sig();
     }
 
     function sig() {
@@ -93,7 +105,7 @@ window.TodayView = (function () {
         // Идёт расчёт для другого окна дней — дождаться и пересчитать под нынешний выбор.
         if (building) return building.then(() => buildAdvice());
         building = (async () => {
-            advice = await SalesAdvice.scanAll(salesDepartures(), null, aheadDays(), 'today');
+            advice = await SalesAdvice.scanAll(salesDepartures(), aheadDays(), 'today');
             adviceSig = s;
         })().finally(() => { building = null; });
         return building;
@@ -143,7 +155,7 @@ window.TodayView = (function () {
 
     function leadText(p, errs, gaps) {
         const parts = [];
-        if (canTab('sales')) parts.push(p ? `${p} ${pluralRu(p, 'вылет ждёт', 'вылета ждут', 'вылетов ждут')} решения` : `все вылеты на ${aheadDays()} дн. в норме или уже отмечены`);
+        if (canTab('sales')) parts.push(!adviceReady() ? 'подсказки по вылетам считаются…' : p ? `${p} ${pluralRu(p, 'вылет ждёт', 'вылета ждут', 'вылетов ждут')} решения` : `все вылеты на ${aheadDays()} дн. в норме или уже отмечены`);
         if (typeof FlightChecks !== 'undefined' && FlightChecks.enabled()) parts.push(errs ? `${errs} ${pluralRu(errs, 'рейс', 'рейса', 'рейсов')} с ошибкой тарифа` : 'ошибок тарифов нет');
         if (gaps) parts.push(`в справочнике ${gaps} ${pluralRu(gaps, 'пропуск', 'пропуска', 'пропусков')}`);
         return parts.length ? parts.join(', ') + '.' : '';
@@ -252,7 +264,7 @@ window.TodayView = (function () {
             const order = { down: 0, attn: 1, up: 2 };
             const list = pend.slice().sort((a, b) => order[a.status] - order[b.status] || a.dtd - b.dtd);
             rows = list.slice(0, 200).map(a => rowHtml({ code: a.code, date: a.date, adv: a })).join('');
-            empty = canTab('sales') ? `Все вылеты на ${aheadDays()} дн. в норме или уже отмечены сегодня.` : 'Нет доступа к «Управлению продажами».';
+            empty = canTab('sales') ? (!adviceReady() ? 'Считаю подсказки по вылетам…' : `Все вылеты на ${aheadDays()} дн. в норме или уже отмечены сегодня.`) : 'Нет доступа к «Управлению продажами».';
         } else if (tab === 'errors') {
             head = '<th>Рейс</th><th>Маршрут</th><th>Вылет</th><th>Загрузка</th><th title="Прогноз загрузки к вылету (тот же, что в карточке и RMS); в скобках — пределы, в которые попадают 8 вылетов из 10">Прогноз</th><th>Обычно / план</th><th>Ошибка</th><th></th>';
             rows = errs.map(e => rowHtml({ code: e.code, date: e.date }, `<span class="td-err">${esc(e.items.map(i => i.title).join(', '))}</span>`)).join('');

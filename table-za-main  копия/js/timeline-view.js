@@ -1,4 +1,4 @@
-// js\timeline-view.js - extracted from script.js, logic unchanged.
+// js\timeline-view.js - графический план полётов.
 // Globals on purpose: no bundler; onclick and other files call by name.
 
 const TIMELINE_SCROLL_OFFSET = 400;
@@ -27,7 +27,6 @@ const TIMELINE_GANTT_CHIP_H = 44;
 const TIMELINE_CHIP_GAP = 4;
 const TIMELINE_CELL_PAD = 0;
 const TIMELINE_DAY_MIN = 24 * 60;
-const TIMELINE_SLOT_H = 12;
 const TIMELINE_COMPACT_COL_PX = 118;
 const TIMELINE_MIN_BLOCK_MIN = 20;
 const TIMELINE_HUB_UTC = 7;
@@ -41,7 +40,7 @@ const TIMELINE_AIRPORT_UTC = {
 };
 
 const timelineExpandedDates = new Set();
-let timelineAnchorDate = null;
+let timelineDragOff = null;
 
 function invalidateTimelineCache() {
     timelineRenderCache = { sig: '', html: '' };
@@ -144,6 +143,7 @@ function initTimelineDrag() {
     const container = document.getElementById('timeline-container');
     if (!container || container.dataset.dragInit) return;
     container.dataset.dragInit = '1';
+    if (timelineDragOff) timelineDragOff();
 
     const DRAG_THRESHOLD = 8;
     let isDown = false;
@@ -189,6 +189,10 @@ function initTimelineDrag() {
     container.addEventListener('mousedown', onMouseDown);
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
+    timelineDragOff = () => {
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
+    };
 
     container.addEventListener('click', (e) => {
         if (timelineSuppressClick) {
@@ -214,7 +218,6 @@ function toggleTimelineDateExpand(date) {
     if (!date) return;
     if (timelineExpandedDates.has(date)) timelineExpandedDates.delete(date);
     else timelineExpandedDates.add(date);
-    timelineAnchorDate = date;
     refreshTimelineExpanded();
     requestAnimationFrame(() => {
         const el = document.querySelector(`.timeline-date-head[data-date="${CSS.escape(date)}"]`);
@@ -225,7 +228,6 @@ function toggleTimelineDateExpand(date) {
 function collapseAllTimelineDates() {
     if (!timelineExpandedDates.size) return;
     timelineExpandedDates.clear();
-    timelineAnchorDate = null;
     refreshTimelineExpanded();
 }
 
@@ -436,7 +438,7 @@ function renderTimelineHourScale() {
 function shortenTimelineDirection(dir) {
     const text = String(dir || '').trim();
     if (!text) return '';
-    const parts = text.split(/[—–-]/).map(s => s.trim()).filter(Boolean);
+    const parts = text.split(/\s*[—–]\s*|\s+-\s+/).map(s => s.trim()).filter(Boolean);
     if (parts.length === 2) {
         const cut = (s) => (s.length > 9 ? s.slice(0, 8) + '…' : s);
         return cut(parts[0]) + ' — ' + cut(parts[1]);
@@ -639,11 +641,7 @@ function buildTimelineHtml() {
     const maxChipsByAc = Object.fromEntries(globalAcOrder.map(ac => [ac, 0]));
     const expandedHByAc = Object.fromEntries(globalAcOrder.map(ac => [ac, 0]));
 
-    let orderedDates = allDates;
-    const todayIdx = orderedDates.indexOf(today);
-    if (todayIdx > 0) {
-        orderedDates = orderedDates.slice(0, todayIdx).concat(orderedDates.slice(todayIdx));
-    }
+    const orderedDates = allDates;
 
     const byDateAc = {};
     orderedDates.forEach(date => {
@@ -706,7 +704,7 @@ function buildTimelineHtml() {
         const isToday = date === today;
         const fd = parseLocalDate(date);
         const isPast = fd ? fd < todayStart : false;
-        const flights = flightDates[date] || [];
+        const flights = (flightDates[date] || []).filter(f => globalAcOrder.includes(metaByDateFlight[`${date}\x1f${f}`]?.ac));
         const expanded = timelineExpandedDates.has(date);
         const headCls = [
             'timeline-date-head',
@@ -907,7 +905,7 @@ function scrollTimelineToToday(behavior = 'smooth') {
     if (!container || !content) return;
     const todayEl = content.querySelector('.timeline-date-head-today');
     if (!todayEl) {
-        showToast('Сегодняшняя дата не найдена в плане', 'error');
+        if (behavior !== 'auto') showToast('Сегодняшняя дата не найдена в плане', 'error');
         return;
     }
     const targetScroll = Math.max(0, todayEl.offsetLeft - TIMELINE_SCROLL_OFFSET);

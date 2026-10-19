@@ -1240,7 +1240,7 @@ window.NetworkMap = (function () {
             city: searchQueryForLine(line),
             query: searchQueryForLine(line),
             flights: line.flights,
-            iata: line.a.code,
+            iata: ([line.a, line.b].find(p => !isHubName(p.city)) || line.a).code,
             date: (period && period !== 'file') ? period : (line.nearest?.date || null)
         };
     }

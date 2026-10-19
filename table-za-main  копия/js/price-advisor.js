@@ -135,8 +135,9 @@ window.PriceAdvisor = (function () {
                     const cv = SalesArchive.curveFor(d.date, fl);
                     if (!cv || !(cv.total > 0)) return;
                     deps++;
-                    let prev = 0;
-                    for (let t = Math.min(PV.PA_HORIZON, cv.maxDtd); t >= 0; t--) {
+                    const t0 = Math.min(PV.PA_HORIZON, cv.maxDtd);
+                    let prev = cv.onHand[t0 + 1] || 0;   // проданное раньше горизонта не относим к его границе
+                    for (let t = t0; t >= 0; t--) {
                         const v = cv.onHand[t] != null ? cv.onHand[t] : prev;
                         acc[t] += Math.max(0, v - prev);
                         prev = v;
@@ -283,12 +284,11 @@ window.PriceAdvisor = (function () {
             curFull = idx.length ? info.ladder[Math.max(...idx)] : info.ladder[nearestIdx(info.ladder.map(l => l.price), cp.price)];
         }
         const overCap = cap != null && curFull && curFull.price > cap + 0.5;
-        let ladder = info.ladder.filter(l => cap == null || l.price <= cap + 0.5);
+        const ladder = info.ladder.filter(l => cap == null || l.price <= cap + 0.5);
         if (!ladder.length) {
             return { code, date, dtd, dtdNow: dtd0, cap, action: 'nocap', free: Math.max(0, C - sold), curCls: curFull ? curFull.cls : null,
                 text: `ни один класс не укладывается в потолок субсидии ${rub(cap)}` };
         }
-        if (!ladder.length) ladder = [{ cls: '—', price: cap }];
         const prices = ladder.map(l => l.price);
         const free = Math.max(0, C - sold);
         if (free === 0) return { code, date, free: 0, dtd, dtdNow: dtd0, cap, action: 'closed', text: 'распродан — продажи закрыты' };
@@ -302,7 +302,8 @@ window.PriceAdvisor = (function () {
         if (fcOk) {
             const pNow = curFull && !overCap ? curFull.price : prices[0];
             let base0 = 0;
-            for (let t = 1; t <= dtd; t++) base0 += info.a[t] * Math.exp(betaFor() * (pNow / info.pRef - 1));
+            const betaNow = betaFor();
+            for (let t = 1; t <= dtd; t++) base0 += info.a[t] * Math.exp(betaNow * (pNow / info.pRef - 1));
             // Прогноз не больше кресел: если он упёрся в кресла — спрос не меньше, берём верх интервала.
             const want = Math.max(0, (fc.final >= C && fc.hiRaw != null ? Math.max(fc.final, fc.hiRaw) : fc.final) - sold);
             if (base0 > 0.2) scale = Math.max(0.25, Math.min(4, want / base0));
@@ -319,7 +320,7 @@ window.PriceAdvisor = (function () {
         const corr = settings().corridor;
         let k = kRaw;
         if (kCur != null && corr < 9) k = Math.max(kCur - corr, Math.min(kCur + corr, kRaw));
-        if (overCap) k = Math.min(kRaw, ladder.length - 1);   // выше потолка нельзя — сразу в допустимое
+        if (overCap) k = kRaw;   // выше потолка нельзя — сразу в допустимое
         // Цель продаж: последний билет — ближе к вылету, а не за месяц. Если по прогнозу (тот же, что в карточке)
         // при нынешней цене рейс распродастся раньше чем за PV.PA_PACE_DAYS дн. до вылета — поднимаем хотя бы на класс.
         let early = null;
@@ -333,8 +334,9 @@ window.PriceAdvisor = (function () {
             if (k < kCur && fc.lf >= PV.ADVICE_FC_HIGH) { k = kCur; guard = `прогноз к вылету ${fc.lf}% — снижать не нужно`; }
             else if (k < kCur) {
                 // Продажи идут не хуже нормы и плана (файла ожидаемой загрузки) на этот день — снижать незачем.
-                const sa = typeof SalesAdvice !== 'undefined' ? SalesAdvice.forDeparture(code, date, PV.PA_HORIZON) : null;
-                if (sa && sa.refs && sa.refs.length && sa.refs.every(r => r.d >= 0)) { k = kCur; guard = 'продажи не отстают от нормы и плана — снижать не нужно'; }
+                const nm = typeof SalesAdvice !== 'undefined' ? SalesAdvice.norms(code, date) : null;
+                const gaps = nm ? [nm.ref, nm.exp].filter(v => v != null).map(v => nm.sold - v) : [];
+                if (gaps.length && gaps.every(d => d >= 0)) { k = kCur; guard = 'продажи не отстают от нормы и плана — снижать не нужно'; }
             }
             else if (k > kCur && early == null && fc.lf < PV.ADVICE_FC_LOW) { k = kCur; guard = `прогноз к вылету ${fc.lf}% — повышать рано`; }
         }
@@ -477,7 +479,7 @@ window.PriceAdvisor = (function () {
         else if (typeof showToast === 'function') showToast('Ценовой советник выгружен');
     }
 
-    function handleClick(el, rerender) {
+    function handleClick(el) {
         if (el.id === 'pa-xlsx') { exportReport().catch(e => console.warn(e)); return true; }
         return false;
     }
@@ -489,5 +491,5 @@ window.PriceAdvisor = (function () {
         return false;
     }
 
-    return { currentPrice, advise, text, inScope, capFor, routeInfo, settings, saveSettings, scanAll, canView, rub, get T() { return PV.PA_HORIZON; }, reportHtml, handleClick, handleChange };
+    return { currentPrice, advise, text, settings, canView, rub, reportHtml, handleClick, handleChange };
 })();

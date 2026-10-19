@@ -6,16 +6,24 @@ window.SalesSync = (function () {
 
     let dataRootHandle = null;
 
+    let idbPromise = null;
     function openIdb() {
-        return new Promise((resolve, reject) => {
+        if (idbPromise) return idbPromise;
+        idbPromise = new Promise((resolve, reject) => {
             const req = indexedDB.open(IDB_NAME, 1);
             req.onerror = () => reject(req.error);
             req.onupgradeneeded = () => {
                 const db = req.result;
                 if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
             };
-            req.onsuccess = () => resolve(req.result);
+            req.onsuccess = () => {
+                const db = req.result;
+                db.onversionchange = () => { db.close(); idbPromise = null; };
+                resolve(db);
+            };
         });
+        idbPromise.catch(() => { idbPromise = null; });
+        return idbPromise;
     }
 
     async function saveDataFolderHandle(handle) {
@@ -51,7 +59,8 @@ window.SalesSync = (function () {
                 dataRootHandle = handle;
                 return handle;
             }
-            if (perm === 'prompt' || readPerm === 'prompt') {
+            const activated = !navigator.userActivation || navigator.userActivation.isActive;
+            if (activated && (perm === 'prompt' || readPerm === 'prompt')) {
                 const reqPerm = await handle.requestPermission({ mode: 'readwrite' });
                 if (reqPerm === 'granted') {
                     dataRootHandle = handle;

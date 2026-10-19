@@ -1,4 +1,4 @@
-// js\pair-engine.js - extracted from script.js, logic unchanged.
+// Пары рейсов туда/обратно, метрики ног пары.
 // Globals on purpose: no bundler; onclick and other files call by name.
 
 function getFlightPair(base) {
@@ -221,7 +221,7 @@ function buildFlightLegMetrics(row, firstSalesByKey, todayStart) {
             empty: true,
             seats: '—', bookings: '—', load: '—', zpk: '—',
             salesToday: '—', salesYest: '—', avg: '—', last: '—', revenue: '—', revenueNum: 0,
-            costText: '—', costNum: 0, costTitle: '',
+            costText: '—', costNum: 0,
             subsidyAmt: 0, subsidyOneWay: 0, subsidized: false,
             rowCls: 'pair-leg-empty'
         };
@@ -263,7 +263,6 @@ function buildFlightLegMetrics(row, firstSalesByKey, todayStart) {
     const econ = typeof RouteCosts !== 'undefined' ? RouteCosts.lookup(row, flightCode, date) : null;
     const costNum = econ && econ.unitCost != null ? econ.unitCost : 0;
     const costText = econ && econ.unitCost != null ? formatRub(econ.unitCost) : '—';
-    const costTitle = '';
 
     return {
         empty: false,
@@ -279,7 +278,6 @@ function buildFlightLegMetrics(row, firstSalesByKey, todayStart) {
         revenueNum: revenue,
         costText,
         costNum,
-        costTitle,
         subsidyAmt: econ ? (econ.subsidyAmt || 0) : 0,
         subsidyCalc: econ ? (econ.subsidyOneWay || 0) : 0,
         subsidyOneWay: (typeof SharedOverrides !== 'undefined' && SharedOverrides.hasSubsidy(flightCode, date))
@@ -391,14 +389,12 @@ function matchPairLegsTurnaround(outRows, inRows) {
         if (bestIdx >= 0) {
             usedIn.add(bestIdx);
             entries.push({
-                sortDate: outDate,
                 date: outDate,
                 outRow: out,
                 inRow: ins[bestIdx]
             });
         } else {
             entries.push({
-                sortDate: outDate,
                 date: outDate,
                 outRow: out,
                 inRow: null
@@ -410,7 +406,6 @@ function matchPairLegsTurnaround(outRows, inRows) {
         if (usedIn.has(i)) continue;
         const inn = ins[i];
         entries.push({
-            sortDate: inn[1],
             date: inn[1],
             outRow: null,
             inRow: inn
@@ -457,15 +452,8 @@ function buildPairTableEntries(outRows, inRows) {
 }
 
 function buildTableSalesSumRowHtml(beforeSalesCols, sums, fareCols = 0, showExpand = false) {
-    // sums: { tSum, ySum, d2Sum, d7Sum, d14Sum, d30Sum } or legacy (tSum, ySum numbers)
-    let s = sums;
-    if (typeof sums === 'number') {
-        s = { tSum: arguments[1], ySum: arguments[2], d2Sum: 0, d7Sum: 0, d14Sum: 0, d30Sum: 0 };
-        fareCols = arguments[3] || 0;
-        showExpand = arguments[4] || false;
-        beforeSalesCols = arguments[0];
-    }
-    s = s || {};
+    // sums: { tSum, ySum, d2Sum, d7Sum, d14Sum, d30Sum }
+    const s = sums || {};
     const salesReady = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(typeof dataLoadStatus !== 'undefined' && dataLoadStatus.sales);
     const sn = (v) => salesReady ? formatNum(v || 0) : '—';
     const farePlaceholders = fareCols > 0
@@ -482,25 +470,5 @@ function buildTableSalesSumRowHtml(beforeSalesCols, sums, fareCols = 0, showExpa
         <th class="table-head-sum-cell">${sn(s.d30Sum)}</th>
         ${farePlaceholders}
         ${expandCell}
-    </tr>`;
-}
-
-function buildPairSalesSumRowHtml(outRevSum, inRevSum, totalRevSum, legBaseCols = 3, legExtraCols = 3) {
-    const legSumCells = (revSum, subCls) => {
-        const skipAvg = `<th class="col-extra table-head-sum-skip ${subCls}"></th>`;
-        const skipLast = `<th class="col-extra table-head-sum-skip ${subCls}"></th>`;
-        const revCell = `<th class="col-extra table-head-sum-cell ${subCls}">${revSum ? formatRub(revSum) : '—'}</th>`;
-        const splitCls = subCls === 'pair-sub-in' ? ' pair-split-start' : (subCls === 'pair-sub-out' ? ' pair-split-end' : '');
-        return `
-            <th colspan="${legBaseCols}" class="table-head-sum-skip ${subCls}${splitCls}"></th>
-            ${skipAvg}
-            ${skipLast}
-            ${revCell}`;
-    };
-    const totalRevCell = `<th class="col-extra table-head-sum-cell pair-total-rev-sum-head">${totalRevSum ? formatRub(totalRevSum) : '—'}</th>`;
-    return `<tr class="table-sales-sum-row pair-head-sum">
-        ${legSumCells(outRevSum, 'pair-sub-out')}
-        ${legSumCells(inRevSum, 'pair-sub-in')}
-        ${totalRevCell}
     </tr>`;
 }

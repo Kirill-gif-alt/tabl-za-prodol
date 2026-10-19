@@ -1,4 +1,4 @@
-// js\table-views.js - extracted from script.js, logic unchanged.
+// js\table-views.js - таблицы «Динамика продаж», «Экономическая таблица», «ПКЗ».
 // Globals on purpose: no bundler; onclick and other files call by name.
 
 function anyPairLegExtraCols() {
@@ -82,18 +82,6 @@ function buildTableFilterPanel(base, foundCount, totalCount, hasExpectedLoad = t
             <div class="table-found-count">Найдено: <strong>${foundCount}</strong> / ${totalCount}</div>
         </div>
     `;
-}
-
-function bindTableExpandToggle(tableContainer, rerender) {
-    if (!tableContainer) return;
-    const btn = tableContainer.querySelector('.table-cols-toggle-btn');
-    if (!btn) return;
-    btn.onclick = (e) => {
-        e.stopPropagation();
-        tableExtraColsExpanded = !tableExtraColsExpanded;
-        if (typeof SessionStore !== 'undefined') SessionStore.saveUiSession();
-        rerender();
-    };
 }
 
 function bindTableControls(cont, base, targetDate, rerenderFn) {
@@ -198,9 +186,6 @@ function actuallyRenderTable(base,targetDate=null){
         <span class="table-flight-badge">${flightCount} вылетов</span>
     `;
 
-    // Сброс фильтров при смене рейса (опционально — можно убрать если хотим сохранять)
-    // tableSort = { by: 'date', dir: 'asc' }; tableFilterStatus = 'all';
-
     showExpectedLoadColumn = false;
     const rb = groupedData[base] || [];
     for (let r of rb) {
@@ -241,7 +226,6 @@ function actuallyRenderTable(base,targetDate=null){
     if (controls) controls.innerHTML = filterHTML;
     bindTableControls(controls || cont, base, targetDate, () => actuallyRenderTable(base, targetDate));
 
-    const expectedHead = showExpectedLoadColumn ? '<th>Ожидаемая</th><th>Δ от ожидаемой</th>' : '';
     const showBook = !!showSpecBookings;
 
     if (!rows.length) {
@@ -440,8 +424,6 @@ function actuallyRenderPairTable(selectedBase, targetDate = null) {
         return tableSort.dir === 'asc' ? va - vb : vb - va;
     });
 
-    const outVisibleRows = entries.map(e => e.outRow).filter(Boolean);
-    const inVisibleRows = entries.map(e => e.inRow).filter(Boolean);
     const totalCount = outRowsAll.length + inRowsAll.length;
     const filterHTML = buildTableFilterPanel(selectedBase, entries.length, totalCount, false, {
         showPairCols: true,
@@ -1073,11 +1055,8 @@ function actuallyRenderPkzTable(base, targetDate = null) {
         const pkzText = details ? formatPkzKg(details.pkzKg) : '—';
         const bagTotalText = (typeof formatBaggageTimesLoadKg === 'function' && details)
             ? formatBaggageTimesLoadKg(details)
-            : (typeof formatAvgBagUnitKg === 'function' && details ? formatAvgBagUnitKg(details) : '—');
-        const bagPer = details && details.baggageKg != null && !isNaN(details.baggageKg)
-            ? Number(details.baggageKg).toFixed(1)
             : '—';
-        const navVal = getPkzNavValue(date, orig);
+        const navVal = getPkzNavValue(date, orig, row);
         const navInputVal = navVal != null ? String(navVal) : '';
         const vacText = formatVacancyKg(navVal, kzKg);
         const vacCls = navVal != null && kzKg != null

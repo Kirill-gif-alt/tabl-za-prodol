@@ -5,14 +5,14 @@
 window.LowerRequest = (function () {
     const FILE = 'lower-requests.json';
     const WD = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
-    const COLS = [['date', 'Дата'], ['load', 'Загрузка'], ['dtd', 'Дней до вылета'], ['fare', 'Тариф сейчас'], ['exp', 'Ожидаемая (откл.)'], ['sim', 'Аналогичные дни (откл.)'], ['ask', 'Просим согласовать']];
+    const COLS = [['n', '№'], ['date', 'Дата'], ['load', 'Загрузка'], ['dtd', 'Дней до вылета'], ['fare', 'Тариф сейчас'], ['exp', 'Ожидаемая (откл.)'], ['sim', 'Аналогичные дни (откл.)'], ['ask', 'Просим согласовать']];
 
     let store = { version: 1, items: {} };
     let loaded = false;
     let host = null;
 
     function esc(v) { return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-    function isAdmin() { return typeof ProfileAuth !== 'undefined' && !!(ProfileAuth.getCurrentProfile() || {}).isAdmin; }
+    function canUse() { return typeof ProfileAuth !== 'undefined' && !!ProfileAuth.canAccessTab('lowreq'); }
     function keyOf(code, date) { return `${code}|${date}`; }
     function toast(m, t) { if (typeof showToast === 'function') showToast(m, t); }
     const fmtN = (n) => (n == null ? '—' : Math.round(n).toLocaleString('ru-RU'));
@@ -25,23 +25,47 @@ window.LowerRequest = (function () {
 
     // ---------- хранение ----------
 
+    // Возвращает true, если содержимое списка изменилось.
     async function load() {
-        if (typeof SharedStorage === 'undefined') { loaded = true; return; }
+        if (typeof SharedStorage === 'undefined') { loaded = true; return false; }
+        const before = JSON.stringify(store.items);
         const r = await SharedStorage.readJsonFileStrict(FILE).catch(() => ({ ok: false }));
-        if (r.ok && r.data && typeof r.data === 'object' && r.data.items && typeof r.data.items === 'object') store = { version: 1, items: r.data.items };
+        if (r.ok && r.data && typeof r.data === 'object' && r.data.items && typeof r.data.items === 'object') store = { version: 1, items: { ...r.data.items, ...unsynced } };
         loaded = true;
+        rowsMemo = null;
+        return JSON.stringify(store.items) !== before;
     }
 
-    async function save(mutate) {
+    // Отметки, которые не удалось записать в общий файл: остаются в списке, пока запись не пройдёт.
+    const unsynced = {};
+
+    // Записи идут строго по очереди: иначе две быстрые правки читают один и тот же файл и затирают друг друга.
+    let saveChain = Promise.resolve();
+    let pending = 0;
+    function save(mutate) {
+        pending++;
+        const run = saveChain.then(() => saveNow(mutate), () => saveNow(mutate)).finally(() => { pending--; });
+        saveChain = run.catch(() => {});
+        return run;
+    }
+
+    async function saveNow(mutate) {
         // Свежая копия файла перед записью: правки другого администратора не теряются.
-        if (typeof SharedStorage !== 'undefined') {
+        // Если за этой записью уже стоят другие правки, читать файл рано: свежую копию возьмёт последняя из них.
+        if (typeof SharedStorage !== 'undefined' && pending <= 1) {
             const r = await SharedStorage.readJsonFileStrict(FILE).catch(() => ({ ok: false }));
             if (r.ok && r.data && r.data.items) store = { version: 1, items: r.data.items };
         }
         mutate(store.items);
+        rowsMemo = null;
+        Object.keys(unsynced).forEach(k => { if (!(k in store.items)) store.items[k] = unsynced[k]; });
         const by = (typeof ProfileAuth !== 'undefined' && (ProfileAuth.getCurrentProfile() || {}).name) || '';
         const ok = typeof SharedStorage !== 'undefined' ? await SharedStorage.writeJsonFile(FILE, { version: 1, updatedAt: new Date().toISOString(), by, items: store.items }) : false;
-        if (!ok) toast('Запрос сохранён только здесь: нет доступа к общей папке', 'error');
+        Object.keys(unsynced).forEach(k => delete unsynced[k]);
+        if (!ok) {
+            Object.keys(store.items).forEach(k => { unsynced[k] = store.items[k]; });
+            toast('Запрос сохранён только здесь: нет доступа к общей папке', 'error');
+        }
         return ok;
     }
 
@@ -51,15 +75,17 @@ window.LowerRequest = (function () {
     }
 
     async function toggle(code, date, on) {
-        if (!isAdmin()) return false;
+        if (!canUse()) return false;
         const key = keyOf(code, date);
         const at = new Date().toISOString();
-        await save(items => {
+        const apply = items => {
             if (on) items[key] = { ...(items[key] && !items[key].deleted ? items[key] : {}), code, date, at };
             else delete items[key];
-        });
+        };
+        apply(store.items);   // список меняется сразу, запись в общий файл идёт следом
+        rowsMemo = null;
         if (host && !host.hidden) render();
-        return true;
+        return save(apply);
     }
 
     // ---------- цифры по вылету ----------
@@ -81,8 +107,23 @@ window.LowerRequest = (function () {
         try { return typeof FareGrid !== 'undefined' ? FareGrid.ladderFor(code, date) : []; } catch (e) { return []; }
     }
 
-    // Автоматические значения строки.
+    // Расчёт строки тяжёлый (нормы, лестница тарифов, цена): считаем один раз, пока не изменились данные и день.
+    const autoCache = new Map();
+    let autoSig = '';
+    function dataSig() {
+        const rev = (typeof analyticsRevision === 'function' ? analyticsRevision() : 0) + '|' + (typeof SalesArchive !== 'undefined' ? SalesArchive.revision() : 0);
+        return `${rev}|${new Date().toDateString()}`;
+    }
     function autoOf(code, date) {
+        const sig = dataSig();
+        if (sig !== autoSig) { autoCache.clear(); autoSig = sig; rowsMemo = null; }
+        const k = keyOf(code, date);
+        let v = autoCache.get(k);
+        if (!v) { v = computeAuto(code, date); autoCache.set(k, v); }
+        return v;
+    }
+
+    function computeAuto(code, date) {
         const n = typeof SalesAdvice !== 'undefined' ? SalesAdvice.norms(code, date) : null;
         const ladder = ladderOf(code, date);
         let open = null;
@@ -124,7 +165,9 @@ window.LowerRequest = (function () {
         return parts.join(' и ');
     }
 
+    let rowsMemo = null;
     function rowsOf() {
+        if (rowsMemo) return rowsMemo;
         const out = [];
         Object.keys(store.items).forEach(k => {
             const it = store.items[k];
@@ -135,12 +178,14 @@ window.LowerRequest = (function () {
             out.push({ key: k, it, auto, dir: dirOf(it.code), ord: orderOf(it.code), ts: d ? d.getTime() : 0 });
         });
         out.sort((a, b) => a.ord[0] - b.ord[0] || a.ord[1] - b.ord[1] || a.ord[2] - b.ord[2] || a.dir.localeCompare(b.dir, 'ru') || a.ts - b.ts);
+        rowsMemo = out;
         return out;
     }
 
     function cellVal(row, col) {
         const o = row.it.over && row.it.over[col];
         if (o != null) return o;
+        if (col === 'n') return row.n;
         if (col === 'ask') return askText(row.it, row.auto);
         return row.auto[col];
     }
@@ -149,7 +194,7 @@ window.LowerRequest = (function () {
 
     function groupsOf(rows) {
         const g = [];
-        rows.forEach(r => { let x = g.find(y => y.dir === r.dir); if (!x) { x = { dir: r.dir, rows: [] }; g.push(x); } x.rows.push(r); });
+        rows.forEach(r => { let x = g.find(y => y.dir === r.dir); if (!x) { x = { dir: r.dir, rows: [] }; g.push(x); } x.rows.push(r); r.n = x.rows.length; });
         return g;
     }
 
@@ -160,6 +205,7 @@ window.LowerRequest = (function () {
         const asks = asksOf(r.it);
         const askRows = (asks.length ? asks : [{ places: null, cls: '' }]).map((a, i) => `<span class="lr-ask-ctl"><input type="number" min="0" step="1" class="lr-num" data-lr-places="${esc(r.key)}" data-i="${i}" value="${a.places != null ? esc(a.places) : ''}" placeholder="мест"> <select class="lr-sel" data-lr-cls="${esc(r.key)}" data-i="${i}" title="Тариф (подкласс), о котором просим">${clsOpts(a.cls)}</select>${i > 0 ? ` <button type="button" class="lr-del2" data-lr-askdel="${esc(r.key)}" data-i="${i}" title="Убрать этот подкласс">✕</button>` : ''}</span>`).join('');
         return `<tr data-lr-row="${esc(r.key)}">
+            <td class="lr-n">${r.n}</td>
             <td class="lr-first"><button type="button" class="lr-del" data-lr-del="${esc(r.key)}" title="Убрать из запроса">✕</button>
                 <input class="lr-in${over.date != null ? ' lr-over' : ''}" data-lr-cell="date" data-lr-key="${esc(r.key)}" value="${esc(cellVal(r, 'date'))}"><div class="lr-code">${esc(r.it.code)}</div></td>
             ${cell('load')}${cell('dtd')}${cell('fare')}${cell('exp')}${cell('sim')}
@@ -170,7 +216,7 @@ window.LowerRequest = (function () {
 
     function render() {
         if (!host) return;
-        if (!isAdmin()) { host.innerHTML = '<p class="rp-note">Вкладка доступна только администратору.</p>'; return; }
+        if (!canUse()) { host.innerHTML = '<p class="rp-note">Нет доступа к этой вкладке.</p>'; return; }
         if (!loaded) { host.innerHTML = '<p class="rp-note">Загружаю…</p>'; load().then(render); return; }
         const rows = rowsOf();
         const groups = groupsOf(rows);
@@ -192,8 +238,32 @@ window.LowerRequest = (function () {
             </section>`;
     }
 
+    // Правка рейса применяется сразу: перерисовывается одна строка, запись в файл идёт в фоне.
     function patch(key, fn) {
-        return save(items => { const it = items[key]; if (it && !it.deleted) { fn(it); it.at = new Date().toISOString(); } });
+        const apply = items => { const it = items[key]; if (it && !it.deleted) { fn(it); it.at = new Date().toISOString(); } };
+        apply(store.items);
+        rowsMemo = null;
+        renderRow(key);
+        return save(apply);
+    }
+
+    function renderRow(key) {
+        const act = document.activeElement;
+        if (host && act && host.contains(act) && typeof act.blur === 'function') act.blur();   // снятие фокуса может само вызвать правку этой строки
+        const tr = host && [...host.querySelectorAll('tr[data-lr-row]')].find(x => x.dataset.lrRow === key);
+        const row = rowsOf().find(r => r.key === key);
+        if (!tr || !row) { render(); return; }
+        row.n = Number(tr.querySelector('.lr-n')?.textContent) || 1;
+        const box = document.createElement('tbody');
+        box.innerHTML = rowHtml(row);
+        if (tr.isConnected) tr.replaceWith(box.firstElementChild);
+    }
+
+    // Копия просьб вылета, дополненная пустыми до индекса i включительно.
+    function asksCopy(it, i) {
+        const a = asksOf(it).map(x => ({ ...x }));
+        while (a.length <= i) a.push({ places: null, cls: '' });
+        return a;
     }
 
     function setAsks(it, a) {
@@ -215,13 +285,13 @@ window.LowerRequest = (function () {
                 it.over = it.over || {};
                 if (!v || v === auto) delete it.over[col]; else it.over[col] = v;
                 if (!Object.keys(it.over).length) delete it.over;
-            }).then(render);
+            });
         } else if (t.dataset.lrPlaces != null) {
             const i = Number(t.dataset.i) || 0;
-            patch(t.dataset.lrPlaces, it => { const a = asksOf(it).map(x => ({ ...x })); while (a.length <= i) a.push({ places: null, cls: '' }); a[i].places = t.value === '' ? null : Math.max(0, parseInt(t.value, 10) || 0); setAsks(it, a); }).then(render);
+            patch(t.dataset.lrPlaces, it => { const a = asksCopy(it, i); a[i].places = t.value === '' ? null : Math.max(0, parseInt(t.value, 10) || 0); setAsks(it, a); });
         } else if (t.dataset.lrCls != null) {
             const i = Number(t.dataset.i) || 0;
-            patch(t.dataset.lrCls, it => { const a = asksOf(it).map(x => ({ ...x })); while (a.length <= i) a.push({ places: null, cls: '' }); a[i].cls = t.value; setAsks(it, a); }).then(render);
+            patch(t.dataset.lrCls, it => { const a = asksCopy(it, i); a[i].cls = t.value; setAsks(it, a); });
         }
     }
 
@@ -276,25 +346,28 @@ window.LowerRequest = (function () {
         panel.addEventListener('change', onChange);
         panel.addEventListener('click', (e) => {
             const add = e.target.closest('[data-lr-askadd]');
-            if (add) { patch(add.dataset.lrAskadd, it => { const a = asksOf(it).map(x => ({ ...x })); if (!a.length) a.push({ places: null, cls: '' }); a.push({ places: null, cls: '' }); setAsks(it, a); }).then(render); return; }
+            if (add) { patch(add.dataset.lrAskadd, it => { const a = asksOf(it).map(x => ({ ...x })); if (!a.length) a.push({ places: null, cls: '' }); a.push({ places: null, cls: '' }); setAsks(it, a); });
+                return; }
             const adel = e.target.closest('[data-lr-askdel]');
-            if (adel) { patch(adel.dataset.lrAskdel, it => { const a = asksOf(it).map(x => ({ ...x })); a.splice(Number(adel.dataset.i), 1); setAsks(it, a); }).then(render); return; }
+            if (adel) { patch(adel.dataset.lrAskdel, it => { const a = asksOf(it).map(x => ({ ...x })); a.splice(Number(adel.dataset.i), 1); setAsks(it, a); });
+                return; }
             const del = e.target.closest('[data-lr-del]');
             if (del) { const [c, d] = del.dataset.lrDel.split('|'); toggle(c, d, false); return; }
             if (e.target.closest('[data-lr-copy]')) { copy(); return; }
             if (e.target.closest('[data-lr-xlsx]')) { exportXlsx().catch(err => { console.error(err); toast('Ошибка выгрузки', 'error'); }); return; }
             if (e.target.closest('[data-lr-clear]')) {
                 if (!window.confirm('Убрать все рейсы из запроса на понижение?')) return;
-                save(items => { Object.keys(items).forEach(k => delete items[k]); }).then(render);
+                const wipe = items => { Object.keys(items).forEach(k => delete items[k]); };
+                wipe(store.items); rowsMemo = null; render(); save(wipe);
             }
         });
         render();
     }
 
-    function refresh() { if (host) render(); }
+    function refresh() { if (host && loaded) load().then(changed => { if (changed && !host.hidden) render(); }); }
 
     // Отметки подгружаются заранее, чтобы галочки в «Управлении продажами» стояли сразу.
     function ensureLoaded() { return loaded ? Promise.resolve() : load(); }
 
-    return { createView, refresh, toggle, has, ensureLoaded, isAdmin };
+    return { createView, refresh, toggle, has, ensureLoaded, canUse };
 })();

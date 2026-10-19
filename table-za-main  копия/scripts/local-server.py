@@ -7,6 +7,8 @@ import re
 import sys
 import tempfile
 import threading
+import time
+from urllib.parse import unquote, urlparse
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -43,12 +45,12 @@ HISTORY_POLICY = {
     "lower-requests.json": (600, 30),
 }
 # Архив продаж (js/sales-archive.js): shared/history/curves-ГГГГ-ММ.json.
-ARCHIVE_RE = re.compile(r"^history/(curves-\d{4}-\d{2}|tickets-\d{4}-\d{2}|import)\.json$")
+ARCHIVE_RE = re.compile(r"^history/(curves-\d{4}-\d{2}|tickets-\d{4}-\d{2}|import)\.json$", re.ASCII)
 # Отметки «Управления продажами»: свой файл у каждого автора (js/sales-management.js).
-MARKS_RE = re.compile(r"^sales-marks/\d{4}-\d{2}/[a-z0-9_]{1,40}\.json$")
-MARKS_DIR_RE = re.compile(r"^sales-marks/\d{4}-\d{2}$")
+MARKS_RE = re.compile(r"^sales-marks/\d{4}-\d{2}/[a-z0-9_]{1,40}\.json$", re.ASCII)
+MARKS_DIR_RE = re.compile(r"^sales-marks/\d{4}-\d{2}$", re.ASCII)
 # Журнал прогнозов загрузки (js/forecast-lab.js): shared/forecast-log/ГГГГ-ММ.json.
-FCLOG_RE = re.compile(r"^forecast-log/\d{4}-\d{2}\.json$")
+FCLOG_RE = re.compile(r"^forecast-log/\d{4}-\d{2}\.json$", re.ASCII)
 MAX_BODY = 64 * 1024 * 1024
 SOCKET_TIMEOUT = 30   # зависший клиент не держит поток и память бесконечно
 WRITE_LOCK = threading.Lock()
@@ -158,9 +160,20 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_error(404)
         return None
 
+    def _static_blocked(self):
+        # Служебное не отдаём: .git и скрытые пути, scripts/, tools/, *.cmd/*.py/*.bat/*.md в корне.
+        parts = [p for p in unquote(urlparse(self.path).path).replace("\\", "/").split("/") if p]
+        if any(p.startswith(".") for p in parts):
+            return True
+        if parts and parts[0] in ("scripts", "tools"):
+            return True
+        return len(parts) == 1 and parts[0].lower().endswith((".cmd", ".py", ".bat", ".md"))
+
     def do_HEAD(self):
         if self.headers.get("Host", "") not in ALLOWED_HOSTS:
             return self._send_json(403, {"error": "forbidden"})
+        if self._static_blocked():
+            return self._send_json(404, {"error": "not found"})
         return super().do_HEAD()
 
     def do_GET(self):
@@ -170,7 +183,7 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path.split("?")[0] == "/__krasavia/caps":
             if not self._same_origin():
                 return self._send_json(403, {"error": "forbidden"})
-            return self._send_json(200, {"sharedWrite": os.path.isdir(SHARED_DIR) or os.access(ROOT, os.W_OK), "history": True})
+            return self._send_json(200, {"sharedWrite": os.access(SHARED_DIR if os.path.isdir(SHARED_DIR) else ROOT, os.W_OK), "history": True})
         if self.path.split("?")[0] == "/__krasavia/history":
             if not self._same_origin():
                 return self._send_json(403, {"error": "forbidden"})
@@ -191,6 +204,8 @@ class Handler(SimpleHTTPRequestHandler):
             if os.path.isdir(full):
                 names = sorted(n for n in os.listdir(full) if re.match(r"^[a-z0-9_]{1,40}\.json$", n))
             return self._send_json(200, {"files": names})
+        if self._static_blocked():
+            return self._send_json(404, {"error": "not found"})
         return super().do_GET()
 
     def do_PUT(self):
@@ -227,11 +242,21 @@ class Handler(SimpleHTTPRequestHandler):
                 try:
                     with os.fdopen(fd, "wb") as f:
                         f.write(body)
+                        f.flush()
+                        os.fsync(f.fileno())
                     try:
                         os.chmod(tmp, 0o644)  # mkstemp создаёт файл только для владельца
                     except OSError:
                         pass
-                    os.replace(tmp, target)
+                    # На Windows/SMB замена падает, пока файл открыт читателем (другой ПК) — повторяем.
+                    for attempt in range(6):
+                        try:
+                            os.replace(tmp, target)
+                            break
+                        except PermissionError:
+                            if attempt == 5:
+                                raise
+                            time.sleep(0.2 * (attempt + 1))
                 except BaseException:
                     try:
                         os.remove(tmp)

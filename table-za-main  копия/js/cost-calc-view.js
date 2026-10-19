@@ -87,6 +87,12 @@ function uploadCostsFile() {
             }
         });
         inp.addEventListener('cancel', () => { inp.remove(); resolve(false); });
+        // Браузеры без события cancel: после закрытия диалога окно получает фокус.
+        window.addEventListener('focus', () => {
+            setTimeout(() => {
+                if (inp.isConnected && !(inp.files && inp.files.length)) { inp.remove(); resolve(false); }
+            }, 1000);
+        }, { once: true });
         inp.click();
     });
 }

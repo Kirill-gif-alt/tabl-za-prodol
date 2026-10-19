@@ -40,12 +40,21 @@ window.SalesArchive = (function () {
 
     // ---------- чтение ----------
 
-    async function readMonth(month) {
-        if (loadedMonths.has(month)) return;
-        loadedMonths.add(month);
+    // Месяц попадает в loadedMonths только после чтения; параллельные запросы того же месяца ждут один и тот же промис.
+    const inflight = new Map();
+
+    function readMonth(month) {
+        if (loadedMonths.has(month)) return Promise.resolve();
+        if (inflight.has(month)) return inflight.get(month);
+        const p = readMonth0(month).finally(() => { inflight.delete(month); });
+        inflight.set(month, p);
+        return p;
+    }
+
+    async function readMonth0(month) {
         if (typeof SharedStorage === 'undefined') return;
         const r = await SharedStorage.readJsonFileStrict(`history/curves-${month}.json`).catch(() => ({ ok: false }));
-        if (!r.ok) loadedMonths.delete(month); // нет доступа — перечитаем позже
+        if (r.ok) loadedMonths.add(month);   // нет доступа — не помечаем, перечитаем позже
         const tr = await SharedStorage.readJsonFileStrict(`history/tickets-${month}.json`).catch(() => ({ ok: false }));
         if (tr.ok && tr.data && tr.data.flights && typeof tr.data.flights === 'object') Object.assign(tickets, tr.data.flights);
         const c = r.data;
@@ -74,16 +83,19 @@ window.SalesArchive = (function () {
     }
 
     // Загрузить последние месяцы (и те же месяцы год назад — для «год назад, тот же день недели»).
+    let loadingMonth = '';
     function ensureLoaded() {
-        if (loading) return loading;
         const now = monthOf(todayStr());
+        if (loading && loadingMonth === now) return loading;
         if (!now) return Promise.resolve();
+        loadingMonth = now;
         const months = [];
         for (let i = 0; i <= PV.ARCH_MONTHS_BACK; i++) months.push(shiftMonth(now, -i));
         months.push(shiftMonth(now, -12), shiftMonth(now, -11));
         loading = Promise.all(months.map(m => readMonth(m).catch(() => null))).then(() => {
             rev++;
             refreshOpenReport();
+            if (months.some(m => !loadedMonths.has(m))) loading = null;   // часть месяцев не прочиталась — следующий вызов повторит
         });
         return loading;
     }
@@ -392,6 +404,7 @@ window.SalesArchive = (function () {
 
     async function noteImport(file, r) {
         lastImport = {
+            ...(lastImport || {}),   // отметки загрузки билетов (tickets*) не теряем
             version: 1, sig: fileSig(file), file: file ? String(file.name || '').slice(0, 80) : '', at: new Date().toISOString(),
             flights: r.flights, from: r.from ? formatDateRu(r.from) : '', to: r.to ? formatDateRu(r.to) : ''
         };
@@ -547,7 +560,6 @@ window.SalesArchive = (function () {
             if (w) Object.assign(tickets, byMonth[m]);
         }
         rev++;
-        ticketsRev++;
         if (typeof ActivityLog !== 'undefined') ActivityLog.log('import', `История по билетам: ${flights} вылетов`);
         if (ok) {
             const read = await readLastImport().catch(() => null);
@@ -559,7 +571,6 @@ window.SalesArchive = (function () {
         return { ok, flights };
     }
 
-    let ticketsRev = 0;
     async function autoImportTickets(file) {
         if (!file || typeof SharedStorage === 'undefined' || typeof ProfileAuth === 'undefined') return null;
         if (!ProfileAuth.hasPermission('share_data')) return null;
@@ -581,11 +592,8 @@ window.SalesArchive = (function () {
 
     return {
         typicalSeats,
-        importTickets,
         autoImportTickets,
         ticketsFor,
-        ticketsRevision: () => ticketsRev + Object.keys(tickets).length,
-        ensureLoaded,
         ensureMonth,
         ensureMonths,
         entries,
@@ -597,7 +605,6 @@ window.SalesArchive = (function () {
         readLastImport,
         curveFor,
         departuresFor,
-        capture,
         captureSoon,
         scheduleAfterStart,
         revision: () => rev

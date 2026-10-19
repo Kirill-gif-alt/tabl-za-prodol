@@ -59,7 +59,6 @@ window.CalendarEvents = (function () {
     }));
 
     let custom = {};      // id → { from, to, type, name, norm, deleted, at, by }
-    let loaded = false;
     let rev = 0;
     let memo = { rev: -1, list: [], byDay: new Map() };
 
@@ -172,7 +171,6 @@ window.CalendarEvents = (function () {
         const r = await SharedStorage.readJsonFileStrict(FILE).catch(() => ({ ok: false }));
         if (!r.ok) return;
         custom = mergeInto({}, r.data && r.data.events);
-        loaded = true;
         rev++;
     }
 
@@ -187,7 +185,6 @@ window.CalendarEvents = (function () {
         const okWrite = await SharedStorage.writeJsonFile(FILE, { version: 1, updatedAt: new Date().toISOString(), events: merged });
         if (!okWrite) return { ok: false, error: 'Не удалось записать calendar.json' };
         custom = mergeInto({}, merged);
-        loaded = true;
         rev++;
         if (typeof invalidateMetricsCache === 'function') invalidateMetricsCache();
         return { ok: true };
@@ -216,5 +213,5 @@ window.CalendarEvents = (function () {
         return BUILTIN.filter(b => custom[b.id] && custom[b.id].deleted);
     }
 
-    return { TYPES, list, on, label, normKey, filterCohort, load, save, remove, restore, deletedBuiltins, canEdit, isLoaded: () => loaded, revision: () => rev };
+    return { TYPES, list, on, label, normKey, filterCohort, load, save, remove, restore, deletedBuiltins, canEdit, revision: () => rev };
 })();

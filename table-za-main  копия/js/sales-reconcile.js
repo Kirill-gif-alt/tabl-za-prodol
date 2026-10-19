@@ -96,10 +96,6 @@ window.SalesReconcile = (function () {
         return picked;
     }
 
-    function count(units) {
-        return units.reduce((a, u) => a + u.length, 0);
-    }
-
     // Перенос: пометка moved — откуда; номер заказа — с префиксом исходного вылета, чтобы не совпасть
     // с заказом №1 на новом месте.
     function put(details, key, s, fromKey) {
@@ -391,5 +387,5 @@ window.SalesReconcile = (function () {
         return true;
     }
 
-    return { run, report, html, handleChange, canView, badge, lastRun: () => lastRun };
+    return { run, html, handleChange, canView, badge };
 })();

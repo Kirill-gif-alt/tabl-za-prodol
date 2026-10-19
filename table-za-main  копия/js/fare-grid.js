@@ -28,9 +28,9 @@ window.FareGrid = (function () {
         return String(typeof getFlightDirection === 'function' ? getFlightDirection(base(code)) || '' : '').replace(/\s+/g, ' ').trim() || base(code);
     }
 
-    // Код без детских/служебных хвостов: «KSTOW/CN20» → «KSTOW», «JOPOWIDB» → «JOPOW».
+    // Код без детских/служебных хвостов: «KSTOW/CN20» → «KSTOW» (коды …IDB отсеяны раньше, в isAdult).
     function cleanCode(b) {
-        return String(b || '').toUpperCase().split('/')[0].replace(/IDB$/, '').trim();
+        return String(b || '').toUpperCase().split('/')[0].trim();
     }
 
     function familyAuto(code) {
@@ -139,7 +139,6 @@ window.FareGrid = (function () {
     function parseWorkbook(lib, wb) {
         const routes = Object.create(null);
         const unmatched = new Set();
-        let tables = 0;
         wb.SheetNames.forEach(name => {
             if (SKIP_SHEET.test(name)) return;
             const rows = lib.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: '' });
@@ -182,13 +181,12 @@ window.FareGrid = (function () {
                     Object.keys(byRoute).forEach(rt => {
                         const dirs = matchDirections(rt);
                         if (!dirs.length) { unmatched.add(rt); return; }
-                        tables++;
                         dirs.forEach(d => { (routes[d] || (routes[d] = [])).push({ from: per.from, to: per.to, sheet: name, rows: byRoute[rt] }); });
                     });
                 });
             }
         });
-        return { routes, unmatched: [...unmatched], tables };
+        return { routes, unmatched: [...unmatched] };
     }
 
     function ts(d) { const x = typeof parseLocalDate === 'function' ? parseLocalDate(d) : null; return x ? x.getTime() : null; }
@@ -204,8 +202,6 @@ window.FareGrid = (function () {
         return pick || null;
     }
 
-    function familyOf(code) { return AUTO_FAMILY[code.slice(1, 3)] || 'other'; }
-
     // Лестница по официальной сетке: класс → лайт, иначе стандарт, иначе самый дешёвый код; оптимум отдельно.
     function officialLadder(dir, date) {
         const per = officialFor(dir, date);
@@ -216,7 +212,7 @@ window.FareGrid = (function () {
             const sv = saved[x.code];
             if (sv && sv.off) return;
             const fare = sv && sv.fare > 0 ? sv.fare : x.fare;
-            const fam = (sv && sv.family) || familyOf(x.code);
+            const fam = (sv && sv.family) || familyAuto(x.code);
             (byCls[x.code[0]] || (byCls[x.code[0]] = [])).push({ code: x.code, fare, family: fam });
         });
         const ladder = Object.keys(byCls).map(cls => {
@@ -315,12 +311,12 @@ window.FareGrid = (function () {
         const per = offDir ? offDir.period : null;
         const fmtP = (p) => `${p.from ? 'с ' + p.from : ''}${p.to ? ' по ' + p.to : ''}` || 'без срока';
         const offList = off && off.routes && off.routes[current] ? off.routes[current] : [];
-        const famCell = (rows, cls, fam) => { const x = rows.find(r => r.code[0] === cls && familyOf(r.code) === fam); return x ? `${x.fare.toLocaleString('ru-RU')} <span class="rp-muted">${esc(x.code)}</span>` : '—'; };
+        const famCell = (rows, cls, fam) => { const x = rows.find(r => r.code[0] === cls && familyAuto(r.code) === fam); return x ? `${x.fare.toLocaleString('ru-RU')} <span class="rp-muted">${esc(x.code)}</span>` : '—'; };
         const offTable = (p) => {
             const classes = [...new Set(p.rows.map(r => r.code[0]))];
             const cheapest = (c) => Math.min(...p.rows.filter(r => r.code[0] === c).map(r => r.fare));
             classes.sort((a, b) => cheapest(a) - cheapest(b));
-            const other = (c) => p.rows.filter(r => r.code[0] === c && familyOf(r.code) === 'other').map(r => `${r.fare.toLocaleString('ru-RU')} <span class="rp-muted">${esc(r.code)}</span>`).join(', ') || '—';
+            const other = (c) => p.rows.filter(r => r.code[0] === c && familyAuto(r.code) === 'other').map(r => `${r.fare.toLocaleString('ru-RU')} <span class="rp-muted">${esc(r.code)}</span>`).join(', ') || '—';
             return `<div class="rp-scroll"><table class="rp-table"><thead><tr><th>Класс</th><th>Лайт</th><th>Стандарт</th><th>Оптимум</th><th>Другие</th></tr></thead><tbody>${classes.map(c => `<tr><td><strong>${esc(c)}</strong></td><td>${famCell(p.rows, c, 'lite')}</td><td>${famCell(p.rows, c, 'standard')}</td><td>${famCell(p.rows, c, 'optimum')}</td><td>${other(c)}</td></tr>`).join('')}</tbody></table></div>`;
         };
         // Правка периода: тарифы кодов, новые коды (в том числе новая буква), удаление кода.
@@ -426,5 +422,5 @@ window.FareGrid = (function () {
         return true;
     }
 
-    return { grid, ladderFor, officialLadder, parseWorkbook, load, sectionHtml, handleClick, handleChange, canEdit, revision: () => rev, FAMILY };
+    return { ladderFor, officialLadder, load, sectionHtml, handleClick, handleChange, revision: () => rev };
 })();

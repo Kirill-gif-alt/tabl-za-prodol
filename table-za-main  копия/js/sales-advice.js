@@ -1,10 +1,10 @@
 // Подсказка ценового решения по вылету (для «Управления продажами» и утренней сводки).
-// Только вылеты в ближайшие 15 дней (на «Сегодня» окно выбирается). Сравнивает продано сейчас с нормой («обычно к этому дню»)
+// Только вылеты в ближайшие дни (окно из параметров расчётов; на «Сегодня» выбирается). Сравнивает продано сейчас с нормой («обычно к этому дню»)
 // и с планом (файл ожидаемой загрузки) — те же цифры, что в выводе карточки и детализации:
 //   отстаёт от всех доступных ориентиров на порог и больше  → ▼ снизить;
 //   опережает все ориентиры на порог и больше             → ▲ повысить;
 //   от одного отстаёт, другой опережает на порог           → ! внимание.
-// Порог — 10% кресел, но не меньше 3 билетов. Решение всегда принимает человек: это только подсветка.
+// Порог — доля кресел, но не меньше минимума билетов (задаются в параметрах расчётов). Решение всегда принимает человек: это только подсветка.
 window.SalesAdvice = (function () {
     let memo = new Map();
     let memoSig = '';
@@ -63,7 +63,7 @@ window.SalesAdvice = (function () {
         const lag = dtd != null && dtdNow != null && dtd > dtdNow && typeof salesDataCutoffTime === 'function'
             ? ` (данные на ${formatDateRu(new Date(salesDataCutoffTime()))})` : '';
         const diff = (d) => (d > 0 ? `+${d}` : String(d));
-        const text = `Продано ${sold} ${dtd === 0 ? 'в день вылета' : `за ${dtd} дн. до вылета`}${lag}; ` + refs.map(r => `${r.label} ${r.value} (${diff(r.d)})`).join(', ')
+        const text = `Продано ${sold} за ${dtd} дн. до вылета${lag}; ` + refs.map(r => `${r.label} ${r.value} (${diff(r.d)})`).join(', ')
             + (fcOk ? `; прогноз к вылету ${fc.final} из ${fc.seats} (${fc.lf}%)` : '') + (conflict ? ` — ${conflict}` : '');
         return { code, date, base, status, sold, refs, threshold: T, dtd, text, seats };
     }
@@ -87,7 +87,6 @@ window.SalesAdvice = (function () {
     // Где показывать — переключатели в «Настройки» → «Параметры расчётов» → «Подсказки по тарифам»:
     // place = 'today' (страница «Сегодня»), 'sales' («Управление продажами»), 'summary' (утренняя сводка).
     function enabled(place) {
-        if (place === true) place = 'today';
         return place === 'today' ? PV.HINT_TODAY === 1 : (place === 'sales' ? PV.HINT_SALES === 1 : (place === 'summary' ? PV.HINT_SUMMARY === 1 : false));
     }
     function forDeparture(code, date, maxDays, place) {
@@ -104,7 +103,6 @@ window.SalesAdvice = (function () {
     }
 
     const LABEL = { down: '▼ снизить', up: '▲ повысить', attn: '! внимание' };
-    const STATUS = { down: 'down', up: 'up', attn: 'attn' };
 
     // Все вылеты в окне (по загруженным данным): [{ code, date, base }].
     function departuresAhead(maxDays) {
@@ -125,20 +123,17 @@ window.SalesAdvice = (function () {
 
     // Подсказки по всем вылетам окна (для сводки). Считается порциями, чтобы не подвешивать страницу.
     // only — набор «рейс|дата»: считать только эти вылеты (например, из «Управления продажами»).
-    async function scanAll(only, onProgress, maxDays, place) {
+    async function scanAll(only, maxDays, place) {
         if (!enabled(place)) return [];
         const list = departuresAhead(maxDays).filter(d => !only || only.has(d.code + '|' + d.date));
         const out = [];
         for (let i = 0; i < list.length; i++) {
             const a = forDeparture(list[i].code, list[i].date, maxDays, place);
             if (a && a.status) out.push(a);
-            if (i % 25 === 24) {
-                if (onProgress) onProgress(i + 1, list.length);
-                await new Promise(r => setTimeout(r, 0));
-            }
+            if (i % 25 === 24) await new Promise(r => setTimeout(r, 0));
         }
         return out;
     }
 
-    return { norms, forDeparture, scanAll, departuresAhead, inWindow, LABEL, STATUS, get DAYS_AHEAD() { return PV.ADVICE_DAYS_AHEAD; } };
+    return { norms, forDeparture, scanAll, inWindow, LABEL, get DAYS_AHEAD() { return PV.ADVICE_DAYS_AHEAD; } };
 })();

@@ -144,7 +144,7 @@ function classifyFilesFromInput(fileList) {
         children: typeof findChildrenCsvFile === 'function'
             ? (findChildrenCsvFile(all) || findChildrenCsvFile(rootCsv))
             : null,
-        sales: findSalesCsvFile(all) || picked.sales,
+        sales: picked.sales || findSalesCsvFile(all),
         history: findSalesHistoryFile(all),
         tickets: findSalesTicketsFile(all),
         costs: typeof RouteCosts !== 'undefined' ? RouteCosts.findCostsFile(xlsxAll) : null,
@@ -461,9 +461,7 @@ async function loadAvailabilityFiles(files){
     for(const fh of files){
         const file = await toFile(fh);
         const txt = await readCsvText(file);
-        const parsed = typeof parseAvailabilityTextAsync === 'function'
-            ? await parseAvailabilityTextAsync(txt, (p) => setLoadingMessage(`Загрузка таб… ${p}%`))
-            : parseAvailabilityText(txt);
+        const parsed = await parseAvailabilityTextAsync(txt, (p) => setLoadingMessage(`Загрузка таб… ${p}%`));
         if (parsed.length) allData.push(...parsed);
     }
     } finally { availabilityKeepClosed = false; }

@@ -1,5 +1,4 @@
-// js\selection-bar.js - extracted from script.js, logic unchanged.
-// Globals on purpose: no bundler; onclick and other files call by name.
+// Выделение в таблицах (плашка кол-во / сумма / среднее). Глобальные функции: сборщика нет, вызываются по имени.
 
 /**
  * Выделение в таблицах как в Excel:
@@ -35,7 +34,6 @@ function initSelectionStatusBar() {
     const selectedByTable = new WeakMap();
     let drag = null; // { table, mode: 'col'|'row'|'cell', r0, c0, additive }
     let activeTable = null;
-    let didDragSelect = false;
 
     // Ячейка с датой (09.10, 09.10.2026, «29.09/30.09», дата с номером доп. рейса) — не число, в сумму не идёт.
     const DATE_CELL_RE = /(^|[^\d])(0[1-9]|[12]\d|3[01])\.(0[1-9]|1[0-2])(\.\d{4}|\/|\s|$)/;
@@ -209,11 +207,7 @@ function initSelectionStatusBar() {
             if (!td) return;
             const found = parseNumsFromText(td.textContent || '');
             // одна ячейка — одно значение (первое число), чтобы % и «+3» не давали мусор
-            if (found.length === 1) nums.push(found[0]);
-            else if (found.length > 1) {
-                // «+3» / «100%» — берём первое «значимое» (часто единственное)
-                nums.push(found[0]);
-            }
+            if (found.length) nums.push(found[0]);
         });
         if (nums.length < 1) {
             bar.classList.remove('is-visible');
@@ -322,7 +316,7 @@ function initSelectionStatusBar() {
         return { table, start, span, th };
     };
 
-    const isRowSelectorCell = (td, table) => {
+    const isRowSelectorCell = (td) => {
         if (!td) return false;
         // первая колонка (дата) — селектор строки; также col-date
         if (td.classList.contains('col-date')) return true;
@@ -350,7 +344,6 @@ function initSelectionStatusBar() {
             for (let i = 0; i < head.span; i++) {
                 selectColumn(head.table, head.start + i, additive || i > 0);
             }
-            didDragSelect = false;
             drag = null;
             return;
         }
@@ -371,9 +364,8 @@ function initSelectionStatusBar() {
         e.preventDefault();
         window.getSelection()?.removeAllRanges();
         const additive = e.ctrlKey || e.metaKey;
-        didDragSelect = false;
 
-        if (isRowSelectorCell(cell.td, cell.table) && !e.shiftKey) {
+        if (isRowSelectorCell(cell.td) && !e.shiftKey) {
             selectRow(cell.table, cell.r, additive);
             drag = { table: cell.table, mode: 'rowPick', r0: cell.r, c0: cell.c, additive };
             return;
@@ -412,7 +404,6 @@ function initSelectionStatusBar() {
             else drag.dominant = 'row';
         }
 
-        didDragSelect = true;
         if (drag.dominant === 'col') {
             drag.mode = 'col';
             selectColRange(drag.table, drag.c0, drag.r0, cell.r, drag.additive);

@@ -37,6 +37,7 @@ window.ProfileAuth = (function () {
         edit_calendar: { label: 'Календарь событий — менять', group: 'Справочник', hint: 'праздники, каникулы; видят все' },
         view_forecast: { label: 'Прогноз загрузки и предупреждения', group: 'Отчёты', hint: 'отчёт «Прогноз и предупреждения», строка «Модель» в карточке рейса' },
         price_advisor: { label: 'Ценовой советник', group: 'Отчёты', hint: 'какой класс держать открытым: строка «Цена» в карточке рейса и таблица в «Прогноз и предупреждения»' },
+        lowreq: { label: 'Запрос на понижение', group: 'Отчёты', hint: 'вкладка и галочка у рейса в «Управлении продажами»' },
         manage_profiles: { label: 'Управление профилями', group: 'Админ' }
     };
 
@@ -184,17 +185,9 @@ window.ProfileAuth = (function () {
         return (typeof Security !== 'undefined' && Security.MIN_PASSWORD_LEN) || 8;
     }
 
-    /** Сброс пароля админом (любому профилю) — от 3 символов */
+    /** Сброс пароля админом (любому профилю) */
     function minPasswordLenAdminReset() {
-        return (typeof Security !== 'undefined' && Security.MIN_PASSWORD_LEN_ADMIN) || 3;
-    }
-
-    function minPasswordLenFor(profileOrAdminFlag) {
-        // обратная совместимость: для сброса админом — 3; иначе 8
-        if (profileOrAdminFlag === true || profileOrAdminFlag === 'admin-reset') {
-            return minPasswordLenAdminReset();
-        }
-        return minPasswordLenSelfChange();
+        return (typeof Security !== 'undefined' && Security.MIN_PASSWORD_LEN_ADMIN) || 8;
     }
 
     function applyPasswordRecord(profile, cred) {
@@ -386,7 +379,8 @@ window.ProfileAuth = (function () {
         profilesCache = await buildDefaultStore();
         profilesFromShared = false;
         migrateSalesViewPermission();
-        if (read.ok) await saveProfiles(true);
+        // Файл есть, но без профилей (повреждён) — его не затираем стандартными паролями.
+        if (read.ok && !read.data) await saveProfiles(true);
         else persistLocalProfilesCache();
         try { localStorage.setItem(ADMIN_PWD_FIX_KEY, '1'); } catch (e) { /* ignore */ }
         return profilesCache;
@@ -420,7 +414,12 @@ window.ProfileAuth = (function () {
         if (change && typeof SharedStorage !== 'undefined' && SharedStorage.readJsonFileStrict) {
             const read = await SharedStorage.readJsonFileStrict('profiles.json').catch(() => ({ ok: false }));
             const fresh = read.ok && read.data && Array.isArray(read.data.profiles) ? read.data.profiles : null;
-            if (fresh && fresh.length) {
+            if (!(fresh && fresh.length)) {
+                // Свежий файл не прочитан — свою устаревшую копию поверх не пишем.
+                if (typeof showToast === 'function') showToast('Не удалось прочитать общие профили — изменения не сохранены', 'error');
+                return false;
+            }
+            {
                 const removed = new Set(change.remove || []);
                 const merged = fresh.filter(p => p && !removed.has(p.id)).map(p => ({ ...p }));
                 Object.entries(change.update || {}).forEach(([id, fields]) => {
@@ -433,8 +432,10 @@ window.ProfileAuth = (function () {
         }
         persistLocalProfilesCache();
         if (typeof SharedStorage !== 'undefined') {
-            await SharedStorage.saveProfiles(profilesCache, null, silent);
+            const ok = await SharedStorage.saveProfiles(profilesCache, null, silent);
+            return ok || !SharedStorage.isLinked();
         }
+        return true;
     }
 
     function updateSharedStatus() {
@@ -578,7 +579,7 @@ window.ProfileAuth = (function () {
     function canAccessTab(tab) {
         if (tab === 'home') return resolveShowHomeMap(currentProfile);
         if (tab === 'stats') return hasPermission('tab_stats');
-        if (tab === 'lowreq') return !!(currentProfile && currentProfile.isAdmin);   // «Запрос на понижение» — только администратору
+        if (tab === 'lowreq') return hasPermission('lowreq');   // «Запрос на понижение» — по праву, по умолчанию только у администратора
         const perm = TAB_PERM[tab];
         if (!perm) return false;
         // ПКЗ и «Расчёт расходов» — свои права (раньше открывались с «Динамикой продаж» / «Экономикой»;
@@ -628,6 +629,14 @@ window.ProfileAuth = (function () {
             return { ok: false, error: 'Неверный пароль' };
         }
         if (typeof Security !== 'undefined') Security.resetLoginFailures();
+        if (profile.hashVer !== 2) {
+            // Старый хеш (SHA-256 без растяжения) → PBKDF2 при успешном входе.
+            try {
+                const cred = await makePasswordRecord(password);
+                applyPasswordRecord(profile, cred);
+                await saveProfiles(true, { update: { [profile.id]: { salt: cred.salt, hash: cred.hash, hashVer: cred.hashVer } } });
+            } catch (e) { console.warn('rehash', e); }
+        }
         currentProfile = {
             id: profile.id,
             name: profile.name,
@@ -750,7 +759,6 @@ window.ProfileAuth = (function () {
             userChip.classList.toggle('profile-chip-admin', !!currentProfile.isAdmin);
         }
 
-        if (typeof updateFlightOpenModeUI === 'function') updateFlightOpenModeUI();
         if (typeof TabOrder !== 'undefined') TabOrder.apply();
     }
 
@@ -824,8 +832,6 @@ window.ProfileAuth = (function () {
     async function onLoginSuccess() {
         if (typeof ThemeSettings !== 'undefined') ThemeSettings.apply();
         if (typeof ActivityLog !== 'undefined') ActivityLog.startBackgroundSync();
-        if (typeof loadPinnedFlights === 'function') loadPinnedFlights();
-        if (typeof loadFlightOpenMode === 'function') loadFlightOpenMode();
         if (typeof startAppAfterLogin === 'function') {
             await startAppAfterLogin();
             return;
@@ -886,7 +892,7 @@ window.ProfileAuth = (function () {
         const basics = paCard('Новый профиль', 'имя и пароль для входа', `<div class="profile-admin-fields">
                 <label class="profile-field"><span>Имя</span>
                     <input type="text" id="profile-create-name" class="profile-create-input" placeholder="Например, Иванов И.И."></label>
-                <label class="profile-field"><span>Пароль (минимум ${minPasswordLenAdminReset()} символа)</span>
+                <label class="profile-field"><span>Пароль (минимум ${minPasswordLenAdminReset()} символов)</span>
                     <input type="password" id="profile-create-pass" class="profile-create-input" placeholder="Пароль" autocomplete="new-password"></label>
             </div>`);
         return `<div class="pa-editor pa-editor-new" data-pa-editor="__new__"${paSelected === '__new__' ? '' : ' hidden'}>
@@ -973,9 +979,9 @@ window.ProfileAuth = (function () {
             ? Security.sanitizeTextInput(name, 80)
             : String(name || '').trim();
         if (!trimmed) return { ok: false, error: 'Укажите имя профиля' };
-        // Создание профиля — админ задаёт пароль (мин. 3)
+        // Создание профиля — админ задаёт пароль
         const minLen = minPasswordLenAdminReset();
-        if (!password || password.length < minLen) return { ok: false, error: `Пароль — минимум ${minLen} символа` };
+        if (!password || password.length < minLen) return { ok: false, error: `Пароль — минимум ${minLen} символов` };
         if (!permissions.length) return { ok: false, error: 'Выберите хотя бы одно право доступа' };
 
         const cred = await makePasswordRecord(password);
@@ -995,7 +1001,7 @@ window.ProfileAuth = (function () {
             tabsSplitMigrated: true
         };
         profilesCache.push(profile);
-        await saveProfiles(false, { add: [profile] });
+        if (!(await saveProfiles(false, { add: [profile] }))) return { ok: false, error: 'Не удалось записать профиль в общий файл' };
         if (typeof ActivityLog !== 'undefined') {
             await ActivityLog.log('profile_create', trimmed, { profileId: profile.id });
         }
@@ -1103,7 +1109,9 @@ window.ProfileAuth = (function () {
 
         const cred = await makePasswordRecord(newPwd);
         applyPasswordRecord(profile, cred);
-        await saveProfiles(false, { update: { [profile.id]: { salt: profile.salt, hash: profile.hash, hashVer: profile.hashVer } } });
+        if (!(await saveProfiles(false, { update: { [profile.id]: { salt: profile.salt, hash: profile.hash, hashVer: profile.hashVer } } }))) {
+            return { ok: false, error: 'Не удалось записать пароль в общий файл' };
+        }
 
         if (typeof ActivityLog !== 'undefined') {
             await ActivityLog.log('password_self', 'Пароль изменён');
@@ -1124,7 +1132,7 @@ window.ProfileAuth = (function () {
                 const badPass = passInput && passInput.value && passInput.value.length < minLen;
                 if (noPerms || badPass) {
                     if (typeof selectProfileEditor === 'function') selectProfileEditor(p.id);
-                    if (typeof showToast === 'function') showToast(noPerms ? `Профиль «${p.name}»: выберите хотя бы одно право` : `Пароль «${p.name}»: минимум ${minLen} символа`, 'error');
+                    if (typeof showToast === 'function') showToast(noPerms ? `Профиль «${p.name}»: выберите хотя бы одно право` : `Пароль «${p.name}»: минимум ${minLen} символов`, 'error');
                     return;
                 }
             }
@@ -1140,15 +1148,8 @@ window.ProfileAuth = (function () {
                 }
 
                 const passInput = document.querySelector(`.profile-pass-input[data-profile="${p.id}"]`);
-                if (passInput?.value) {
-                    // Админ может выставить любому пароль от 3 символов
-                    const minLen = minPasswordLenAdminReset();
-                    if (passInput.value.length < minLen) {
-                        if (typeof showToast === 'function') {
-                            showToast(`Пароль «${p.name}»: минимум ${minLen} символа`, 'error');
-                        }
-                        return;
-                    }
+                // Пароль администратора меняет только он сам (иначе manage_profiles = захват админа).
+                if (passInput?.value && (!p.isAdmin || currentProfile?.isAdmin)) {
                     const cred = await makePasswordRecord(passInput.value);
                     applyPasswordRecord(p, cred);
                     passInput.value = '';
@@ -1186,7 +1187,10 @@ window.ProfileAuth = (function () {
                     showHomeMap: p.showHomeMap, showScreenWidgets: p.showScreenWidgets, features: p.features };
                 if (passIds.has(p.id)) Object.assign(update[p.id], { salt: p.salt, hash: p.hash, hashVer: p.hashVer });
             });
-            await saveProfiles(false, { update });
+            if (!(await saveProfiles(false, { update }))) {
+                if (typeof showToast === 'function') showToast('Профили не записаны в общий файл', 'error');
+                return;
+            }
 
             if (typeof ActivityLog !== 'undefined') {
                 await ActivityLog.log('profile_save', `Изменено профилей: ${profilesCache.length}`);
@@ -1279,8 +1283,6 @@ window.ProfileAuth = (function () {
         if (await tryRestoreSession()) {
             hideLoginScreen();
             document.querySelector('.main-layout')?.classList.remove('app-locked');
-            if (typeof loadPinnedFlights === 'function') loadPinnedFlights();
-            if (typeof loadFlightOpenMode === 'function') loadFlightOpenMode();
             if (typeof ActivityLog !== 'undefined' && currentProfile) {
                 ActivityLog.log('login', currentProfile.name, { restored: true });
             }
@@ -1325,7 +1327,6 @@ window.ProfileAuth = (function () {
         getCurrentProfile: () => currentProfile,
         changeOwnPassword,
         setShowHomeMap,
-        screenWidgetsOn: () => resolveScreenWidgets(currentProfile),
         featureOn,
         FEATURES,
         PERMISSIONS

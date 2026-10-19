@@ -1,8 +1,8 @@
 // «Отчёты» → «Решения»: журнал ценовых решений и их итог.
 // Каждая отметка «▼ Снижение» / «▲ Повышение» из «Управления продажами»: сколько билетов и по какому тарифу
 // продали за 3 дня до решения и за 3 дня после, и сколько обычно продаётся за те же дни (норма по дням недели).
-// Итог — в рублях: выручка после решения против той, что была бы без него (столько билетов, сколько продали бы
-// по старому тарифу, × старый тариф). Повышение с чуть меньшими продажами, но большим тарифом — не провал.
+// Итог — в билетах против нормы (снижение — за несколько дней после решения, повышение — по итогу вылета).
+// Повышение с чуть меньшими продажами, но большим тарифом — не провал.
 // Сводка по типу решения, по направлениям и по людям. Те же расчёты, что в карточке рейса (price-marks.js).
 window.DecisionsReport = (function () {
     const PERIODS = [30, 60, 90];
@@ -66,8 +66,7 @@ window.DecisionsReport = (function () {
                 code, base, dep: m.dep, check: m.check, status: m.status, author: m.author || '',
                 direction: typeof getFlightDirection === 'function' ? getFlightDirection(code) : '',
                 e,
-                done: !!(e && e.complete && e.effect != null),
-                money: e && e.complete && e.money ? e.money.delta : null
+                done: !!(e && e.complete && e.effect != null)
             });
             seen.set(dk, out[out.length - 1]);
         });
@@ -76,40 +75,24 @@ window.DecisionsReport = (function () {
         return out;
     }
 
-    function plural(n, one, few, many) {
-        const m10 = Math.abs(n) % 10, m100 = Math.abs(n) % 100;
-        if (m10 === 1 && m100 !== 11) return one;
-        if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
-        return many;
-    }
-
     function signed(n) {
         if (n == null) return '—';
         return (n > 0 ? '+' : (n < 0 ? '−' : '')) + String(Math.abs(n)).replace('.', ',');
     }
 
-    // «Сработало» — по выручке (PriceMarks.judge); «рано судить» в долю не входит.
+    // «Сработало» — по билетам против нормы (PriceMarks.judge); «рано судить» в долю не входит.
     function worked(r) {
         return verdictOf(r).worked;
     }
 
-    // Сводка: решений, с итогом, «сработало», средний итог в билетах и сумма в рублях к «без решения».
+    // Сводка: решений, с итогом, «сработало», средний итог в билетах.
     function summarize(list) {
         const done = list.filter(r => r.done);
         const judged = done.filter(r => worked(r) != null);
         const good = judged.filter(r => worked(r) === true).length;
         const avg = done.length ? done.reduce((a, r) => a + r.e.effect, 0) / done.length : null;
-        // Рубли — только по решениям, о которых можно судить (как и «сработало»).
-        const withMoney = judged.filter(r => r.money != null);
-        const money = withMoney.length ? withMoney.reduce((a, r) => a + r.money, 0) : null;
         const waiting = list.filter(r => !(r.e && r.e.complete)).length;
-        return { n: list.length, done: done.length, waiting, noNorm: list.length - done.length - waiting, judged: judged.length, good, share: judged.length ? Math.round(good / judged.length * 100) : null, avg: avg == null ? null : Math.round(avg * 10) / 10, money };
-    }
-
-    function rubSigned(v) {
-        if (v == null) return '—';
-        const t = typeof formatRub === 'function' ? formatRub(Math.abs(v)) : Math.round(Math.abs(v)).toLocaleString('ru-RU') + ' ₽';
-        return (v > 0 ? '+' : (v < 0 ? '−' : '')) + t;
+        return { n: list.length, done: done.length, waiting, noNorm: list.length - done.length - waiting, judged: judged.length, good, share: judged.length ? Math.round(good / judged.length * 100) : null, avg: avg == null ? null : Math.round(avg * 10) / 10 };
     }
 
     function groupBy(list, keyFn) {
@@ -133,18 +116,16 @@ window.DecisionsReport = (function () {
     }
 
     function summaryTable(title, groups, keyLabel) {
-        const noMoney = true;   // рубли по решениям не считаются
         if (!groups.length) return '';
         const rowsHtml = groups.slice(0, 10).map(g => `
             <tr>
                 <td class="rp-left"><strong>${esc(g.key)}</strong></td>
                 <td>${g.n}</td>
                 <td class="dr-share-cell">${shareBar(g.share)}</td>
-                ${noMoney ? '' : `<td class="rp-nowrap">${g.money == null ? '—' : `<span class="${g.money > 0 ? 'dr-pos' : (g.money < 0 ? 'dr-neg' : '')}">${rubSigned(g.money)}</span>`}</td>`}
             </tr>`).join('');
         return `<div class="dr-sum">
             <div class="dr-sum-title">${esc(title)}</div>
-            <table class="rp-table dr-sum-table"><thead><tr><th>${esc(keyLabel)}</th><th>Решений</th><th title="Из решений, по которым можно судить: выручка после решения не ниже, чем была бы без него">Сработало</th>${noMoney ? '' : '<th title="Сумма: на сколько рублей выручка после решений больше (+) или меньше (−), чем была бы без них (за ' + wd() + ' после каждого)">Итог, ₽</th>'}</tr></thead><tbody>${rowsHtml}</tbody></table>
+            <table class="rp-table dr-sum-table"><thead><tr><th>${esc(keyLabel)}</th><th>Решений</th><th title="Из решений, по которым можно судить: выручка после решения не ниже, чем была бы без него">Сработало</th></tr></thead><tbody>${rowsHtml}</tbody></table>
             ${groups.length > 10 ? `<div class="rp-muted">и ещё ${groups.length - 10} — полный список в Excel</div>` : ''}
         </div>`;
     }
@@ -202,7 +183,7 @@ window.DecisionsReport = (function () {
         }).join('');
         const sums = list.length ? `<div class="dr-sums">
             ${summaryTable('По направлениям', groupBy(list, r => r.direction || r.code), 'Направление')}
-            ${summaryTable('По людям', groupBy(list, r => r.author || '—'), 'Кто', true)}
+            ${summaryTable('По людям', groupBy(list, r => r.author || '—'), 'Кто')}
         </div>` : '';
         return `
             <section class="rp-card dr-card">
@@ -247,9 +228,6 @@ window.DecisionsReport = (function () {
                     fareBefore: e && e.before.avg != null ? Math.round(e.before.avg) : '',
                     fareAfter: e && e.after.avg != null ? Math.round(e.after.avg) : '',
                     effect: e && e.complete && e.effect != null ? e.effect : '',
-                    revBefore: e && e.complete && e.money ? e.money.r0 : '',
-                    revAfter: e && e.complete && e.money ? e.money.r1 : '',
-                    revDelta: e && e.complete && e.money ? e.money.delta : '',
                     verdict: v.short, text: v.text
                 };
             })
@@ -262,9 +240,5 @@ window.DecisionsReport = (function () {
         return false;
     }
 
-    function handleChange() {
-        return false;
-    }
-
-    return { canView, html, handleChange, handleClick, exportData, summarize };
+    return { canView, html, handleClick, exportData, summarize };
 })();

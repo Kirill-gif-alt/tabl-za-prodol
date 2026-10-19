@@ -405,7 +405,8 @@ window.RouteCosts = (function () {
     async function loadFiles(expensesFile, periodsFile) {
         if (expensesFile) {
             const json = await readXlsxJson(expensesFile);
-            fileCostRows = parseCostsSheet(json || []);
+            const parsedRows = parseCostsSheet(json || []);
+            if (parsedRows.length) fileCostRows = parsedRows;
         }
         if (periodsFile) {
             const json = await readXlsxJson(periodsFile);
@@ -423,8 +424,8 @@ window.RouteCosts = (function () {
             const next = {};
             Object.keys(snap.periodsByNum).forEach((key) => {
                 next[key] = (snap.periodsByNum[key] || []).map((r) => {
-                    const from = r.from || ruDateFromCell(r.from);
-                    const to = r.to || ruDateFromCell(r.to);
+                    const from = r.from;
+                    const to = r.to;
                     const k0 = r.k0 || dateKey(from);
                     const k1 = r.k1 || dateKey(to);
                     return { from, to, k0: Math.min(k0, k1), k1: Math.max(k0, k1) };
@@ -622,15 +623,6 @@ window.RouteCosts = (function () {
     }
 
     /**
-     * @returns {{
-     *   unitCost: number|null,
-     *   subsidyAmt: number,
-     *   subsidized: boolean,
-     *   commercial: boolean,
-     *   krai: boolean
-     * }}
-     */
-    /**
      * Субсидия и коммерция — только этот рейс и его дата (row[0], row[1]).
      * В файле сумма на туда+обратно → на одно направление: сумма / 2 * 1000.
      */
@@ -700,7 +692,6 @@ window.RouteCosts = (function () {
         amountRows,
         periodsFor: (code) => periodsForFlight(code),
         periodSource,
-        cityKey,
         acKey,
         acLabels: () => ({ ...AC_LABELS }),
         lookup,

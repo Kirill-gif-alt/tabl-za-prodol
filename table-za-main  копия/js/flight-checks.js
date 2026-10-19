@@ -13,7 +13,6 @@
 // Значок «!» ставится у рейса в «Загрузке рейсов», «Экономической таблице» и «Динамике продаж»,
 // полный список — во вкладке «Отчёты», счётчик — в шапке.
 window.FlightChecks = (function () {
-    const RULE_TITLE = 'Проверка рейсов';
     const RULES = {
         child50_subsidy: { title: 'Детский тариф −50% на субсидированном рейсе', short: 'Детский −50%' },
         fare_above_subsidy: { title: 'Тариф выше субсидированного', short: 'Выше субсидированного тарифа' }
@@ -211,10 +210,6 @@ window.FlightChecks = (function () {
     function issuesFor(code, date) {
         const c = candidates().get(cleanFlight(code) + '|' + date);
         return c ? evaluate(c).issues : [];
-    }
-
-    function issueFor(code, date) {
-        return issuesFor(code, date)[0] || null;
     }
 
     let listCache = { token: '', map: null, out: [] };
@@ -441,5 +436,5 @@ window.FlightChecks = (function () {
         if (typeof updateHeaderStatus === 'function') updateHeaderStatus();
     }
 
-    return { enabled, isNeverSubsidized, list, issuesFor, issueFor, missingRefs, suggestRefs, modeFor, modeBadge, flagForRow, rowClass, headerChip, openReport, refreshViews, RULES, RULE_TITLE };
+    return { enabled, isNeverSubsidized, list, issuesFor, missingRefs, suggestRefs, modeFor, modeBadge, flagForRow, rowClass, headerChip, openReport, refreshViews, RULES };
 })();

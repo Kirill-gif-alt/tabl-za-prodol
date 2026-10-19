@@ -1,4 +1,4 @@
-// js\rms-view.js - extracted from script.js, logic unchanged.
+// js\rms-view.js - вкладка RMS.
 // Globals on purpose: no bundler; onclick and other files call by name.
 
 let rmsVirtualHandle = null;
@@ -110,6 +110,7 @@ function renderRmsWatchlist() {
     if (!container) return;
     const sig = getRmsRenderSig();
     if (container.dataset.renderSig === sig && container.childElementCount > 0) return;
+    delete container.dataset.renderSig;
     if (rmsVirtualHandle) {
         rmsVirtualHandle.destroy();
         rmsVirtualHandle = null;

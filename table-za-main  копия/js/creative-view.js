@@ -268,7 +268,6 @@ window.CreativeView = (function () {
     let activeRef = '';
     let saved = {};
     let shared = {};
-    let sharedLoaded = false;
     // Панель столбцов — выдвижная справа, по умолчанию закрыта (таблица на всю ширину).
     let panelOpen = false;
     let filtersOpen = false;
@@ -280,6 +279,7 @@ window.CreativeView = (function () {
     let built = { sig: '', result: null };
     let saveTimer = null;
     let host = null;
+    let docBound = false;
 
     function defaultLayout() {
         return normalizeLayout(BUILTIN['Загрузка и экономика']);
@@ -384,7 +384,6 @@ window.CreativeView = (function () {
             if (!item || !item.layout) return;
             shared[name] = { layout: normalizeLayout(item.layout), author: String(item.author || ''), updatedAt: String(item.updatedAt || '') };
         });
-        sharedLoaded = true;
     }
 
     async function writeShared(mutate) {
@@ -1287,7 +1286,9 @@ window.CreativeView = (function () {
             }
         });
 
-        // Клик мимо всплывающих меню закрывает их.
+        // Клик мимо всплывающих меню закрывает их (на document вешаем один раз).
+        if (!docBound) {
+        docBound = true;
         document.addEventListener('pointerdown', (event) => {
             const t = event.target;
             if (menuOpen && !t.closest('#cr-menu') && !t.closest('#cr-menu-btn')) { menuOpen = false; renderMenu(); }
@@ -1298,6 +1299,7 @@ window.CreativeView = (function () {
             if (menuOpen || filtersOpen) { menuOpen = false; filtersOpen = false; renderMenu(); renderFilterPop(); return; }
             if (panelOpen && document.getElementById('cr-panel')?.contains(document.activeElement)) { panelOpen = false; renderPanel(); }
         });
+        }
 
         let dragKey = '';
         root.addEventListener('dragstart', (event) => {
@@ -1476,12 +1478,6 @@ window.CreativeView = (function () {
     return {
         create,
         refresh,
-        onProfileChange,
-        FIELDS,
-        GROUPS,
-        BUILTIN,
-        _buildResult: () => buildResult(),
-        _setLayout: (next) => { layout = normalizeLayout(next); built = { sig: '', result: null }; }
     };
 })();
 
