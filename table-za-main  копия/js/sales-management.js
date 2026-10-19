@@ -1267,7 +1267,7 @@ function paintSalesCellList(td, list) {
     td.innerHTML = salesCellInner(list);
     td.title = list.length ? salesEntriesTitle(list) : (td.dataset.edit === '1' ? 'Не проверен — нажмите, чтобы отметить' : 'Не проверен');
     if (!list.length && salesCheckIsToday(td.dataset.check) && typeof SalesAdvice !== 'undefined') {
-        const adv = SalesAdvice.forDeparture(td.dataset.flight, td.dataset.dep);
+        const adv = SalesAdvice.forDeparture(td.dataset.flight, td.dataset.dep, undefined, 'sales');
         if (adv && adv.status) {
             td.classList.add('sm-suggest', 'sm-suggest-' + adv.status);
             td.title = `Подсказка: ${SalesAdvice.LABEL[adv.status]}. ${adv.text}`;
@@ -1347,7 +1347,7 @@ function openSalesPopover(td) {
     if (title) title.textContent = `${flight} · вылет ${dep} · проверка ${check}`;
     const adviceBox = document.getElementById('sm-pop-advice');
     if (adviceBox) {
-        const adv = typeof SalesAdvice !== 'undefined' && salesCheckIsToday(check) ? SalesAdvice.forDeparture(flight, dep) : null;
+        const adv = typeof SalesAdvice !== 'undefined' && salesCheckIsToday(check) ? SalesAdvice.forDeparture(flight, dep, undefined, 'sales') : null;
         adviceBox.hidden = !(adv && adv.status);
         adviceBox.className = 'sm-pop-advice' + (adv && adv.status ? ' sm-suggest-' + adv.status : '');
         adviceBox.textContent = adv && adv.status ? `Подсказка: ${SalesAdvice.LABEL[adv.status]}. ${adv.text}` : '';
@@ -1588,6 +1588,9 @@ function renderSalesGrid() {
         return `<th class="sm-check-head${isToday ? ' sm-check-today' : ''}" data-check="${salesAttr(date)}" title="${salesAttr(date)}"><span class="sm-check-date">${salesEsc(salesShortDate(date))}</span><span class="sm-check-dow">${salesEsc(dow)}</span>${tag}</th>`;
     }).join('');
     const editable = SalesManagement.canEdit();
+    // Администратор отмечает вылеты для вкладки «Запрос на понижение» (галочка у номера рейса).
+    const lrOn = typeof LowerRequest !== 'undefined' && LowerRequest.isAdmin();
+    if (lrOn && !salesLrReady) { salesLrReady = true; LowerRequest.ensureLoaded().then(() => renderSalesGrid()); }
     const body = flight.departures.map(dep => {
         const cells = flight.checks.map(check => {
             const list = SalesManagement.getMarks(dep.code, dep.date, check);
@@ -1599,7 +1602,7 @@ function renderSalesGrid() {
             // Пустая ячейка «сегодня» у вылета в ближайшие 15 дней — подсказка решения (только подсветка).
             let inner = salesCellInner(list);
             if (!list.length && !dep.flown && salesCheckIsToday(check) && typeof SalesAdvice !== 'undefined') {
-                const adv = SalesAdvice.forDeparture(dep.code, dep.date);
+                const adv = SalesAdvice.forDeparture(dep.code, dep.date, undefined, 'sales');
                 if (adv && adv.status) {
                     cls += ` sm-suggest sm-suggest-${adv.status}`;
                     title = `Подсказка: ${SalesAdvice.LABEL[adv.status]}. ${adv.text}`;
@@ -1611,7 +1614,7 @@ function renderSalesGrid() {
         const rowClass = dep.flown ? 'sm-row-flew' : (salesNearDeparture(dep.date, today) ? 'sm-row-near' : '');
         return `<tr class="${rowClass}" data-card-flight="${salesAttr(dep.code)}" data-card-date="${salesAttr(dep.date)}">
             <td class="sm-freeze sm-c0">${salesEsc(dep.date)}</td>
-            <td class="sm-freeze sm-c1">${salesEsc(dep.code)}</td>
+            <td class="sm-freeze sm-c1">${lrOn && !dep.flown ? `<input type="checkbox" class="sm-lr" data-flight="${salesAttr(dep.code)}" data-dep="${salesAttr(dep.date)}" title="В запрос на понижение"${LowerRequest.has(dep.code, dep.date) ? ' checked' : ''}> ` : ''}${salesEsc(dep.code)}</td>
             <td class="sm-freeze sm-c2">${salesEsc(dep.weekday)}</td>
             <td class="sm-freeze sm-c3">${salesEsc(dep.aircraft)}</td>
             <td class="sm-freeze sm-c4">${salesEsc(dep.route)}</td>
@@ -1648,6 +1651,7 @@ function renderSalesGrid() {
 }
 
 let salesSnapToToday = false;
+let salesLrReady = false;
 
 function salesFrozenWidth(host) {
     let width = 0;
@@ -1851,6 +1855,12 @@ function createSalesManagementView(panel) {
         renderSalesGrid();
     });
     document.getElementById('sm-grid')?.addEventListener('click', (event) => {
+        const lr = event.target.closest('.sm-lr');
+        if (lr) {
+            event.stopPropagation();
+            LowerRequest.toggle(lr.dataset.flight, lr.dataset.dep, lr.checked).then(ok => { if (ok && typeof showToast === 'function') showToast(lr.checked ? `${lr.dataset.flight} ${lr.dataset.dep} — в запросе на понижение` : 'Убрано из запроса на понижение'); });
+            return;
+        }
         const td = event.target.closest('.sm-cell');
         if (td) {
             openSalesPopover(td);

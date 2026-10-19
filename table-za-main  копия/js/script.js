@@ -157,6 +157,7 @@ const TAB_HOST_CLASSES = {
     creative: 'content-area content-creative',
     reports: 'content-area content-reports',
     home: 'content-area content-home',
+    lowreq: 'content-area content-reports',
     stats: 'content-area content-stats'
 };
 const tabPanels = {};
@@ -603,6 +604,10 @@ function refreshTabPanel(tab) {
         if (typeof refreshCostCalc === 'function') refreshCostCalc();
         return;
     }
+    if (tab === 'lowreq') {
+        if (typeof LowerRequest !== 'undefined') LowerRequest.refresh();
+        return;
+    }
     if (tab === 'sales') {
         if (typeof refreshSalesManagement === 'function') refreshSalesManagement(false, true);
         return;
@@ -671,7 +676,7 @@ function switchMainTab(tab){
     Object.values(tabPanels).forEach(p => { if (p !== panel && !p.hidden) p.hidden = true; });
     panel.hidden = false;
 
-    ['tab-today','tab-home','tab-main','tab-table','tab-pkz','tab-pair','tab-costs','tab-rms','tab-sales','tab-creative','tab-reports','tab-data','tab-stats'].forEach(id=>{
+    ['tab-today','tab-home','tab-main','tab-table','tab-pkz','tab-pair','tab-costs','tab-rms','tab-sales','tab-creative','tab-reports','tab-data','tab-lowreq','tab-stats'].forEach(id=>{
         const b = document.getElementById(id);
         if (!b) return;
         b.classList.remove('tab-active');
@@ -695,6 +700,7 @@ function switchMainTab(tab){
         else if (tab === 'creative' && typeof createCreativeView === 'function') createCreativeView(panel);
         else if (tab === 'reports' && typeof createReportsView === 'function') createReportsView(panel);
         else if (tab === 'home' && typeof NetworkMap !== 'undefined') NetworkMap.createView(panel);
+        else if (tab === 'lowreq' && typeof LowerRequest !== 'undefined') LowerRequest.createView(panel);
         else if (tab === 'stats') createStatsView(panel);
         else if (tab === 'today' && typeof createTodayView === 'function') createTodayView(panel);
         else createMainTimelineView(panel);

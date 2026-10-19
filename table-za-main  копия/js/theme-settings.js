@@ -453,8 +453,11 @@ window.ThemeSettings = (function () {
             ${groups.map(g => `<div class="theme-params-group"><div class="theme-params-title">${esc(g.name)}</div>
                 ${g.items.map(d => `<label class="theme-param${d.value !== d.def ? ' theme-param-changed' : ''}">
                     <span class="theme-param-label">${esc(d.label)}${d.hint ? `<span class="theme-param-hint">${esc(d.hint)}</span>` : ''}</span>
-                    <input type="number" class="theme-param-input" data-param="${d.key}" value="${d.value}" min="${d.min}" max="${d.max}" step="${d.step}">
-                    <span class="theme-param-def">по умолч. ${fmtN(d.def)} · ${fmtN(d.min)}…${fmtN(d.max)}</span>
+                    ${d.min === 0 && d.max === 1 && d.step === 1
+        ? `<select class="theme-param-input" data-param="${d.key}"><option value="1"${d.value === 1 ? ' selected' : ''}>Включено</option><option value="0"${d.value === 0 ? ' selected' : ''}>Выключено</option></select>
+                    <span class="theme-param-def">по умолч. ${d.def ? 'включено' : 'выключено'}</span>`
+        : `<input type="number" class="theme-param-input" data-param="${d.key}" value="${d.value}" min="${d.min}" max="${d.max}" step="${d.step}">
+                    <span class="theme-param-def">по умолч. ${fmtN(d.def)} · ${fmtN(d.min)}…${fmtN(d.max)}</span>`}
                     <button type="button" class="theme-param-reset" data-param-reset="${d.key}" title="Вернуть ${fmtN(d.def)}"${d.value === d.def ? ' disabled' : ''}>↺</button>
                 </label>`).join('')}</div>`).join('') || '<p class="theme-section-hint">Ничего не найдено.</p>'}
             <div class="theme-params-actions">

@@ -400,6 +400,90 @@ window.SubsidyRef = (function () {
         return res.ok ? { ok: true, periods: nP, amounts: nA } : res;
     }
 
+    // ---------- история изменений ----------
+    // Версии — резервные копии файла справочника (shared/_history) и нынешний. По соседним версиям видно,
+    // что менялось; у записи есть автор и время (at, by). Откат — одной записи, а не всего файла.
+    const MONTHS_RU = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+    const k1 = (v) => (v == null ? '—' : String(Math.round(v * 10) / 10).replace('.', ','));
+    function sigOf(e) {
+        if (!e) return 'x';
+        if (e.deleted) return 'd';
+        const c = { ...e };
+        delete c.at; delete c.by;
+        return JSON.stringify(c);
+    }
+    function rangesText(e) {
+        const r = e && !e.deleted && e.ranges ? e.ranges : [];
+        return r.length ? r.map(x => `${x.from}–${x.to}`).join(', ') : 'коммерции нет';
+    }
+    function describe(kind, key, a, b) {
+        const gone = (e) => !e || e.deleted;
+        if (kind === 'periods') {
+            return { title: `Рейс KV-${key}: периоды коммерции`, text: gone(a) ? `добавлено: ${rangesText(b)}` : (gone(b) ? 'запись убрана' : `${rangesText(a)} → ${rangesText(b)}`) };
+        }
+        if (kind === 'amounts') {
+            const t = gone(b) ? `${(a || {}).from} — ${(a || {}).to}, ${(a || {}).ac}` : `${b.from} — ${b.to}, ${b.ac}`;
+            if (gone(a)) return { title: t, text: `добавлено: субсидия ${k1(b.subsidy)}, себестоимость ${k1(b.cost)} тыс. ₽` };
+            if (gone(b)) return { title: t, text: 'запись убрана' };
+            const parts = [];
+            if ((a.subsidy || 0) !== (b.subsidy || 0)) parts.push(`субсидия ${k1(a.subsidy || 0)} → ${k1(b.subsidy || 0)}`);
+            if ((a.cost || 0) !== (b.cost || 0)) parts.push(`себестоимость ${k1(a.cost)} → ${k1(b.cost)}`);
+            if (!parts.length) parts.push('суммы по месяцам или число рейсов');
+            return { title: t, text: parts.join('; ') + ' тыс. ₽' };
+        }
+        const e = gone(b) ? a : b;
+        const t = `ПКЗ ${(e || {}).direction || ''}${e && e.ac ? ', ' + e.ac : ''}`;
+        if (gone(a)) return { title: t, text: `добавлено: ${b.from}–${b.to}, ${b.value} кг` };
+        if (gone(b)) return { title: t, text: 'правило убрано' };
+        return { title: t, text: `${a.value} → ${b.value} кг (${b.from}–${b.to})` };
+    }
+
+    async function changeLog(maxVersions) {
+        if (typeof SharedStorage === 'undefined' || !SharedStorage.listHistory) return { ok: false, error: 'Нет доступа к общей папке' };
+        const files = await SharedStorage.listHistory();
+        if (!files) return { ok: false, error: 'Нет доступа к общей папке — подключите папку приложения' };
+        const ids = ((files[FILE] || []).slice(0, maxVersions || 14)).map(v => v.id).reverse();   // от старой к новой
+        const versions = [];
+        for (const id of ids) {
+            const d = await SharedStorage.readHistory(FILE, id);
+            if (d) versions.push(normStore(d));
+        }
+        versions.push(cache);
+        const items = [];
+        for (let i = 1; i < versions.length; i++) {
+            const prev = versions[i - 1];
+            const cur = versions[i];
+            ['periods', 'amounts', 'pkz'].forEach(kind => {
+                const keys = new Set([...Object.keys(prev[kind]), ...Object.keys(cur[kind])]);
+                keys.forEach(key => {
+                    const a = prev[kind][key] || null;
+                    const b = cur[kind][key] || null;
+                    if (sigOf(a) === sigOf(b)) return;
+                    if (!a && b && b.deleted) return;   // убрали то, чего не было
+                    const who = (b && b.at ? b : a) || {};
+                    items.push({ kind, key, before: a, after: b, at: who.at || '', by: who.by || '', ...describe(kind, key, a, b) });
+                });
+            });
+        }
+        items.sort((x, y) => String(y.at).localeCompare(String(x.at)));
+        // Откатить можно, только если запись с тех пор не менялась: нынешнее состояние равно «после».
+        items.forEach(it => { it.canUndo = sigOf(cache[it.kind][it.key] || null) === sigOf(it.after); });
+        return { ok: true, items: items.slice(0, 150), versions: versions.length - 1 };
+    }
+
+    // Вернуть одну запись к тому, что было «до» (нет записи — убрать).
+    async function revertEntry(kind, key, before) {
+        if (!canEdit() && !(kind === 'pkz' && canEditPkz())) return { ok: false, error: 'Нет права менять справочник' };
+        const at = new Date().toISOString();
+        const by = author();
+        return apply(s => {
+            const gone = !before || before.deleted;
+            if (kind === 'periods') s.periods[key] = gone ? { deleted: true, at, by } : { ...before, at, by };
+            else if (kind === 'amounts') s.amounts[key] = gone ? { deleted: true, at, by } : { ...before, at, by };
+            else s.pkz[key] = gone ? { deleted: true, at, by } : { ...before, at, by };
+        });
+    }
+
     function activePeriods() {
         const out = {};
         Object.keys(cache.periods).forEach(k => { if (!cache.periods[k].deleted) out[k] = cache.periods[k]; });
@@ -418,6 +502,8 @@ window.SubsidyRef = (function () {
         clearPeriods,
         setAmount,
         removeAmount,
+        changeLog,
+        revertEntry,
         importFromFiles,
         setPkzRule,
         applyImport,

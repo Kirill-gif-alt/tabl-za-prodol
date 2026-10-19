@@ -11,6 +11,8 @@ window.SharedStorage = (function () {
         'profiles.json', 'fare-grid.json', 'snapshot.json', 'activity.json', 'flight-comments.json',
         'subsidy-overrides.json', 'pkz-nav.json', 'sales-management.json',
         'creative-layouts.json', 'subsidy-fares.json', 'subsidy-ref.json', 'calendar.json', 'flights.json',
+        'export-kk.json', 'export-mr.json', // вкладки выгрузки «Загрузка - КК / Межрегионалка» (js/excel-export.js)
+        'lower-requests.json', // «Запрос на понижение» (js/lower-request.js)
         'params.json',        // параметры расчётов администратора (js/params.js)
         'forecast-now.json'   // прогноз к вылету по всем рейсам — один для всех (пишет тот, у кого модель обучена)
     ]);
@@ -31,7 +33,8 @@ window.SharedStorage = (function () {
         'flight-comments.json': { every: 3600, keep: 24 },
         'creative-layouts.json': { every: 3600, keep: 20 },
         'params.json': { every: 600, keep: 30 },
-        'fare-grid.json': { every: 600, keep: 30 }
+        'fare-grid.json': { every: 600, keep: 30 },
+        'lower-requests.json': { every: 600, keep: 30 }
     };
     const lastBackupAt = {};
     let serverHistory = false;

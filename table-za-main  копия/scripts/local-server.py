@@ -19,7 +19,8 @@ SHARED_WRITABLE = {
     "profiles.json", "fare-grid.json", "snapshot.json", "activity.json", "flight-comments.json",
     "subsidy-overrides.json", "pkz-nav.json", "sales-management.json",
     "creative-layouts.json", "subsidy-fares.json", "subsidy-ref.json", "calendar.json", "flights.json",
-    "forecast-now.json", "params.json",
+    "forecast-now.json", "params.json", "lower-requests.json",
+    "export-kk.json", "export-mr.json",
 }
 # Резервные копии перед перезаписью: shared/_history/<имя>/<имя>__ГГГГ-ММ-ДД_ЧЧ-ММ-СС.json.
 # every — не чаще раза в столько секунд, keep — сколько последних копий хранить.
@@ -39,6 +40,7 @@ HISTORY_POLICY = {
     "creative-layouts.json": (3600, 20),
     "params.json": (600, 30),
     "fare-grid.json": (600, 30),
+    "lower-requests.json": (600, 30),
 }
 # Архив продаж (js/sales-archive.js): shared/history/curves-ГГГГ-ММ.json.
 ARCHIVE_RE = re.compile(r"^history/(curves-\d{4}-\d{2}|tickets-\d{4}-\d{2}|import)\.json$")

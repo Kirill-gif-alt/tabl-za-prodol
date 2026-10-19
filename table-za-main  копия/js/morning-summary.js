@@ -79,7 +79,7 @@ window.MorningSummary = (function () {
     }
 
     function adviceAllowed() {
-        return false && canTab('sales') && typeof SalesManagement !== 'undefined';
+        return typeof PV !== 'undefined' && PV.HINT_SUMMARY === 1 && canTab('sales') && typeof SalesManagement !== 'undefined';
     }
 
     async function build() {
@@ -88,7 +88,7 @@ window.MorningSummary = (function () {
         if (builtFor === s) return;
         if (building) return building;
         building = (async () => {
-            advice = adviceAllowed() && typeof SalesAdvice !== 'undefined' ? await SalesAdvice.scanAll(salesDepartures()) : [];
+            advice = adviceAllowed() && typeof SalesAdvice !== 'undefined' ? await SalesAdvice.scanAll(salesDepartures(), null, undefined, 'summary') : [];
             builtFor = s;
             if (typeof updateHeaderStatus === 'function') updateHeaderStatus();
         })().finally(() => { building = null; });

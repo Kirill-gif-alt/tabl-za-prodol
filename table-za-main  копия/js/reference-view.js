@@ -248,6 +248,80 @@ window.ReferenceView = (function () {
 
     // ---------- суммы субсидии и себестоимость ----------
 
+    // Форма суммы → запись справочника (или { error }).
+    function readAmountForm() {
+        const val = (id) => document.getElementById(id)?.value ?? '';
+        const entry = { from: val('ref-a-from'), to: val('ref-a-to'), ac: val('ref-a-ac'), subsidy: val('ref-a-sub'), cost: val('ref-a-cost') };
+        const mcost = [...document.querySelectorAll('.ref-a-mcost')];
+        if (mcost.length) {
+            const krai = RouteCosts.isKraiPair ? RouteCosts.isKraiPair(entry.from, entry.to) : false;
+            const n = (x) => { const v = parseFloat(String(x || '').replace(',', '.')); return isFinite(v) ? v : null; };
+            const byMonth = {};
+            const months = [];
+            mcost.forEach(inp => {
+                const m = parseInt(inp.dataset.m, 10);
+                months.push(m);
+                const c = n(inp.value);
+                const nEl = document.querySelector(`.ref-a-mn[data-m="${m}"]`);
+                if (c != null) {
+                    byMonth[m] = { cost: c, sub: krai ? 0 : (n(document.getElementById('ref-a-suball')?.value) || 0) };
+                    if (n(nEl && nEl.value) != null) byMonth[m].n = Math.round(n(nEl.value));
+                }
+            });
+            const have = Object.values(byMonth);
+            if (!have.length) return { error: 'Впишите себестоимость хотя бы за один месяц' };
+            Object.assign(entry, { months, byMonth, krai,
+                cost: have.reduce((a, v) => a + v.cost, 0) / have.length,
+                subsidy: krai ? 0 : have.reduce((a, v) => a + v.sub, 0) / have.length });
+        }
+        return entry;
+    }
+
+    // Предупреждения при вводе суммы (не запрещают сохранить): подозрительные цифры и то, что сайт сделает сам.
+    function amountWarnings(e) {
+        const out = [];
+        const num = (v) => { const x = parseFloat(String(v == null ? '' : v).replace(',', '.')); return isFinite(x) ? x : null; };
+        const sub = num(e.subsidy);
+        const cost = num(e.cost);
+        const krai = RouteCosts.isKraiPair ? RouteCosts.isKraiPair(e.from, e.to) : false;
+        if (!String(e.from).trim() || !String(e.to).trim()) return out;
+        if (krai && sub > 0) out.push('краевой маршрут — субсидия всегда 0, вписанная сумма учитываться не будет');
+        if (sub != null && cost != null && sub > cost) out.push(`субсидия (${fmtK(sub)}) больше себестоимости (${fmtK(cost)})`);
+        if (cost != null && cost > 0 && cost < 100) out.push(`себестоимость ${fmtK(cost)} тыс. ₽ за пару рейсов — слишком мало, вы не ошиблись в единицах (нужны тысячи рублей)?`);
+        if (cost != null && cost > 15000) out.push(`себестоимость ${fmtK(cost)} тыс. ₽ за пару рейсов — слишком много, вы не ошиблись в единицах?`);
+        // Другие типы ВС этого же маршрута: себестоимость в разы другая / субсидия задана только у одного.
+        const key = SubsidyRef.amountKey(e.from, e.to, e.ac);
+        const same = RouteCosts.amountRows().filter(x => x.key !== key && SubsidyRef.amountKey(x.from, x.to, 'X') === SubsidyRef.amountKey(e.from, e.to, 'X') && x.cost > 0);
+        if (cost > 0 && same.length) {
+            const med = same.map(x => x.cost).sort((a, b) => a - b)[same.length >> 1];
+            if (cost > med * 1.6 || cost < med / 1.6) out.push(`у других типов ВС этого маршрута себестоимость около ${fmtK(med)} — у этой записи ${fmtK(cost)}`);
+        }
+        if (!krai && same.length) {
+            const withSub = same.filter(x => x.subsidy > 0);
+            if (withSub.length === same.length && !(sub > 0)) out.push('у других типов ВС этого маршрута субсидия есть, а здесь не задана');
+            if (!withSub.length && sub > 0) out.push('у других типов ВС этого маршрута субсидии нет, а здесь задана');
+        }
+        // По месяцам: месяц, сильно отличающийся от остальных, и нулевое число рейсов.
+        if (e.byMonth) {
+            const ms = Object.keys(e.byMonth).map(m => ({ m: +m, v: e.byMonth[m] }));
+            if (ms.length >= 2) {
+                const avg = ms.reduce((a, x) => a + x.v.cost, 0) / ms.length;
+                ms.forEach(x => { if (avg > 0 && Math.abs(x.v.cost - avg) / avg > 0.4) out.push(`${monthCap(x.m)}: себестоимость ${fmtK(x.v.cost)} заметно отличается от среднего ${fmtK(avg)}`); });
+            }
+            ms.forEach(x => { if (x.v.n === 0) out.push(`${monthCap(x.m)}: число рейсов 0`); });
+        }
+        return out;
+    }
+
+    function refreshAmountWarn() {
+        const box = document.getElementById('ref-a-warn');
+        if (!box) return;
+        const e = readAmountForm();
+        const w = e.error ? [] : amountWarnings(e);
+        box.innerHTML = w.length ? w.map(x => `<div>⚠ ${esc(x)}</div>`).join('') : '';
+        box.hidden = !w.length;
+    }
+
     function amountsHtml() {
         const can = SubsidyRef.canEdit();
         const q = amountFilter.trim().toLowerCase();
@@ -278,6 +352,7 @@ window.ReferenceView = (function () {
         // Месяцы формы: у записи свои или, для нового маршрута, — из последнего файла.
         const aeMonths = ae ? (ae.months && ae.months.length ? ae.months : months) : [];
         const aeKrai = !!(ae && ae.from && ae.to && RouteCosts.isKraiPair && RouteCosts.isKraiPair(ae.from, ae.to));
+        if (can && ae) setTimeout(refreshAmountWarn, 0);
         const form = can && ae ? `
             <div class="rp-ref-form" id="ref-amount-form">
                 <div class="rp-ref-form-title">${ae.key ? 'Изменить маршрут' : 'Новый маршрут'}</div>
@@ -301,6 +376,7 @@ window.ReferenceView = (function () {
                         <td><input class="cr-input ref-a-mn" data-m="${m}" type="number" min="0" step="1" value="${esc(v.n != null ? v.n : '')}"></td></tr>`; }).join('')}
                     </tbody></table>
                 </div>` : ''}
+                <div class="rp-ref-warn" id="ref-a-warn" hidden></div>
                 <div class="rp-ref-actions">
                     <button type="button" class="btn-primary rp-btn" data-refa-save>Сохранить</button>
                     <button type="button" class="filter-btn" data-refa-cancel>Отмена</button>
@@ -987,6 +1063,45 @@ window.ReferenceView = (function () {
         rerender();
     }
 
+    // ---------- история изменений справочника ----------
+    let hist = null;   // null — закрыта; { loading } | { ok, items, versions } | { error }
+
+    function histHtml() {
+        const can = typeof SubsidyRef !== 'undefined' && (SubsidyRef.canEdit() || SubsidyRef.canEditPkz());
+        if (!can) return '';
+        if (!hist) return '<div class="ref-hist-bar"><button type="button" class="filter-btn" data-rh-open title="Кто и что менял в периодах, суммах и ПКЗ; одну запись можно вернуть как было">🕘 История изменений</button></div>';
+        let body;
+        if (hist.loading) body = '<p class="rp-note">Загружаю историю…</p>';
+        else if (hist.error) body = `<p class="rp-note rp-warn">${esc(hist.error)}</p>`;
+        else if (!hist.items.length) body = '<p class="rp-note">Изменений в сохранённых копиях пока нет. Копии делаются при записи справочника не чаще раза в 10 минут.</p>';
+        else {
+            body = `<div class="rp-scroll"><table class="rp-table rp-refs-table">
+                <thead><tr><th>Когда</th><th>Кто</th><th>Что</th><th>Изменение</th><th></th></tr></thead>
+                <tbody>${hist.items.map((it, i) => {
+        const dt = it.at ? new Date(it.at) : null;
+        const when = dt && !isNaN(dt) ? `${String(dt.getDate()).padStart(2, '0')}.${String(dt.getMonth() + 1).padStart(2, '0')} ${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}` : '—';
+        return `<tr><td class="rp-nowrap">${when}</td><td>${esc(it.by || '—')}</td><td class="rp-left">${esc(it.title)}</td><td class="rp-left">${esc(it.text)}</td>
+            <td>${it.canUndo ? `<button type="button" class="filter-btn rp-open" data-rh-undo="${i}">Вернуть как было</button>` : '<span class="rp-muted" title="С тех пор эта запись менялась ещё раз">позже менялось</span>'}</td></tr>`;
+    }).join('')}</tbody></table></div>
+                <p class="rp-note">Показаны изменения по сохранённым копиям (${hist.versions} версий). «Вернуть как было» меняет только эту запись и видно всем.</p>`;
+        }
+        return `<section class="rp-card ref-hist"><div class="rp-card-head"><h3 class="rp-card-title">История изменений справочника</h3>
+            <button type="button" class="filter-btn" data-rh-close>Закрыть</button></div>${body}</section>`;
+    }
+
+    async function loadHist(rerender) {
+        hist = { loading: true };
+        rerender();
+        try {
+            const r = await SubsidyRef.changeLog(14);
+            hist = r.ok ? r : { error: r.error || 'Не удалось прочитать копии' };
+        } catch (e) {
+            console.warn(e);
+            hist = { error: 'Не удалось прочитать копии' };
+        }
+        rerender();
+    }
+
     function excelBarHtml() {
         const canImport = ['fares', 'periods', 'amounts', 'nav'].some(id => viewSection(id) && canEditSection(id));
         return `
@@ -1014,6 +1129,7 @@ window.ReferenceView = (function () {
         else if (section === 'flights') body = flightsHtml();
         return `
             ${excelBarHtml()}
+            ${histHtml()}
             <div class="ref-sections" role="tablist">${list.map(s => `
                 <button type="button" class="ref-section${s.id === section ? ' ref-section-on' : ''}" data-ref-section="${s.id}" aria-selected="${s.id === section}">${esc(s.label)}${s.id === 'check' && hasDataNow() && completeness().total ? ` <span class="ref-section-badge">${completeness().total}</span>` : ''}</button>`).join('')}
             </div>
@@ -1058,6 +1174,22 @@ window.ReferenceView = (function () {
             section = d.refSection;
             try { localStorage.setItem(SECTION_KEY, section); } catch (e) { /* ignore */ }
             rerender();
+            return true;
+        }
+        if (d.rhOpen != null) { loadHist(rerender); return true; }
+        if (d.rhClose != null) { hist = null; rerender(); return true; }
+        if (d.rhUndo != null) {
+            const it = hist && hist.items && hist.items[Number(d.rhUndo)];
+            if (!it) return true;
+            if (!window.confirm(`Вернуть как было?\n\n${it.title}\n${it.text}\n\nЭто увидят все.`)) return true;
+            btn.disabled = true;
+            SubsidyRef.revertEntry(it.kind, it.key, it.before).then(res => {
+                if (!res.ok) { toast(res.error || 'Не удалось вернуть', 'error'); btn.disabled = false; return; }
+                toast('Запись возвращена');
+                if (typeof ActivityLog !== 'undefined') ActivityLog.log('fare_refs', 'Откат: ' + it.title);
+                refreshAll();
+                loadHist(rerender);
+            });
             return true;
         }
         if (d.refXlExport != null) {
@@ -1162,30 +1294,10 @@ window.ReferenceView = (function () {
         }
         if (d.refaCancel != null) { amountEdit = null; rerender(); return true; }
         if (d.refaSave != null) {
-            const val = (id) => document.getElementById(id)?.value ?? '';
-            const entry = { from: val('ref-a-from'), to: val('ref-a-to'), ac: val('ref-a-ac'), subsidy: val('ref-a-sub'), cost: val('ref-a-cost') };
-            const mcost = [...document.querySelectorAll('.ref-a-mcost')];
-            if (mcost.length) {
-                const krai = RouteCosts.isKraiPair ? RouteCosts.isKraiPair(entry.from, entry.to) : false;
-                const n = (x) => { const v = parseFloat(String(x || '').replace(',', '.')); return isFinite(v) ? v : null; };
-                const byMonth = {};
-                const months = [];
-                mcost.forEach(inp => {
-                    const m = parseInt(inp.dataset.m, 10);
-                    months.push(m);
-                    const c = n(inp.value);
-                    const nEl = document.querySelector(`.ref-a-mn[data-m="${m}"]`);
-                    if (c != null) {
-                        byMonth[m] = { cost: c, sub: krai ? 0 : (n(document.getElementById('ref-a-suball')?.value) || 0) };
-                        if (n(nEl && nEl.value) != null) byMonth[m].n = Math.round(n(nEl.value));
-                    }
-                });
-                const have = Object.values(byMonth);
-                if (!have.length) { const el = document.getElementById('ref-a-error'); if (el) el.textContent = 'Впишите себестоимость хотя бы за один месяц'; return true; }
-                Object.assign(entry, { months, byMonth, krai,
-                    cost: have.reduce((a, v) => a + v.cost, 0) / have.length,
-                    subsidy: krai ? 0 : have.reduce((a, v) => a + v.sub, 0) / have.length });
-            }
+            const entry = readAmountForm();
+            if (entry.error) { const el = document.getElementById('ref-a-error'); if (el) el.textContent = entry.error; return true; }
+            const warns = amountWarnings(entry);
+            if (warns.length && !window.confirm('Проверьте перед сохранением:\n\n• ' + warns.join('\n• ') + '\n\nВсё равно сохранить?')) return true;
             run(btn, () => SubsidyRef.setAmount(entry, amountEdit && amountEdit.key), 'ref-a-error', () => {
                 amountEdit = null;
                 toast('Маршрут сохранён');
@@ -1357,6 +1469,7 @@ window.ReferenceView = (function () {
 
     let filterTimer = null;
     function handleInput(target, rerender) {
+        if (/^ref-a-(from|to|ac|sub|cost|suball)$/.test(target.id) || /(^|\s)ref-a-(mcost|mn)(\s|$)/.test(target.className || '')) { refreshAmountWarn(); return false; }
         if (/^ref-f-(code|from|to|back|type)$/.test(target.id)) { syncFlEdit(); return false; }
         if (target.id === 'ref-f-filter') {
             syncFlEdit();

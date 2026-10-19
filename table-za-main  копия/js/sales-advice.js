@@ -68,14 +68,32 @@ window.SalesAdvice = (function () {
         return { code, date, base, status, sold, refs, threshold: T, dtd, text, seats };
     }
 
+    // Цифры вылета к нынешнему дню: продано, кресла, ожидаемая (файл) и «аналогичные дни» (норма по дню недели).
+    // Не зависит от переключателей подсказок — нужна отчёту «Запрос на понижение».
+    function norms(code, date) {
+        const base = typeof getBaseFlight === 'function' ? getBaseFlight(code) : code;
+        const row = typeof getFlightRowForDate === 'function' ? getFlightRowForDate(base, date, code) : null;
+        if (!row || typeof buildFlightDtdBookingSeries !== 'function') return null;
+        const seats = typeof getSeatsOnSale === 'function' ? getSeatsOnSale(row) : 0;
+        const s = buildFlightDtdBookingSeries(base, date, code, 1, row[4]);
+        if (!s || !s.thisData || !s.thisData.length) return null;
+        const sold = s.thisData[s.thisData.length - 1];
+        const ref = s.refData && s.refData.length && !s.refIsLy ? s.refData[s.refData.length - 1] : null;
+        const exp = s.expectedData && s.expectedData.length ? s.expectedData[s.expectedData.length - 1] : null;
+        return { sold, seats, ref: ref != null && !isNaN(ref) ? Math.round(ref) : null, exp: exp != null && !isNaN(exp) ? Math.round(exp) : null, dtd: daysUntil(date), aircraft: row[4] };
+    }
+
     // Подсказка для вылета или null (нет данных / вне окна / не о чем подсказывать).
-    // В «Управлении продажами», карточке и утренней сводке подсказки выключены по решению владельца;
-    // на странице «Сегодня» (вкладка «Вылеты») — показываются: там им и место (force = true).
-    const SHOW = false;
-    function forDeparture(code, date, maxDays, force) {
-        if (!SHOW && !force) return null;
+    // Где показывать — переключатели в «Настройки» → «Параметры расчётов» → «Подсказки по тарифам»:
+    // place = 'today' (страница «Сегодня»), 'sales' («Управление продажами»), 'summary' (утренняя сводка).
+    function enabled(place) {
+        if (place === true) place = 'today';
+        return place === 'today' ? PV.HINT_TODAY === 1 : (place === 'sales' ? PV.HINT_SALES === 1 : (place === 'summary' ? PV.HINT_SUMMARY === 1 : false));
+    }
+    function forDeparture(code, date, maxDays, place) {
+        if (!enabled(place)) return null;
         if (!code || !date || !inWindow(date, maxDays)) return null;
-        const s = sig();
+        const s = sig() + '|' + (typeof Params !== 'undefined' ? Params.revision() : 0);
         if (s !== memoSig) { memo = new Map(); memoSig = s; }
         const key = code + '|' + date;
         if (memo.has(key)) return memo.get(key);
@@ -107,12 +125,12 @@ window.SalesAdvice = (function () {
 
     // Подсказки по всем вылетам окна (для сводки). Считается порциями, чтобы не подвешивать страницу.
     // only — набор «рейс|дата»: считать только эти вылеты (например, из «Управления продажами»).
-    async function scanAll(only, onProgress, maxDays, force) {
-        if (!SHOW && !force) return [];
+    async function scanAll(only, onProgress, maxDays, place) {
+        if (!enabled(place)) return [];
         const list = departuresAhead(maxDays).filter(d => !only || only.has(d.code + '|' + d.date));
         const out = [];
         for (let i = 0; i < list.length; i++) {
-            const a = forDeparture(list[i].code, list[i].date, maxDays, force);
+            const a = forDeparture(list[i].code, list[i].date, maxDays, place);
             if (a && a.status) out.push(a);
             if (i % 25 === 24) {
                 if (onProgress) onProgress(i + 1, list.length);
@@ -122,5 +140,5 @@ window.SalesAdvice = (function () {
         return out;
     }
 
-    return { forDeparture, scanAll, departuresAhead, inWindow, LABEL, STATUS, get DAYS_AHEAD() { return PV.ADVICE_DAYS_AHEAD; } };
+    return { norms, forDeparture, scanAll, departuresAhead, inWindow, LABEL, STATUS, get DAYS_AHEAD() { return PV.ADVICE_DAYS_AHEAD; } };
 })();

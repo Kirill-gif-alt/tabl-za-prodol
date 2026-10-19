@@ -370,10 +370,9 @@ window.PriceAdvisor = (function () {
         return `${now}${what}${guardNote}${why}${clamp} · ${bidTxt}${capNote}`;
     }
 
-    // Подсказки по цене на сайте отключены (решение владельца): карточка, отчёты и выгрузки их не показывают.
-    const SHOW = false;
+    // Включается в «Настройки» → «Параметры расчётов» → «Подсказки по тарифам» → «Ценовой советник».
     function canView() {
-        if (!SHOW) return false;
+        if (PV.HINT_PRICE !== 1) return false;
         // Включается в «Профилях» правом «Ценовой советник» (у администратора — всегда).
         return typeof ProfileAuth === 'undefined' || !!(ProfileAuth.getCurrentProfile() || {}).isAdmin || ProfileAuth.hasPermission('price_advisor');
     }
@@ -490,5 +489,5 @@ window.PriceAdvisor = (function () {
         return false;
     }
 
-    return { advise, text, inScope, capFor, routeInfo, settings, saveSettings, scanAll, canView, rub, get T() { return PV.PA_HORIZON; }, reportHtml, handleClick, handleChange };
+    return { currentPrice, advise, text, inScope, capFor, routeInfo, settings, saveSettings, scanAll, canView, rub, get T() { return PV.PA_HORIZON; }, reportHtml, handleClick, handleChange };
 })();

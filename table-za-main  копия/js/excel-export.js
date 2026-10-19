@@ -973,11 +973,107 @@ async function exportDataBoardSplit() {
         dataSearchQuery = keep.q;
     }
     const isKrai = (p) => typeof getFlightRouteType === 'function' && getFlightRouteType(p.outbound) === 'krai';
-    await exportDataBoardWorkbook(pairs.filter(isKrai), todayStart, 'Загрузка - КК');
-    await exportDataBoardWorkbook(pairs.filter(p => !isKrai(p)), todayStart, 'Загрузка - Межрегионалка');
+    await exportDataBoardWorkbook(pairs.filter(isKrai), todayStart, 'Загрузка - КК', true);
+    await exportDataBoardWorkbook(pairs.filter(p => !isKrai(p)), todayStart, 'Загрузка - Межрегионалка', true);
 }
 
-async function exportDataBoardWorkbook(pairs, todayStart, fileBase) {
+// История выгрузок «КК / Межрегионалка»: лист каждого дня хранится в браузере (IndexedDB), файл всегда один
+// и пересобирается целиком — старые вкладки сохраняют оформление (при чтении xlsx оно бы потерялось).
+const DATA_HIST_MAX = 30;   // вкладок в файле не больше 30 — самые старые уходят
+
+function dataHistDb() {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open('krasavia_excel_hist', 1);
+        req.onerror = () => reject(req.error);
+        req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains('sheets')) req.result.createObjectStore('sheets'); };
+        req.onsuccess = () => resolve(req.result);
+    });
+}
+
+// Вкладки хранятся в общей папке (shared/export-kk.json, export-mr.json) — один файл на всех администраторов;
+// нет доступа к общей папке — запасной путь: хранилище этого браузера.
+const DATA_HIST_FILES = { 'Загрузка - КК': 'export-kk.json', 'Загрузка - Межрегионалка': 'export-mr.json' };
+
+// Лист в общую папку — в сжатом виде: одинаковые стили ячеек (их десятки на 15 тыс. ячеек) хранятся один раз.
+function dataHistPack(ws) {
+    const styles = [];
+    const idx = new Map();
+    const out = {};
+    Object.keys(ws).forEach(k => {
+        const c = ws[k];
+        if (k.charAt(0) === '!' || !c || typeof c !== 'object') { out[k] = c; return; }
+        const cell = { ...c };
+        if (cell.s) {
+            const j = JSON.stringify(cell.s);
+            if (!idx.has(j)) { idx.set(j, styles.length); styles.push(cell.s); }
+            cell.s = idx.get(j);
+        }
+        out[k] = cell;
+    });
+    out['!styles'] = styles;
+    return out;
+}
+
+function dataHistUnpack(p) {
+    if (!p || !Array.isArray(p['!styles'])) return p;
+    const styles = p['!styles'];
+    const out = {};
+    Object.keys(p).forEach(k => {
+        if (k === '!styles') return;
+        const c = p[k];
+        if (k.charAt(0) === '!' || !c || typeof c !== 'object') { out[k] = c; return; }
+        out[k] = typeof c.s === 'number' ? { ...c, s: styles[c.s] } : c;
+    });
+    return out;
+}
+
+async function dataHistLoad(key) {
+    const shared = DATA_HIST_FILES[String(key).split(':').slice(1).join(':')];
+    if (shared && typeof SharedStorage !== 'undefined' && SharedStorage.readJsonFileStrict) {
+        const r = await SharedStorage.readJsonFileStrict(shared).catch(() => ({ ok: false }));
+        if (r.ok) {
+            const raw = (r.data && r.data.sheets && typeof r.data.sheets === 'object') ? r.data.sheets : {};
+            const out = {};
+            Object.keys(raw).forEach(k => { out[k] = dataHistUnpack(raw[k]); });
+            return out;
+        }
+    }
+    try {
+        const db = await dataHistDb();
+        return await new Promise((resolve) => {
+            const req = db.transaction('sheets', 'readonly').objectStore('sheets').get(key);
+            req.onsuccess = () => resolve(req.result || {});
+            req.onerror = () => resolve({});
+        });
+    } catch (e) { return {}; }
+}
+
+async function dataHistSave(key, map) {
+    const shared = DATA_HIST_FILES[String(key).split(':').slice(1).join(':')];
+    if (shared && typeof SharedStorage !== 'undefined' && SharedStorage.writeJsonFile) {
+        const packed = {};
+        Object.keys(map).forEach(k => { packed[k] = dataHistPack(map[k]); });
+        const ok = await SharedStorage.writeJsonFile(shared, { version: 1, updatedAt: new Date().toISOString(), sheets: packed }).catch(() => false);
+        if (ok) return;
+    }
+    try {
+        const db = await dataHistDb();
+        await new Promise((resolve) => {
+            const tx = db.transaction('sheets', 'readwrite');
+            tx.objectStore('sheets').put(map, key);
+            tx.oncomplete = resolve;
+            tx.onerror = resolve;
+        });
+    } catch (e) { /* без истории — просто файл за сегодня */ }
+}
+
+// «16.10.26» → число для сортировки (ГГММДД).
+function dataHistOrder(name) {
+    const m = String(name).match(/^(\d{2})\.(\d{2})\.(\d{2})$/);
+    return m ? +(m[3] + m[2] + m[1]) : 0;
+}
+
+async function exportDataBoardWorkbook(pairs, todayStart, fileBase, history) {
     const folder = await excelPrepareFolder('data');
     if (!(await loadPlainXlsx())) {
         showToast('Библиотека Excel не загружена', 'error');
@@ -992,9 +1088,28 @@ async function exportDataBoardWorkbook(pairs, todayStart, fileBase) {
         return;
     }
     const wb = lib.utils.book_new();
+    const fileDate = typeof getTodayDate === 'function' ? getTodayDate() : built.stamp;
+    if (history) {
+        // Один файл, вкладка на каждый день выгрузки («15.10.26», «16.10.26»…); повторная выгрузка за день — заменяет её.
+        const d = new Date();
+        const tab = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getFullYear()).slice(-2)}`;
+        const key = (typeof excelProfileId === 'function' ? excelProfileId() : '') + ':' + fileBase;
+        const map = await dataHistLoad(key);
+        map[tab] = built.ws;
+        const names = Object.keys(map).sort((a, b) => dataHistOrder(a) - dataHistOrder(b));
+        while (names.length > DATA_HIST_MAX) delete map[names.shift()];
+        await dataHistSave(key, map);
+        names.forEach(n => lib.utils.book_append_sheet(wb, map[n], n));
+        if (typeof excelSafeWorkbook === 'function') excelSafeWorkbook(wb);
+        // Последняя вкладка (сегодня) открывается первой.
+        wb.Workbook = wb.Workbook || {};
+        wb.Workbook.Views = [{ activeTab: names.length - 1 }];
+        const saved = await excelSaveWorkbook(lib, wb, excelSafeFilename(`${fileBase}.xlsx`), folder);
+        excelAnnounceSaved(saved, `${fileBase}: вкладка ${tab} (всего вкладок: ${names.length})`);
+        return;
+    }
     lib.utils.book_append_sheet(wb, built.ws, 'Маршруты');
     if (typeof excelSafeWorkbook === 'function') excelSafeWorkbook(wb);
-    const fileDate = typeof getTodayDate === 'function' ? getTodayDate() : built.stamp;
     const saved = await excelSaveWorkbook(lib, wb, excelDailyFilename(fileBase || 'КРАСАВИА_данные', fileDate), folder);
     excelAnnounceSaved(saved, `${fileBase ? fileBase + ': ф' : 'Ф'}айл готов, дата выгрузки ${built.stamp}`);
 }
