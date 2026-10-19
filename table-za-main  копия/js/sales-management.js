@@ -1851,6 +1851,9 @@ function createSalesManagementView(panel) {
         renderSalesFlightList();
         salesSnapToToday = true;
         renderSalesGrid();
+        // Карточка рейса (если открыта) показывает ближайший невыполненный вылет выбранного рейса.
+        const next = document.querySelector('#sm-grid tr[data-card-flight]:not(.sm-row-flew)');
+        if (next && typeof FlightCard !== 'undefined') FlightCard.maybeOpen(next.dataset.cardFlight, next.dataset.cardDate);
     });
     document.getElementById('sm-grid')?.addEventListener('click', (event) => {
         const lr = event.target.closest('.sm-lr');

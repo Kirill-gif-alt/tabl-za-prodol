@@ -298,7 +298,7 @@ window.FlightCard = (function () {
             const isModel = f.source === 'model';
             const range = f.lo != null && f.hi != null && f.lo !== f.hi ? `${isModel ? '8 из 10: ' : 'разброс '}${f.lo}–${f.hi}` : '';
             const histNote = (s) => (s.source === 'history'
-                ? `по ${s.n} ${FI.plural(s.n, 'прошлому вылету', 'прошлым вылетам', 'прошлым вылетам')} в этот день недели`
+                ? `по ${s.n} ${pluralRu(s.n, 'прошлому вылету', 'прошлым вылетам', 'прошлым вылетам')} в этот день недели`
                 : 'по файлу ожидаемой загрузки');
             const errTxt = isModel && f.model.err ? `обычно ошибается на ±${String(f.model.err).replace('.', ',')}` : '';
             const src = isModel ? `модель прогноза: ${f.model.method}${errTxt ? ' · ' + errTxt : ''}` : histNote(f);
@@ -340,7 +340,7 @@ window.FlightCard = (function () {
         if (g.length) {
             const total = g.reduce((a, x) => a + x.n, 0);
             const pnrOk = typeof ProfileAuth === 'undefined' || (ProfileAuth.hasPermission('sales_detail') && ProfileAuth.hasPermission('load_data'));
-            const items = g.map(x => `<span class="fc-grp-item"><strong>${x.n}</strong> ${FI.plural(x.n, 'человек', 'человека', 'человек')}${x.dealDate ? ' · от ' + esc(String(x.dealDate).slice(0, 5)) : ''}${x.pnr && pnrOk ? ' · ' + esc(x.pnr) : ''}</span>`).join('');
+            const items = g.map(x => `<span class="fc-grp-item"><strong>${x.n}</strong> ${pluralRu(x.n, 'человек', 'человека', 'человек')}${x.dealDate ? ' · от ' + esc(String(x.dealDate).slice(0, 5)) : ''}${x.pnr && pnrOk ? ' · ' + esc(x.pnr) : ''}</span>`).join('');
             groups = `<div class="fc-groups"><span class="fc-groups-title">${g.length === 1 ? 'Группа' : `Группы (${g.length})`}</span>${items}</div>`;
             summary.push(`<span class="fc-ins-chip fc-ins-group">${g.length === 1 ? 'группа' : 'группы'} ${total} чел.</span>`);
         }
