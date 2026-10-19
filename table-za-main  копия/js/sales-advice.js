@@ -69,10 +69,11 @@ window.SalesAdvice = (function () {
     }
 
     // Подсказка для вылета или null (нет данных / вне окна / не о чем подсказывать).
-    // Подсказки решений («снизить / повысить / внимание») отключены по решению владельца — нигде не показываются.
+    // В «Управлении продажами», карточке и утренней сводке подсказки выключены по решению владельца;
+    // на странице «Сегодня» (вкладка «Вылеты») — показываются: там им и место (force = true).
     const SHOW = false;
-    function forDeparture(code, date, maxDays) {
-        if (!SHOW) return null;
+    function forDeparture(code, date, maxDays, force) {
+        if (!SHOW && !force) return null;
         if (!code || !date || !inWindow(date, maxDays)) return null;
         const s = sig();
         if (s !== memoSig) { memo = new Map(); memoSig = s; }
@@ -106,12 +107,12 @@ window.SalesAdvice = (function () {
 
     // Подсказки по всем вылетам окна (для сводки). Считается порциями, чтобы не подвешивать страницу.
     // only — набор «рейс|дата»: считать только эти вылеты (например, из «Управления продажами»).
-    async function scanAll(only, onProgress, maxDays) {
-        if (!SHOW) return [];
+    async function scanAll(only, onProgress, maxDays, force) {
+        if (!SHOW && !force) return [];
         const list = departuresAhead(maxDays).filter(d => !only || only.has(d.code + '|' + d.date));
         const out = [];
         for (let i = 0; i < list.length; i++) {
-            const a = forDeparture(list[i].code, list[i].date, maxDays);
+            const a = forDeparture(list[i].code, list[i].date, maxDays, force);
             if (a && a.status) out.push(a);
             if (i % 25 === 24) {
                 if (onProgress) onProgress(i + 1, list.length);
