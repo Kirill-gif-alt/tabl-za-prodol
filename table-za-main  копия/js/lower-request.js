@@ -69,6 +69,14 @@ window.LowerRequest = (function () {
         return d.replace(/\s*[—–-]\s*/g, ' – ').replace(/\s+/g, ' ').trim() || code;
     }
 
+    // Порядок: пары «туда — обратно» рядом (101, 102; 301, 302), нечётный раньше чётного.
+    function orderOf(code) {
+        const m = String(code || '').match(/(\d+)\s*$/);
+        if (!m) return [1e9, 0, 0];
+        const n = Number(m[1]);
+        return [Math.floor(((n % 100) + 1) / 2), Math.floor(n / 100), n % 2 ? 0 : 1];
+    }
+
     function ladderOf(code, date) {
         try { return typeof FareGrid !== 'undefined' ? FareGrid.ladderFor(code, date) : []; } catch (e) { return []; }
     }
@@ -124,9 +132,9 @@ window.LowerRequest = (function () {
             const auto = autoOf(it.code, it.date);
             if (auto.dtdNum != null && auto.dtdNum < 1) return;   // улетевшие и сегодняшние не показываем
             const d = typeof parseLocalDate === 'function' ? parseLocalDate(it.date) : null;
-            out.push({ key: k, it, auto, dir: dirOf(it.code), ts: d ? d.getTime() : 0 });
+            out.push({ key: k, it, auto, dir: dirOf(it.code), ord: orderOf(it.code), ts: d ? d.getTime() : 0 });
         });
-        out.sort((a, b) => a.dir.localeCompare(b.dir, 'ru') || a.ts - b.ts);
+        out.sort((a, b) => a.ord[0] - b.ord[0] || a.ord[1] - b.ord[1] || a.ord[2] - b.ord[2] || a.dir.localeCompare(b.dir, 'ru') || a.ts - b.ts);
         return out;
     }
 
