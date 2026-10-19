@@ -93,7 +93,7 @@ window.TodayView = (function () {
         // Идёт расчёт для другого окна дней — дождаться и пересчитать под нынешний выбор.
         if (building) return building.then(() => buildAdvice());
         building = (async () => {
-            advice = await SalesAdvice.scanAll(salesDepartures(), null, aheadDays());
+            advice = await SalesAdvice.scanAll(salesDepartures(), null, aheadDays(), true);
             adviceSig = s;
         })().finally(() => { building = null; });
         return building;
@@ -143,7 +143,7 @@ window.TodayView = (function () {
 
     function leadText(p, errs, gaps) {
         const parts = [];
-        if (false && canTab('sales')) parts.push(p ? `${p} ${pluralRu(p, 'вылет ждёт', 'вылета ждут', 'вылетов ждут')} решения` : `все вылеты на ${aheadDays()} дн. в норме или уже отмечены`);
+        if (canTab('sales')) parts.push(p ? `${p} ${pluralRu(p, 'вылет ждёт', 'вылета ждут', 'вылетов ждут')} решения` : `все вылеты на ${aheadDays()} дн. в норме или уже отмечены`);
         if (typeof FlightChecks !== 'undefined' && FlightChecks.enabled()) parts.push(errs ? `${errs} ${pluralRu(errs, 'рейс', 'рейса', 'рейсов')} с ошибкой тарифа` : 'ошибок тарифов нет');
         if (gaps) parts.push(`в справочнике ${gaps} ${pluralRu(gaps, 'пропуск', 'пропуска', 'пропусков')}`);
         return parts.length ? parts.join(', ') + '.' : '';
@@ -196,7 +196,7 @@ window.TodayView = (function () {
         const sold = r && typeof getSoldFromRow === 'function' ? getSoldFromRow(r) : 0;
         const ac = r && typeof getAircraftType === 'function' ? getAircraftType(r[4]) : '';
         const dtd = daysUntil(item.date);
-        const adv = item.adv !== undefined ? item.adv : (typeof SalesAdvice !== 'undefined' ? SalesAdvice.forDeparture(item.code, item.date, aheadDays()) : null);
+        const adv = item.adv !== undefined ? item.adv : (typeof SalesAdvice !== 'undefined' ? SalesAdvice.forDeparture(item.code, item.date, aheadDays(), true) : null);
         const ref = adv && adv.refs ? adv.refs.map(x => x.value).join(' / ') : '—';
         const on = selected && selected.code === item.code && selected.date === item.date;
         const fc = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(item.code, item.date) : null;
@@ -280,7 +280,7 @@ window.TodayView = (function () {
         const dt = parseLocalDate(today());
         const longDate = dt ? dt.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : today();
         const tabs = [
-            false && canTab('sales') ? { id: 'advice', label: `Ждут решения · ${pend.length}` } : null,
+            canTab('sales') ? { id: 'advice', label: `Ждут решения · ${pend.length}` } : null,
             typeof FlightChecks !== 'undefined' && FlightChecks.enabled() ? { id: 'errors', label: `Ошибки тарифов · ${errs.length}` } : null,
             { id: 'day', label: `Вылеты ${pickDay && pickDay !== today() ? pickDay.slice(0, 5) : 'сегодня'} · ${departuresOn(pickDay || today()).length}` }
         ].filter(Boolean);
