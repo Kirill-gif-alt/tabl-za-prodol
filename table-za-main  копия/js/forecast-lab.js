@@ -772,7 +772,7 @@ window.ForecastLab = (function () {
         ['Продано на сейчас', 1], ['Файл ожидаемой загрузки', 3], ['Прогноз по дням недели', 2], ['Дней до вылета', 1],
         ['Темп продаж за 7 дней', 1], ['Соседние даты рейса', 1], ['Добор рейса за 4 недели', 1], ['Обратный рейс', 2], ['Есть признаки соседей', 1],
         ['День недели', 7], ['Выходной / пятница–воскресенье', 2], ['Праздник', 1], ['Каникулы', 1], ['Событие', 1], ['Канун / после праздника', 2], ['Сезон', 2],
-        ['Тип рейса и ВС', 2], ['Добор этого рейса (сглаж.)', 3], ['Рейс часто улетает полным', 1], ['Спрос рейса без ограничения кресел', 1],
+        ['Тип рейса и ВС', 2], ['Добор этого рейса (сглаж.)', 3], ['Рейс часто улетает полным', 1], ['Спрос рейса без ограничения кресел', 1], ['Обычное падение продаж к вылету (возвраты, неявки)', 2],
         ['Открытый класс и цена', 3], ['Группы на руках', 1], ['Кресла в продаже к ёмкости ВС', 1]
     ];
 
@@ -789,7 +789,7 @@ window.ForecastLab = (function () {
             r.y != null ? 1 : 0,
             Math.min(1, (r.d != null ? r.d : h) / 30),
             x[0], x[1], x[2], x[3], x[4], r.x ? 1 : 0
-        ].concat(calFeatures(smp.date), routeFeatures(smp.base, smp.sF || s), smp.eb || [0, 0, 0, 0, 0],
+        ].concat(calFeatures(smp.date), routeFeatures(smp.base, smp.sF || s), smp.eb || [0, 0, 0, 0, 0, 0, 0],
             // Нет данных о цене (история) — 0 и признак «нет»: модель учится на тех, где есть, и не путает «нет» с «дёшево».
             [r.pi ? 1 : 0, r.pi ? r.pk || 0 : 0, r.pi ? r.pf || 0 : 0, r.gh || 0, r.ss || 1]);
     }
@@ -859,8 +859,9 @@ window.ForecastLab = (function () {
     // ---------- решающие деревья (градиентный бустинг) ----------
 
     // Потери Хьюбера: большие ошибки (группы, отмены) не тянут деревья — ближе к средней ошибке в пассажирах.
-    // Обучение отдаёт управление браузеру примерно каждые 25 мс — интерфейс не подвисает.
-    async function gbmTrain(X, y, w) {
+    // gbmCore самодостаточна (без внешних имён): её исходный текст уходит в фоновый поток браузера, там деревья
+    // обучаются параллельно и не трогают интерфейс. Нет потока — тот же код считается в основном потоке с паузами.
+    async function gbmCore(X, y, w, P, tick) {
         const n = X.length;
         const k = X[0].length;
         // Пороги — квантили признака; значения раскладываются по корзинам один раз на обучение
@@ -872,7 +873,7 @@ window.ForecastLab = (function () {
             for (let i = 0; i < n; i++) vals[i] = X[i][f];
             const sorted = vals.slice().sort();
             const set = new Set();
-            for (let q = 1; q < GBM.bins; q++) set.add(sorted[Math.floor(q * (n - 1) / GBM.bins)]);
+            for (let q = 1; q < P.bins; q++) set.add(sorted[Math.floor(q * (n - 1) / P.bins)]);
             const cs = [...set].sort((a, c) => a - c);
             cuts.push(cs);
             const bf = new Uint8Array(n);
@@ -896,66 +897,117 @@ window.ForecastLab = (function () {
         const all = new Int32Array(n);
         for (let i = 0; i < n; i++) all[i] = i;
         const wt = w ? Float64Array.from(w) : new Float64Array(n).fill(1);
-        const ws = { bs: new Float64Array(GBM.bins + 1), bn: new Int32Array(GBM.bins + 1), bw: new Float64Array(GBM.bins + 1), w: wt };
-        let last = Date.now();
-        for (let t = 0; t < GBM.rounds; t++) {
+        const ws = { bs: new Float64Array(P.bins + 1), bn: new Int32Array(P.bins + 1), bw: new Float64Array(P.bins + 1), w: wt };
+
+        // Узел: лучший порог по всем признакам (максимум G = S_L²/n_L + S_R²/n_R − S²/n).
+        function grow(idx, depth) {
+            const nAll = idx.length;
+            const { bs, bn, bw, w } = ws;
+            let total = 0;
+            let wAll = 0;
+            for (let j = 0; j < nAll; j++) { const i = idx[j]; total += w[i] * res[i]; wAll += w[i]; }
+            const mean = wAll > 0 ? total / wAll : 0;
+            if (depth >= P.depth || nAll < P.minLeaf * 2) return { v: mean };
+            let best = null;
+            for (let f = 0; f < cuts.length; f++) {
+                const cs = cuts[f];
+                if (!cs.length) continue;
+                const bf = bins[f];
+                bs.fill(0);
+                bn.fill(0);
+                bw.fill(0);
+                for (let j = 0; j < nAll; j++) { const i = idx[j]; const b = bf[i]; bs[b] += w[i] * res[i]; bn[b]++; bw[b] += w[i]; }
+                let ls = 0;
+                let ln = 0;
+                let lw = 0;
+                for (let c = 0; c < cs.length; c++) {
+                    ls += bs[c];
+                    ln += bn[c];
+                    lw += bw[c];
+                    const rn = nAll - ln;
+                    const rw = wAll - lw;
+                    if (ln < P.minLeaf || rn < P.minLeaf || lw <= 0 || rw <= 0) continue;
+                    const rs = total - ls;
+                    const g = ls * ls / lw + rs * rs / rw - total * total / wAll;
+                    if (!best || g > best.g) best = { g, f, c, thr: cs[c] };
+                }
+            }
+            if (!best || best.g <= 1e-9) return { v: mean };
+            gain[best.f] += best.g;
+            const bf = bins[best.f];
+            let nl = 0;
+            for (let j = 0; j < nAll; j++) if (bf[idx[j]] <= best.c) nl++;
+            const L = new Int32Array(nl);
+            const R = new Int32Array(nAll - nl);
+            let a = 0;
+            let z = 0;
+            for (let j = 0; j < nAll; j++) { const i = idx[j]; if (bf[i] <= best.c) L[a++] = i; else R[z++] = i; }
+            return { f: best.f, c: best.c, thr: best.thr, l: grow(L, depth + 1), r: grow(R, depth + 1) };
+        }
+
+        for (let t = 0; t < P.rounds; t++) {
             for (let i = 0; i < n; i++) { const r = y[i] - pred[i]; res[i] = r > delta ? delta : (r < -delta ? -delta : r); }
-            const tree = grow(bins, res, all, 0, cuts, gain, ws);
+            const tree = grow(all, 0);
             trees.push(tree);
             for (let i = 0; i < n; i++) {
                 let nd = tree;
                 while (nd.v === undefined) nd = bins[nd.f][i] <= nd.c ? nd.l : nd.r;
-                pred[i] += GBM.rate * nd.v;
+                pred[i] += P.rate * nd.v;
             }
-            if (Date.now() - last > 25) { await pause(); last = Date.now(); }
+            if (tick) await tick();
         }
-        return { base, trees, gain };
+        return { base, trees, gain, rate: P.rate };
     }
 
-    // Узел: лучший порог по всем признакам (максимум G = S_L²/n_L + S_R²/n_R − S²/n).
-    function grow(bins, res, idx, depth, cuts, gain, ws) {
-        const nAll = idx.length;
-        const { bs, bn, bw, w } = ws;
-        let total = 0;
-        let wAll = 0;
-        for (let j = 0; j < nAll; j++) { const i = idx[j]; total += w[i] * res[i]; wAll += w[i]; }
-        const mean = wAll > 0 ? total / wAll : 0;
-        if (depth >= GBM.depth || nAll < GBM.minLeaf * 2) return { v: mean };
-        let best = null;
-        for (let f = 0; f < cuts.length; f++) {
-            const cs = cuts[f];
-            if (!cs.length) continue;
-            const bf = bins[f];
-            bs.fill(0);
-            bn.fill(0);
-            bw.fill(0);
-            for (let j = 0; j < nAll; j++) { const i = idx[j]; const b = bf[i]; bs[b] += w[i] * res[i]; bn[b]++; bw[b] += w[i]; }
-            let ls = 0;
-            let ln = 0;
-            let lw = 0;
-            for (let c = 0; c < cs.length; c++) {
-                ls += bs[c];
-                ln += bn[c];
-                lw += bw[c];
-                const rn = nAll - ln;
-                const rw = wAll - lw;
-                if (ln < GBM.minLeaf || rn < GBM.minLeaf || lw <= 0 || rw <= 0) continue;
-                const rs = total - ls;
-                const g = ls * ls / lw + rs * rs / rw - total * total / wAll;
-                if (!best || g > best.g) best = { g, f, c, thr: cs[c] };
+    // Пул фоновых потоков для деревьев (до 3). Исходный текст потока — из gbmCore (Blob), поэтому отдельного файла нет
+    // и работает в любом способе запуска сайта. Нет Worker / запрещён политикой — пул пуст, считаем в основном потоке.
+    let gbmPool = null;
+    function gbmWorkers() {
+        if (gbmPool) return gbmPool;
+        gbmPool = { slots: [], free: [], waiters: [] };
+        try {
+            if (typeof Worker === 'undefined' || typeof Blob === 'undefined' || !URL.createObjectURL) return gbmPool;
+            const src = 'const core=' + gbmCore.toString() + ';self.onmessage=async function(e){const d=e.data;try{const m=await core(d.X,d.y,d.w,d.P,null);self.postMessage({m:m});}catch(err){self.postMessage({err:String(err&&err.message||err)});}};';
+            const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+            const n = Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 2) - 1));
+            for (let i = 0; i < n; i++) { const slot = { w: new Worker(url) }; gbmPool.slots.push(slot); gbmPool.free.push(slot); }
+        } catch (e) { gbmPoolOff(); }
+        return gbmPool;
+    }
+
+    function gbmPoolOff() {
+        if (gbmPool) gbmPool.slots.forEach(s => { try { s.w.terminate(); } catch (e) { /* ignore */ } });
+        gbmPool = { slots: [], free: [], waiters: [], off: true };
+    }
+
+    function gbmParams() {
+        return { bins: GBM.bins, rounds: GBM.rounds, depth: GBM.depth, rate: GBM.rate, minLeaf: GBM.minLeaf };
+    }
+
+    // Несколько моделей деревьев сразу: jobs = [{ X, y, w }]. Параллельно в потоках; сбой потока — всё заново в основном.
+    async function gbmTrainAll(jobs) {
+        const P = gbmParams();
+        const pool = gbmWorkers();
+        if (pool.slots.length) {
+            const acquire = () => (pool.free.length ? Promise.resolve(pool.free.pop()) : new Promise(r => pool.waiters.push(r)));
+            const release = (s) => { const w = pool.waiters.shift(); if (w) w(s); else pool.free.push(s); };
+            try {
+                return await Promise.all(jobs.map(j => acquire().then(slot => new Promise((res, rej) => {
+                    slot.w.onmessage = (e) => { release(slot); if (e.data && e.data.err) rej(new Error(e.data.err)); else res(e.data.m); };
+                    slot.w.onerror = (e) => { release(slot); rej(new Error(e && e.message || 'worker')); };
+                    slot.w.postMessage({ X: j.X, y: j.y, w: j.w, P });
+                }))));
+            } catch (e) {
+                console.warn('ForecastLab: фоновый поток не сработал, считаю в основном', e);
+                gbmPoolOff();
             }
         }
-        if (!best || best.g <= 1e-9) return { v: mean };
-        gain[best.f] += best.g;
-        const bf = bins[best.f];
-        let nl = 0;
-        for (let j = 0; j < nAll; j++) if (bf[idx[j]] <= best.c) nl++;
-        const L = new Int32Array(nl);
-        const R = new Int32Array(nAll - nl);
-        let a = 0;
-        let z = 0;
-        for (let j = 0; j < nAll; j++) { const i = idx[j]; if (bf[i] <= best.c) L[a++] = i; else R[z++] = i; }
-        return { f: best.f, c: best.c, thr: best.thr, l: grow(bins, res, L, depth + 1, cuts, gain, ws), r: grow(bins, res, R, depth + 1, cuts, gain, ws) };
+        const out = [];
+        for (const j of jobs) {
+            let last = Date.now();
+            out.push(await gbmCore(j.X, j.y, j.w, P, async () => { if (Date.now() - last > 25) { await pause(); last = Date.now(); } }));
+        }
+        return out;
     }
 
     function treeValue(t, x) {
@@ -965,7 +1017,8 @@ window.ForecastLab = (function () {
 
     function gbmPredict(m, x) {
         let s = m.base;
-        for (const t of m.trees) s += GBM.rate * treeValue(t, x);
+        const rate = m.rate != null ? m.rate : GBM.rate;
+        for (const t of m.trees) s += rate * treeValue(t, x);
         return s;
     }
 
@@ -978,13 +1031,32 @@ window.ForecastLab = (function () {
         return dep && !dep.arch ? groupsBetween(dep, -1, h - 1) : 0;
     }
 
+    // Сбой данных: накануне вылета почти пусто (≤15% итога), а улетел заметный вылет (от 15 пасс.) — так не бывает,
+    // это выгрузка продаж без части дней. Такой вылет не годится ни для обучения, ни для проверки.
+    function isGlitch(e) {
+        if (!e || e.f == null || !(e.f >= 15)) return false;
+        const r = e.h && (e.h[1] || e.h[3]);
+        return !!(r && r.o <= 0.15 * e.f);
+    }
+    let glitchLive = [];   // для отчёта: какие вылеты исключены
+
+    // Видны ли по вылету возвраты: живые вылеты — да; архив — только с файлом по билетам (иначе он «чистый»,
+    // и падения продаж к вылету в нём не видно).
+    function grossKnown(dep) {
+        if (!dep) return false;
+        if (!dep.arch) return true;
+        return !!(typeof SalesArchive !== 'undefined' && SalesArchive.ticketsFor && SalesArchive.ticketsFor(dep.date, dep.code));
+    }
+
     // Записи с известным фактом, по дате вылета.
     function samples() {
         const out = [];
         const C = context();
+        glitchLive = [];
         Object.keys(log).forEach(key => {
             const e = log[key];
             if (e.f == null) return;
+            if (isGlitch(e)) { glitchLive.push(key); return; }
             const date = key.slice(0, key.lastIndexOf('|'));
             const d = parseLocalDate(date);
             if (!d) return;
@@ -994,7 +1066,7 @@ window.ForecastLab = (function () {
                 if (!(s > 0)) return;
                 const dep = C.byKey[key];
                 if (dep && dep.trunc) return;   // ранние продажи вылета не попали в историю — добор ложный
-                out.push({ key, base: e.b, date, ts: d.getTime(), h: Number(h), s, sF: dep && dep.sF ? dep.sF : s, r, f: e.f, grpAfter: grpAfterOf(key, Number(h)) });
+                out.push({ key, base: e.b, date, ts: d.getTime(), h: Number(h), s, sF: dep && dep.sF ? dep.sF : s, r, f: e.f, gr: grossKnown(dep), grpAfter: grpAfterOf(key, Number(h)) });
             });
         });
         out.sort((a, b) => a.ts - b.ts || a.h - b.h || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
@@ -1042,6 +1114,14 @@ window.ForecastLab = (function () {
         H.s += t; H.n++; H.fu += fu;
         G.s += t; G.n++; G.fu += fu;
         R.s += t; R.n++; R.fu += fu;
+        // Падение к вылету: сколько кресел в среднем «уходит» (возвраты, неявки) и как часто итог ниже проданного.
+        if (x.gr) {
+            const dn = t < 0 ? -t : 0;
+            const ng = t < 0 ? 1 : 0;
+            H.dn = (H.dn || 0) + dn; H.ng = (H.ng || 0) + ng; H.gn = (H.gn || 0) + 1;
+            G.dn = (G.dn || 0) + dn; G.ng = (G.ng || 0) + ng; G.gn = (G.gn || 0) + 1;
+            R.dn = (R.dn || 0) + dn; R.ng = (R.ng || 0) + ng; R.gn = (R.gn || 0) + 1;
+        }
         // Восстановление спроса (projection detruncation): добор полных вылетов заменяется ожиданием добора
         // при условии «не меньше увиденного» по нормальному закону добора группы на этом горизонте,
         // оценённому по неполным вылетам: E[t | t ≥ c] = μ + σ·φ(a)/(1 − Φ(a)), a = (c − μ)/σ.
@@ -1079,14 +1159,19 @@ window.ForecastLab = (function () {
         const fGrp = G && G.n ? (G.fu + K * fAll) / (G.n + K) : fAll;
         const uAll = (H.u || H.s) / H.n;
         const uGrp = G && G.n ? ((G.u || G.s) + K * uAll) / (G.n + K) : uAll;
-        return { v: (R.s + K * grp) / (R.n + K), n: R.n, fu: (R.fu + K * fGrp) / (R.n + K), u: ((R.u || R.s) + K * uGrp) / (R.n + K) };
+        const m = (a, gn) => (gn > 0 ? a / gn : 0);
+        const dnAll = m(H.dn || 0, H.gn || 0);
+        const dnGrp = G && G.gn ? ((G.dn || 0) + K * dnAll) / (G.gn + K) : dnAll;
+        const ngAll = m(H.ng || 0, H.gn || 0);
+        const ngGrp = G && G.gn ? ((G.ng || 0) + K * ngAll) / (G.gn + K) : ngAll;
+        return { dn: ((R.dn || 0) + K * dnGrp) / ((R.gn || 0) + K), ng: ((R.ng || 0) + K * ngGrp) / ((R.gn || 0) + K), v: (R.s + K * grp) / (R.n + K), n: R.n, fu: (R.fu + K * fGrp) / (R.n + K), u: ((R.u || R.s) + K * uGrp) / (R.n + K) };
     }
 
     // [добор рейса, есть, доверие, доля вылетов рейса, улетевших полными] — последний: насколько добор рейса
     // занижен креслами (цензурированный спрос). Высокая доля — спрос выше того, что рейс успевает «показать».
     function ebFeature(acc, base, h, s) {
         const e = ebPick(acc, base, h, PV.EB_K_FEAT, s);
-        return e ? [e.v, 1, e.n / (e.n + PV.EB_K_FEAT), e.fu, e.u] : [0, 0, 0, 0, 0];
+        return e ? [e.v, 1, e.n / (e.n + PV.EB_K_FEAT), e.fu, e.u, e.dn, e.ng] : [0, 0, 0, 0, 0, 0, 0];
     }
 
     function target(x) {
@@ -1151,7 +1236,17 @@ window.ForecastLab = (function () {
         const W = recencyWeights(list);
         // Прореженная старая часть — каждая m-я запись — весит за m записей: вес по давности не умножается на прореживание.
         if (W && list.thin) for (let i = 0; i < list.thin.n; i++) W[i] *= list.thin.step;
-        const res = { n: list.length, lin: {}, linAll: ridge(X, y, W), gbm: await gbmTrain(X, y, W) };
+        // Деревья: общие и отдельные на близкие (1–3 дня), средние (5–10) и дальние (14–30) горизонты — параллельно.
+        const jobs = [{ X, y, w: W }];
+        const gids = [];
+        GROUPS.forEach(g => {
+            const ids = [];
+            list.forEach((x, i) => { if (g.hs.includes(x.h)) ids.push(i); });
+            if (ids.length >= PV.MIN_TRAIN) { gids.push(g.id); jobs.push({ X: ids.map(i => X[i]), y: ids.map(i => y[i]), w: W && ids.map(i => W[i]) }); }
+        });
+        const trees = await gbmTrainAll(jobs);
+        const res = { n: list.length, lin: {}, linAll: ridge(X, y, W), gbm: trees[0], gbmG: {} };
+        gids.forEach((id, j) => { res.gbmG[id] = trees[j + 1]; });
         HORIZONS.forEach(h => {
             const ids = [];
             list.forEach((x, i) => { if (x.h === h) ids.push(i); });
@@ -1169,7 +1264,8 @@ window.ForecastLab = (function () {
         const o = smp.r.o / smp.s;
         const clamp = (lf) => Math.max(0, Math.min(smp.s, Math.round((o + lf) * smp.s)));
         const l = linPredict(m.lin[smp.h] || m.linAll, x);
-        const g = gbmPredict(m.gbm, x);
+        const gg = m.gbmG && m.gbmG[groupOf(smp.h).id];
+        const g = gg ? (1 - PV.GBM_GROUP_MIX) * gbmPredict(m.gbm, x) + PV.GBM_GROUP_MIX * gbmPredict(gg, x) : gbmPredict(m.gbm, x);
         return { lin: clamp(l), gbm: clamp(g), ens: clamp((l + g) / 2) };
     }
 
@@ -1355,14 +1451,16 @@ window.ForecastLab = (function () {
         // Интервал 80%: [f̂ + q_lo·s, f̂ + q_hi·s], снизу 0 (неявки и возвраты бывают), сверху — кресла.
         let lo = null;
         let hi = null;
-        const c = ev.conf && ev.conf[h + '|' + segOf(r)];
+        // Интервал по загрузке, какой выйдет у прогноза (до калибровки); мало рейсов такой загрузки — общий.
+        const vForBand = final != null ? final : r.o;
+        const c = ev.conf && (ev.conf[h + '|' + segOf(r) + '|' + loadBand(vForBand, r.s)] || ev.conf[h + '|' + segOf(r)]);
         // Интервал — только если проверялся тот же расчёт, что идёт вживую: комитет и модели на горизонте,
         // где модели проверить было не на чем, вживую устроены иначе, чем в проверке.
         const sameAsEval = ['planOr', 'planPick', 'hist', 'naive'].includes(usedK) || !(ev.byH[h] && ev.byH[h].simpleOnly);
         if (final != null && c && c.k === usedK && sameAsEval) {
             // Снизу — не меньше уже проданного: «8 из 10» показывает, сколько ещё доберут.
-            lo = Math.min(final, Math.max(0, Math.floor(final + c.lo * r.s)));
-            hi = Math.max(final, Math.min(Math.max(r.s, r.o), Math.ceil(final + c.hi * r.s)));
+            lo = Math.min(final, Math.max(0, Math.round(final + c.lo * r.s)));
+            hi = Math.max(final, Math.min(Math.max(r.s, r.o), Math.round(final + c.hi * r.s)));
         }
         if (final == null) final = r.o;
         // Калибровка по уровню загрузки (если на проверке она уменьшила ошибку) — интервал сдвигается вместе с прогнозом.
@@ -1619,6 +1717,14 @@ window.ForecastLab = (function () {
     function rankLo(n, a) { return Math.floor((n + 1) * a + 1e-9); }
     function rankHi(n, a) { return Math.ceil((n + 1) * (1 - a) - 1e-9); }
 
+    // Загрузка по прогнозу: слабые, средние и почти полные рейсы ошибаются по-разному (у полных потолок — кресла),
+    // поэтому интервал берётся из остатков рейсов той же загрузки, если их достаточно.
+    const BAND_MULT = 4;   // по загрузке интервал берётся при остатков в 4 раза больше минимума: на малом числе он завышен
+    function loadBand(v, s) {
+        const l = s > 0 ? v / s : 0;
+        return l < 0.55 ? 0 : (l < 0.85 ? 1 : 2);
+    }
+
     async function conformal(test, choice, val, tick) {
         const alpha = (1 - PV.CONF_LEVEL) / 2;
         const out = {};
@@ -1629,6 +1735,16 @@ window.ForecastLab = (function () {
             ['plan', 'hist', 'none'].forEach(sg => {
                 const pick = choice[h + '|' + sg] || choice[h];
                 if (!pick) return;
+                const bandOf = (x) => { const v = val(pick.k, x); return v == null ? -1 : loadBand(v, x.s); };
+                [0, 1, 2].forEach(lb => {
+                    const r = bank(pick.k, test.filter(x => x.h === h && segOf(x.r) === sg && bandOf(x) === lb)).sort((a, b) => a - b);
+                    const n = r.length;
+                    if (n < PV.CONF_MIN * BAND_MULT) return;
+                    const iLo = rankLo(n, alpha);
+                    const iHi = rankHi(n, alpha);
+                    if (iLo < 1 || iHi > n) return;
+                    out[h + '|' + sg + '|' + lb] = { k: pick.k, lo: r[iLo - 1], hi: r[iHi - 1], n, level: 'h·сегмент·загрузка' };
+                });
                 const levels = [
                     ['h·сегмент', x => x.h === h && segOf(x.r) === sg],
                     ['h', x => x.h === h],
@@ -1908,10 +2024,10 @@ window.ForecastLab = (function () {
             sortedBank.set(bk, { len: b.length, arr });
             return arr;
         };
-        const bankKeys = (x, k) => {
+        const bankKeys = (x, k, v) => {
             const sg = segOf(x.r);
             const g = groupOf(x.h).id;
-            return [`a|${x.h}|${sg}|${k}`, `b|${x.h}|${k}`, `c|${g}|${sg}|${k}`, `d|${g}|${k}`, `e|${k}`];
+            return [`l|${x.h}|${sg}|${loadBand(v, x.s)}|${k}`, `a|${x.h}|${sg}|${k}`, `b|${x.h}|${k}`, `c|${g}|${sg}|${k}`, `d|${g}|${k}`, `e|${k}`];
         };
         const cover = {};
         HORIZONS.forEach(h => { cover[h] = { in: 0, n: 0, width: 0 }; });
@@ -1923,7 +2039,7 @@ window.ForecastLab = (function () {
                 const pk = choice[y.h + '|' + segOf(y.r)] || choice[y.h];
                 const v = pk ? val(pk.k, y) : null;
                 if (v == null) continue;
-                bankKeys(y, pk.k).forEach(bk => (banks.get(bk) || banks.set(bk, []).get(bk)).push((y.f - v) / y.s));
+                bankKeys(y, pk.k, v).forEach(bk => (banks.get(bk) || banks.set(bk, []).get(bk)).push((y.f - v) / y.s));
             }
             byCut.get(cut).forEach(x => {
                 const pk = choice[x.h + '|' + segOf(x.r)] || choice[x.h];
@@ -1931,15 +2047,15 @@ window.ForecastLab = (function () {
                 // Тот же порядок уровней, что у живого интервала (conformal): h·сегмент → h → группа·сегмент → группа → все.
                 let r = null;
                 if (pk && v != null) {
-                    for (const bk of bankKeys(x, pk.k)) {
+                    for (const bk of bankKeys(x, pk.k, v)) {
                         const a = sortedOf(bk);
-                        if (a && a.length >= PV.CONF_MIN && rankLo(a.length, alpha) >= 1 && rankHi(a.length, alpha) <= a.length) { r = a; break; }
+                        if (a && a.length >= PV.CONF_MIN * (bk.charAt(0) === 'l' ? BAND_MULT : 1) && rankLo(a.length, alpha) >= 1 && rankHi(a.length, alpha) <= a.length) { r = a; break; }
                     }
                 }
                 if (!r) return;
                 const n = r.length;
-                const lo = Math.min(v, Math.max(0, Math.floor(v + r[Math.max(0, rankLo(n, alpha) - 1)] * x.s)));
-                const hi = Math.min(Math.max(x.s, x.r.o), Math.ceil(v + r[Math.min(n - 1, rankHi(n, alpha) - 1)] * x.s));
+                const lo = Math.min(v, Math.max(0, Math.round(v + r[Math.max(0, rankLo(n, alpha) - 1)] * x.s)));
+                const hi = Math.min(Math.max(x.s, x.r.o), Math.round(v + r[Math.min(n - 1, rankHi(n, alpha) - 1)] * x.s));
                 const C = cover[x.h];
                 C.n++;
                 C.width += hi - lo;
@@ -2026,6 +2142,20 @@ window.ForecastLab = (function () {
             if (md != null) { R.modelAll[0] += Math.abs(md - x.f); R.modelAll[1]++; }
             byBase.set(x.base, R);
         });
+        // Где модель ошибается: по рейсам, за 3, 7 и 14 дней до вылета («что берём»). Ошибка, её доля от перевезённых и смещение
+        // (↑ завышает, ↓ занижает) — по ним видно рейсы, на которых модели не хватает данных или признаков.
+        const rAcc = new Map();
+        test.forEach(x => {
+            if (x.h !== 3 && x.h !== 7 && x.h !== 14) return;
+            const v = chosenVal(x);
+            if (v == null) return;
+            const a = rAcc.get(x.base) || { n: 0, abs: 0, bias: 0, f: 0 };
+            a.n++; a.abs += Math.abs(v - x.f); a.bias += v - x.f; a.f += x.f;
+            rAcc.set(x.base, a);
+        });
+        const routeErr = [...rAcc.entries()].filter(([, a]) => a.n >= 15)
+            .map(([b, a]) => ({ b, n: a.n, mae: a.abs / a.n, wape: a.f ? a.abs / a.f : null, bias: a.bias / a.n }))
+            .sort((p, q) => q.mae - p.mae).slice(0, 15);
         // Модель для карточки — на всём журнале; «что влияет» — по её деревьям.
         const full = await cachedTrain(all, all.length, cum);
         let influence = [];
@@ -2044,7 +2174,7 @@ window.ForecastLab = (function () {
         // Как модель учится: сколько вылетов за последнюю неделю данных добавилось в обучение.
         const lastTs = all.length ? all[all.length - 1].ts : 0;
         const fresh = new Set(all.filter(x => x.ts > lastTs - 7 * DAY).map(x => x.key)).size;
-        return { at: Date.now(), fresh, calib, calibCheck, rubErr, full, pool: poolOf(all), committee, cover, groups, signals, byH, byWeek, byBase, choice, conf, influence, segCount, samples: all.length, departures: new Set(all.map(x => x.key)).size, trained: !!full, anyModel };
+        return { at: Date.now(), fresh, calib, calibCheck, rubErr, full, pool: poolOf(all), committee, cover, groups, signals, byH, byWeek, byBase, routeErr, glitches: glitchLive.slice(), choice, conf, influence, segCount, samples: all.length, departures: new Set(all.map(x => x.key)).size, trained: !!full, anyModel };
     }
 
     // Один расчёт за раз; все, кто ждал, получают результат (и при ошибке). Устаревший расчёт не применяется.
@@ -2584,9 +2714,9 @@ window.ForecastLab = (function () {
             ${f('<i>w<sub>k</sub></i> ∝ exp(−4·(<i>L<sub>k</sub></i>/<i>L</i><sub>min</sub> − 1)), &nbsp; <i>L</i><sub>рейс</sub> = (Σ|<i>e</i>| + 8·<i>L</i><sub>все</sub>) / (<i>n</i> + 8)', '«Комитет моделей»: все способы считают прогноз, вес каждого — по его ошибкам именно на этом рейсе (пока вылетов мало — по всем рейсам). Лучший на рейсе весит больше, остальные страхуют; способ с ошибкой больше двух лучших не голосует.')}
             ${f('<i>a<sub>i</sub></i> = 2<sup>−давность/120 дн.</sup>', 'Постоянное дообучение: каждый день модели заново учатся на всех улетевших вылетах за год (загруженная история + новые вылеты). Свежие вылеты весят больше: полугодовой — в 3 раза меньше вчерашнего, годовой — в 8 раз.')}
             ${f('<i>ŵ</i> = (<i>X</i><sup>T</sup><i>AX</i> + λ<i>I</i>)<sup>−1</sup><i>X</i><sup>T</sup><i>At</i>, <i>A</i> = diag(<i>a</i>), &nbsp; λ = 0,8', `Линейная модель (гребневая регрессия) по ${FEATURE_GROUPS.reduce((a, g) => a + g[1], 0)} признакам: признаки приводятся к одному масштабу, штраф λ не даёт весам раздуваться на малых данных. Своя модель на каждом горизонте, когда записей ≥ 80.`)}
-            ${f('<i>F<sub>m</sub></i> = <i>F</i><sub><i>m</i>−1</sub> + η·<i>h<sub>m</sub></i>, &nbsp; <i>r</i> = clip(<i>t</i> − <i>F</i>, −δ, δ), &nbsp; η = 0,08, <i>M</i> = 120', 'Решающие деревья (градиентный бустинг): каждое следующее дерево исправляет ошибки предыдущих. Ошибка обрезается на δ (потери Хьюбера) — группы и отмены не сбивают модель.')}
+            ${f(`<i>F<sub>m</sub></i> = <i>F</i><sub><i>m</i>−1</sub> + η·<i>h<sub>m</sub></i>, &nbsp; <i>r</i> = clip(<i>t</i> − <i>F</i>, −δ, δ), &nbsp; η = ${String(PV.GBM_RATE).replace('.', ',')}, <i>M</i> = ${PV.GBM_ROUNDS}, глубина ${PV.GBM_DEPTH}`, 'Решающие деревья (градиентный бустинг): каждое следующее дерево исправляет ошибки предыдущих. Ошибка обрезается на δ (потери Хьюбера) — группы и отмены не сбивают модель. Кроме общих деревьев обучаются отдельные на близкие (1–3 дня), средние (5–10) и дальние (14–30) горизонты; итог — их смесь. Обучение идёт в фоновых потоках браузера и не тормозит сайт.')}
             ${f('<i>t̂</i> = ½(<i>t̂</i><sub>лин</sub> + <i>t̂</i><sub>дер</sub>)', 'Среднее двух моделей. Особенности рейса модели берут из признака «добор этого рейса». Добор может быть и отрицательным: в последние дни возвраты бывают больше новых продаж.')}
-            ${f('[<i>f̂</i> + <i>q</i><sub>0,1</sub>·<i>s</i>; &nbsp;<i>f̂</i> + <i>q</i><sub>0,9</sub>·<i>s</i>], &nbsp; <i>q</i> — квантили остатков (<i>f</i> − <i>f̂</i>)/<i>s</i> прошлых прогнозов', 'Интервал 80% (конформный): по тому, как этот же способ ошибался раньше на таком же горизонте и таких же вылетах. Несимметричный — вниз и вверх ошибаются по-разному. В карточке: «44 из 72 (40–47, 80%)».')}
+            ${f('[<i>f̂</i> + <i>q</i><sub>0,1</sub>·<i>s</i>; &nbsp;<i>f̂</i> + <i>q</i><sub>0,9</sub>·<i>s</i>], &nbsp; <i>q</i> — квантили остатков (<i>f</i> − <i>f̂</i>)/<i>s</i> прошлых прогнозов', 'Интервал 80% (конформный): по тому, как этот же способ ошибался раньше на таком же горизонте, таких же вылетах и такой же загрузке (слабые, средние и почти полные рейсы ошибаются по-разному). Несимметричный — вниз и вверх ошибаются по-разному. В карточке: «44 из 72 (40–47, 80%)».')}
             ${f('недобор: P50/<i>s</i> &lt; 60%; &nbsp; перегруз: P50/<i>s</i> ≥ 95% или (P90 &gt; <i>s</i> и P50/<i>s</i> ≥ 90%); &nbsp; темп: |<i>z</i>| ≥ 2, <i>z</i> = (<i>o</i>/<i>s</i> − <i>m</i>)/σ', 'Ранние предупреждения. P50 — прогноз, P10–P90 — интервал 80%; <i>m</i> и σ — сколько обычно продано к этому дню у того же рейса в тот же день недели. Срочность = сила отклонения / √дней до вылета. Пороги меняются в отчёте.')}
             ${f('Ошибка, % = Σ|<i>f̂</i> − <i>f</i>| / Σ<i>f</i>', 'Ошибка в процентах от всех перевезённых пассажиров — не «взрывается» на рейсах с малой загрузкой, в отличие от средней ошибки в процентах по рейсам.')}
             ${f('обучение: вылеты с датой ≤ понедельник(дата − <i>h</i>) − 1 день', 'Честная проверка: прогноз за <i>h</i> дней модель делает, зная только вылеты, улетевшие к тому моменту.')}
@@ -2729,6 +2859,9 @@ window.ForecastLab = (function () {
                 <div class="dr-sum"><div class="dr-sum-title">Где ошибается сильнее всего, за 7 дней</div>
                     ${rowsR ? `<table class="rp-table dr-sum-table"><thead><tr><th>Рейс</th><th>Файл ожидаемой</th><th>Что берём</th><th>Вылетов</th></tr></thead><tbody>${rowsR}</tbody></table>` : '<p class="rp-note">Пока нет данных.</p>'}
                 </div>
+                ${ev.routeErr && ev.routeErr.length ? `<div class="dr-sum"><div class="dr-sum-title">Где модель ошибается: рейсы с самой большой ошибкой (за 3, 7 и 14 дней до вылета)</div>
+                    <table class="rp-table dr-sum-table"><thead><tr><th>Рейс</th><th>Ошибка, пасс.</th><th>Ошибка, %</th><th title="↑ прогноз завышает, ↓ занижает">Смещение</th><th>Записей</th></tr></thead><tbody>${ev.routeErr.map(x => `<tr><td class="rp-left"><strong>${esc(x.b)}</strong> <span class="rp-muted">${esc(typeof getFlightDirection === 'function' ? getFlightDirection(x.b) : '')}</span></td><td>${fmt(x.mae)}</td><td>${x.wape == null ? '—' : Math.round(x.wape * 100) + '%'}</td><td>${x.bias > 0 ? '↑' : '↓'}${fmt(Math.abs(x.bias))}</td><td>${x.n}</td></tr>`).join('')}</tbody></table></div>` : ''}
+                ${ev.glitches && ev.glitches.length ? `<p class="rp-note">Исключены как сбой данных (накануне вылета почти пусто, а улетел заметный вылет): ${ev.glitches.length} — ${esc(ev.glitches.slice(0, 6).map(k => k.split('|').reverse().join(' ')).join(', '))}${ev.glitches.length > 6 ? '…' : ''}.</p>` : ''}
                 ${groupsHtml(ev)}
                 ${mathHtml()}
                 ${canWrite() ? `<div class="ref-toolbar"><button type="button" class="btn-secondary rp-btn" id="fl-capture">Записать прогнозы сейчас</button>
