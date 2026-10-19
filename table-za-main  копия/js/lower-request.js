@@ -101,11 +101,19 @@ window.LowerRequest = (function () {
         };
     }
 
+    // Просьбы по подклассам: [{ places, cls }, …]. Старые записи (places/cls у самого рейса) читаются как одна просьба.
+    function asksOf(it) {
+        if (Array.isArray(it.asks)) return it.asks;
+        return it.places != null || it.cls ? [{ places: it.places, cls: it.cls || '' }] : [];
+    }
+
     function askText(it, auto) {
-        const p = Number(it.places);
-        if (!(p > 0)) return '';
-        const l = auto.ladder.find(x => x.cls === it.cls);
-        return `${p} ${placesWord(p)}${it.cls ? `, тариф ${it.cls}${l ? ` (${fmtN(l.price)})` : ''}` : ''}`;
+        const parts = asksOf(it).filter(a => Number(a.places) > 0).map(a => {
+            const p = Number(a.places);
+            const l = auto.ladder.find(x => x.cls === a.cls);
+            return `${p} ${placesWord(p)}${a.cls ? `, тариф ${a.cls}${l ? ` (${fmtN(l.price)})` : ''}` : ''}`;
+        });
+        return parts.join(' и ');
     }
 
     function rowsOf() {
@@ -140,12 +148,14 @@ window.LowerRequest = (function () {
     function rowHtml(r) {
         const over = r.it.over || {};
         const cell = (col) => `<td><input class="lr-in${over[col] != null ? ' lr-over' : ''}" data-lr-cell="${col}" data-lr-key="${esc(r.key)}" value="${esc(cellVal(r, col))}"></td>`;
-        const clsOpts = ['<option value="">—</option>'].concat(r.auto.ladder.map(l => `<option value="${esc(l.cls)}"${r.it.cls === l.cls ? ' selected' : ''}>${esc(l.cls)} (${fmtN(l.price)})</option>`)).join('');
+        const clsOpts = (sel) => ['<option value="">—</option>'].concat(r.auto.ladder.map(l => `<option value="${esc(l.cls)}"${sel === l.cls ? ' selected' : ''}>${esc(l.cls)} (${fmtN(l.price)})</option>`)).join('');
+        const asks = asksOf(r.it);
+        const askRows = (asks.length ? asks : [{ places: null, cls: '' }]).map((a, i) => `<span class="lr-ask-ctl"><input type="number" min="0" step="1" class="lr-num" data-lr-places="${esc(r.key)}" data-i="${i}" value="${a.places != null ? esc(a.places) : ''}" placeholder="мест"> <select class="lr-sel" data-lr-cls="${esc(r.key)}" data-i="${i}" title="Тариф (подкласс), о котором просим">${clsOpts(a.cls)}</select>${i > 0 ? ` <button type="button" class="lr-del2" data-lr-askdel="${esc(r.key)}" data-i="${i}" title="Убрать этот подкласс">✕</button>` : ''}</span>`).join('');
         return `<tr data-lr-row="${esc(r.key)}">
             <td class="lr-first"><button type="button" class="lr-del" data-lr-del="${esc(r.key)}" title="Убрать из запроса">✕</button>
                 <input class="lr-in${over.date != null ? ' lr-over' : ''}" data-lr-cell="date" data-lr-key="${esc(r.key)}" value="${esc(cellVal(r, 'date'))}"><div class="lr-code">${esc(r.it.code)}</div></td>
             ${cell('load')}${cell('dtd')}${cell('fare')}${cell('exp')}${cell('sim')}
-            <td class="lr-ask"><span class="lr-ask-ctl"><input type="number" min="0" step="1" class="lr-num" data-lr-places="${esc(r.key)}" value="${r.it.places != null ? esc(r.it.places) : ''}" placeholder="мест"> <select class="lr-sel" data-lr-cls="${esc(r.key)}" title="Тариф, о котором просим">${clsOpts}</select></span>
+            <td class="lr-ask">${askRows}<button type="button" class="lr-add" data-lr-askadd="${esc(r.key)}" title="Просить места ещё по одному подклассу">＋ ещё подкласс</button>
                 <input class="lr-in${over.ask != null ? ' lr-over' : ''}" data-lr-cell="ask" data-lr-key="${esc(r.key)}" value="${esc(cellVal(r, 'ask'))}" placeholder="текст вручную"></td>
         </tr>`;
     }
@@ -178,6 +188,12 @@ window.LowerRequest = (function () {
         return save(items => { const it = items[key]; if (it && !it.deleted) { fn(it); it.at = new Date().toISOString(); } });
     }
 
+    function setAsks(it, a) {
+        it.asks = a;
+        delete it.places; delete it.cls;
+        if (it.over) delete it.over.ask;   // место и тариф поменялись — текст собирается заново
+    }
+
     function onChange(e) {
         const t = e.target;
         if (t.dataset.lrCell) {
@@ -193,9 +209,11 @@ window.LowerRequest = (function () {
                 if (!Object.keys(it.over).length) delete it.over;
             }).then(render);
         } else if (t.dataset.lrPlaces != null) {
-            patch(t.dataset.lrPlaces, it => { it.places = t.value === '' ? null : Math.max(0, parseInt(t.value, 10) || 0); if (it.over) delete it.over.ask; }).then(render);
+            const i = Number(t.dataset.i) || 0;
+            patch(t.dataset.lrPlaces, it => { const a = asksOf(it).map(x => ({ ...x })); while (a.length <= i) a.push({ places: null, cls: '' }); a[i].places = t.value === '' ? null : Math.max(0, parseInt(t.value, 10) || 0); setAsks(it, a); }).then(render);
         } else if (t.dataset.lrCls != null) {
-            patch(t.dataset.lrCls, it => { it.cls = t.value; if (it.over) delete it.over.ask; }).then(render);
+            const i = Number(t.dataset.i) || 0;
+            patch(t.dataset.lrCls, it => { const a = asksOf(it).map(x => ({ ...x })); while (a.length <= i) a.push({ places: null, cls: '' }); a[i].cls = t.value; setAsks(it, a); }).then(render);
         }
     }
 
@@ -249,6 +267,10 @@ window.LowerRequest = (function () {
         panel.classList.add('lr-panel');
         panel.addEventListener('change', onChange);
         panel.addEventListener('click', (e) => {
+            const add = e.target.closest('[data-lr-askadd]');
+            if (add) { patch(add.dataset.lrAskadd, it => { const a = asksOf(it).map(x => ({ ...x })); if (!a.length) a.push({ places: null, cls: '' }); a.push({ places: null, cls: '' }); setAsks(it, a); }).then(render); return; }
+            const adel = e.target.closest('[data-lr-askdel]');
+            if (adel) { patch(adel.dataset.lrAskdel, it => { const a = asksOf(it).map(x => ({ ...x })); a.splice(Number(adel.dataset.i), 1); setAsks(it, a); }).then(render); return; }
             const del = e.target.closest('[data-lr-del]');
             if (del) { const [c, d] = del.dataset.lrDel.split('|'); toggle(c, d, false); return; }
             if (e.target.closest('[data-lr-copy]')) { copy(); return; }

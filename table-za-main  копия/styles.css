@@ -8613,3 +8613,5 @@ html[data-theme="dark"] .cr-table tbody tr:hover td { background: #1f2a37; }
 .lr-num { width: 64px; padding: 3px 6px; border: 1px solid #cbd5e1; border-radius: 6px; }
 .lr-sel { padding: 3px 6px; border: 1px solid #cbd5e1; border-radius: 6px; }
 .sm-lr { margin-right: 4px; vertical-align: middle; cursor: pointer; }
+.lr-add { border: 0; background: transparent; color: #2563eb; cursor: pointer; font-size: 12px; padding: 2px 0 6px 0; }
+.lr-del2 { border: 0; background: transparent; color: #b91c1c; cursor: pointer; }
