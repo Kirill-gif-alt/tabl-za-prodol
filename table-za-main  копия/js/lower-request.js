@@ -5,7 +5,7 @@
 window.LowerRequest = (function () {
     const FILE = 'lower-requests.json';
     const WD = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
-    const COLS = [['n', '№'], ['date', 'Дата'], ['load', 'Загрузка'], ['dtd', 'Дней до вылета'], ['fare', 'Тариф сейчас'], ['exp', 'Ожидаемая (откл.)'], ['sim', 'Аналогичные дни (откл.)'], ['ask', 'Просим согласовать']];
+    const COLS = [['n', '№'], ['date', 'Дата'], ['load', 'Загрузка'], ['dtd', 'Дней до вылета'], ['fare', 'Тариф сейчас'], ['exp', 'Ожидаемая (откл.)'], ['sim', 'Аналогичные дни (откл.)'], ['ask', 'Просим согласовать'], ['ok', 'Согласование']];
 
     let store = { version: 1, items: {} };
     let loaded = false;
@@ -186,6 +186,7 @@ window.LowerRequest = (function () {
         const o = row.it.over && row.it.over[col];
         if (o != null) return o;
         if (col === 'n') return row.n;
+        if (col === 'ok') return '';   // столбец для ответа: заполняется вручную в письме или в Excel
         if (col === 'ask') return askText(row.it, row.auto);
         return row.auto[col];
     }
@@ -211,6 +212,7 @@ window.LowerRequest = (function () {
             ${cell('load')}${cell('dtd')}${cell('fare')}${cell('exp')}${cell('sim')}
             <td class="lr-ask">${askRows}<button type="button" class="lr-add" data-lr-askadd="${esc(r.key)}" title="Просить места ещё по одному подклассу">＋ ещё подкласс</button>
                 <input class="lr-in${over.ask != null ? ' lr-over' : ''}" data-lr-cell="ask" data-lr-key="${esc(r.key)}" value="${esc(cellVal(r, 'ask'))}" placeholder="текст вручную"></td>
+            <td class="lr-ok"></td>
         </tr>`;
     }
 
@@ -332,7 +334,7 @@ window.LowerRequest = (function () {
             aoa.push([]);
         });
         const ws = XLSX.utils.aoa_to_sheet(aoa);
-        ws['!cols'] = [{ wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 20 }, { wch: 24 }, { wch: 28 }];
+        ws['!cols'] = [{ wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 20 }, { wch: 24 }, { wch: 28 }, { wch: 22 }];
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Запрос на понижение');
         const d = new Date();

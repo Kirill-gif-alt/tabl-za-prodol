@@ -8184,3 +8184,4 @@ html[data-theme="dark"] .cr-table tbody tr:hover td { background: #1f2a37; }
 .lr-add { border: 0; background: transparent; color: #2563eb; cursor: pointer; font-size: 12px; padding: 2px 0 6px 0; }
 .lr-del2 { border: 0; background: transparent; color: #b91c1c; cursor: pointer; }
 .lr-n { width: 36px; text-align: center; color: #64748b; font-weight: 600; }
+.lr-ok { min-width: 120px; }
