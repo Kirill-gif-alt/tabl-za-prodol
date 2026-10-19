@@ -9,3 +9,8 @@ shared/_history/
 shared/history/
 shared/sales-marks/
 shared/forecast-log/
+
+# Рабочие данные, пароли, журналы и ярлыки в репозиторий не попадают — только код
+shared/
+*.lnk
+*.crswap
