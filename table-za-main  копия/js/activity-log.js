@@ -37,6 +37,7 @@ window.ActivityLog = (function () {
         sales: 'Управление продажами',
         creative: 'Творческая',
         reports: 'Отчёты',
+        lowreq: 'Запрос на понижение',
         stats: 'Статистика'
     };
 

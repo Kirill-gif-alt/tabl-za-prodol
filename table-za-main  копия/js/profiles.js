@@ -36,7 +36,7 @@ window.ProfileAuth = (function () {
         edit_flights: { label: 'Справочник рейсов — менять', group: 'Справочник', hint: 'видят все' },
         edit_calendar: { label: 'Календарь событий — менять', group: 'Справочник', hint: 'праздники, каникулы; видят все' },
         view_forecast: { label: 'Прогноз загрузки и предупреждения', group: 'Отчёты', hint: 'отчёт «Прогноз и предупреждения», строка «Модель» в карточке рейса' },
-        price_advisor: { hidden: true, label: 'Ценовой советник', group: 'Отчёты', hint: 'какой класс держать открытым: строка «Цена» в карточке рейса и таблица в «Прогноз и предупреждения»' },
+        price_advisor: { label: 'Ценовой советник', group: 'Отчёты', hint: 'какой класс держать открытым: строка «Цена» в карточке рейса и таблица в «Прогноз и предупреждения»' },
         manage_profiles: { label: 'Управление профилями', group: 'Админ' }
     };
 
@@ -578,6 +578,7 @@ window.ProfileAuth = (function () {
     function canAccessTab(tab) {
         if (tab === 'home') return resolveShowHomeMap(currentProfile);
         if (tab === 'stats') return hasPermission('tab_stats');
+        if (tab === 'lowreq') return !!(currentProfile && currentProfile.isAdmin);   // «Запрос на понижение» — только администратору
         const perm = TAB_PERM[tab];
         if (!perm) return false;
         // ПКЗ и «Расчёт расходов» — свои права (раньше открывались с «Динамикой продаж» / «Экономикой»;
@@ -715,6 +716,8 @@ window.ProfileAuth = (function () {
         if (adminBtn) {
             adminBtn.style.display = hasPermission('manage_profiles') ? '' : 'none';
         }
+        const lowTab = document.getElementById('tab-lowreq');
+        if (lowTab) lowTab.style.display = canAccessTab('lowreq') ? '' : 'none';
         const statsTab = document.getElementById('tab-stats');
         if (statsTab) {
             statsTab.style.display = canAccessTab('stats') ? '' : 'none';

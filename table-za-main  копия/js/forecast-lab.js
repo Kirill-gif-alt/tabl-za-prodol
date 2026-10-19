@@ -1474,7 +1474,8 @@ window.ForecastLab = (function () {
             if (lo != null) { lo = Math.max(0, Math.min(final, lo + dlt)); hi = Math.max(final, Math.min(Math.max(r.s, r.o), hi + dlt)); }
         }
         const hiRaw = lo != null ? Math.ceil(final + c.hi * r.s) : null;   // без ограничения креслами — спрос сверх ёмкости
-        return { final, lo, hi, hiRaw, sold: r.o, d, plan: r.p, team, cover: lo != null ? Math.round(PV.CONF_LEVEL * 100) : null, seats: r.s, lf: Math.round(final / r.s * 100), method: METHOD_LABEL[usedK], err: Math.round(pick.v * 10) / 10, trainedOn: pick.n, h };
+        const mlNow = ml ? one('ens') : null;   // прогноз самих моделей на сейчас — для сравнения с записью недельной давности
+        return { final, lo, hi, hiRaw, mlNow, sold: r.o, d, plan: r.p, team, cover: lo != null ? Math.round(PV.CONF_LEVEL * 100) : null, seats: r.s, lf: Math.round(final / r.s * 100), method: METHOD_LABEL[usedK], err: Math.round(pick.v * 10) / 10, trainedOn: pick.n, h };
     }
 
     // ---------- запись журнала ----------
@@ -2461,6 +2462,87 @@ window.ForecastLab = (function () {
         return out;
     }
 
+    // ---------- что изменилось за неделю ----------
+    // Прогноз моделей сейчас против записи журнала примерно недельной давности (ближайший контрольный день 7 дней назад).
+    let chgMemo = { sig: '', list: null };
+    let chgBusy = null;
+
+    function weekChanges() {
+        return chgMemo.sig === warnSig() ? chgMemo.list : null;
+    }
+
+    function weekChangesAsync() {
+        if (!evalState.ev || !loaded || !canView()) return Promise.resolve(null);
+        const sig = warnSig();
+        if (chgMemo.sig === sig) return Promise.resolve(chgMemo.list);
+        if (chgBusy && chgBusy.sig === sig) return chgBusy.p;
+        const p = computeChanges(sig).finally(() => { if (chgBusy && chgBusy.sig === sig) chgBusy = null; });
+        chgBusy = { sig, p };
+        return p;
+    }
+
+    async function computeChanges(sig) {
+        const C = context();
+        const now = todayTs();
+        const out = [];
+        let lastYield = Date.now();
+        const deps = [];
+        Object.keys(C.byBase).forEach(base => C.byBase[base].forEach(dep => deps.push([base, dep])));
+        for (const [base, dep] of deps) {
+            if (Date.now() - lastYield > 25) { await pause(); lastYield = Date.now(); }
+            const dtd = Math.round((dep.ts - now) / DAY);
+            if (dtd < 1 || dtd > 21 || !(dep.s > 0) || dep.arch) continue;
+            const e = log[dep.date + '|' + dep.code] || log[dep.date + '|' + base];
+            if (!e || !e.h) continue;
+            const p = predict(dep.rowCode, dep.date);
+            if (!p || p.mlNow == null || p.closed) continue;
+            // Запись примерно неделю назад: контрольный день не меньше чем на 3 дня дальше нынешнего, ближайший к «сейчас + 7».
+            let best = null;
+            HORIZONS.forEach(h => {
+                const r = e.h[h];
+                if (!r || r.m == null || h < p.d + 3) return;
+                if (!best || Math.abs(h - (p.d + 7)) < Math.abs(best.h - (p.d + 7))) best = { h, r };
+            });
+            if (!best) continue;
+            const delta = p.mlNow - best.r.m;
+            if (Math.abs(delta) < Math.max(4, Math.round(p.seats * 0.08))) continue;
+            const days = best.h - p.d;
+            const dSold = p.sold - best.r.o;
+            const norm = typeof SalesAdvice !== 'undefined' ? SalesAdvice.norms(dep.rowCode, dep.date) : null;
+            const dPlan = norm && norm.exp != null && best.r.q != null ? norm.exp - best.r.q : null;
+            const why = [`продано ${best.r.o} → ${p.sold} (${dSold >= 0 ? '+' : '−'}${Math.abs(dSold)} за ${days} дн.)`];
+            if (dPlan != null) {
+                why.push(`по плану за это время ${dPlan >= 0 ? '+' : '−'}${Math.abs(dPlan)}`);
+                if (dSold - dPlan >= 3) why.push('продажи идут быстрее плана');
+                else if (dPlan - dSold >= 3) why.push('продажи идут медленнее плана');
+            }
+            out.push({ code: dep.rowCode, date: dep.date, dtd, dir: typeof getFlightDirection === 'function' ? getFlightDirection(base) : '', s: p.seats, old: Math.round(best.r.m), now: Math.round(p.mlNow), delta: Math.round(delta), days, why });
+        }
+        out.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+        chgMemo = { sig, list: out };
+        return out;
+    }
+
+    function changesHtml(rerender) {
+        if (!evalState.ev) return '';
+        const list = weekChanges();
+        if (!list) {
+            weekChangesAsync().then(() => { if (rerender) rerender(); }).catch(e => console.warn(e));
+            return '';
+        }
+        if (!list.length) return `<section class="rp-card"><div class="rp-card-head"><h3 class="rp-card-title">Что изменилось за неделю</h3></div>
+            <p class="rp-note">Прогноз моделей по вылетам на 3 недели вперёд почти не изменился (порог — 8% кресел, не меньше 4 пасс.).</p></section>`;
+        const rows = list.slice(0, 30).map(c => `<tr>
+            <td class="rp-left"><strong>${esc(c.code)}</strong> <span class="rp-muted">${esc(c.dir)}</span></td>
+            <td>${esc(c.date)}<div class="rp-muted">через ${c.dtd} дн.</div></td>
+            <td>${c.old} → <strong>${c.now}</strong> <span class="rp-muted">из ${c.s}</span></td>
+            <td class="${c.delta > 0 ? 'fl-best' : 'fl-warn-slow'}"><strong>${c.delta > 0 ? '▲ +' : '▼ −'}${Math.abs(c.delta)}</strong></td>
+            <td class="rp-left fl-warn-why">${c.why.map(esc).join('; ')}</td></tr>`).join('');
+        return `<section class="rp-card"><div class="rp-card-head"><h3 class="rp-card-title">Что изменилось за неделю</h3></div>
+            <p class="rp-card-text">Вылеты на 3 недели вперёд, у которых прогноз моделей сейчас заметно отличается от записанного примерно неделю назад (порог — 8% кресел, не меньше 4 пасс.). Сначала — самые большие изменения. Показано ${Math.min(30, list.length)} из ${list.length}.</p>
+            <div class="rp-scroll"><table class="rp-table"><thead><tr><th>Рейс</th><th>Вылет</th><th>Прогноз моделей</th><th>Изменение</th><th>Почему</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+    }
+
     const WARN_LABEL = { under: 'Риск недобора', over: 'Риск перегруза', fast: 'Темп выше обычного', slow: 'Темп ниже обычного' };
 
     function warnHtml(rerender) {
@@ -2822,6 +2904,7 @@ window.ForecastLab = (function () {
             ? `Последняя запись журнала: прогнозов ${lastCapture.recorded}, восстановлено вылетов ${lastCapture.backfilled}, дописан факт ${lastCapture.finals}.` : '';
         if (lastCapture && lastCapture.stale) cap += ' Данные продаж старше суток — прогнозы на сегодня не записаны (запишутся после загрузки свежих данных).';
         return `${warnHtml(rerender)}
+            ${changesHtml(rerender)}
             ${typeof PriceAdvisor !== 'undefined' ? PriceAdvisor.reportHtml(rerender) : ''}
             <section class="rp-card">
                 <div class="rp-card-head"><h3 class="rp-card-title">Точность прогноза загрузки</h3></div>

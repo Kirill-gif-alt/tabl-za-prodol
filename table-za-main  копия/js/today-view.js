@@ -83,7 +83,7 @@ window.TodayView = (function () {
 
     function sig() {
         return [typeof dataEpoch === 'number' ? dataEpoch : 0, today(), typeof allData !== 'undefined' && allData ? allData.length : 0, aheadDays(),
-            typeof analyticsRevision === 'function' ? analyticsRevision() : ''].join('|');
+            typeof analyticsRevision === 'function' ? analyticsRevision() : '', typeof Params !== 'undefined' ? Params.revision() : 0].join('|');
     }
 
     async function buildAdvice() {
@@ -93,7 +93,7 @@ window.TodayView = (function () {
         // Идёт расчёт для другого окна дней — дождаться и пересчитать под нынешний выбор.
         if (building) return building.then(() => buildAdvice());
         building = (async () => {
-            advice = await SalesAdvice.scanAll(salesDepartures(), null, aheadDays(), true);
+            advice = await SalesAdvice.scanAll(salesDepartures(), null, aheadDays(), 'today');
             adviceSig = s;
         })().finally(() => { building = null; });
         return building;
@@ -196,7 +196,7 @@ window.TodayView = (function () {
         const sold = r && typeof getSoldFromRow === 'function' ? getSoldFromRow(r) : 0;
         const ac = r && typeof getAircraftType === 'function' ? getAircraftType(r[4]) : '';
         const dtd = daysUntil(item.date);
-        const adv = item.adv !== undefined ? item.adv : (typeof SalesAdvice !== 'undefined' ? SalesAdvice.forDeparture(item.code, item.date, aheadDays(), true) : null);
+        const adv = item.adv !== undefined ? item.adv : (typeof SalesAdvice !== 'undefined' ? SalesAdvice.forDeparture(item.code, item.date, aheadDays(), 'today') : null);
         const ref = adv && adv.refs ? adv.refs.map(x => x.value).join(' / ') : '—';
         const on = selected && selected.code === item.code && selected.date === item.date;
         const fc = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(item.code, item.date) : null;
