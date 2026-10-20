@@ -8196,3 +8196,36 @@ html[data-theme="dark"] .cr-table tbody tr:hover td { background: #1f2a37; }
 .lr-add { border: 0; background: transparent; color: #2563eb; cursor: pointer; font-size: 12px; padding: 2px 0 6px 0; }
 .lr-del2 { border: 0; background: transparent; color: #b91c1c; cursor: pointer; }
 .lr-n { width: 36px; text-align: center; color: #64748b; font-weight: 600; }
+
+/* Решения: диаграммы */
+.dv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-bottom: 14px; }
+.dv-card { background: var(--card-bg, #fff); border: 1px solid var(--border, #e2e8f0); border-radius: 10px; padding: 12px 14px; }
+.dv-title { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 10px; }
+.dv-stack { display: flex; height: 26px; border-radius: 6px; overflow: hidden; gap: 2px; }
+.dv-seg { display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; color: #fff; min-width: 4px; }
+.dv-pos { background: #059669; }
+.dv-neg { background: #dc2626; }
+.dv-unk { background: #94a3b8; }
+.dv-na { background: #cbd5e1; color: #334155; }
+.dv-wait { background: #f59e0b; }
+.dv-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 10px; font-size: 0.78rem; color: var(--text-muted); }
+.dv-leg b { color: var(--text); }
+.dv-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+.dv-row { display: grid; grid-template-columns: minmax(90px, 36%) 1fr auto; gap: 10px; align-items: center; padding: 3px 0; }
+.dv-lab { font-size: 0.8rem; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dv-lab span { display: block; font-size: 0.68rem; font-weight: 400; color: var(--text-muted); }
+.dv-track { height: 10px; background: var(--muted-bg, #f1f5f9); border-radius: 5px; overflow: hidden; }
+.dv-fill { height: 100%; border-radius: 5px; }
+.dv-val { font-size: 0.8rem; font-weight: 700; white-space: nowrap; text-align: right; min-width: 72px; }
+.dv-note { margin-top: 8px; font-size: 0.72rem; color: var(--text-muted); }
+.dv-cols { display: flex; gap: 6px; align-items: stretch; height: 150px; }
+.dv-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.dv-up, .dv-down { flex: 1; display: flex; align-items: flex-end; justify-content: center; }
+.dv-down { align-items: flex-start; border-top: 1px solid var(--border, #e2e8f0); }
+.dv-bar { width: 70%; max-width: 34px; border-radius: 3px; }
+.dv-xl { font-size: 0.62rem; text-align: center; color: var(--text-muted); margin-top: 3px; white-space: nowrap; overflow: hidden; }
+.dr-viewseg { display: inline-flex; gap: 4px; padding: 4px; background: var(--muted-bg, #f1f5f9); border-radius: 10px; margin: 0 0 12px; }
+.dr-viewseg button { border: 0; background: transparent; padding: 7px 16px; border-radius: 7px; font: inherit; font-size: 0.85rem; font-weight: 600; color: var(--text-muted); cursor: pointer; }
+.dr-viewseg button.on { background: var(--card-bg, #fff); color: var(--text); box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12); }
+html[data-theme="dark"] .dv-na { color: #0f172a; }
+.dv-grid > .dv-card:has(.dv-stack) { align-self: start; }

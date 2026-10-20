@@ -751,6 +751,65 @@ window.ReportsView = (function () {
     }
 
     // «Решения» → Excel: лист «Журнал» (каждое решение) и «Сводка» (по типу, направлениям, людям).
+    async function exportDecisionsTickets() {
+        if (!hasPerm('export_excel')) {
+            toast('Экспорт недоступен для вашего профиля', 'error');
+            return;
+        }
+        if (typeof DecisionsTickets === 'undefined') return;
+        const d = DecisionsTickets.exportData();
+        if (!d.rows.length) {
+            toast('За период решений нет — выгружать нечего', 'error');
+            return;
+        }
+        const folder = typeof excelPrepareFolder === 'function' ? await excelPrepareFolder('econ') : null;
+        const lib = await ensureXlsx();
+        if (!lib) {
+            toast('Библиотека Excel не загружена', 'error');
+            return;
+        }
+        const stamp = typeof excelExportStamp === 'function' ? excelExportStamp() : ru(new Date());
+        const head = `Журнал решений · ${d.period} дн. · решения: ${d.kind} · выгрузка ${stamp}`;
+        const j = sheetWriter(lib);
+        j.title(0, head, 14, style('FFFFFF', NAVY, true, 'left'));
+        j.table(1, ['Решение от', 'Кто', 'Рейс', 'Направление', 'Вылет', 'Решение', 'До, бил.', 'Обычно до', 'После, бил.', 'Обычно после', 'Ср. тариф до, ₽', 'Ср. тариф после, ₽', 'Итог, бил.', 'Результат'],
+            d.rows.map(r => ({ leftCols: [1, 3, 13], cells: [r.check, r.author, r.code, r.direction, r.dep, r.kind, r.before, r.normBefore, r.after, r.normAfter, r.fareBefore, r.fareAfter, r.effect, r.text] })));
+        const wsJ = j.finish([12, 18, 10, 30, 12, 14, 10, 11, 11, 13, 15, 16, 11, 44], 2);
+        const s = sheetWriter(lib);
+        const sec = style(SECTION, 'FFFFFF', true, 'left');
+        const pct = (v) => (v == null ? '' : v);   // число, а не «67%»: в Excel его можно сортировать и складывать
+        const block = (r, title, groups, keyLabel) => {
+            s.title(r++, title, 8, sec);
+            const head = [keyLabel, 'Решений', 'С итогом', 'Можно судить', 'Сработало', 'Сработало, %', 'Средний итог, бил.'];
+            return s.table(r, head,
+                groups.map(g => ({ cells: [g.key, g.n, g.done, g.judged, g.good, pct(g.share), g.avg == null ? '' : g.avg] }))) + 1;
+        };
+        let r = 0;
+        s.title(r++, head, 8, style('FFFFFF', NAVY, true, 'left'));
+        r++;
+        const t = d.total;
+        r = block(r, 'Итого', [{ key: 'Все решения', ...t }], 'Решения');
+        r = block(r, 'По типу решения', d.byKind, 'Решение');
+        r = block(r, 'По направлениям', d.byDir, 'Направление');
+        block(r, 'По людям', d.byAuthor, 'Кто');
+        const wsS = s.finish([34, 10, 10, 13, 11, 13, 17, 24], 0);
+        const wb = lib.utils.book_new();
+        lib.utils.book_append_sheet(wb, wsJ, 'Журнал');
+        lib.utils.book_append_sheet(wb, wsS, 'Сводка');
+        const fileDate = typeof getTodayDate === 'function' ? getTodayDate() : stamp;
+        const filename = typeof excelDailyFilename === 'function'
+            ? excelDailyFilename('КРАСАВИА_журнал_решений', fileDate)
+            : `КРАСАВИА_журнал_решений_${fileDate.replace(/\./g, '-')}.xlsx`;
+        const saved = typeof excelSaveWorkbook === 'function'
+            ? await excelSaveWorkbook(lib, wb, filename, folder)
+            : (lib.writeFile(wb, filename), { where: 'download' });
+        if (typeof ActivityLog !== 'undefined') ActivityLog.log('export', 'Журнал решений');
+        const msg = `Файл готов: решений ${d.rows.length}`;
+        if (typeof excelAnnounceSaved === 'function') excelAnnounceSaved(saved, msg);
+        else toast(msg);
+    }
+
+    // «Решения» → Excel: лист «Журнал» (каждое решение) и «Сводка» (по типу, направлениям, людям).
     async function exportDecisions() {
         if (!hasPerm('export_excel')) {
             toast('Экспорт недоступен для вашего профиля', 'error');
@@ -1035,7 +1094,7 @@ window.ReportsView = (function () {
                 : (btn.id === 'rp-sales' ? exportSales
                     : (btn.id === 'rp-econ' ? exportEcon
                         : (btn.id === 'rp-checks-export' ? exportChecks
-                            : (btn.id === 'dr-export' ? exportDecisions : null))));
+                            : (btn.id === 'dr-export' ? (DecisionsReport.view() === 'money' ? exportDecisions : exportDecisionsTickets) : null))));
             if (!run) return;
             btn.disabled = true;
             Promise.resolve()

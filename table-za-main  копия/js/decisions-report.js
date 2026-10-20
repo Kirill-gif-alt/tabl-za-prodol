@@ -8,6 +8,9 @@ window.DecisionsReport = (function () {
     let period = 60;
     let kindFilter = '';
     let memo = { sig: '', rows: null };
+    const VIEW_KEY = 'krasavia_decisions_view';
+    let view = 'tickets';
+    try { view = localStorage.getItem(VIEW_KEY) === 'money' ? 'money' : 'tickets'; } catch (e) { /* ignore */ }
     let money = { sig: '', map: null, loading: false, done: 0 };
 
     function esc(v) {
@@ -211,7 +214,7 @@ window.DecisionsReport = (function () {
         return kindFilter ? all.filter(r => r.status === kindFilter) : all;
     }
 
-    function html(rerender) {
+    function moneyHtml(rerender) {
         if (!available()) return '<p class="rp-note">Журнал решений недоступен.</p>';
         ensureMoney(rerender);
         const list = filtered();
@@ -262,6 +265,33 @@ window.DecisionsReport = (function () {
                     <td class="rp-left"><span class="dr-verdict dr-verdict-${st.cls}">${esc(st.text)}</span>${st.reason ? `<span class="dr-usual" style="white-space:normal">${esc(st.reason)}</span>` : ''}${reliab}${tail}</td>
                 </tr>`;
         }).join('');
+        const sts = list.map(moneyState);
+        const cnt = (f) => sts.filter(f).length;
+        const byDir = groupBy(list, r => r.direction || r.code).filter(g => g.money.definite).slice(0, 8);
+        const weeks = new Map();
+        list.forEach((r, i) => {
+            const m = sts[i].m;
+            if (!m || m.stage !== 'final' || (m.verdict !== 'worked' && m.verdict !== 'failed')) return;
+            const d = parseLocalDate(r.check);
+            if (!d) return;
+            d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+            const k = d.getTime();
+            weeks.set(k, (weeks.get(k) || 0) + m.delta);
+        });
+        const weekItems = [...weeks.entries()].sort((a, b) => a[0] - b[0]).map(([k, v]) => {
+            const d = new Date(k);
+            return { label: String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0'), value: v, text: rub(v) };
+        });
+        const dash = list.length ? `<div class="dv-grid">
+            ${DecisionsViz.stack('Итог решений', [
+                { label: 'Сработало', value: cnt(x => x.cls === 'pos'), cls: 'dv-pos' },
+                { label: 'Не сработало', value: cnt(x => x.cls === 'neg'), cls: 'dv-neg' },
+                { label: 'Неопределённо', value: cnt(x => x.text === 'неопределённо'), cls: 'dv-unk' },
+                { label: 'Ждём данные', value: cnt(x => x.cls === 'wait'), cls: 'dv-wait' },
+                { label: 'Не оценивается', value: cnt(x => x.text === 'не оценивается'), cls: 'dv-na' }])}
+            ${DecisionsViz.bars('Эффект по направлениям (определённые решения)', byDir.map(g => ({ label: g.key, value: g.money.sum, text: rub(g.money.sum), sub: `решений ${g.money.definite}` })), 'Рубли за окно после решения против ожидаемого по прежней цене')}
+            ${DecisionsViz.columns('Эффект по неделям решений', weekItems, 'Неделя начинается с даты внизу; только определённые решения')}
+        </div>` : '';
         const sums = list.length ? `<div class="dr-sums">
             ${summaryTable('По направлениям', groupBy(list, r => r.direction || r.code), 'Направление')}
             ${summaryTable('По типу решения', groupBy(list, r => KIND[r.status] || r.status), 'Решение')}
@@ -282,6 +312,7 @@ window.DecisionsReport = (function () {
                 </details>
                 ${toolbar}
                 ${kpis}
+                ${dash}
                 ${sums}
                 ${body ? `<div class="dr-list-title">Все решения <span class="rp-muted">· ${list.length}</span></div><div class="rp-scroll"><table class="rp-table dr-table">
                     <thead><tr><th>Решение</th><th>Рейс</th><th>Вылет</th><th>Что</th><th title="Класс до → после (из отметки или по продажам)">Класс</th><th title="Билетов в окне после решения / сколько ожидали">Билетов</th><th>Ср. тариф до → после</th><th title="Выручка в окне минус ожидаемая по прежней цене; в строке — диапазон ≈90%">Эффект</th><th>Объём / цена</th><th>Итог</th></tr></thead>
@@ -290,7 +321,7 @@ window.DecisionsReport = (function () {
     }
 
     // Данные для выгрузки в Excel (reports-view.js → exportDecisions).
-    function exportData() {
+    function moneyExport() {
         const list = filtered();
         const g = (fn) => groupBy(list, fn);
         return {
@@ -321,7 +352,7 @@ window.DecisionsReport = (function () {
         };
     }
 
-    function handleClick(btn, rerender) {
+    function moneyClick(btn, rerender) {
         if (btn.dataset.drRecompute) {
             if (!moneyAvailable() || money.loading) return true;
             const list = rows().filter(r => { const m = moneyOf(r); return m && m.stage !== 'na'; });
@@ -336,5 +367,20 @@ window.DecisionsReport = (function () {
         return false;
     }
 
-    return { canView, html, handleClick, exportData, summarize };
+    function setView(v) {
+        view = v === 'money' ? 'money' : 'tickets';
+        try { localStorage.setItem(VIEW_KEY, view); } catch (e) { /* ignore */ }
+    }
+
+    function html(rerender) {
+        const sw = `<div class="dr-viewseg" role="tablist"><button type="button" role="tab" class="${view === 'tickets' ? 'on' : ''}" data-dr-view="tickets">По билетам</button><button type="button" role="tab" class="${view === 'money' ? 'on' : ''}" data-dr-view="money">В рублях</button></div>`;
+        return sw + (view === 'money' ? moneyHtml(rerender) : DecisionsTickets.html());
+    }
+
+    function handleClick(btn, rerender) {
+        if (btn.dataset.drView) { setView(btn.dataset.drView); rerender(); return true; }
+        return view === 'money' ? moneyClick(btn, rerender) : DecisionsTickets.handleClick(btn, rerender);
+    }
+
+    return { canView, html, handleClick, view: () => view, exportData: () => (view === 'money' ? moneyExport() : DecisionsTickets.exportData()), summarize };
 })();
