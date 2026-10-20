@@ -42,9 +42,11 @@ window.DecisionsViz = (function () {
     }
 
     // Компактная строка решения; по двойному клику раскрываются подробности. tone: pos / neg / unk / wait / na.
-    const TONE = { pos: 'ЛУЧШЕ', neg: 'ХУЖЕ', lpos: 'СКОРЕЕ ЛУЧШЕ', lneg: 'СКОРЕЕ ХУЖЕ', unk: 'НЕ ПОНЯТНО', wait: 'ЖДЁМ', ser: 'В СЕРИИ', na: 'НЕ СЧИТАЕМ' };
-    const TONE_ORDER = ['pos', 'neg', 'lpos', 'lneg', 'unk', 'wait', 'ser', 'na'];
-    const TONE_FILTER = { pos: 'Помогли', neg: 'Навредили', lpos: 'Скорее лучше', lneg: 'Скорее хуже', unk: 'Не понятно', wait: 'Ждём', ser: 'В серии', na: 'Не считаем' };
+    const TONE = { pos: 'ЛУЧШЕ', neg: 'ХУЖЕ', lpos: 'СКОРЕЕ ЛУЧШЕ', lneg: 'СКОРЕЕ ХУЖЕ', wpos: 'ЧУТЬ ЛУЧШЕ', wneg: 'ЧУТЬ ХУЖЕ', flat: 'БЕЗ ЭФФЕКТА', unk: 'НЕ ПОНЯТНО', wait: 'ЖДЁМ', ser: 'В СЕРИИ', na: 'НЕ СЧИТАЕМ' };
+    // Фильтры сгруппированы: «Лучше» = ЛУЧШЕ, СКОРЕЕ ЛУЧШЕ и ЧУТЬ ЛУЧШЕ; «Хуже» — аналогично.
+    const GROUP = { pos: 'good', lpos: 'good', wpos: 'good', neg: 'bad', lneg: 'bad', wneg: 'bad', flat: 'flat', unk: 'unk', wait: 'wait', ser: 'ser', na: 'na' };
+    const TONE_ORDER = ['good', 'bad', 'flat', 'unk', 'wait', 'ser', 'na'];
+    const TONE_FILTER = { good: 'Лучше', bad: 'Хуже', flat: 'Без эффекта', unk: 'Не понятно', wait: 'Ждём', ser: 'В серии', na: 'Не считаем' };
 
     // Раскрытые строки помним по ключу: список перерисовывается (данные, расчёт денег), а открытое закрываться не должно.
     const openKeys = new Set();
@@ -84,7 +86,7 @@ window.DecisionsViz = (function () {
 
     function toneBar(rows, cur, attr) {
         const cnt = {};
-        rows.forEach(r => { cnt[r.tone] = (cnt[r.tone] || 0) + 1; });
+        rows.forEach(r => { const g = GROUP[r.tone] || r.tone; cnt[g] = (cnt[g] || 0) + 1; });
         const b = (t, label, n) => `<button type="button" class="dp-f${String(cur) === String(t) ? ' on' : ''}${t && t !== '' ? ' dp-f-' + t : ''}" data-${attr}="${t}">${label} <b>${n}</b></button>`;
         return `<div class="dp-filters">${b('', 'Все', rows.length)}${TONE_ORDER.filter(t => cnt[t]).map(t => b(t, TONE_FILTER[t], cnt[t])).join('')}
             <span class="dp-hint">Двойной клик по строке — подробности</span>
@@ -94,7 +96,7 @@ window.DecisionsViz = (function () {
     // Список: первые PAGE строк сразу, остальные по кнопке «Показать ещё» (без перерисовки).
     const PAGE = 80;
     function list(rows, cur) {
-        const sel = cur ? rows.filter(r => r.tone === cur) : rows;
+        const sel = cur ? rows.filter(r => (GROUP[r.tone] || r.tone) === cur) : rows;
         if (!sel.length) return '<div class="dp-list"><p class="rp-note">Нет решений с такой меткой.</p></div>';
         const head = sel.slice(0, PAGE).map(r => r.html).join('');
         const rest = sel.slice(PAGE);
@@ -106,7 +108,8 @@ window.DecisionsViz = (function () {
         return `<div class="dp-read">
             <span class="dp-chip dp-pos">ЛУЧШЕ</span> решение помогло
             <span class="dp-chip dp-neg">ХУЖЕ</span> навредило
-            <span class="dp-chip dp-unk">НЕ ПОНЯТНО</span> разница может быть случайной
+            <span class="dp-chip dp-lpos">СКОРЕЕ / ЧУТЬ</span> направление есть, но слабое
+            <span class="dp-chip dp-unk">БЕЗ ЭФФЕКТА</span> разница меньше значимой
             <span class="dp-chip dp-na">НЕ СЧИТАЕМ</span> сравнивать не с чем
             ${extra || ''}</div>`;
     }

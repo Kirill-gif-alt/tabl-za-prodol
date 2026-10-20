@@ -402,9 +402,16 @@ window.DecisionMoney = (function () {
             thr: round1k(est.thr), nExpPaid: round1(est.nExpPaid), expRev: round1k(est.expRev), revFact: round1k(est.revFact), strengthK: Math.round(est.strengthK * 100) / 100,
             dTickets: round1(est.dTickets), grade
         });
-        res.verdict = sampleOk ? verdict : 'unclear';
+        // Остаток: эффект ниже порога значимости — «без заметного эффекта», иначе — направление по знаку («чуть лучше / хуже»).
+        // Вероятность плюса (pPos) показывается рядом, поэтому слабый сигнал не выдаётся за твёрдый.
+        if (!sampleOk) verdict = verdict === 'worked' ? 'lean_pos' : (verdict === 'failed' ? 'lean_neg' : verdict);
+        if (verdict === 'unclear') {
+            if (Math.abs(est.delta) < est.thr) verdict = 'flat';
+            else verdict = est.delta > 0 ? 'weak_pos' : 'weak_neg';
+        }
+        res.verdict = verdict;
         res.pPos = pPos == null ? null : Math.round(pPos * 100);
-        if (!sampleOk) res.reason = 'мало билетов для вывода';
+        if (!sampleOk) res.reason = 'мало билетов: вывод слабый';
         return res;
     }
 
