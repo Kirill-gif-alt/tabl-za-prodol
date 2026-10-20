@@ -181,6 +181,20 @@ window.ForecastLab = (function () {
     }
 
     const pause = () => new Promise(r => setTimeout(r, 0));
+    // Долгие циклы отдают управление браузеру каждые ~10 мс: страница не замирает, пока модель учится.
+    function makeYield(ms) {
+        let t = performance.now();
+        return async () => { if (performance.now() - t > (ms || 10)) { await pause(); t = performance.now(); } };
+    }
+    async function mapAsync(arr, fn) {
+        const tick = makeYield();
+        const out = new Array(arr.length);
+        for (let i = 0; i < arr.length; i++) {
+            out[i] = fn(arr[i]);
+            if ((i & 127) === 127) await tick();
+        }
+        return out;
+    }
 
     // ---------- журнал: формат и слияние ----------
 
@@ -788,7 +802,8 @@ window.ForecastLab = (function () {
 
     // Признаки стандартизуются (взвешенные среднее и разброс): штраф λ одинаково действует на все веса, независимо
     // от единиц признака (доли кресел, дни, 0/1). Свободный член не штрафуется. Веса возвращаются в исходных единицах.
-    function ridge(X, y, w) {
+    async function ridge(X, y, w) {
+        const tick = makeYield();
         const k = X[0].length + 1;
         const mu = new Array(k - 1).fill(0);
         const sd = new Array(k - 1).fill(0);
@@ -801,15 +816,16 @@ window.ForecastLab = (function () {
         const A = Array.from({ length: k }, () => new Array(k).fill(0));
         const b = new Array(k).fill(0);
         let sw = 0;
-        X.forEach((row, i) => {
-            const x = z(row);
+        for (let i = 0; i < X.length; i++) {
+            const x = z(X[i]);
             const wi = w ? w[i] : 1;
             sw += wi;
             for (let a = 0; a < k; a++) {
                 b[a] += wi * x[a] * y[i];
                 for (let c = a; c < k; c++) A[a][c] += wi * x[a] * x[c];
             }
-        });
+            if ((i & 255) === 255) await tick();
+        }
         for (let a = 0; a < k; a++) for (let c = 0; c < a; c++) A[a][c] = A[c][a];
         // Штраф — в той же мере, что без весов: λ·(Σw/n).
         const lam = PV.LAMBDA * (X.length ? sw / X.length : 1);
@@ -957,7 +973,7 @@ window.ForecastLab = (function () {
         gbmPool = { slots: [], free: [], waiters: [] };
         try {
             if (typeof Worker === 'undefined' || typeof Blob === 'undefined' || !URL.createObjectURL) return gbmPool;
-            const src = 'const core=' + gbmCore.toString() + ';self.onmessage=async function(e){const d=e.data;try{const m=await core(d.X,d.y,d.w,d.P,null);self.postMessage({m:m});}catch(err){self.postMessage({err:String(err&&err.message||err)});}};';
+            const src = 'const core=' + gbmCore.toString() + ';self.onmessage=async function(e){const d=e.data;try{const X=new Array(d.n);for(let i=0;i<d.n;i++)X[i]=d.xf.subarray(i*d.k,(i+1)*d.k);const m=await core(X,d.y,d.w,d.P,null);self.postMessage({m:m});}catch(err){self.postMessage({err:String(err&&err.message||err)});}};';
             const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
             const n = Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 2) - 1));
             for (let i = 0; i < n; i++) { const slot = { w: new Worker(url) }; gbmPool.slots.push(slot); gbmPool.free.push(slot); }
@@ -986,7 +1002,13 @@ window.ForecastLab = (function () {
                 return await Promise.all(jobs.map(j => acquire().then(slot => new Promise((res, rej) => {
                     slot.w.onmessage = (e) => { release(slot); if (e.data && e.data.err) rej(new Error(e.data.err)); else res(e.data.m); };
                     slot.w.onerror = (e) => { release(slot); rej(new Error(e && e.message || 'worker')); };
-                    slot.w.postMessage({ X: j.X, y: j.y, w: j.w, P });
+                    // Данные уходят плоскими буферами с передачей владения: без копирования структуры в основном потоке.
+                    const n = j.X.length, k = j.X[0].length;
+                    const xf = new Float64Array(n * k);
+                    for (let i = 0; i < n; i++) xf.set(j.X[i], i * k);
+                    const yf = Float64Array.from(j.y);
+                    const wf = j.w ? Float64Array.from(j.w) : null;
+                    slot.w.postMessage({ xf, n, k, y: yf, w: wf, P }, wf ? [xf.buffer, yf.buffer, wf.buffer] : [xf.buffer, yf.buffer]);
                 }))));
             } catch (e) {
                 console.warn('ForecastLab: фоновый поток не сработал, считаю в основном', e);
@@ -996,7 +1018,7 @@ window.ForecastLab = (function () {
         const out = [];
         for (const j of jobs) {
             let last = Date.now();
-            out.push(await gbmCore(j.X, j.y, j.w, P, async () => { if (Date.now() - last > 25) { await pause(); last = Date.now(); } }));
+            out.push(await gbmCore(j.X, j.y, j.w, P, async () => { if (Date.now() - last > 10) { await pause(); last = Date.now(); } }));
         }
         return out;
     }
@@ -1222,7 +1244,7 @@ window.ForecastLab = (function () {
             list.thin = { n: pick.length, step };
         }
         if (list.length < PV.MIN_TRAIN) return null;
-        const X = list.map(features);
+        const X = await mapAsync(list, x => features(x));
         const y = list.map(target);
         const W = recencyWeights(list);
         // Прореженная старая часть — каждая m-я запись — весит за m записей: вес по давности не умножается на прореживание.
@@ -1236,13 +1258,13 @@ window.ForecastLab = (function () {
             if (ids.length >= PV.MIN_TRAIN) { gids.push(g.id); jobs.push({ X: ids.map(i => X[i]), y: ids.map(i => y[i]), w: W && ids.map(i => W[i]) }); }
         });
         const trees = await gbmTrainAll(jobs);
-        const res = { n: list.length, lin: {}, linAll: ridge(X, y, W), gbm: trees[0], gbmG: {} };
+        const res = { n: list.length, lin: {}, linAll: await ridge(X, y, W), gbm: trees[0], gbmG: {} };
         gids.forEach((id, j) => { res.gbmG[id] = trees[j + 1]; });
-        HORIZONS.forEach(h => {
+        for (const h of HORIZONS) {
             const ids = [];
             list.forEach((x, i) => { if (x.h === h) ids.push(i); });
-            if (ids.length >= PV.MIN_TRAIN_H) res.lin[h] = ridge(ids.map(i => X[i]), ids.map(i => y[i]), W && ids.map(i => W[i]));
-        });
+            if (ids.length >= PV.MIN_TRAIN_H) res.lin[h] = await ridge(ids.map(i => X[i]), ids.map(i => y[i]), W && ids.map(i => W[i]));
+        }
         // Отдельной поправки по рейсу нет: она считалась по остаткам на тех же данных, на которых училась модель
         // (двойная подстройка), а признак «добор этого рейса» уже несёт особенности рейса. Без неё проверка точнее.
         return res;
