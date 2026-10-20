@@ -16,7 +16,7 @@
 // результат фиксируется через день после окна. Повышение: через окно — только ранний сигнал, итог после вылета по остатку продаж.
 // Зафиксированный итог лежит в shared/decision-money/ГГГГ-ММ.json и дальше не меняется (при смене данных и параметров тоже).
 window.DecisionMoney = (function () {
-    const METHOD_VERSION = 4;
+    const METHOD_VERSION = 5;
     const DAY = 86400000;
     const REGULAR = /^KV-\d{3}$/;      // допы и чартеры (KV-9xxx и т. п.) не оцениваем: покупки блоками, нормы нет
     const GAPS = [56, 84, 182, 100000]; // расширение окна поиска аналогов, дней
@@ -114,13 +114,9 @@ window.DecisionMoney = (function () {
         return Math.max(0, curveAt(curve, lo) - curveAt(curve, hi + 1));
     }
 
-    function isGroup(s) { return (s.grp || 1) >= num('GROUP_MIN', 5); }
     function price(s) { return s.adjustedFare || s.fare || 0; }
-    function isAdultPaid(s) {
-        if (typeof FareGrid !== 'undefined' && typeof FareGrid.isAdultPaid === 'function') return FareGrid.isAdultPaid(s);
-        const b = String(s.basicFareStr || '').toUpperCase();
-        return price(s) > 0 && !/\/(CN|IN|ID|WO|DA)\d*/.test(b) && !/IDB$/.test(b.split('/')[0]);
-    }
+    // Считаем все билеты с ненулевым тарифом: взрослые, дети, группы. Нулевой тариф (служебные, бесплатные) не считаем.
+    function isPaid(s) { return price(s) > 0; }
     function classOf(s) {
         if (typeof FareGrid !== 'undefined' && typeof FareGrid.classOf === 'function') return FareGrid.classOf(s);
         return String(s.basicFareStr || '').toUpperCase().split('/')[0].trim().slice(0, 1);
@@ -275,11 +271,11 @@ window.DecisionMoney = (function () {
             if (d == null) return;
             if (d >= dtdD - w && d <= dtdD - 1) {
                 own.all++;
-                if (!isGroup(s) && isAdultPaid(s)) { own.paid++; own.rev += price(s); afterAdult.push(s); }
+                if (isPaid(s)) { own.paid++; own.rev += price(s); afterAdult.push(s); }
             }
             if (d >= dtdD + 1) {
                 own.beforeAll++;
-                if (!isGroup(s) && isAdultPaid(s)) {
+                if (isPaid(s)) {
                     own.beforeAdult++;
                     if (d <= dtdD + 3) before3.push(s);
                     if (d <= dtdD + 7) before7.push(s);
@@ -309,7 +305,7 @@ window.DecisionMoney = (function () {
             flags.push('по продажам тариф не изменился: эффект в основном объёмный');
         }
         // Доля платных взрослых негрупповых среди всех билетов вылета до решения.
-        const share = own.beforeAll >= 10 ? own.beforeAdult / own.beforeAll : num('MONEY_PAID_SHARE', 0.8);
+        const share = own.beforeAll >= 10 ? own.beforeAdult / own.beforeAll : num('MONEY_PAID_SHARE', 0.9);
         // Сила рейса: билеты за 3 дня до решения у вылета и у аналогов.
         const normOwn = analogMean(an, dtdD + 1, dtdD + 3);
         const out = Object.assign(base0, { priceBefore: Math.round(priceBefore), clsBefore, clsAfter, share: round1(share * 100) / 100 });
@@ -328,7 +324,7 @@ window.DecisionMoney = (function () {
             list.forEach(s => {
                 const d = dayDiff(dep, s.dealDate);
                 if (d == null) return;
-                if (d <= dtdD - 1) { rem.all++; if (!isGroup(s) && isAdultPaid(s)) { rem.paid++; rem.rev += price(s); } }
+                if (d <= dtdD - 1) { rem.all++; if (isPaid(s)) { rem.paid++; rem.rev += price(s); } }
                 if (d >= dtdD) soldAtD++;
             });
             const free = seats > 0 ? Math.max(0, seats - soldAtD) : null;
