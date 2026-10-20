@@ -42,9 +42,9 @@ window.DecisionsViz = (function () {
     }
 
     // Компактная строка решения; по двойному клику раскрываются подробности. tone: pos / neg / unk / wait / na.
-    const TONE = { pos: 'ЛУЧШЕ', neg: 'ХУЖЕ', unk: 'НЕ ПОНЯТНО', wait: 'ЖДЁМ', na: 'НЕ СЧИТАЕМ' };
-    const TONE_ORDER = ['pos', 'neg', 'unk', 'wait', 'na'];
-    const TONE_FILTER = { pos: 'Помогли', neg: 'Навредили', unk: 'Не понятно', wait: 'Ждём', na: 'Не считаем' };
+    const TONE = { pos: 'ЛУЧШЕ', neg: 'ХУЖЕ', unk: 'НЕ ПОНЯТНО', wait: 'ЖДЁМ', ser: 'В СЕРИИ', na: 'НЕ СЧИТАЕМ' };
+    const TONE_ORDER = ['pos', 'neg', 'unk', 'wait', 'ser', 'na'];
+    const TONE_FILTER = { pos: 'Помогли', neg: 'Навредили', unk: 'Не понятно', wait: 'Ждём', ser: 'В серии', na: 'Не считаем' };
 
     function plainRow(c) {
         const html = `<div class="dp-row dp-${c.tone}" title="Двойной клик — подробности">

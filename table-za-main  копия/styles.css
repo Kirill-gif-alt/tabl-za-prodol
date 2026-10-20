@@ -8287,3 +8287,7 @@ details.dp-more { margin-top: 8px; } details.dp-more > summary { cursor: pointer
 .dv-grid2 { grid-template-columns: 1fr 1.3fr; }
 @media (max-width: 900px) { .dv-grid2 { grid-template-columns: 1fr; } }
 .dp-dep { font-size: 0.82rem; font-weight: 600; color: var(--text); } .dp-act { white-space: nowrap; }
+.dp-ser .dp-badge { background: #64748b; } .dp-row.dp-ser { border-left-color: #64748b; } .dp-chip.dp-ser { background: #64748b; }
+.dp-flags { color: #b45309; font-size: 0.8rem; margin: 4px 0; }
+.dp-reasons { font-size: 0.8rem; color: var(--text-muted); margin: -4px 0 10px; }
+.dv-ser { background: #64748b; }

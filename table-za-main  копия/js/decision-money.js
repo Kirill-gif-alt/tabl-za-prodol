@@ -16,7 +16,7 @@
 // результат фиксируется через день после окна. Повышение: через окно — только ранний сигнал, итог после вылета по остатку продаж.
 // Зафиксированный итог лежит в shared/decision-money/ГГГГ-ММ.json и дальше не меняется (при смене данных и параметров тоже).
 window.DecisionMoney = (function () {
-    const METHOD_VERSION = 1;
+    const METHOD_VERSION = 2;
     const DAY = 86400000;
     const REGULAR = /^KV-\d{3}$/;      // допы и чартеры (KV-9xxx и т. п.) не оцениваем: покупки блоками, нормы нет
     const GAPS = [56, 84, 182, 100000]; // расширение окна поиска аналогов, дней
@@ -140,18 +140,22 @@ window.DecisionMoney = (function () {
     }
 
     // Аналоги: тот же рейс и день недели, ±8 недель (расширяем до 12, 26 недель и всех дат). Нужны данные по концу окна (lo).
+    // Сначала берём вылеты без ценовых решений; если их мало — и вылеты с решениями (оценка помечается, доверие ниже).
     function findAnalogs(base, code, dep, lo, seats) {
-        const minK = num('MONEY_MIN_ANALOGS', 3);
         let cohort = [];
         try { cohort = collectSameWeekdayCohort(base, dep, code); } catch (e) { cohort = []; }
-        const usable = cohort.filter(c => c.seats > 0 && REGULAR.test(String(c.code)) && c.observedFrom <= lo && !hasDecision(c.code, c.date));
+        const usable = cohort.filter(c => c.seats > 0 && REGULAR.test(String(c.code)) && c.observedFrom <= lo);
         const win = num('WEEKDAY_NORM_WINDOW_DAYS', 56);
         const tiers = [win].concat(GAPS.filter(g => g > win));
-        for (let i = 0; i < tiers.length; i++) {
-            const list = usable.filter(c => c.dayGap <= tiers[i]);
-            if (list.length >= minK) {
-                const withCurves = list.map(c => ({ c, curve: departureCurve(c.date, c.code), scale: seats > 0 ? Math.min(2.5, Math.max(0.4, seats / c.seats)) : 1 }));
-                return { list: withCurves, tier: tiers[i] };
+        const attempts = [{ min: num('MONEY_MIN_ANALOGS', 3), withDec: false }, { min: num('MONEY_MIN_ANALOGS', 3), withDec: true }, { min: 2, withDec: true }];
+        for (let a = 0; a < attempts.length; a++) {
+            const pool = attempts[a].withDec ? usable : usable.filter(c => !hasDecision(c.code, c.date));
+            for (let i = 0; i < tiers.length; i++) {
+                const list = pool.filter(c => c.dayGap <= tiers[i]);
+                if (list.length >= attempts[a].min) {
+                    const withCurves = list.map(c => ({ c, curve: departureCurve(c.date, c.code), scale: seats > 0 ? Math.min(2.5, Math.max(0.4, seats / c.seats)) : 1 }));
+                    return { list: withCurves, tier: tiers[i], withDecisions: attempts[a].withDec, few: attempts[a].min < num('MONEY_MIN_ANALOGS', 3) };
+                }
             }
         }
         return { list: [], tier: 0 };
@@ -189,50 +193,67 @@ window.DecisionMoney = (function () {
 
     function na(reason, extra) { return Object.assign({ stage: 'na', reason, grade: 'C', v: METHOD_VERSION }, extra || {}); }
 
+    // Следующее ценовое решение по этому вылету не дальше окна: до него и считаем эффект этой отметки (окна соседних отметок не пересекаются).
+    function nextDecisionGap(code, dep, check) {
+        const maxW = num('MONEY_WINDOW_MAX', 10);
+        const marks = typeof SalesManagement !== 'undefined' && SalesManagement.marksFor ? SalesManagement.marksFor(code, dep) : [];
+        let best = null;
+        marks.forEach(x => {
+            if (x.status !== 'up' && x.status !== 'down') return;
+            const g = dayDiff(x.check, check);
+            if (g != null && g > 0 && g <= maxW && (best == null || g < best)) best = g;
+        });
+        return best;
+    }
+
     // Оценка одного решения по данным сайта. m: { code|flight, dep, check, status, clsFrom?, clsTo? }.
+    // Почти всё считается; сомнительные случаи помечаются флагами (m.flags) и получают доверие «низкое».
     function compute(m) {
         const code = m.code || m.flight;
         const dep = m.dep;
         const kind = m.status;
         if (kind !== 'down' && kind !== 'up') return na('не ценовое решение');
         const base = typeof getBaseFlight === 'function' ? getBaseFlight(code) : code;
-        if (!REGULAR.test(String(code))) return na('доп. рейс или чартер: нормы нет');
-        const dtdD = dayDiff(dep, m.check);
-        if (dtdD == null) return na('нет даты решения');
-        if (dtdD < 3) return na('решение за менее чем 3 дня до вылета: оценка ненадёжна');
+        if (!REGULAR.test(String(code))) return na('доп. рейс или чартер: обычной нормы нет');
+        const dtdD0 = dayDiff(dep, m.check);
+        if (dtdD0 == null) return na('нет даты решения');
+        if (dtdD0 < 1) return na('решение в день вылета или позже: после него не осталось дней для оценки');
         const list = typeof getFlightSalesList === 'function' ? getFlightSalesList(dep, code) : [];
         if (!list.length) return na('билетов этого вылета нет в данных: оценить нельзя');
-        // Серия: другое ценовое решение по этому вылету рядом.
-        const others = (typeof SalesManagement !== 'undefined' ? SalesManagement.marksFor(code, dep) : [])
-            .filter(x => (x.status === 'up' || x.status === 'down') && x.check !== m.check);
+        const nextGap = nextDecisionGap(code, dep, m.check);
+        const dtdD = dtdD0;
+        const flags = [];
+        if (nextGap != null) flags.push(`серия решений: окно только до следующего решения (${nextGap} дн.)`);
+        if (dtdD < 3) flags.push(`решение за ${dtdD} дн. до вылета: окно очень короткое`);
         const maxW = num('MONEY_WINDOW_MAX', 10);
-        if (others.some(x => { const g = dayDiff(x.check, m.check); return g != null && Math.abs(g) <= maxW; })) {
-            return na('серия решений по этому вылету: оценивается эпизодом, а не по звеньям');
-        }
-        // Праздники и каникулы в окне: норма из обычных дней не годится.
+        // Праздники и события: норма из обычных дней грубее — считаем, но с пометкой.
         if (typeof CalendarEvents !== 'undefined') {
-            const probe = [dep, m.check, addDays(m.check, Math.min(maxW, dtdD))].some(d => CalendarEvents.normKey(d) !== '');
-            if (probe) return na('праздники или события в окне: норма из обычных дней не годится');
+            const hi = Math.min(nextGap != null ? nextGap : maxW, dtdD);
+            const probe = [dep, m.check, addDays(m.check, hi)].some(d => CalendarEvents.normKey(d) !== '');
+            if (probe) flags.push('праздники или события рядом: обычная норма грубее');
         }
         const seats = seatsFor(base, code, dep);
         const W0 = num('DECISION_WINDOW_MONEY', 4);
         const minExp = num('MONEY_MIN_EXPECTED', 6);
-        const wCap = Math.min(maxW, dtdD);
+        const wCap = Math.min(nextGap != null ? nextGap : maxW, dtdD);
         const loNeed = Math.max(0, dtdD - wCap);
         const an = findAnalogs(base, code, dep, loNeed, seats);
-        if (an.list.length < num('MONEY_MIN_ANALOGS', 3)) return na('мало аналогов (нужно не меньше 3 вылетов этого рейса в тот же день недели)');
-        // Окно: от W0 дней, пока ожидание не дойдёт до минимума.
+        if (an.list.length < 2) return na('нет похожих вылетов этого рейса и дня недели в данных: сравнивать не с чем');
+        if (an.withDecisions) flags.push('у похожих вылетов тоже были ценовые решения');
+        if (an.few || an.list.length < 3) flags.push(`похожих вылетов всего ${an.list.length}`);
+        // Окно: от W0 дней (для эпизода — до последней отметки плюс W0), пока ожидание не дойдёт до минимума.
         let w = Math.min(W0, wCap);
+        w = Math.max(1, w);
         let E = analogMean(an, dtdD - w, dtdD - 1);
         while (w < wCap && E < minExp) { w++; E = analogMean(an, dtdD - w, dtdD - 1); }
         const windowTo = addDays(m.check, w);
         const cutoffMs = typeof salesDataCutoffTime === 'function' ? salesDataCutoffTime() : Date.now();
         const needMs = parseLocalDate(windowTo).getTime() + num('MONEY_LAG_DAYS', 1) * DAY;
-        const base0 = { w, windowFrom: addDays(m.check, 1), windowTo, k: an.list.length, tierDays: an.tier, v: METHOD_VERSION, kind };
+        const base0 = { w, windowFrom: addDays(m.check, 1), windowTo, k: an.list.length, tierDays: an.tier, v: METHOD_VERSION, kind, flags };
         if (cutoffMs < needMs) return Object.assign(base0, { stage: 'wait', reason: `ждём данные до ${windowTo}`, grade: 'C', readyOn: addDays(windowTo, num('MONEY_LAG_DAYS', 1)) });
 
         // Факт по билетам вылета.
-        const own = { all: 0, paid: 0, rev: 0, beforeAll: 0, beforeAdult: 0, beforeGroupZero: 0 };
+        const own = { all: 0, paid: 0, rev: 0, beforeAll: 0, beforeAdult: 0 };
         const before3 = []; const before7 = []; const afterAdult = []; let nOwn3 = 0;
         list.forEach(s => {
             const d = dayDiff(dep, s.dealDate);
@@ -252,19 +273,24 @@ window.DecisionMoney = (function () {
             if (d >= dtdD + 1 && d <= dtdD + 3) nOwn3++;
         });
         const ladder = ladderIndex(code, dep);
-        // Цена и класс до решения: указанные вручную или по продажам за 3 (запасной — 7) дней до решения.
+        // Цена и класс до решения: указанные вручную, по продажам за 3 (запасной — 7) дней до решения,
+        // иначе — по средней цене продаж после решения (тогда считается только объём), иначе — по самому дешёвому классу лестницы.
         let priceBefore = null; let clsBefore = null;
         if (m.clsFrom && ladder.get(m.clsFrom)) { priceBefore = ladder.get(m.clsFrom).price; clsBefore = m.clsFrom; }
         if (priceBefore == null) {
             const src = before3.length ? before3 : before7;
-            if (!src.length) return na('до решения не было продаж: цену прежнего класса определить нельзя (укажите «Класс до» в отметке)', base0);
-            priceBefore = mean(src.map(price));
-            clsBefore = lowestClass(src, ladder);
+            if (src.length) { priceBefore = mean(src.map(price)); clsBefore = lowestClass(src, ladder); }
         }
-        const clsAfter = m.clsTo || lowestClass(afterAdult, ladder);
         const avgAfter = afterAdult.length ? mean(afterAdult.map(price)) : null;
+        if (priceBefore == null && avgAfter != null) { priceBefore = avgAfter; flags.push('до решения продаж не было: прежний тариф взят по продажам после (считается только объём; укажите «Класс до»)'); }
+        if (priceBefore == null) {
+            const cheapest = [...ladder.values()].map(x => x.price).filter(x => x > 0);
+            if (cheapest.length) { priceBefore = Math.min(...cheapest); flags.push('нет продаж до и после решения: тариф взят по самому дешёвому классу'); }
+        }
+        if (priceBefore == null) return na('нет данных о тарифах: не из чего посчитать рубли', base0);
+        const clsAfter = m.clsTo || lowestClass(afterAdult, ladder);
         if (clsBefore && clsAfter && clsBefore === clsAfter && !m.clsFrom && !m.clsTo && avgAfter != null && Math.abs(avgAfter - priceBefore) / priceBefore < 0.03) {
-            return na('цена не менялась: после решения продают тот же класс по той же цене', Object.assign(base0, { clsBefore, clsAfter }));
+            flags.push('по продажам тариф не изменился: эффект в основном объёмный');
         }
         // Доля платных взрослых негрупповых среди всех билетов вылета до решения.
         const share = own.beforeAll >= 10 ? own.beforeAdult / own.beforeAll : num('MONEY_PAID_SHARE', 0.8);
@@ -272,14 +298,14 @@ window.DecisionMoney = (function () {
         const normOwn = analogMean(an, dtdD + 1, dtdD + 3);
         const out = Object.assign(base0, { priceBefore: Math.round(priceBefore), clsBefore, clsAfter, share: round1(share * 100) / 100 });
 
-        // Остаток после окна: для повышения — итог, для понижения — «хвост» (только в билетах, для вывода о переносе спроса).
         const flyDt = parseLocalDate(dep);
         const dataCoversFlight = !!(flyDt && flyDt.getTime() < cutoffMs);
 
-        if (kind === 'up' && dataCoversFlight) {
+        if (kind === 'up' && nextGap == null && dataCoversFlight) {
             // Итог повышения: остаток продаж от дня после решения до вылета против обычного добора (чистая норма).
             const an0 = findAnalogs(base, code, dep, 0, seats);
-            if (an0.list.length < num('MONEY_MIN_ANALOGS', 3)) return na('мало улетевших аналогов для итога', out);
+            if (an0.list.length < 2) return na('нет улетевших похожих вылетов для итога', out);
+            if (an0.withDecisions && !flags.includes('у похожих вылетов тоже были ценовые решения')) flags.push('у похожих вылетов тоже были ценовые решения');
             const Erem = analogMean(an0, 0, dtdD - 1);
             const rem = { all: 0, paid: 0, rev: 0 };
             let soldAtD = 0;
@@ -297,7 +323,7 @@ window.DecisionMoney = (function () {
         }
 
         const est = estimateWindow({ E, k: an.list.length, nFactAll: own.all, nFactPaid: own.paid, rFact: own.rev, priceBefore, share, strength: normOwn == null ? null : { own: nOwn3, norm: normOwn } });
-        if (kind === 'up') {
+        if (kind === 'up' && nextGap == null) {
             // Через окно — только ранний сигнал: рост цены сдвигает покупки на позже, вердикт по итогу вылета.
             const res = finish(out, est, { stage: 'prelim', expAll: round1(est.nExpAll), factAll: own.all });
             res.verdict = null;
@@ -319,14 +345,23 @@ window.DecisionMoney = (function () {
 
     function finish(base, est, extra) {
         const sampleOk = est.nExpAll + (extra.factAll || 0) >= num('MONEY_MIN_TICKETS', 4);
-        const grade = base.k >= 5 && est.nExpAll >= 6 ? 'A' : 'B';
+        const flags = base.flags || [];
+        const grade = flags.length ? 'C' : (base.k >= 5 && est.nExpAll >= 6 ? 'A' : 'B');
+        // Каждый флаг расширяет диапазон на 25%: сомнительные оценки реже получают «сработало/не сработало».
+        const widen = 1 + 0.25 * flags.length;
+        const half = (est.hi - est.lo) / 2 * widen;
+        const lo = est.delta - half; const hi = est.delta + half;
+        let verdict = 'unclear';
+        if (lo > 0 && est.delta >= est.thr) verdict = 'worked';
+        else if (hi < 0 && est.delta <= -est.thr) verdict = 'failed';
+        if (est.filled || extra.filled) verdict = est.verdict;
         const res = Object.assign(base, extra, {
-            priceAfter: Math.round(est.priceAfter), delta: round1k(est.delta), lo: round1k(est.lo), hi: round1k(est.hi),
+            priceAfter: Math.round(est.priceAfter), delta: round1k(est.delta), lo: round1k(lo), hi: round1k(hi),
             volume: round1k(est.volume), priceEffect: round1k(est.price), payback: est.payback == null ? null : round1(est.payback),
             thr: round1k(est.thr), nExpPaid: round1(est.nExpPaid), strengthK: Math.round(est.strengthK * 100) / 100,
             dTickets: round1(est.dTickets), grade
         });
-        res.verdict = sampleOk ? est.verdict : 'unclear';
+        res.verdict = sampleOk ? verdict : 'unclear';
         if (!sampleOk) res.reason = 'мало билетов для вывода';
         return res;
     }
@@ -376,7 +411,7 @@ window.DecisionMoney = (function () {
             const items = (r.data && r.data.items) || {};
             list.forEach(e => {
                 const old = items[e.key];
-                if (old && old.stage === 'final') return;                               // итог уже зафиксирован — не трогаем
+                if (old && old.stage === 'final' && old.v === METHOD_VERSION) return;                               // итог уже зафиксирован — не трогаем
                 if (old && old.stage === 'prelim' && e.stage === 'prelim') return;       // ранний сигнал один раз
                 items[e.key] = e;
             });
@@ -418,7 +453,7 @@ window.DecisionMoney = (function () {
             const m = decisions[i];
             const key = keyOf(m);
             const frozen = get(key);
-            if (frozen && (frozen.stage === 'final' || (frozen.stage === 'prelim' && m.status === 'up' && !frozenUpgradable(m)))) { out.set(key, Object.assign({ frozen: true }, frozen)); continue; }
+            if (frozen && frozen.v === METHOD_VERSION && (frozen.stage === 'final' || (frozen.stage === 'prelim' && m.status === 'up' && !frozenUpgradable(m)))) { out.set(key, Object.assign({ frozen: true }, frozen)); continue; }
             let res;
             try { res = compute(m); } catch (e) { console.warn('DecisionMoney.compute', e); res = na('ошибка расчёта'); }
             const entry = Object.assign({}, res, { key, check: m.check, at: new Date().toISOString() });
