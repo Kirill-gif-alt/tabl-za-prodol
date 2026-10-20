@@ -41,5 +41,24 @@ window.DecisionsViz = (function () {
         return `<div class="dv-card"><div class="dv-title">${esc(title)}</div><div class="dv-cols">${cols}</div>${note ? `<div class="dv-note">${esc(note)}</div>` : ''}</div>`;
     }
 
-    return { stack, bars, columns };
+    // Карточка одного решения простым языком. tone: pos / neg / unk / wait / na.
+    const TONE = { pos: 'ЛУЧШЕ', neg: 'ХУЖЕ', unk: 'НЕ ПОНЯТНО', wait: 'ЖДЁМ', na: 'НЕ СЧИТАЕМ' };
+    function plainCard(c) {
+        return `<div class="dp-card dp-${c.tone}">
+            <div class="dp-top"><div class="dp-who">${c.head}</div><div class="dp-act">${c.act}</div></div>
+            <div class="dp-res"><div class="dp-badge">${TONE[c.tone]}</div><div class="dp-big">${c.big}</div></div>
+            <ul class="dp-lines">${c.lines.filter(Boolean).map(l => `<li>${l}</li>`).join('')}</ul>
+        </div>`;
+    }
+
+    function howToRead(extra) {
+        return `<div class="dp-read"><b>Как читать:</b>
+            <span class="dp-chip dp-pos">ЛУЧШЕ</span> решение помогло
+            <span class="dp-chip dp-neg">ХУЖЕ</span> решение навредило
+            <span class="dp-chip dp-unk">НЕ ПОНЯТНО</span> разница есть, но она может быть случайной
+            <span class="dp-chip dp-na">НЕ СЧИТАЕМ</span> сравнивать не с чем
+            ${extra || ''}</div>`;
+    }
+
+    return { stack, bars, columns, plainCard, howToRead };
 })();

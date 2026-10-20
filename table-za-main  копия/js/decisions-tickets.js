@@ -75,6 +75,12 @@ window.DecisionsTickets = (function () {
         return out;
     }
 
+    function plural(n) {
+        const a = Math.abs(n) % 100; const b = a % 10;
+        if (a > 10 && a < 20) return 'билетов';
+        return b === 1 ? 'билет' : (b >= 2 && b <= 4 ? 'билета' : 'билетов');
+    }
+
     function signed(n) {
         if (n == null) return '—';
         return (n > 0 ? '+' : (n < 0 ? '−' : '')) + String(Math.abs(n)).replace('.', ',');
@@ -181,6 +187,33 @@ window.DecisionsTickets = (function () {
                     <td class="rp-left"><span class="dr-verdict dr-verdict-${v.cls}">${esc(v.text)}</span></td>
                 </tr>`;
         }).join('');
+        const fmtD = (x) => String(x).slice(0, 5);
+        const cards = list.map(r => {
+            const e = r.e;
+            const v = verdictOf(r);
+            const up = r.status === 'up';
+            const tone = v.cls === 'pos' ? 'pos' : (v.cls === 'neg' ? 'neg' : (v.cls === 'wait' ? 'wait' : 'na'));
+            const eff = e && e.complete && e.effect != null ? e.effect : null;
+            let big = '—';
+            if (tone === 'pos' || tone === 'neg') big = up ? (tone === 'pos' ? 'решение удачное' : 'решение неудачное') : (eff != null ? `${signed(eff)} ${plural(Math.abs(eff))} к обычному` : '');
+            else if (tone === 'wait') big = 'итог пока не ясен';
+            else big = 'мало данных';
+            const lines = [];
+            if (e) {
+                lines.push(`За ${wd()} ДО решения продали <b>${e.before.n}</b> ${plural(e.before.n)}${e.normBefore ? ` (обычно ${e.normBefore.value})` : ''}.`);
+                lines.push(up ? `ПОСЛЕ решения до вылета продали <b>${e.after.n}</b> ${plural(e.after.n)}${e.normAfter ? ` (обычно ${e.normAfter.value})` : ''}.`
+                    : `За ${wd()} ПОСЛЕ решения продали <b>${e.after.n}</b> ${plural(e.after.n)}${e.normAfter ? ` (обычно ${e.normAfter.value})` : ''}.`);
+                if (e.before.avg != null && e.after.avg != null) lines.push(`Средний тариф был ${Math.round(e.before.avg).toLocaleString('ru-RU')} ₽, стал ${Math.round(e.after.avg).toLocaleString('ru-RU')} ₽.`);
+            }
+            lines.push(`<b>Вывод:</b> ${esc(v.text)}.`);
+            return DecisionsViz.plainCard({
+                tone,
+                head: `<button type="button" class="filter-btn rp-open" data-open-base="${esc(r.base)}" data-open-code="${esc(r.code)}" data-open-date="${esc(r.dep)}" title="Открыть вылет">${esc(r.code)}</button> вылет ${esc(fmtD(r.dep))}<span>${esc(r.direction)}</span>`,
+                act: `${esc(fmtD(r.check))}${r.author ? ' (' + esc(r.author) + ')' : ''}: ${up ? 'повысили тариф' : 'снизили тариф'}`,
+                big, lines
+            });
+        }).join('');
+        const summary = list.length ? `<div class="dp-summary">За ${period} дн. принято решений: <b>${total.n}</b>. Помогли: <b>${total.good}</b>, навредили: <b>${total.judged - total.good}</b>, ещё рано судить или не с чем сравнить: <b>${total.n - total.judged}</b>.${total.avg == null ? '' : ` В среднем на одно решение продавали на <b>${signed(total.avg)}</b> ${plural(Math.abs(total.avg))} ${total.avg >= 0 ? 'больше' : 'меньше'} обычного.`}</div>` : '';
         const dash = list.length ? `<div class="dv-grid">
             ${DecisionsViz.stack('Итог решений', [
                 { label: 'Сработало', value: total.good, cls: 'dv-pos' },
@@ -207,12 +240,14 @@ window.DecisionsTickets = (function () {
                     <p>Если билетов слишком мало для вывода — «рано судить», такие решения в «Сработало» не считаются.</p>
                 </details>
                 ${toolbar}
+                ${summary}
+                ${DecisionsViz.howToRead()}
                 ${kpis}
                 ${dash}
                 ${sums}
-                ${body ? `<div class="dr-list-title">Все решения <span class="rp-muted">· ${list.length}</span></div><div class="rp-scroll"><table class="rp-table dr-table">
+                ${body ? `<div class="dr-list-title">Все решения <span class="rp-muted">· ${list.length}</span></div><div class="dp-list">${cards}</div><details class="dp-more"><summary>Подробная таблица</summary><div class="rp-scroll"><table class="rp-table dr-table">
                     <thead><tr><th>Решение</th><th>Рейс</th><th>Вылет</th><th>Что</th><th title="Билетов за ${wd()} до решения">До</th><th title="Билетов после решения: для снижения — за ${wd()}, для повышения — до вылета">После</th><th>Ср. тариф до → после</th><th>Итог</th></tr></thead>
-                    <tbody>${body}</tbody></table></div>` : '<p class="rp-note">За период решений «снижение/повышение» нет.</p>'}
+                    <tbody>${body}</tbody></table></div></details>` : '<p class="rp-note">За период решений «снижение/повышение» нет.</p>'}
             </section>`;
     }
 

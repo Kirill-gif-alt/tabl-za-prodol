@@ -265,6 +265,39 @@ window.DecisionsReport = (function () {
                     <td class="rp-left"><span class="dr-verdict dr-verdict-${st.cls}">${esc(st.text)}</span>${st.reason ? `<span class="dr-usual" style="white-space:normal">${esc(st.reason)}</span>` : ''}${reliab}${tail}</td>
                 </tr>`;
         }).join('');
+        const fmtD = (x) => String(x).slice(0, 5);
+        const numRu = (x) => String(x).replace('.', ',');
+        const cards = list.map(r => {
+            const st = moneyState(r);
+            const m = st.m;
+            const up = r.status === 'up';
+            const hasNum = m && (m.stage === 'final' || m.stage === 'prelim') && m.delta != null;
+            let tone = 'na'; let big = 'не считаем';
+            if (st.cls === 'pos') { tone = 'pos'; big = rub(m.delta); }
+            else if (st.cls === 'neg') { tone = 'neg'; big = rub(m.delta); }
+            else if (m && m.stage === 'final') { tone = 'unk'; big = 'примерно ' + rub(m.delta); }
+            else if (m && (m.stage === 'prelim' || m.stage === 'wait')) { tone = 'wait'; big = hasNum ? 'пока ' + rub(m.delta) : 'ждём данные'; }
+            else if (!m) { tone = 'wait'; big = 'считаем…'; }
+            const lines = [];
+            if (hasNum) {
+                const exp = m.nExpPaid * m.priceBefore;
+                lines.push(`За ${m.w} дн. после решения продали <b>${m.factAll}</b> билетов, а в обычные дни продают около <b>${numRu(m.expAll)}</b>.`);
+                lines.push(`Если бы тариф не трогали (был ${rubPlain(m.priceBefore)}), выручка была бы около <b>${rubPlain(exp)}</b>. По факту — около <b>${rubPlain(exp + m.delta)}</b>.`);
+                lines.push(`Разница <b>${rub(m.delta)}</b>: из-за количества билетов ${rub(m.volume)}, из-за изменения цены ${rub(m.priceEffect)}.`);
+                lines.push(`Точность: настоящая разница где-то между ${rub(m.lo)} и ${rub(m.hi)}.`);
+            }
+            if (tone === 'unk') lines.push('<b>Почему «не понятно»:</b> диапазон включает ноль или разница слишком мала. Такое решение в общую сумму не входит.');
+            if (tone === 'wait' && st.reason) lines.push(esc(st.reason) + '.');
+            if (tone === 'na' && st.reason) lines.push('<b>Почему не считаем:</b> ' + esc(st.reason) + '.');
+            if (m && m.tailExp != null) lines.push(`После окна рейс продал ${m.tailFact} билетов (обычно ${numRu(m.tailExp)})${m.fullFlight ? ', рейс заполнился' : ''}.`);
+            return DecisionsViz.plainCard({
+                tone,
+                head: `<button type="button" class="filter-btn rp-open" data-open-base="${esc(r.base)}" data-open-code="${esc(r.code)}" data-open-date="${esc(r.dep)}" title="Открыть вылет">${esc(r.code)}</button> вылет ${esc(fmtD(r.dep))}<span>${esc(r.direction)}</span>`,
+                act: `${esc(fmtD(r.check))}${r.author ? ' (' + esc(r.author) + ')' : ''}: ${up ? 'повысили тариф' : 'снизили тариф'}${m && m.clsBefore && m.clsAfter && m.clsBefore !== m.clsAfter ? `, класс ${esc(m.clsBefore)} → ${esc(m.clsAfter)}` : ''}`,
+                big, lines
+            });
+        }).join('');
+        const summary = list.length ? `<div class="dp-summary">За ${period} дн. принято решений: <b>${total.n}</b>. Точно оценили: <b>${mt.definite}</b> — они в сумме принесли <b>${mt.definite ? rub(mt.sum) : '0 ₽'}</b> (помогли: ${mt.worked}, навредили: ${mt.failed}). Ещё <b>${mt.unclear}</b> — «не понятно» (разница может быть случайной), <b>${mt.na}</b> — не считаем, <b>${mt.wait}</b> — ждём данные.</div>` : '';
         const sts = list.map(moneyState);
         const cnt = (f) => sts.filter(f).length;
         const byDir = groupBy(list, r => r.direction || r.code).filter(g => g.money.definite).slice(0, 8);
@@ -311,12 +344,14 @@ window.DecisionsReport = (function () {
                     <p>Выручка в рублях — по ценам билетов без допов и без групп. Это оценка относительно нормы, а не доказанная причина: на неё влияют погода, конкуренты и события, которых в данных нет. Проверка на вылетах без решений показала, что «сработало» метод иногда выдаёт и там (естественный рост цены ближе к вылету), поэтому читайте итог как ориентир, а не как факт.</p>
                 </details>
                 ${toolbar}
+                ${summary}
+                ${DecisionsViz.howToRead('<span class="dp-chip dp-wait">ЖДЁМ</span> данных пока мало')}
                 ${kpis}
                 ${dash}
                 ${sums}
-                ${body ? `<div class="dr-list-title">Все решения <span class="rp-muted">· ${list.length}</span></div><div class="rp-scroll"><table class="rp-table dr-table">
+                ${body ? `<div class="dr-list-title">Все решения <span class="rp-muted">· ${list.length}</span></div><div class="dp-list">${cards}</div><details class="dp-more"><summary>Подробная таблица</summary><div class="rp-scroll"><table class="rp-table dr-table">
                     <thead><tr><th>Решение</th><th>Рейс</th><th>Вылет</th><th>Что</th><th title="Класс до → после (из отметки или по продажам)">Класс</th><th title="Билетов в окне после решения / сколько ожидали">Билетов</th><th>Ср. тариф до → после</th><th title="Выручка в окне минус ожидаемая по прежней цене; в строке — диапазон ≈90%">Эффект</th><th>Объём / цена</th><th>Итог</th></tr></thead>
-                    <tbody>${body}</tbody></table></div>` : '<p class="rp-note">За период решений «снижение/повышение» нет.</p>'}
+                    <tbody>${body}</tbody></table></div></details>` : '<p class="rp-note">За период решений «снижение/повышение» нет.</p>'}
             </section>`;
     }
 
