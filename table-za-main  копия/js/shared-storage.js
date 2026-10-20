@@ -185,16 +185,18 @@ window.SharedStorage = (function () {
     }
 
     // Архив продаж: shared/history/curves-ГГГГ-ММ.json (см. sales-archive.js).
-    const HISTORY_FILE_RE = /^history\/(curves-\d{4}-\d{2}|tickets-\d{4}-\d{2}|import)\.json$/;   // import.json — какой файл истории загружен последним
+    const HISTORY_FILE_RE = /^history\/(curves-\d{4}-\d{2}|tickets-\d{4}-\d{2}|daylog-\d{4}-\d{2}|import)\.json$/;   // import.json — какой файл истории загружен последним
     // Отметки «Управления продажами»: у каждого автора свой файл за месяц — никто не перезаписывает чужое.
     const MARKS_FILE_RE = /^sales-marks\/\d{4}-\d{2}\/[a-z0-9_]{1,40}\.json$/;
     const MARKS_DIR_RE = /^sales-marks\/\d{4}-\d{2}$/;
     // Журнал прогнозов загрузки: shared/forecast-log/ГГГГ-ММ.json (см. forecast-lab.js).
     const FCLOG_FILE_RE = /^forecast-log\/\d{4}-\d{2}\.json$/;
+    // Результаты решений в деньгах: shared/decision-money/ГГГГ-ММ.json (см. js/decision-money.js).
+    const DMONEY_FILE_RE = /^decision-money\/\d{4}-\d{2}\.json$/;
 
     function isAllowedSharedFile(filename) {
         const name = String(filename || '');
-        return ALLOWED_FILES.has(name) || HISTORY_FILE_RE.test(name) || MARKS_FILE_RE.test(name) || FCLOG_FILE_RE.test(name);
+        return ALLOWED_FILES.has(name) || HISTORY_FILE_RE.test(name) || MARKS_FILE_RE.test(name) || FCLOG_FILE_RE.test(name) || DMONEY_FILE_RE.test(name);
     }
 
     // Папка и имя файла внутри shared/ (для архива — подпапка history/).
@@ -358,9 +360,17 @@ window.SharedStorage = (function () {
         return items.sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
     }
 
+    // Политика копий: именные файлы — из HISTORY_POLICY, месячные журналы — по шаблону (как _policy_for в local-server.py).
+    function backupPolicyFor(filename) {
+        if (HISTORY_POLICY[filename]) return HISTORY_POLICY[filename];
+        if (DMONEY_FILE_RE.test(filename)) return { every: 6 * 3600, keep: 10 };
+        if (/^history\/daylog-\d{4}-\d{2}\.json$/.test(filename)) return { every: 24 * 3600, keep: 3 };
+        return null;
+    }
+
     // Копия текущей версии перед перезаписью (запись без сервера). Ошибка копии запись не останавливает.
     async function backupViaHandle(sharedDir, filename, force) {
-        const pol = HISTORY_POLICY[filename];
+        const pol = backupPolicyFor(filename);
         if (!pol) return;
         const now = Date.now();
         if (!force && lastBackupAt[filename] && now - lastBackupAt[filename] < pol.every * 1000) return;
@@ -371,7 +381,7 @@ window.SharedStorage = (function () {
             } catch {
                 return; // файла ещё нет — копировать нечего
             }
-            const base = filename.slice(0, -5);
+            const base = filename.slice(0, -5).replace(/\//g, '_');   // как в local-server.py: одна папка копий на файл
             const root = await sharedDir.getDirectoryHandle(HISTORY_DIR, { create: true });
             const histDir = await root.getDirectoryHandle(base, { create: true });
             const items = await listHistoryDir(histDir, base, true);

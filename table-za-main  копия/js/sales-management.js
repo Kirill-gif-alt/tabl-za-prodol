@@ -730,28 +730,55 @@ window.SalesManagement = (function () {
         return `${MARKS_DIR}/${month}/${slug}.json`;
     }
 
-    // Отметки ячейки: [{ status, author, updatedAt }], самая новая первой, не больше трёх авторов.
+    // Необязательные «Класс до» / «Класс после» — только у повышения/снижения, одна буква класса.
+    function cleanCls(v) {
+        const t = String(v == null ? '' : v).trim().toUpperCase();
+        return /^[A-Z]$/.test(t) ? t : '';
+    }
+
+    function markExtra(status, src) {
+        if (status !== 'up' && status !== 'down') return {};
+        const out = {};
+        const from = cleanCls(src && src.clsFrom);
+        const to = cleanCls(src && src.clsTo);
+        if (from) out.clsFrom = from;
+        if (to) out.clsTo = to;
+        return out;
+    }
+
+    function extraOf(e) {
+        const out = {};
+        if (e.clsFrom) out.clsFrom = e.clsFrom;
+        if (e.clsTo) out.clsTo = e.clsTo;
+        return out;
+    }
+
+    // Отметки ячейки: [{ status, author, updatedAt, clsFrom?, clsTo? }], самая новая первой, не больше трёх авторов.
     function cellEntries(key) {
         const rev = markRevision();
         if (entriesCache.rev !== rev) entriesCache = { rev, map: new Map() };
         if (entriesCache.map.has(key)) return entriesCache.map.get(key);
         const by = new Map();
-        const apply = (author, s, at) => {
+        const apply = (author, s, at, src) => {
             const name = authorSignature(author) || String(author || '');
             const id = authorId(name);
             const prev = by.get(id);
             if (prev && String(prev.updatedAt) > String(at || '')) return;
-            by.set(id, { status: s, author: name, updatedAt: String(at || '') });
+            const entry = { status: s, author: name, updatedAt: String(at || '') };
+            const ex = markExtra(s, src);
+            if (ex.clsFrom) entry.clsFrom = ex.clsFrom;
+            if (ex.clsTo) entry.clsTo = ex.clsTo;
+            by.set(id, entry);
         };
         const legacy = cache.marks[key];
-        if (legacy && statusOk(legacy.status)) apply(legacy.author, legacy.status, legacy.updatedAt);
+        if (legacy && statusOk(legacy.status)) apply(legacy.author, legacy.status, legacy.updatedAt, legacy);
         const files = people[monthOfKey(key)] || {};
         Object.keys(files).forEach(slug => {
             const f = files[slug];
             const e = f && f.marks && f.marks[key];
-            if (e) apply(f.author, e.s, e.at);
+            if (e) apply(f.author, e.s, e.at, e);
         });
-        pending.forEach(p => { if (p.key === key) apply(p.author, p.s, p.at); });
+        pending.forEach(p => { if (p.key === key) apply(p.author, p.s, p.at, p); });
         const list = [...by.values()]
             .filter(e => statusOk(e.status))
             .sort((x, y) => (String(x.updatedAt) < String(y.updatedAt) ? 1 : -1))
@@ -789,7 +816,7 @@ window.SalesManagement = (function () {
         pending.forEach(p => { if (p.key.indexOf(prefix) === 0) keys.add(p.key); });
         const out = [];
         keys.forEach(key => {
-            cellEntries(key).forEach(e => out.push({ check: key.slice(prefix.length), status: e.status, author: e.author, updatedAt: e.updatedAt }));
+            cellEntries(key).forEach(e => out.push({ check: key.slice(prefix.length), status: e.status, author: e.author, updatedAt: e.updatedAt, ...extraOf(e) }));
         });
         return out.sort((a, b) => ((parseLocalDate(a.check) || 0) - (parseLocalDate(b.check) || 0)) || (String(a.updatedAt) < String(b.updatedAt) ? -1 : 1));
     }
@@ -805,7 +832,7 @@ window.SalesManagement = (function () {
         keys.forEach(key => {
             const parts = key.split('|');
             if (parts.length !== 3) return;
-            cellEntries(key).forEach(e => out.push({ flight: parts[0], dep: parts[1], check: parts[2], status: e.status, author: e.author, updatedAt: e.updatedAt }));
+            cellEntries(key).forEach(e => out.push({ flight: parts[0], dep: parts[1], check: parts[2], status: e.status, author: e.author, updatedAt: e.updatedAt, ...extraOf(e) }));
         });
         return out;
     }
@@ -829,22 +856,22 @@ window.SalesManagement = (function () {
         return at;
     }
 
-    function setOwn(key, s, author) {
+    function setOwn(key, s, author, extra) {
         const name = authorSignature(author) || profileName() || 'Без подписи';
         const slug = slugOf(name);
-        pending.set(key + '|' + slug, { key, slug, author: name, s, at: stamp(key) });
+        pending.set(key + '|' + slug, { key, slug, author: name, s, at: stamp(key), ...markExtra(s, extra) });
         savePending();
         markRev++;
         schedulePeoplePersist(400);
         return true;
     }
 
-    function putMark(flight, dep, check, status, author) {
+    function putMark(flight, dep, check, status, author, extra) {
         if (!canEdit()) return false;
         if (typeof salesCheckIsToday !== 'function' || !salesCheckIsToday(check)) return false;
         const key = markKey(flight, dep, check);
         if (!key || !statusOk(status)) return false;
-        return setOwn(key, status, author || profileName());
+        return setOwn(key, status, author || profileName(), extra);
     }
 
     // Снять только свою отметку: отметки других людей в ячейке остаются.
@@ -897,7 +924,7 @@ window.SalesManagement = (function () {
             const marks = { ...(remote.marks && typeof remote.marks === 'object' ? remote.marks : {}) };
             items.forEach(([, p]) => {
                 const prev = marks[p.key];
-                if (!prev || String(prev.at || '') <= String(p.at)) marks[p.key] = { s: p.s, at: p.at };
+                if (!prev || String(prev.at || '') <= String(p.at)) marks[p.key] = { s: p.s, at: p.at, ...markExtra(p.s, p) };
             });
             const payload = { version: 1, author: items[items.length - 1][1].author, updatedAt: new Date().toISOString(), marks };
             const ok = await SharedStorage.writeJsonFile(file, payload);
@@ -1343,6 +1370,7 @@ function openSalesPopover(td) {
     pop.querySelectorAll('[data-status]').forEach(btn => {
         btn.classList.toggle('sm-status-on', !!(mark && btn.dataset.status === mark.status));
     });
+    fillSalesPopoverClasses(flight, dep, mark);
     const input = document.getElementById('sm-pop-author');
     if (input) {
         input.value = markAuthor || SalesManagement.profileName();
@@ -1367,6 +1395,32 @@ function salesAnnounceMark(flight, dep, status) {
         ActivityLog.log('sales_mark', `${flight} ${dep}: ${status ? SalesManagement.STATUSES[status].label : 'снята'}`);
     }
     document.dispatchEvent(new CustomEvent('krasavia:mark', { detail: { code: flight, date: dep, status } }));
+}
+
+// «Класс до / после» (необязательно): только для повышения/снижения и только если у вылета есть лестница тарифов.
+function fillSalesPopoverClasses(flight, dep, mark) {
+    const box = document.getElementById('sm-pop-cls');
+    if (!box) return;
+    let ladder = [];
+    try { ladder = typeof FareGrid !== 'undefined' ? FareGrid.ladderFor(flight, dep) || [] : []; } catch { ladder = []; }
+    box.dataset.has = ladder.length ? '1' : '';
+    const fill = (id, value) => {
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        sel.innerHTML = '<option value="">— определить по продажам —</option>' +
+            ladder.map(l => `<option value="${l.cls}">${l.cls}</option>`).join('');
+        sel.value = value && ladder.some(l => l.cls === value) ? value : '';
+    };
+    fill('sm-pop-cls-from', mark && mark.clsFrom);
+    fill('sm-pop-cls-to', mark && mark.clsTo);
+    syncSalesPopoverClasses();
+}
+
+function syncSalesPopoverClasses() {
+    const box = document.getElementById('sm-pop-cls');
+    if (!box) return;
+    const st = currentPopoverStatus();
+    box.hidden = !(box.dataset.has === '1' && (st === 'up' || st === 'down'));
 }
 
 function currentPopoverStatus() {
@@ -1395,7 +1449,11 @@ function applySalesPopover(closeAfter) {
         if (closeAfter && typeof showToast === 'function') showToast('Выберите, что сделано', 'error');
         return;
     }
-    if (!SalesManagement.putMark(flight, dep, check, status, author)) {
+    const extra = status === 'up' || status === 'down' ? {
+        clsFrom: (document.getElementById('sm-pop-cls-from') || {}).value || '',
+        clsTo: (document.getElementById('sm-pop-cls-to') || {}).value || ''
+    } : {};
+    if (!SalesManagement.putMark(flight, dep, check, status, author, extra)) {
         if (typeof showToast === 'function') showToast('Нет права менять эту таблицу', 'error');
         return;
     }
@@ -1426,6 +1484,15 @@ function ensureSalesPopover() {
             <button type="button" class="sm-status-btn sm-st-down" data-status="down">Снижение</button>
             <button type="button" class="sm-status-btn sm-st-up" data-status="up">Повышение</button>
         </div>
+        <div class="sm-pop-cls" id="sm-pop-cls" hidden>
+            <label class="sm-pop-author-label">Класс до
+                <select id="sm-pop-cls-from" class="sm-pop-author"></select>
+            </label>
+            <label class="sm-pop-author-label">Класс после
+                <select id="sm-pop-cls-to" class="sm-pop-author"></select>
+            </label>
+            <div class="sm-pop-cls-hint">Если знаете точный класс — укажите, иначе определим по продажам</div>
+        </div>
         <label class="sm-pop-author-label">Подпись
             <input id="sm-pop-author" class="sm-pop-author" maxlength="80" autocomplete="name">
         </label>
@@ -1439,7 +1506,10 @@ function ensureSalesPopover() {
         const statusBtn = event.target.closest('[data-status]');
         if (statusBtn) {
             pop.querySelectorAll('[data-status]').forEach(btn => btn.classList.toggle('sm-status-on', btn === statusBtn));
-            applySalesPopover(true);
+            syncSalesPopoverClasses();
+            // Повышение/снижение: отметка сохраняется сразу, окно остаётся открытым для необязательных классов.
+            const keepOpen = !document.getElementById('sm-pop-cls').hidden;
+            applySalesPopover(!keepOpen);
             return;
         }
         if (event.target.id === 'sm-pop-clear') {
@@ -1473,6 +1543,9 @@ function ensureSalesPopover() {
     });
     // Подпись применяется по «Готово» / Enter / кнопке статуса, а не на каждую букву:
     // иначе «П», «Пе», «Пет»… превращаются в отдельных авторов.
+    pop.addEventListener('change', (event) => {
+        if (event.target.id === 'sm-pop-cls-from' || event.target.id === 'sm-pop-cls-to') applySalesPopover(false);
+    });
     document.getElementById('sm-pop-author')?.addEventListener('input', (event) => {
         event.target.dataset.touched = '1';
     });

@@ -45,12 +45,14 @@ HISTORY_POLICY = {
     "lower-requests.json": (600, 30),
 }
 # Архив продаж (js/sales-archive.js): shared/history/curves-ГГГГ-ММ.json.
-ARCHIVE_RE = re.compile(r"^history/(curves-\d{4}-\d{2}|tickets-\d{4}-\d{2}|import)\.json$", re.ASCII)
+ARCHIVE_RE = re.compile(r"^history/(curves-\d{4}-\d{2}|daylog-\d{4}-\d{2}|tickets-\d{4}-\d{2}|import)\.json$", re.ASCII)
 # Отметки «Управления продажами»: свой файл у каждого автора (js/sales-management.js).
 MARKS_RE = re.compile(r"^sales-marks/\d{4}-\d{2}/[a-z0-9_]{1,40}\.json$", re.ASCII)
 MARKS_DIR_RE = re.compile(r"^sales-marks/\d{4}-\d{2}$", re.ASCII)
 # Журнал прогнозов загрузки (js/forecast-lab.js): shared/forecast-log/ГГГГ-ММ.json.
 FCLOG_RE = re.compile(r"^forecast-log/\d{4}-\d{2}\.json$", re.ASCII)
+# Результаты решений в деньгах (js/decision-money.js): shared/decision-money/ГГГГ-ММ.json.
+DMONEY_RE = re.compile(r"^decision-money/\d{4}-\d{2}\.json$", re.ASCII)
 MAX_BODY = 64 * 1024 * 1024
 SOCKET_TIMEOUT = 30   # зависший клиент не держит поток и память бесконечно
 WRITE_LOCK = threading.Lock()
@@ -65,7 +67,7 @@ def _history_base(name):
 def _policy_for(name):
     if name in HISTORY_POLICY:
         return HISTORY_POLICY[name]
-    if FCLOG_RE.fullmatch(name):
+    if FCLOG_RE.fullmatch(name) or DMONEY_RE.fullmatch(name):
         return (6 * 3600, 10)
     # Архив продаж (кривые по месяцам) — копия раз в сутки, три последних: загрузка истории переписывает все месяцы.
     if ARCHIVE_RE.fullmatch(name):
@@ -215,7 +217,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.close_connection = True
         if not self._same_origin():
             return self._send_json(403, {"error": "forbidden"})
-        if name not in SHARED_WRITABLE and not ARCHIVE_RE.fullmatch(name) and not MARKS_RE.fullmatch(name) and not FCLOG_RE.fullmatch(name):
+        if name not in SHARED_WRITABLE and not ARCHIVE_RE.fullmatch(name) and not MARKS_RE.fullmatch(name) and not FCLOG_RE.fullmatch(name) and not DMONEY_RE.fullmatch(name):
             return self._send_json(404, {"error": "not allowed"})
         if not self.headers.get("Content-Type", "").startswith("application/json"):
             return self._send_json(415, {"error": "json only"})

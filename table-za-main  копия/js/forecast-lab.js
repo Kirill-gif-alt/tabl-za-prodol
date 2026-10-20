@@ -1333,9 +1333,7 @@ window.ForecastLab = (function () {
     // Что было на вылете в день T (за h дней): открытый класс и цена, группы на руках, кресла в продаже к ёмкости ВС.
     // Только для вылетов из текущего файла продаж (в истории по дням цены и класса нет) — у остальных pi = 0.
     function isAdultPaidSale(x) {
-        const f = x.adjustedFare || x.fare || 0;
-        const b = String(x.basicFareStr || '').toUpperCase();
-        return f > 0 && !/\/(CN|IN|ID|WO|DA)\d*/.test(b) && !/IDB$/.test(b);
+        return FareGrid.isAdultPaid(x);   // общая логика (fare-grid.js)
     }
     function stateAt(dep, h, T, s) {
         const out = {};

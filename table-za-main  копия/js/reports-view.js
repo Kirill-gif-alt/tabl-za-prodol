@@ -771,28 +771,27 @@ window.ReportsView = (function () {
         const stamp = typeof excelExportStamp === 'function' ? excelExportStamp() : ru(new Date());
         const head = `Журнал решений · ${d.period} дн. · решения: ${d.kind} · выгрузка ${stamp}`;
         const j = sheetWriter(lib);
-        j.title(0, head, 14, style('FFFFFF', NAVY, true, 'left'));
-        j.table(1, ['Решение от', 'Кто', 'Рейс', 'Направление', 'Вылет', 'Решение', 'До, бил.', 'Обычно до', 'После, бил.', 'Обычно после', 'Ср. тариф до, ₽', 'Ср. тариф после, ₽', 'Итог, бил.', 'Результат'],
-            d.rows.map(r => ({ leftCols: [1, 3, 13], cells: [r.check, r.author, r.code, r.direction, r.dep, r.kind, r.before, r.normBefore, r.after, r.normAfter, r.fareBefore, r.fareAfter, r.effect, r.text] })));
-        const wsJ = j.finish([12, 18, 10, 30, 12, 14, 10, 11, 11, 13, 15, 16, 11, 44], 2);
+        j.title(0, head, 25, style('FFFFFF', NAVY, true, 'left'));
+        j.table(1, ['Решение от', 'Кто', 'Рейс', 'Направление', 'Вылет', 'Решение', 'До, бил.', 'Обычно до', 'После, бил.', 'Обычно после', 'Ср. тариф до, ₽', 'Ср. тариф после, ₽', 'Эффект, ₽', 'От, ₽', 'До, ₽', 'Объём, ₽', 'Цена, ₽', 'Надёжность', 'Класс до', 'Класс после', 'Билетов ожид.', 'Билетов факт', 'Аналогов', 'Версия метода', 'Результат'],
+            d.rows.map(r => ({ leftCols: [1, 3, 22], cells: [r.check, r.author, r.code, r.direction, r.dep, r.kind, r.before, r.normBefore, r.after, r.normAfter, r.fareBefore, r.fareAfter, r.effect, r.lo, r.hi, r.volume, r.priceEffect, r.grade, r.clsBefore, r.clsAfter, r.expAll, r.factAll, r.analogs, r.method, r.text] })));
+        const wsJ = j.finish([12, 18, 10, 30, 12, 14, 10, 11, 11, 13, 15, 16, 13, 12, 12, 12, 12, 11, 10, 11, 12, 12, 10, 10, 60], 2);
         const s = sheetWriter(lib);
         const sec = style(SECTION, 'FFFFFF', true, 'left');
-        const pct = (v) => (v == null ? '' : v);   // число, а не «67%»: в Excel его можно сортировать и складывать
         const block = (r, title, groups, keyLabel) => {
-            s.title(r++, title, 8, sec);
-            const head = [keyLabel, 'Решений', 'С итогом', 'Можно судить', 'Сработало', 'Сработало, %', 'Средний итог, бил.'];
+            s.title(r++, title, 9, sec);
+            const head = [keyLabel, 'Решений', 'Оценено', 'Определено', 'Сработало', 'Не сработало', 'Эффект по определённым, ₽', 'Неопределённо', 'Не оценивается'];
             return s.table(r, head,
-                groups.map(g => ({ cells: [g.key, g.n, g.done, g.judged, g.good, pct(g.share), g.avg == null ? '' : g.avg] }))) + 1;
+                groups.map(g => ({ cells: [g.key, g.n, g.money.finalN, g.money.definite, g.money.worked, g.money.failed, g.money.definite ? Math.round(g.money.sum) : '', g.money.unclear, g.money.na + g.money.wait] }))) + 1;
         };
         let r = 0;
-        s.title(r++, head, 8, style('FFFFFF', NAVY, true, 'left'));
+        s.title(r++, head, 9, style('FFFFFF', NAVY, true, 'left'));
         r++;
         const t = d.total;
         r = block(r, 'Итого', [{ key: 'Все решения', ...t }], 'Решения');
         r = block(r, 'По типу решения', d.byKind, 'Решение');
         r = block(r, 'По направлениям', d.byDir, 'Направление');
-        block(r, 'По людям', d.byAuthor, 'Кто');
-        const wsS = s.finish([34, 10, 10, 13, 11, 13, 17, 24], 0);
+        block(r, 'По типу решения (повторно)', d.byKind, 'Решение');
+        const wsS = s.finish([34, 10, 10, 12, 11, 13, 24, 14, 14], 0);
         const wb = lib.utils.book_new();
         lib.utils.book_append_sheet(wb, wsJ, 'Журнал');
         lib.utils.book_append_sheet(wb, wsS, 'Сводка');
@@ -898,7 +897,7 @@ window.ReportsView = (function () {
         let content = '';
         if (subtab === 'checks') content = checksHtml();
         else if (subtab === 'refs') content = typeof ReferenceView !== 'undefined' ? ReferenceView.html(refsHtml) : refsHtml();
-        else if (subtab === 'decisions') content = DecisionsReport.html();
+        else if (subtab === 'decisions') content = DecisionsReport.html(renderBody);
         else if (subtab === 'forecast' && typeof ForecastLab !== 'undefined') content = ForecastLab.html(renderBody);
         else if (subtab === 'reconcile') content = SalesReconcile.html();
         else {

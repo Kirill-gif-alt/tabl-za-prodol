@@ -77,9 +77,7 @@ window.PriceAdvisor = (function () {
     }
 
     function isAdultPaid(s) {
-        const f = s.adjustedFare || s.fare || 0;
-        const b = String(s.basicFareStr || '').toUpperCase();
-        return f > 0 && !/\/(CN|IN|ID|WO|DA)\d*/.test(b) && !/IDB$/.test(b);
+        return FareGrid.isAdultPaid(s);   // общая логика (fare-grid.js)
     }
 
     function median(a) {
@@ -111,7 +109,7 @@ window.PriceAdvisor = (function () {
                 if (!isAdultPaid(s)) return;
                 adultPaid++;
                 const f = s.adjustedFare || s.fare;
-                const cls = String(s.basicFareStr || '?').trim().charAt(0).toUpperCase() || '?';
+                const cls = FareGrid.classOf(s) || '?';
                 (byClass[cls] || (byClass[cls] = [])).push(f);
                 all.push(f);
             });

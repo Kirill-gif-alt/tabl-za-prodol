@@ -312,6 +312,7 @@ window.SessionStore = (function () {
         const ok = await SharedStorage.saveSnapshot(announce);
         if (ok) baselineStats = nextStats;
         if (ok && typeof SalesArchive !== 'undefined') SalesArchive.captureSoon();
+        if (ok && typeof SalesDayLog !== 'undefined') SalesDayLog.captureSoon();
         if (ok && announce && typeof ActivityLog !== 'undefined') {
             const flightCount = Object.keys(groupedData || {}).length;
             ActivityLog.log('data_share', `Рейсов: ${flightCount}`);

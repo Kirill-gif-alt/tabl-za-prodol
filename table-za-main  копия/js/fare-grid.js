@@ -37,9 +37,15 @@ window.FareGrid = (function () {
         return AUTO_FAMILY[code.slice(1, 3)] || 'other';
     }
 
+    // Взрослый платный билет: цена > 0, не детский/младенец/льготный/служебный тариф. Единая логика для всех модулей.
     function isAdult(s) {
         const b = String(s.basicFareStr || '').toUpperCase();
         return (s.adjustedFare || s.fare || 0) > 0 && !/\/(CN|IN|ID|WO|DA)\d*/.test(b) && !/IDB$/.test(b.split('/')[0]);
+    }
+
+    // Класс бронирования билета: первая буква кода тарифа («KSTOW/CN20» → «K»), без хвоста; пусто — если кода нет.
+    function classOf(s) {
+        return String(s && s.basicFareStr || '').trim().charAt(0).toUpperCase();
     }
 
     function sig() {
@@ -422,5 +428,5 @@ window.FareGrid = (function () {
         return true;
     }
 
-    return { ladderFor, officialLadder, load, sectionHtml, handleClick, handleChange, revision: () => rev };
+    return { isAdultPaid: isAdult, classOf, ladderFor, officialLadder, load, sectionHtml, handleClick, handleChange, revision: () => rev };
 })();

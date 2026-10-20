@@ -1,15 +1,14 @@
-// «Отчёты» → «Решения»: журнал ценовых решений и их итог.
-// Каждая отметка «▼ Снижение» / «▲ Повышение» из «Управления продажами»: сколько билетов и по какому тарифу
-// продали за 3 дня до решения и за 3 дня после, и сколько обычно продаётся за те же дни (норма по дням недели).
-// Итог — в билетах против нормы (снижение — за несколько дней после решения, повышение — по итогу вылета).
-// Повышение с чуть меньшими продажами, но большим тарифом — не провал.
-// Сводка по типу решения, по направлениям и по людям. Те же расчёты, что в карточке рейса (price-marks.js).
+// «Отчёты» → «Решения»: журнал ценовых решений и их итог в рублях (единственное место на сайте, где показаны деньги по решениям).
+// Эффект = выручка в окне после решения минус ожидаемое число билетов × прежняя цена; делится на объём и цену.
+// «Сработало» только при интервале без нуля и эффекте выше порога, иначе «неопределённо» (расчёт — js/decision-money.js).
+// Билеты до/после и норма — те же, что в карточке рейса (price-marks.js).
 window.DecisionsReport = (function () {
     const PERIODS = [30, 60, 90];
     const KIND = { down: '▼ Снижение', up: '▲ Повышение', attn: '! Внимание' };
     let period = 60;
     let kindFilter = '';
     let memo = { sig: '', rows: null };
+    let money = { sig: '', map: null, loading: false, done: 0 };
 
     function esc(v) {
         return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -23,6 +22,8 @@ window.DecisionsReport = (function () {
     function available() {
         return typeof SalesManagement !== 'undefined' && SalesManagement.allMarks && typeof PriceMarks !== 'undefined' && PriceMarks.effectFor;
     }
+
+    function moneyWindow() { return typeof PV !== 'undefined' && typeof PV.DECISION_WINDOW_MONEY === 'number' ? PV.DECISION_WINDOW_MONEY : 4; }
 
     function wd() { return typeof PriceMarks !== 'undefined' && PriceMarks.winDays ? PriceMarks.winDays() : '3 дня'; }
 
@@ -41,6 +42,67 @@ window.DecisionsReport = (function () {
         return Math.round((t - d) / 86400000);
     }
 
+
+    // ---------- деньги (только здесь, нигде больше на сайте) ----------
+
+    function moneyAvailable() { return typeof DecisionMoney !== 'undefined'; }
+
+    function ensureMoney(rerender) {
+        if (!moneyAvailable()) return;
+        const list = rows();
+        const s = sig() + '|' + (DecisionMoney.revision ? DecisionMoney.revision() : 0);
+        if (money.sig === s || money.loading) return;
+        money.loading = true;
+        money.done = 0;
+        DecisionMoney.resolveAll(list, (d) => { money.done = d; })
+            .then(map => { money = { sig: s, map, loading: false, done: list.length }; })
+            .catch(err => { console.warn('DecisionsReport money', err); money = { sig: s, map: new Map(), loading: false, done: 0 }; })
+            .then(() => { if (typeof rerender === 'function') rerender(); });
+    }
+
+    function moneyOf(r) {
+        return money.map ? (money.map.get(DecisionMoney.keyOf(r)) || null) : null;
+    }
+
+    function rub(n) {
+        if (n == null || n === '') return '—';
+        const v = Math.round(n);
+        return (v > 0 ? '+' : (v < 0 ? '−' : '')) + Math.abs(v).toLocaleString('ru-RU') + ' ₽';
+    }
+
+    function rubPlain(n) { return n == null ? '—' : Math.round(n).toLocaleString('ru-RU') + ' ₽'; }
+
+    // Состояние денежной оценки одного решения для экрана и Excel.
+    function moneyState(r) {
+        const m = moneyOf(r);
+        if (!m) return { cls: 'wait', text: money.loading ? 'считаем…' : '—', short: '', m: null };
+        if (m.stage === 'na') return { cls: 'none', text: 'не оценивается', short: 'не оценивается', reason: m.reason, m };
+        if (m.stage === 'wait') return { cls: 'wait', text: 'ждём данные', short: 'ждём данные', reason: m.reason, m };
+        if (m.stage === 'prelim') return { cls: 'wait', text: 'предв.: ' + rub(m.delta), short: 'предварительно', reason: m.reason, m };
+        if (m.verdict === 'worked') return { cls: 'pos', text: 'сработало', short: 'сработало', m };
+        if (m.verdict === 'failed') return { cls: 'neg', text: 'не сработало', short: 'не сработало', m };
+        return { cls: 'none', text: 'неопределённо', short: 'неопределённо', reason: m.reason || 'интервал включает ноль или эффект ниже порога', m };
+    }
+
+    // Итоги пулом: суммы только по решениям с определённым итогом; неопределённые — отдельно.
+    function moneyTotals(list) {
+        const t = { n: list.length, finalN: 0, worked: 0, failed: 0, unclear: 0, na: 0, wait: 0, sum: 0, lo: 0, hi: 0, definite: 0, sumAll: 0 };
+        list.forEach(r => {
+            const st = moneyState(r);
+            const m = st.m;
+            if (!m || m.stage === 'wait' || m.stage === 'prelim') { t.wait++; return; }
+            if (m.stage === 'na') { t.na++; return; }
+            t.finalN++;
+            t.sumAll += m.delta || 0;
+            if (m.verdict === 'worked') { t.worked++; t.definite++; t.sum += m.delta; }
+            else if (m.verdict === 'failed') { t.failed++; t.definite++; t.sum += m.delta; }
+            else t.unclear++;
+            t.lo += m.lo || 0;
+            t.hi += m.hi || 0;
+        });
+        return t;
+    }
+
     // Строки журнала (решения «снижение/повышение» за период), с итогом.
     function rows() {
         const s = sig();
@@ -53,6 +115,8 @@ window.DecisionsReport = (function () {
             const dk = [m.flight, m.dep, m.check, m.status].join('|');
             if (seen.has(dk)) {
                 const r0 = seen.get(dk);
+                if (!r0.clsFrom && m.clsFrom) r0.clsFrom = m.clsFrom;
+                if (!r0.clsTo && m.clsTo) r0.clsTo = m.clsTo;
                 if (m.author && !r0.author.split(' / ').includes(m.author)) r0.author = r0.author ? r0.author + ' / ' + m.author : m.author;
                 return;
             }
@@ -64,6 +128,7 @@ window.DecisionsReport = (function () {
             try { e = PriceMarks.effectFor(base, code, m.dep, { check: m.check, status: m.status }); } catch (err) { e = null; }
             out.push({
                 code, base, dep: m.dep, check: m.check, status: m.status, author: m.author || '',
+                clsFrom: m.clsFrom || '', clsTo: m.clsTo || '',
                 direction: typeof getFlightDirection === 'function' ? getFlightDirection(code) : '',
                 e,
                 done: !!(e && e.complete && e.effect != null)
@@ -92,7 +157,8 @@ window.DecisionsReport = (function () {
         const good = judged.filter(r => worked(r) === true).length;
         const avg = done.length ? done.reduce((a, r) => a + r.e.effect, 0) / done.length : null;
         const waiting = list.filter(r => !(r.e && r.e.complete)).length;
-        return { n: list.length, done: done.length, waiting, noNorm: list.length - done.length - waiting, judged: judged.length, good, share: judged.length ? Math.round(good / judged.length * 100) : null, avg: avg == null ? null : Math.round(avg * 10) / 10 };
+        const mt = moneyTotals(list);
+        return { money: mt, n: list.length, done: done.length, waiting, noNorm: list.length - done.length - waiting, judged: judged.length, good, share: judged.length ? Math.round(good / judged.length * 100) : null, avg: avg == null ? null : Math.round(avg * 10) / 10 };
     }
 
     function groupBy(list, keyFn) {
@@ -121,11 +187,13 @@ window.DecisionsReport = (function () {
             <tr>
                 <td class="rp-left"><strong>${esc(g.key)}</strong></td>
                 <td>${g.n}</td>
-                <td class="dr-share-cell">${shareBar(g.share)}</td>
+                <td>${g.money.definite}${g.money.definite ? ` <span class="dr-usual">${g.money.worked} / ${g.money.failed}</span>` : ''}</td>
+                <td class="rp-nowrap">${g.money.definite ? `<span class="${g.money.sum >= 0 ? 'dr-pos' : 'dr-neg'}">${rub(g.money.sum)}</span>` : '—'}</td>
+                <td>${g.money.unclear + g.money.na + g.money.wait}</td>
             </tr>`).join('');
         return `<div class="dr-sum">
             <div class="dr-sum-title">${esc(title)}</div>
-            <table class="rp-table dr-sum-table"><thead><tr><th>${esc(keyLabel)}</th><th>Решений</th><th title="Из решений, по которым можно судить: выручка после решения не ниже, чем была бы без него">Сработало</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+            <table class="rp-table dr-sum-table"><thead><tr><th>${esc(keyLabel)}</th><th>Решений</th><th title="Решения с определённым итогом (интервал не включает ноль и эффект выше порога)">Определено</th><th title="Сумма эффекта только по решениям с определённым итогом">Эффект</th><th title="Решения, по которым итог неопределённый, в сумму не входят">Неопред.</th></tr></thead><tbody>${rowsHtml}</tbody></table>
             ${groups.length > 10 ? `<div class="rp-muted">и ещё ${groups.length - 10} — полный список в Excel</div>` : ''}
         </div>`;
     }
@@ -143,8 +211,9 @@ window.DecisionsReport = (function () {
         return kindFilter ? all.filter(r => r.status === kindFilter) : all;
     }
 
-    function html() {
+    function html(rerender) {
         if (!available()) return '<p class="rp-note">Журнал решений недоступен.</p>';
+        ensureMoney(rerender);
         const list = filtered();
         const total = summarize(list);
         const down = summarize(list.filter(r => r.status === 'down'));
@@ -155,53 +224,67 @@ window.DecisionsReport = (function () {
                 <div class="dr-seg"><span class="dr-seg-label">Период</span>${PERIODS.map(p => seg('dr-period', p, period, p + ' дн.')).join('')}</div>
                 <div class="dr-seg"><span class="dr-seg-label">Решения</span>${seg('dr-kind', '', kindFilter, 'все')}${seg('dr-kind', 'down', kindFilter, '▼ снижение')}${seg('dr-kind', 'up', kindFilter, '▲ повышение')}</div>
             </div>`;
-        const avgTxt = (t) => (t.avg == null ? '—' : `<span class="${t.avg > 0 ? 'dr-pos' : (t.avg < 0 ? 'dr-neg' : '')}">${signed(t.avg)}</span>`);
+        const mt = total.money;
+        const sumCls = mt.sum > 0 ? 'dr-pos' : (mt.sum < 0 ? 'dr-neg' : '');
         const kpis = `<div class="dr-kpis">
-            ${kpi('Решений', String(total.n), [`с итогом ${total.done}`, total.waiting ? `ждут итога: ${total.waiting}` : '', total.noNorm ? `не с чем сравнить: ${total.noNorm}` : ''].filter(Boolean).join(' · '))}
-            ${kpi('Сработало', total.share == null ? '—' : `<span class="${total.share >= 50 ? 'dr-pos' : 'dr-neg'}">${total.share}%</span>`, total.judged ? `${total.good} из ${total.judged}${total.done - total.judged ? ` · рано судить ${total.done - total.judged}` : ''}` : 'пока нет итогов')}
-            ${kpi('Билетов к обычному', total.avg == null ? '—' : avgTxt(total), 'в среднем на решение')}
-            ${!kindFilter ? kpi('▼ Снижения', String(down.n), down.share != null ? `сработало ${down.share}%` : '', 'dr-kpi-down') : ''}
-            ${!kindFilter ? kpi('▲ Повышения', String(up.n), up.share != null ? `сработало ${up.share}%` : '', 'dr-kpi-up') : ''}
+            ${kpi('Решений', String(total.n), [`оценено ${mt.finalN}`, mt.wait ? `ждут данных: ${mt.wait}` : '', mt.na ? `не оценивается: ${mt.na}` : ''].filter(Boolean).join(' · '))}
+            ${kpi('Определённый итог', mt.definite ? String(mt.definite) : '—', mt.definite ? `сработало ${mt.worked} · не сработало ${mt.failed}` : (money.loading ? 'считаем…' : 'пока нет'))}
+            ${kpi('Эффект по определённым', mt.definite ? `<span class="${sumCls}">${rub(mt.sum)}</span>` : '—', mt.finalN ? `по всем оценённым ${rub(mt.sumAll)} (диапазон ${rub(mt.lo)} … ${rub(mt.hi)})` : '')}
+            ${kpi('Неопределённо', String(mt.unclear), 'интервал включает ноль или эффект ниже порога; в сумму не входят')}
+            ${!kindFilter ? kpi('▼ Снижения', String(down.n), down.money.definite ? `${rub(down.money.sum)} по определённым` : '', 'dr-kpi-down') : ''}
+            ${!kindFilter ? kpi('▲ Повышения', String(up.n), up.money.definite ? `${rub(up.money.sum)} по определённым` : '', 'dr-kpi-up') : ''}
         </div>`;
         const body = list.map(r => {
             const e = r.e;
-            const v = verdictOf(r);
+            const st = moneyState(r);
+            const m = st.m;
             const usual = (x) => (x ? `<span class="dr-usual">обычно ${x.value}</span>` : '');
             const fare = e && e.before.avg != null && e.after.avg != null
                 ? `${Math.round(e.before.avg).toLocaleString('ru-RU')} → ${Math.round(e.after.avg).toLocaleString('ru-RU')} ₽` : '—';
+            const cls = m && (m.clsBefore || m.clsAfter) ? `${esc(m.clsBefore || '?')} → ${esc(m.clsAfter || '?')}` : (r.clsFrom || r.clsTo ? `${esc(r.clsFrom || '?')} → ${esc(r.clsTo || '?')}` : '—');
+            const hasNum = m && (m.stage === 'final' || m.stage === 'prelim') && m.delta != null;
+            const effect = hasNum ? `<strong class="${m.delta >= 0 ? 'dr-pos' : 'dr-neg'}">${rub(m.delta)}</strong><div class="dr-usual">${rub(m.lo)} … ${rub(m.hi)}</div>` : '—';
+            const split = hasNum ? `<span class="dr-usual">объём ${rub(m.volume)}</span><span class="dr-usual">цена ${rub(m.priceEffect)}</span>` : '';
+            const tix = m && m.expAll != null ? `<strong>${m.factAll}</strong><span class="dr-usual">ожидали ${String(m.expAll).replace('.', ',')}</span>` : '—';
+            const reliab = m && m.grade && (m.stage === 'final' || m.stage === 'prelim') ? `<span class="dr-usual">надёжность ${m.grade}${m.frozen ? '' : ' · не зафиксировано'}</span>` : '';
+            const tail = m && m.tailExp != null ? `<span class="dr-usual">после окна ${m.tailFact} (обычно ${String(m.tailExp).replace('.', ',')})${m.fullFlight ? ', рейс заполнен' : ''}</span>` : '';
             return `
                 <tr>
                     <td class="rp-nowrap"><strong>${esc(r.check.slice(0, 5))}</strong><div class="dr-usual">${esc(r.author || '—')}</div></td>
                     <td class="rp-left"><button type="button" class="filter-btn rp-open" data-open-base="${esc(r.base)}" data-open-code="${esc(r.code)}" data-open-date="${esc(r.dep)}" title="Открыть вылет">${esc(r.code)}</button><div class="dr-usual">${esc(r.direction)}</div></td>
                     <td class="rp-nowrap">${esc(r.dep.slice(0, 5))}</td>
                     <td><span class="dr-kind dr-kind-${esc(r.status)}">${esc(KIND[r.status] || r.status)}</span></td>
-                    <td><strong>${e ? e.before.n : '—'}</strong>${e ? usual(e.normBefore) : ''}</td>
-                    <td><strong>${e ? e.after.n : '—'}</strong>${e ? usual(e.normAfter) : ''}</td>
+                    <td class="rp-nowrap">${cls}</td>
+                    <td>${tix}</td>
                     <td class="rp-nowrap">${fare}</td>
-                    <td class="rp-left"><span class="dr-verdict dr-verdict-${v.cls}">${esc(v.text)}</span></td>
+                    <td class="rp-nowrap">${effect}</td>
+                    <td>${split}</td>
+                    <td class="rp-left"><span class="dr-verdict dr-verdict-${st.cls}">${esc(st.text)}</span>${st.reason ? `<span class="dr-usual" style="white-space:normal">${esc(st.reason)}</span>` : ''}${reliab}${tail}</td>
                 </tr>`;
         }).join('');
         const sums = list.length ? `<div class="dr-sums">
             ${summaryTable('По направлениям', groupBy(list, r => r.direction || r.code), 'Направление')}
-            ${summaryTable('По людям', groupBy(list, r => r.author || '—'), 'Кто')}
+            ${summaryTable('По типу решения', groupBy(list, r => KIND[r.status] || r.status), 'Решение')}
         </div>` : '';
         return `
             <section class="rp-card dr-card">
                 <div class="rp-card-head">
                     <h3 class="rp-card-title">Журнал решений</h3>
-                    ${canExport() ? `<button type="button" class="btn-primary rp-btn" id="dr-export"${list.length ? '' : ' disabled'}>В Excel</button>` : ''}
+                    ${canExport() ? `${moneyAvailable() && DecisionMoney.canFreeze() && list.length ? '<button type="button" class="filter-btn" data-dr-recompute="1" title="Пересчитать зафиксированные итоги с текущими параметрами">Пересчитать</button>' : ''}<button type="button" class="btn-primary rp-btn" id="dr-export"${list.length ? '' : ' disabled'}>В Excel</button>` : ''}
                 </div>
                 <details class="dr-help"><summary>Как считается</summary>
-                    <p>Решения судятся по <strong>билетам</strong>, а не по рублям: выручка за несколько дней зависит от того, кто купил (группа, дети, лайт или оптимум), сильнее, чем от самого решения.</p>
-                    <p><strong>«▼ Снижение»</strong> — продажи за ${wd()} после решения против обычных для этих дней (норма по тому же дню недели), с поправкой на то, как рейс шёл до решения. Продали больше обычного — сработало.</p>
-                    <p><strong>«▲ Повышение»</strong> — по итогу вылета: дороже продают медленнее, это нормально. Сработало, если рейс заполнился (от 95%) или с дня решения до вылета добрали не меньше обычного (допуск 10%). До вылета — «итог повышения — после вылета».</p>
-                    <p>Если билетов слишком мало для вывода — «рано судить», такие решения в «Сработало» не считаются.</p>
+                    <p><strong>Эффект в рублях</strong> = выручка по взрослым платным билетам в окне после решения минус то, что продали бы по прежней цене: ожидаемое число билетов (норма аналогичных вылетов того же рейса и дня недели) × цена прежнего класса. Он делится на <em>объём</em> (больше или меньше билетов, чем ожидали) и <em>цену</em> (другой тариф). Сумма двух частей равна эффекту.</p>
+                    <p><strong>Окно</strong>: ${moneyWindow()} дн. после решения (день решения не считается), при малых продажах до 10 дней. Итог фиксируется на следующий день после окна и потом не меняется.</p>
+                    <p><strong>«Сработало» / «не сработало»</strong> — только если интервал (≈90%) не включает ноль и эффект не меньше большего из 15% ожидаемой выручки и 20 000 ₽. Иначе — «неопределённо»: по одному вылету это частый и честный ответ. Суммы считаются только по определённым решениям, неопределённые показаны отдельно.</p>
+                    <p><strong>«Не оценивается»</strong>: доп. рейсы и чартеры, решение за менее чем 3 дня до вылета, серия решений по вылету, праздники и события, нет продаж до решения, цена не менялась, мало аналогов. Надёжность A / B — по числу аналогов и ожидаемых билетов.</p>
+                    <p><strong>▲ Повышение</strong>: через окно — только предварительный сигнал; итог после вылета по остатку продаж, с учётом свободных мест. Если рейс заполнился, учитывается только эффект цены.</p>
+                    <p>Выручка в рублях — по ценам билетов без допов и без групп. Это оценка относительно нормы, а не доказанная причина: на неё влияют погода, конкуренты и события, которых в данных нет. Проверка на вылетах без решений показала, что «сработало» метод иногда выдаёт и там (естественный рост цены ближе к вылету), поэтому читайте итог как ориентир, а не как факт.</p>
                 </details>
                 ${toolbar}
                 ${kpis}
                 ${sums}
                 ${body ? `<div class="dr-list-title">Все решения <span class="rp-muted">· ${list.length}</span></div><div class="rp-scroll"><table class="rp-table dr-table">
-                    <thead><tr><th>Решение</th><th>Рейс</th><th>Вылет</th><th>Что</th><th title="Билетов за ${wd()} до решения">До</th><th title="Билетов после решения: для снижения — за ${wd()}, для повышения — до вылета">После</th><th>Ср. тариф до → после</th><th>Итог</th></tr></thead>
+                    <thead><tr><th>Решение</th><th>Рейс</th><th>Вылет</th><th>Что</th><th title="Класс до → после (из отметки или по продажам)">Класс</th><th title="Билетов в окне после решения / сколько ожидали">Билетов</th><th>Ср. тариф до → после</th><th title="Выручка в окне минус ожидаемая по прежней цене; в строке — диапазон ≈90%">Эффект</th><th>Объём / цена</th><th>Итог</th></tr></thead>
                     <tbody>${body}</tbody></table></div>` : '<p class="rp-note">За период решений «снижение/повышение» нет.</p>'}
             </section>`;
     }
@@ -219,7 +302,9 @@ window.DecisionsReport = (function () {
             byAuthor: g(r => r.author || '—'),
             rows: list.map(r => {
                 const e = r.e;
-                const v = verdictOf(r);
+                const st = moneyState(r);
+                const m = st.m;
+                const fin = m && (m.stage === 'final' || m.stage === 'prelim') && m.delta != null;
                 return {
                     check: r.check, author: r.author, code: r.code, direction: r.direction, dep: r.dep,
                     kind: KIND[r.status] || r.status,
@@ -227,14 +312,25 @@ window.DecisionsReport = (function () {
                     after: e ? e.after.n : '', normAfter: e && e.normAfter ? e.normAfter.value : '',
                     fareBefore: e && e.before.avg != null ? Math.round(e.before.avg) : '',
                     fareAfter: e && e.after.avg != null ? Math.round(e.after.avg) : '',
-                    effect: e && e.complete && e.effect != null ? e.effect : '',
-                    verdict: v.short, text: v.text
+                    effect: fin ? m.delta : '', lo: fin ? m.lo : '', hi: fin ? m.hi : '', volume: fin ? m.volume : '', priceEffect: fin ? m.priceEffect : '',
+                    grade: fin ? m.grade : '', clsBefore: m ? (m.clsBefore || '') : '', clsAfter: m ? (m.clsAfter || '') : '',
+                    expAll: m && m.expAll != null ? m.expAll : '', factAll: m && m.factAll != null ? m.factAll : '', analogs: m && m.k != null ? m.k : '',
+                    method: m && m.v != null ? m.v : '', verdict: st.short, text: st.text + (st.reason ? ': ' + st.reason : '')
                 };
             })
         };
     }
 
     function handleClick(btn, rerender) {
+        if (btn.dataset.drRecompute) {
+            if (!moneyAvailable() || money.loading) return true;
+            const list = rows().filter(r => { const m = moneyOf(r); return m && m.stage !== 'na'; });
+            money.loading = true;
+            btn.disabled = true;
+            (async () => { for (const r of list) { try { await DecisionMoney.recompute(r); } catch (err) { console.warn(err); } } })()
+                .then(() => { money = { sig: '', map: null, loading: false, done: 0 }; rerender(); });
+            return true;
+        }
         if (btn.dataset.drPeriod != null) { period = parseInt(btn.dataset.drPeriod, 10) || 60; rerender(); return true; }
         if (btn.dataset.drKind != null) { kindFilter = btn.dataset.drKind || ''; rerender(); return true; }
         return false;
