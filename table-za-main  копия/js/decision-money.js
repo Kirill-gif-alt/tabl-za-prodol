@@ -143,7 +143,20 @@ window.DecisionMoney = (function () {
 
     // Аналоги: тот же рейс и день недели, ±8 недель (расширяем до 12, 26 недель и всех дат). Нужны данные по концу окна (lo).
     // Сначала берём вылеты без ценовых решений; если их мало — и вылеты с решениями (оценка помечается, доверие ниже).
+    // Результат поиска запоминается на время неизменных данных и отметок: у серии решений по одному вылету он один и тот же.
+    const analogMemo = new Map();
+    let analogMemoSig = '';
+
     function findAnalogs(base, code, dep, lo, seats) {
+        const sg = [typeof dataEpoch === 'number' ? dataEpoch : 0, typeof SalesManagement !== 'undefined' && SalesManagement.markRevision ? SalesManagement.markRevision() : '',
+            typeof SalesArchive !== 'undefined' && SalesArchive.revision ? SalesArchive.revision() : 0, typeof Params !== 'undefined' && Params.revision ? Params.revision() : 0].join('|');
+        if (sg !== analogMemoSig) { analogMemo.clear(); analogMemoSig = sg; }
+        const key = [base, code, dep, lo, Math.round(seats || 0)].join('|');
+        if (!analogMemo.has(key)) analogMemo.set(key, findAnalogsRaw(base, code, dep, lo, seats));
+        return analogMemo.get(key);
+    }
+
+    function findAnalogsRaw(base, code, dep, lo, seats) {
         let cohort = [];
         try { cohort = collectSameWeekdayCohort(base, dep, code); } catch (e) { cohort = []; }
         const usable = cohort.filter(c => c.seats > 0 && REGULAR.test(String(c.code)) && c.observedFrom <= lo);
@@ -346,6 +359,15 @@ window.DecisionMoney = (function () {
         return res;
     }
 
+    // Функция ошибок (Абрамовиц–Стеган): для вероятности «плюс» в finish.
+    function erf(x) {
+        const sign = x < 0 ? -1 : 1;
+        const a = Math.abs(x);
+        const t = 1 / (1 + 0.3275911 * a);
+        const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-a * a);
+        return sign * y;
+    }
+
     function finish(base, est, extra) {
         const sampleOk = est.nExpAll + (extra.factAll || 0) >= num('MONEY_MIN_TICKETS', 4);
         const flags = base.flags || [];
@@ -359,6 +381,18 @@ window.DecisionMoney = (function () {
         if (lo > 0 && est.delta >= est.thr) verdict = 'worked';
         else if (hi < 0 && est.delta <= -est.thr) verdict = 'failed';
         if (est.filled || extra.filled) verdict = est.verdict;
+        // «Скорее»: диапазон включает ноль, но вероятность плюса (или минуса) по нормальной оценке не ниже 75%.
+        const zc = num('MONEY_NOISE_Z', 1.9);
+        const sd = half > 0 ? half / zc : 0;
+        let pPos = null;
+        if (sd > 0) {
+            const t = est.delta / sd;
+            pPos = 0.5 * (1 + erf(t / Math.SQRT2));
+            if (verdict === 'unclear' && !(est.filled || extra.filled)) {
+                if (pPos >= num('MONEY_LEAN_P', 0.75)) verdict = 'lean_pos';
+                else if (pPos <= 1 - num('MONEY_LEAN_P', 0.75)) verdict = 'lean_neg';
+            }
+        }
         const delta = round1k(est.delta);
         const volume = round1k(est.volume);
         const res = Object.assign(base, extra, {
@@ -369,6 +403,7 @@ window.DecisionMoney = (function () {
             dTickets: round1(est.dTickets), grade
         });
         res.verdict = sampleOk ? verdict : 'unclear';
+        res.pPos = pPos == null ? null : Math.round(pPos * 100);
         if (!sampleOk) res.reason = 'мало билетов для вывода';
         return res;
     }

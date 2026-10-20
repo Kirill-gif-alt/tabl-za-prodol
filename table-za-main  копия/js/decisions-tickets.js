@@ -209,9 +209,10 @@ window.DecisionsTickets = (function () {
             const short = e ? (up ? `после: ${e.after.n}${e.normAfter ? ' (обычно ' + e.normAfter.value + ')' : ''}` : `продали ${e.after.n}${e.normAfter ? ' вместо ' + e.normAfter.value : ''}`) : esc(v.text);
             return DecisionsViz.plainRow({
                 tone,
+                key: [r.code, r.dep, r.check, r.status].join('|'),
                 head: `<span class="dp-code">${esc(r.code)}</span> <span class="dp-dir">${esc(r.direction)}</span>`,
                 dep: esc(fmtD(r.dep)),
-                act: `${up ? '▲' : '▼'} ${esc(fmtD(r.check))}${r.author ? ' · ' + esc(r.author) : ''}`,
+                act: `<span class="dp-ud dp-ud-${up ? 'up' : 'down'}" title="${up ? 'Повышение' : 'Понижение'}">${up ? '▲' : '▼'} ${esc(fmtD(r.check))}${r.author ? ' · ' + esc(r.author) : ''}</span>`,
                 big, short, say, lines,
                 tags: [`<button type="button" class="filter-btn rp-open" data-open-base="${esc(r.base)}" data-open-code="${esc(r.code)}" data-open-date="${esc(r.dep)}">Открыть вылет →</button>`]
             });

@@ -8301,3 +8301,12 @@ html[data-theme="dark"] .dp-f.on b { color: #334155; }
 /* серый и жёлтый фон: тёмный текст читается лучше белого (в обеих темах) */
 .dp-chip.dp-unk, .dp-unk .dp-badge, .dp-chip.dp-wait, .dp-wait .dp-badge, .dv-seg.dv-unk, .dv-seg.dv-wait { color: #0f172a; }
 html[data-theme="dark"] .dp-rseg { opacity: 1; }
+
+.dp-lpos .dp-badge, .dp-chip.dp-lpos, .dp-chip.dp-lneg, .dp-lneg .dp-badge { color: #0f172a; font-size: 0.62rem; }
+.dp-lpos .dp-badge, .dp-chip.dp-lpos { background: #86efac; } .dp-lneg .dp-badge, .dp-chip.dp-lneg { background: #fca5a5; }
+.dp-row.dp-lpos { border-left-color: #4ade80; } .dp-row.dp-lneg { border-left-color: #f87171; }
+.dp-lpos .dp-big { color: #15803d; } .dp-lneg .dp-big { color: #b91c1c; }
+.dv-lpos { background: #86efac; color: #0f172a; } .dv-lneg { background: #fca5a5; color: #0f172a; }
+.dp-ud { display: inline-block; padding: 1px 8px; border-radius: 5px; font-weight: 700; font-size: 0.78rem; }
+.dp-ud-up { background: rgba(5, 150, 105, 0.14); color: #047857; } .dp-ud-down { background: rgba(220, 38, 38, 0.12); color: #b91c1c; }
+html[data-theme="dark"] .dp-ud-up { color: #34d399; } html[data-theme="dark"] .dp-ud-down { color: #f87171; }

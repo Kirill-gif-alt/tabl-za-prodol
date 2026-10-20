@@ -42,12 +42,15 @@ window.DecisionsViz = (function () {
     }
 
     // Компактная строка решения; по двойному клику раскрываются подробности. tone: pos / neg / unk / wait / na.
-    const TONE = { pos: 'ЛУЧШЕ', neg: 'ХУЖЕ', unk: 'НЕ ПОНЯТНО', wait: 'ЖДЁМ', ser: 'В СЕРИИ', na: 'НЕ СЧИТАЕМ' };
-    const TONE_ORDER = ['pos', 'neg', 'unk', 'wait', 'ser', 'na'];
-    const TONE_FILTER = { pos: 'Помогли', neg: 'Навредили', unk: 'Не понятно', wait: 'Ждём', ser: 'В серии', na: 'Не считаем' };
+    const TONE = { pos: 'ЛУЧШЕ', neg: 'ХУЖЕ', lpos: 'СКОРЕЕ ЛУЧШЕ', lneg: 'СКОРЕЕ ХУЖЕ', unk: 'НЕ ПОНЯТНО', wait: 'ЖДЁМ', ser: 'В СЕРИИ', na: 'НЕ СЧИТАЕМ' };
+    const TONE_ORDER = ['pos', 'neg', 'lpos', 'lneg', 'unk', 'wait', 'ser', 'na'];
+    const TONE_FILTER = { pos: 'Помогли', neg: 'Навредили', lpos: 'Скорее лучше', lneg: 'Скорее хуже', unk: 'Не понятно', wait: 'Ждём', ser: 'В серии', na: 'Не считаем' };
+
+    // Раскрытые строки помним по ключу: список перерисовывается (данные, расчёт денег), а открытое закрываться не должно.
+    const openKeys = new Set();
 
     function plainRow(c) {
-        const html = `<div class="dp-row dp-${c.tone}" title="Двойной клик — подробности">
+        const html = `<div class="dp-row dp-${c.tone}${openKeys.has(c.key) ? ' open' : ''}" data-key="${esc(c.key || '')}" title="Двойной клик — подробности">
             <div class="dp-main">
                 <span class="dp-badge">${TONE[c.tone]}</span>
                 <div class="dp-who">${c.head}</div>
@@ -55,7 +58,7 @@ window.DecisionsViz = (function () {
                 <div class="dp-act">${c.act}</div>
                 <div class="dp-big">${c.big}</div>
                 <div class="dp-short">${c.short || ''}</div>
-                <button type="button" class="dp-chev" aria-label="Подробности" aria-expanded="false">▾</button>
+                <button type="button" class="dp-chev" aria-label="Подробности">▾</button>
             </div>
             <div class="dp-lines">${c.say ? `<div class="dp-say">${c.say}</div>` : ''}${c.range || ''}<ul>${c.lines.filter(Boolean).map(l => `<li>${l}</li>`).join('')}</ul>${c.tags ? `<div class="dp-tags">${c.tags.filter(Boolean).map(t => `<span>${t}</span>`).join('')}</div>` : ''}</div>
         </div>`;
@@ -88,9 +91,15 @@ window.DecisionsViz = (function () {
             <button type="button" class="dp-all" data-dp-all="1">Раскрыть все</button></div>`;
     }
 
+    // Список: первые PAGE строк сразу, остальные по кнопке «Показать ещё» (без перерисовки).
+    const PAGE = 80;
     function list(rows, cur) {
         const sel = cur ? rows.filter(r => r.tone === cur) : rows;
-        return `<div class="dp-list">${sel.map(r => r.html).join('') || '<p class="rp-note">Нет решений с такой меткой.</p>'}</div>`;
+        if (!sel.length) return '<div class="dp-list"><p class="rp-note">Нет решений с такой меткой.</p></div>';
+        const head = sel.slice(0, PAGE).map(r => r.html).join('');
+        const rest = sel.slice(PAGE);
+        const more = rest.length ? `<template class="dp-rest">${rest.map(r => r.html).join('')}</template><button type="button" class="dp-all dp-more-btn" data-dp-more="1">Показать ещё ${Math.min(PAGE, rest.length)} из ${rest.length}</button>` : '';
+        return `<div class="dp-list">${head}${more}</div>`;
     }
 
     function howToRead(extra) {
@@ -105,8 +114,8 @@ window.DecisionsViz = (function () {
     function toggle(row, force) {
         const open = force == null ? !row.classList.contains('open') : force;
         row.classList.toggle('open', open);
-        const c = row.querySelector('.dp-chev');
-        if (c) c.setAttribute('aria-expanded', String(open));
+        const key = row.dataset.key;
+        if (key) { if (open) openKeys.add(key); else openKeys.delete(key); }
     }
 
     // Один обработчик на страницу: двойной клик по строке и клик по стрелке.
@@ -120,6 +129,22 @@ window.DecisionsViz = (function () {
     document.addEventListener('click', (e) => {
         const chev = e.target.closest && e.target.closest('.dp-chev');
         if (chev) { toggle(chev.closest('.dp-row')); return; }
+        const more = e.target.closest && e.target.closest('[data-dp-more]');
+        if (more) {
+            const list = more.parentNode;
+            const tpl = list.querySelector('template.dp-rest');
+            if (tpl) {
+                const holder = document.createElement('div');
+                holder.innerHTML = tpl.innerHTML;
+                const rows = [...holder.children];
+                const next = rows.slice(0, PAGE);
+                more.before(...next);
+                const left = rows.slice(PAGE);
+                if (left.length) { tpl.innerHTML = left.map(n => n.outerHTML).join(''); more.textContent = `Показать ещё ${Math.min(PAGE, left.length)} из ${left.length}`; }
+                else { tpl.remove(); more.remove(); }
+            }
+            return;
+        }
         const all = e.target.closest && e.target.closest('[data-dp-all]');
         if (all) {
             const rows = [...document.querySelectorAll('.dp-row')];
