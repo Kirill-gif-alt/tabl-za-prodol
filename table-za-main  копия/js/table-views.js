@@ -286,7 +286,7 @@ function actuallyRenderTable(base,targetDate=null){
     </tr>${salesSumRow}</thead><tbody>`;
 
     const rowHtmls = [];
-    rows.forEach(row=>{
+    rows.forEach(row=>{ rowHtmls.push(lazyRow(() => {
         const date=row[1]||'-';
         const free=parseInt(row[6]||0,10)||0;
         const avs=getSpecBookings(row);
@@ -335,7 +335,7 @@ function actuallyRenderTable(base,targetDate=null){
         const salesReady = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(typeof dataLoadStatus !== 'undefined' && dataLoadStatus.sales);
         const sc = (v) => (showSales && salesReady) ? formatNum(v || 0) : '—';
 
-        rowHtmls.push(`<tr class="${cls}${showRoute ? ' segment-row' : ''}${checkFlag ? ' fc-row-problem' : ''}" data-date="${escAttr(date)}" data-flight-base="${escAttr(base)}" data-flight-code="${escAttr(orig)}" data-route="${showRoute ? escAttr(route) : ''}" style="cursor: pointer;">
+        return `<tr class="${cls}${showRoute ? ' segment-row' : ''}${checkFlag ? ' fc-row-problem' : ''}" data-date="${escAttr(date)}" data-flight-base="${escAttr(base)}" data-flight-code="${escAttr(orig)}" data-route="${showRoute ? escAttr(route) : ''}" style="cursor: pointer;">
             <td class="col-date">${dateCell}</td><td class="font-medium">${escHtml(getDayOfWeek(date))}</td>${hasSegments ? `<td>${segmentCell}</td>` : ''}<td class="font-semibold">${escHtml(ac)}</td>
             <td class="font-semibold">${formatNum(seatsOnSale)}</td>
             ${showBook ? `<td class="font-semibold col-spec-book">${formatNum(avs)}</td>` : ''}
@@ -349,8 +349,8 @@ function actuallyRenderTable(base,targetDate=null){
             <td class="font-semibold">${sc(s.d30)}</td>
             <td class="font-bold">${status}</td>
             ${commentCell}
-        </tr>`);
-    });
+        </tr>`;
+    })); });
     tableHtmlCache = { sig: tableCacheSig, html: '', openTable, rows: rowHtmls };
     if (typeof TableVirtual !== 'undefined') {
         TableVirtual.mount({
@@ -518,7 +518,7 @@ function actuallyRenderPairTable(selectedBase, targetDate = null) {
         </thead><tbody>`;
 
     const rowHtmls = [];
-    entries.forEach(entry => {
+    entries.forEach(entry => { rowHtmls.push(lazyRow(() => {
         const { date, outRow, inRow } = entry;
         const outM = buildFlightLegMetrics(outRow, firstSalesByKey, todayStart);
         const inM = buildFlightLegMetrics(inRow, firstSalesByKey, todayStart);
@@ -614,7 +614,7 @@ function actuallyRenderPairTable(selectedBase, targetDate = null) {
 
         const rowFlightCode = outM.flightBase || inM.flightBase || '';
         const rowFlightBase = rowFlightCode ? getBaseFlight(rowFlightCode) : selectedBase;
-        rowHtmls.push(`<tr class="${rowCls}${showRoute ? ' segment-row' : ''}${typeof FlightChecks !== 'undefined' ? FlightChecks.rowClass([outRow, inRow]) : ''}" data-date="${escAttr(date)}" data-flight-base="${escAttr(rowFlightBase)}" data-flight-code="${escAttr(rowFlightCode)}" style="cursor: pointer;">
+        return `<tr class="${rowCls}${showRoute ? ' segment-row' : ''}${typeof FlightChecks !== 'undefined' ? FlightChecks.rowClass([outRow, inRow]) : ''}" data-date="${escAttr(date)}" data-flight-base="${escAttr(rowFlightBase)}" data-flight-code="${escAttr(rowFlightCode)}" style="cursor: pointer;">
             <td class="col-date font-semibold">${dateCell}</td>
             <td class="font-medium">${escHtml(formatPairDayOfWeek(outRow, inRow, date))}</td>
             ${hasSegments ? `<td>${segmentCell}</td>` : ''}
@@ -625,8 +625,8 @@ function actuallyRenderPairTable(selectedBase, targetDate = null) {
             ${subsidyCell}
             ${totalExpCell}
             ${finCell}
-        </tr>`);
-    });
+        </tr>`;
+    })); });
 
     const pairScrollIndex = targetDate ? entries.findIndex(e => e.date === targetDate) : -1;
     if (typeof TableVirtual !== 'undefined') {
@@ -1020,7 +1020,7 @@ function actuallyRenderPkzTable(base, targetDate = null) {
     </tr></thead><tbody>`;
 
     const rowHtmls = [];
-    rows.forEach(row => {
+    rows.forEach(row => { rowHtmls.push(lazyRow(() => {
         const date = row[1] || '-';
         const free = parseInt(row[6] || 0, 10) || 0;
         const avs = getSpecBookings(row);
@@ -1068,7 +1068,7 @@ function actuallyRenderPkzTable(base, targetDate = null) {
             ? `${escHtml(date)} <span class="font-semibold">${escHtml(orig)}</span> <span class="extra-badge ml-1">(ДОП)</span>`
             : escHtml(date);
 
-        rowHtmls.push(`<tr class="${cls}${showRoute ? ' segment-row' : ''}" data-date="${escAttr(date)}" data-flight-base="${escAttr(base)}" data-flight-code="${escAttr(orig)}" style="cursor:pointer;">
+        return `<tr class="${cls}${showRoute ? ' segment-row' : ''}" data-date="${escAttr(date)}" data-flight-base="${escAttr(base)}" data-flight-code="${escAttr(orig)}" style="cursor:pointer;">
             <td class="col-date">${dateCell}</td>
             <td class="font-medium">${escHtml(getDayOfWeek(date))}</td>
             ${hasSegments ? `<td>${segmentCell}</td>` : ''}
@@ -1091,8 +1091,8 @@ function actuallyRenderPkzTable(base, targetDate = null) {
             <td class="font-semibold">${escHtml(pkzText)}</td>
             <td class="font-semibold pkz-vacancy-cell${vacCls}" data-pkz-vacancy>${escHtml(vacText)}</td>
             <td class="font-bold">${status}</td>
-        </tr>`);
-    });
+        </tr>`;
+    })); });
     const pkzScrollIndex = targetDate ? rows.findIndex(r => r[1] === targetDate) : -1;
     if (typeof TableVirtual !== 'undefined') {
         TableVirtual.mount({

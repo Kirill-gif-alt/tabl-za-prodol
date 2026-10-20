@@ -157,7 +157,7 @@ function renderRmsWatchlist() {
 
     const hasExpected = expectedReady || showExpectedLoadColumn;
     const rmsRouteCounts = countRmsRoutesByDateBase(flights);
-    const rowHtmls = flights.map(f => {
+    const rowHtmls = flights.map(f => lazyRow(() => {
         const showRoute = f.route && shouldShowRmsRoute(f, rmsRouteCounts);
         const expectedCells = hasExpected ? `
             <td>${f.evR !== null ? f.evR : '—'}</td>
@@ -199,7 +199,7 @@ function renderRmsWatchlist() {
                 ${markOn ? `<td class="rms-col-mark">${PriceMarks.chipHtml(flightCode, f.date)}</td>` : ''}
             </tr>
         `;
-    });
+    }));
 
     container.innerHTML = `
         <table class="data-table rms-table w-full">

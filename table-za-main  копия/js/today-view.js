@@ -57,19 +57,38 @@ window.TodayView = (function () {
     }
 
     // Все вылеты (по строкам «загрузки таб») на дату.
+    // Строки данных раскладываются по датам один раз на загрузку данных: вызывается десятки раз за отрисовку.
+    let rowsByDate = null;
+    let rowsByDateKey = null;
+    function rowsOnDate(date) {
+        const key = typeof dataEpoch === 'number' ? dataEpoch : 0;
+        if (!rowsByDate || rowsByDateKey !== key || rowsByDate.src !== groupedData) {
+            const map = new Map();
+            Object.keys(groupedData || {}).forEach(base => {
+                (groupedData[base] || []).forEach(r => {
+                    if (!r) return;
+                    let list = map.get(r[1]);
+                    if (!list) map.set(r[1], list = []);
+                    list.push([base, r]);
+                });
+            });
+            map.src = groupedData;
+            rowsByDate = map;
+            rowsByDateKey = key;
+        }
+        return rowsByDate.get(date) || [];
+    }
+
     function departuresOn(date) {
         const out = [];
         const seen = new Set();
-        Object.keys(groupedData || {}).forEach(base => {
-            (groupedData[base] || []).forEach(r => {
-                if (!r || r[1] !== date) return;
-                const code = cleanFlight(r[0]);
-                if (seen.has(code)) return;
-                seen.add(code);
-                const seats = typeof getSeatsOnSale === 'function' ? getSeatsOnSale(r) : 0;
-                const sold = typeof getSoldFromRow === 'function' ? getSoldFromRow(r) : 0;
-                out.push({ code, base, date, row: r, seats, sold });
-            });
+        rowsOnDate(date).forEach(([base, r]) => {
+            const code = cleanFlight(r[0]);
+            if (seen.has(code)) return;
+            seen.add(code);
+            const seats = typeof getSeatsOnSale === 'function' ? getSeatsOnSale(r) : 0;
+            const sold = typeof getSoldFromRow === 'function' ? getSoldFromRow(r) : 0;
+            out.push({ code, base, date, row: r, seats, sold });
         });
         return out.sort((a, b) => String(a.row[11] || '').localeCompare(String(b.row[11] || '')) || (parseInt(a.code.slice(3), 10) - parseInt(b.code.slice(3), 10)));
     }

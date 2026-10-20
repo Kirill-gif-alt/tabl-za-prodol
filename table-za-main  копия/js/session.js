@@ -184,7 +184,18 @@ window.SessionStore = (function () {
         }
     }
 
+    // Подпись снимка перестраивается, только если данные заменили (ссылки и счётчик загрузки те же — подпись та же).
+    let sigMemo = null;
     function getSnapshotSignature() {
+        const refs = [allData, salesMap, salesDetails, closedFlights, expectedLoadData, typeof baggageWeightsData !== 'undefined' ? baggageWeightsData : null];
+        const key = [allData?.length || 0, closedFlights?.size || 0, typeof RouteCosts !== 'undefined' && RouteCosts.loaded ? 1 : 0, lastSalesUpdate ? lastSalesUpdate.getTime() : 0, window.krasaviaIngestSeq || 0, typeof dataEpoch === 'number' ? dataEpoch : 0].join('|');
+        if (sigMemo && sigMemo.key === key && sigMemo.refs.every((r, i) => r === refs[i])) return sigMemo.sig;
+        const sig = computeSnapshotSignature();
+        sigMemo = { key, refs, sig };
+        return sig;
+    }
+
+    function computeSnapshotSignature() {
         return [
             allData?.length || 0,
             Object.keys(salesMap || {}).length,

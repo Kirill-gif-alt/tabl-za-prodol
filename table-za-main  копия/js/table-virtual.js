@@ -1,6 +1,12 @@
 // Оконный tbody: идея Clusterize.js (MIT), без зависимости.
 // thead не режем. Excel берёт полный набор строк через getExportTable(), не DOM.
 
+// Строка таблицы, HTML которой строится только когда её показывают (join/toString), а не для всех строк сразу.
+function lazyRow(build) {
+    let html;
+    return { toString() { if (html === undefined) html = String(build()); return html; } };
+}
+
 const TableVirtual = (function () {
     const DEFAULT_ROW_H = 44;
     const BUFFER = 12;

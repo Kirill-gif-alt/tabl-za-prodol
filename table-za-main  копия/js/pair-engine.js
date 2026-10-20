@@ -359,23 +359,28 @@ function matchPairLegsTurnaround(outRows, inRows) {
     const ins = sortRowsByDepTime(inRows || []);
     const usedIn = new Set();
     const entries = [];
+    // Тип ВС, дата и время «обратно» считаем один раз: внутренний цикл работает только с числами.
+    const tsOfDate = (d) => (typeof PerfCache !== 'undefined' ? PerfCache.dateTsMemo(d) : (parseLocalDate(d) || { getTime: () => null }).getTime());
+    const insInfo = ins.map(r => ({ ac: getPairAircraftKey(r), ts: tsOfDate(r[1]), dep: typeof timeToMinutes === 'function' ? timeToMinutes(getDepTime(r)) : 0 }));
 
     outs.forEach((out) => {
         const outDate = out[1];
         const outDep = typeof timeToMinutes === 'function' ? timeToMinutes(getDepTime(out)) : 0;
         const outAc = getPairAircraftKey(out);
+        const outTs = tsOfDate(outDate);
         let bestIdx = -1;
         let bestScore = Infinity;
 
         for (let i = 0; i < ins.length; i++) {
             if (usedIn.has(i)) continue;
-            const inn = ins[i];
+            const info = insInfo[i];
             // одинаковый тип ВС — обязателен для «туда-обратно»
-            if (getPairAircraftKey(inn) !== outAc) continue;
-            const dayDiff = daysBetweenFlightDates(outDate, inn[1]);
+            if (info.ac !== outAc) continue;
+            if (outTs == null || info.ts == null) continue;
+            const dayDiff = Math.round((info.ts - outTs) / 86400000);
             // только тот же день или обратный после «туда» (переходящие сутки), не «вчера»
-            if (isNaN(dayDiff) || dayDiff < 0 || dayDiff > 2) continue;
-            const inDep = typeof timeToMinutes === 'function' ? timeToMinutes(getDepTime(inn)) : 0;
+            if (dayDiff < 0 || dayDiff > 2) continue;
+            const inDep = info.dep;
             // приоритет: тот же день → ближайшие сутки;
             // внутри дня — ближайшее время к вылету «туда» (354 раньше 353 тоже допускается)
             const timeGap = Math.abs(inDep - outDep);

@@ -2,7 +2,7 @@
 // Globals on purpose: no bundler; onclick and other files call by name.
 
 function invalidateDataBoardCache() {
-    dataBoardRenderCache = { sig: '', html: '', stats: '' };
+    dataBoardRenderCache = { sig: '', chunks: null, stats: '' };
     const track = document.getElementById('data-board-track');
     if (track) delete track.dataset.renderSig;
 }
@@ -600,13 +600,22 @@ function renderDataBoard() {
         applyDataBoardZoom();
         return;
     }
-    if (dataBoardRenderCache.sig === sig && dataBoardRenderCache.html) {
-        track.innerHTML = dataBoardRenderCache.html;
-        track.dataset.renderSig = sig;
-        if (stats) stats.textContent = dataBoardRenderCache.stats || '';
-        syncDataBoardToolbar();
-        bindDataBoardInteractions(track);
-        applyDataBoardZoom();
+    if (dataBoardRenderCache.sig === sig && dataBoardRenderCache.chunks) {
+        // Готовый HTML вставляется порциями по кадрам, а не одной огромной вставкой.
+        const chunks = dataBoardRenderCache.chunks;
+        track.innerHTML = '';
+        track.dataset.renderSig = '';
+        const put = (i) => {
+            if (gen !== dataBoardRenderGen) return;
+            track.insertAdjacentHTML('beforeend', chunks[i]);
+            if (i + 1 < chunks.length) { requestAnimationFrame(() => put(i + 1)); return; }
+            track.dataset.renderSig = sig;
+            if (stats) stats.textContent = dataBoardRenderCache.stats || '';
+            syncDataBoardToolbar();
+            bindDataBoardInteractions(track);
+            applyDataBoardZoom();
+        };
+        if (chunks.length) put(0);
         return;
     }
 
@@ -621,15 +630,11 @@ function renderDataBoard() {
     track.innerHTML = '';
     track.dataset.renderSig = '';
 
+    const chunks = [];
     const finish = (statsText) => {
         if (gen !== dataBoardRenderGen) return;
-        // HTML для повторной вставки снимаем, когда браузер свободен: сериализация тысяч строк заметна.
-        dataBoardRenderCache = { sig, html: '', stats: statsText };
-        const keep = () => {
-            if (dataBoardRenderCache.sig === sig && track.dataset.renderSig === sig) dataBoardRenderCache.html = track.innerHTML;
-        };
-        if (typeof requestIdleCallback === 'function') requestIdleCallback(keep, { timeout: 5000 });
-        else setTimeout(keep, 1500);
+        // Порции HTML запоминаются при построении: сериализовать готовый DOM заново не нужно.
+        dataBoardRenderCache = { sig, chunks, stats: statsText };
         track.dataset.renderSig = sig;
         track.classList.remove('data-board-loading');
         if (stats) stats.textContent = statsText;
@@ -649,7 +654,7 @@ function renderDataBoard() {
         const end = start + (start === 0 ? FIRST_CHUNK : CHUNK);
         const slice = pairs.slice(start, end);
         const html = slice.map(pair => buildDataRouteCardHtml(pair, todayStart)).filter(Boolean).join('');
-        if (html) track.insertAdjacentHTML('beforeend', html);
+        if (html) { track.insertAdjacentHTML('beforeend', html); chunks.push(html); }
         if (end < pairs.length) {
             requestAnimationFrame(() => paintChunk(end));
             return;

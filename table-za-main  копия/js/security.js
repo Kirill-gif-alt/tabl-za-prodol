@@ -33,8 +33,11 @@ window.Security = (function () {
 
     loadLoginState();
 
+    const ESC_RE = /[&<>"']/;
     function escapeHtml(s) {
-        return String(s ?? '')
+        const str = String(s ?? '');
+        if (!ESC_RE.test(str)) return str;   // большинство строк без спецсимволов
+        return str
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')

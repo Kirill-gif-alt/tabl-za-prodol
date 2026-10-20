@@ -74,8 +74,10 @@ window.ActivityLog = (function () {
             if (e?.id) map.set(e.id, e);
         });
         return [...map.values()]
-            .sort((x, y) => new Date(y.ts) - new Date(x.ts))
-            .slice(0, MAX_EVENTS);
+            .map(e => ({ e, t: new Date(e.ts).getTime() }))
+            .sort((x, y) => y.t - x.t)
+            .slice(0, MAX_EVENTS)
+            .map(x => x.e);
     }
 
     // Несколько вызовов подряд при старте ждут одну загрузку, а не качают файл каждый раз.
@@ -114,10 +116,14 @@ window.ActivityLog = (function () {
         }
 
         // Пока ждали сеть, log() мог дописать событие в cache — сохраняем и его.
+        const before = cache;
         cache = mergeEvents(cache || [], mergeEvents(local, shared));
-        try {
-            localStorage.setItem(LOCAL_KEY, JSON.stringify(cache));
-        } catch { /* ignore */ }
+        const same = before && before.length === cache.length && (!cache.length || (before[0].id === cache[0].id && before[before.length - 1].id === cache[cache.length - 1].id));
+        if (!same) {
+            try {
+                localStorage.setItem(LOCAL_KEY, JSON.stringify(cache));
+            } catch { /* ignore */ }
+        }
         return cache;
     }
 
@@ -302,7 +308,9 @@ window.ActivityLog = (function () {
 
     async function renderInto(container, state) {
         const seq = (container._statsSeq = (container._statsSeq || 0) + 1);
-        const events = await loadAll(true);
+        // Журнал перечитываем при открытии вкладки и по кнопке «Обновить»; смена фильтра работает с тем, что уже загружено.
+        const events = await loadAll(!container._statsLoaded);
+        container._statsLoaded = true;
         if (seq !== container._statsSeq) return;   // пока читали журнал, запущена более новая отрисовка
         // Поиск набирается во время перерисовки — вернём фокус и курсор в поле.
         const qEl = container.querySelector('#stats-filter-query');

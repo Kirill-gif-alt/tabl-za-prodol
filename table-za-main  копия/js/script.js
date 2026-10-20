@@ -37,7 +37,7 @@ let dataSort = 'route-asc';
 let dataHideFlew = false;
 let dataSearchQuery = '';
 let dataSearchTimer = null;
-let dataBoardRenderCache = { sig: '', html: '', stats: '' };
+let dataBoardRenderCache = { sig: '', chunks: null, stats: '' };
 let dataBoardRenderGen = 0;
 
 // Класс оформления вкладки (прокрутка, раскладка) — на её панели. Общий контейнер свой класс не меняет:

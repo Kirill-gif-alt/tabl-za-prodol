@@ -184,7 +184,8 @@ window.ForecastLab = (function () {
     // Долгие циклы отдают управление браузеру каждые ~10 мс: страница не замирает, пока модель учится.
     function makeYield(ms) {
         let t = performance.now();
-        return async () => { if (performance.now() - t > (ms || 10)) { await pause(); t = performance.now(); } };
+        // После порции работы — короткая пауза: интерфейс успевает отвечать, пока модель считается в фоне.
+        return async () => { if (performance.now() - t > (ms || 10)) { await new Promise(r => setTimeout(r, 6)); t = performance.now(); } };
     }
     async function mapAsync(arr, fn) {
         const tick = makeYield();

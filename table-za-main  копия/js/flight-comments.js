@@ -99,6 +99,10 @@ window.FlightComments = (function () {
             tr.classList.toggle('has-flight-comment', hasC);
             const cell = tr.querySelector('td.col-comment');
             if (!cell) return;
+            // Ячейка уже в нужном состоянии (окно таблицы перерисовывается при каждой прокрутке) — не трогаем.
+            const state = hasC ? '1|' + (get(fl, d) || 'Есть комментарий') : '0';
+            if (cell.dataset.cm === state) return;
+            cell.dataset.cm = state;
             if (hasC) {
                 const text = get(fl, d) || 'Есть комментарий';
                 cell.innerHTML = `<span class="comment-mark" aria-label="Есть комментарий">!</span>`;

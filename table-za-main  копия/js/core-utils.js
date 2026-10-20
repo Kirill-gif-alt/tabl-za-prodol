@@ -354,13 +354,22 @@ function renderTableEmptyState(cont, title, hint, icon = '📭') {
 }
 
 
+// Числовой ключ даты «ДД.ММ.ГГГГ» запоминается: сортировки сравнивают одни и те же строки тысячи раз.
+const dateKeyCache = new Map();
+function dateKeyNum(s) {
+    let v = dateKeyCache.get(s);
+    if (v === undefined) {
+        const k = String(s || '').split('.');
+        v = k.length === 3 ? (+k[2]) * 10000 + (+k[1]) * 100 + (+k[0]) : null;
+        if (dateKeyCache.size > 20000) dateKeyCache.clear();
+        dateKeyCache.set(s, v);
+    }
+    return v;
+}
 function compareDateStr(a, b) {
-    const ka = String(a || '').split('.');
-    const kb = String(b || '').split('.');
-    if (ka.length !== 3 || kb.length !== 3) return 0;
-    const na = (+ka[2]) * 10000 + (+ka[1]) * 100 + (+ka[0]);
-    const nb = (+kb[2]) * 10000 + (+kb[1]) * 100 + (+kb[0]);
-    return na - nb;
+    const na = dateKeyNum(a);
+    const nb = dateKeyNum(b);
+    return na === null || nb === null ? 0 : na - nb;
 }
 
 function getAircraftType(c){c=String(c||'').toUpperCase();if(c.includes('AT5'))return'ATR-42';if(c.includes('AN4'))return'Ан-24';if(c.includes('AN6'))return'Ан-26';if(c.includes('AT7'))return'ATR-72';if(c.includes('YK2'))return'Як-42';return c||'-'}
@@ -391,7 +400,11 @@ function pluralRu(n, one, few, many) {
     return b === 1 ? one : many;
 }
 
+let todayCheckedAt = 0;
 function getTodayDate(){
+    const now = Date.now();
+    if (CACHED_TODAY !== null && now - todayCheckedAt < 1000) return CACHED_TODAY;   // день меняется раз в сутки: проверяем не чаще раза в секунду
+    todayCheckedAt = now;
     const today = formatDateRu(new Date());
     if (CACHED_TODAY !== today) {
         CACHED_TODAY = today;
