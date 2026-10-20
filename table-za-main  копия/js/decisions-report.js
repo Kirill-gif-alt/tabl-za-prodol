@@ -11,6 +11,7 @@ window.DecisionsReport = (function () {
     const VIEW_KEY = 'krasavia_decisions_view';
     let view = 'tickets';
     try { view = localStorage.getItem(VIEW_KEY) === 'money' ? 'money' : 'tickets'; } catch (e) { /* ignore */ }
+    let toneFilter = '';
     let money = { sig: '', map: null, loading: false, done: 0 };
 
     function esc(v) {
@@ -279,25 +280,34 @@ window.DecisionsReport = (function () {
             else if (m && (m.stage === 'prelim' || m.stage === 'wait')) { tone = 'wait'; big = hasNum ? 'пока ' + rub(m.delta) : 'ждём данные'; }
             else if (!m) { tone = 'wait'; big = 'считаем…'; }
             const lines = [];
+            let say = ''; let range = ''; const tags = [];
             if (hasNum) {
                 const exp = m.nExpPaid * m.priceBefore;
-                lines.push(`За ${m.w} дн. после решения продали <b>${m.factAll}</b> билетов, а в обычные дни продают около <b>${numRu(m.expAll)}</b>.`);
+                lines.push(`За ${m.w} дн. после решения продали <b>${m.factAll}</b> билетов, обычно в такие дни — около <b>${numRu(m.expAll)}</b>.`);
                 lines.push(`Если бы тариф не трогали (был ${rubPlain(m.priceBefore)}), выручка была бы около <b>${rubPlain(exp)}</b>. По факту — около <b>${rubPlain(exp + m.delta)}</b>.`);
-                lines.push(`Разница <b>${rub(m.delta)}</b>: из-за количества билетов ${rub(m.volume)}, из-за изменения цены ${rub(m.priceEffect)}.`);
-                lines.push(`Точность: настоящая разница где-то между ${rub(m.lo)} и ${rub(m.hi)}.`);
+                lines.push(`Разница <b>${rub(m.delta)}</b>: из-за количества билетов ${rub(m.volume)}, из-за цены ${rub(m.priceEffect)}.`);
+                range = DecisionsViz.rangeBar(m.lo, m.delta, m.hi, rub) + '<div class="dp-exp">Диапазон — где настоящий результат с вероятностью около 90%.</div>';
+                if (tone === 'pos') say = 'Точно помогло: даже в худшем случае заработали больше, чем без решения.';
+                else if (tone === 'neg') say = 'Точно навредило: даже в лучшем случае заработали меньше, чем без решения.';
+                else if (tone === 'unk') say = 'Не понятно: результат мог быть и плюсом, и минусом, данных мало. В общую сумму такое решение не входит.';
+                else say = 'Предварительно: итог зафиксируем, когда пройдёт окно или вылет.';
+                tags.push(`Доверие: ${m.grade === 'A' ? 'высокое' : 'среднее'} (${m.k} ${m.k === 1 ? 'похожий вылет' : (m.k < 5 ? 'похожих вылета' : 'похожих вылетов')})`);
+                if (!m.frozen) tags.push('не зафиксировано');
             }
-            if (tone === 'unk') lines.push('<b>Почему «не понятно»:</b> диапазон включает ноль или разница слишком мала. Такое решение в общую сумму не входит.');
-            if (tone === 'wait' && st.reason) lines.push(esc(st.reason) + '.');
-            if (tone === 'na' && st.reason) lines.push('<b>Почему не считаем:</b> ' + esc(st.reason) + '.');
+            if (tone === 'wait' && st.reason && hasNum) lines.push(esc(st.reason) + '.');
+            if (tone === 'na' && st.reason) say = 'Не считаем: ' + esc(st.reason) + '.';
             if (m && m.tailExp != null) lines.push(`После окна рейс продал ${m.tailFact} билетов (обычно ${numRu(m.tailExp)})${m.fullFlight ? ', рейс заполнился' : ''}.`);
-            return DecisionsViz.plainCard({
+            tags.push(`<button type="button" class="filter-btn rp-open" data-open-base="${esc(r.base)}" data-open-code="${esc(r.code)}" data-open-date="${esc(r.dep)}">Открыть вылет →</button>`);
+            const short = hasNum ? `продали ${m.factAll} вместо ${numRu(m.expAll)}` : (st.reason ? esc(st.reason) : '');
+            return DecisionsViz.plainRow({
                 tone,
-                head: `<button type="button" class="filter-btn rp-open" data-open-base="${esc(r.base)}" data-open-code="${esc(r.code)}" data-open-date="${esc(r.dep)}" title="Открыть вылет">${esc(r.code)}</button> вылет ${esc(fmtD(r.dep))}<span>${esc(r.direction)}</span>`,
-                act: `${esc(fmtD(r.check))}${r.author ? ' (' + esc(r.author) + ')' : ''}: ${up ? 'повысили тариф' : 'снизили тариф'}${m && m.clsBefore && m.clsAfter && m.clsBefore !== m.clsAfter ? `, класс ${esc(m.clsBefore)} → ${esc(m.clsAfter)}` : ''}`,
-                big, lines
+                head: `<span class="dp-code">${esc(r.code)}</span> <span class="dp-dir">${esc(r.direction)}</span>`,
+                dep: esc(fmtD(r.dep)),
+                act: `${up ? '▲' : '▼'} ${esc(fmtD(r.check))}${r.author ? ' · ' + esc(r.author) : ''}`,
+                big: tone === 'unk' ? '≈ ' + rub(m.delta) : big, short, say, range, lines, tags
             });
-        }).join('');
-        const summary = list.length ? `<div class="dp-summary">За ${period} дн. принято решений: <b>${total.n}</b>. Точно оценили: <b>${mt.definite}</b> — они в сумме принесли <b>${mt.definite ? rub(mt.sum) : '0 ₽'}</b> (помогли: ${mt.worked}, навредили: ${mt.failed}). Ещё <b>${mt.unclear}</b> — «не понятно» (разница может быть случайной), <b>${mt.na}</b> — не считаем, <b>${mt.wait}</b> — ждём данные.</div>` : '';
+        });
+        const summary = list.length ? DecisionsViz.strip([{ label: 'Решений', value: total.n }, { label: 'Помогли', value: mt.worked, cls: 'dr-pos' }, { label: 'Навредили', value: mt.failed, cls: 'dr-neg' }, { label: 'Не понятно', value: mt.unclear }, { label: 'Не считаем / ждём', value: mt.na + mt.wait }, { label: 'Итог по определённым', value: mt.definite ? rub(mt.sum) : '—', cls: mt.sum > 0 ? 'dr-pos' : (mt.sum < 0 ? 'dr-neg' : '') }]) : '';
         const sts = list.map(moneyState);
         const cnt = (f) => sts.filter(f).length;
         const byDir = groupBy(list, r => r.direction || r.code).filter(g => g.money.definite).slice(0, 8);
@@ -315,7 +325,7 @@ window.DecisionsReport = (function () {
             const d = new Date(k);
             return { label: String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0'), value: v, text: rub(v) };
         });
-        const dash = list.length ? `<div class="dv-grid">
+        const dash = list.length ? `<div class="dv-grid dv-grid2">
             ${DecisionsViz.stack('Итог решений', [
                 { label: 'Сработало', value: cnt(x => x.cls === 'pos'), cls: 'dv-pos' },
                 { label: 'Не сработало', value: cnt(x => x.cls === 'neg'), cls: 'dv-neg' },
@@ -323,7 +333,6 @@ window.DecisionsReport = (function () {
                 { label: 'Ждём данные', value: cnt(x => x.cls === 'wait'), cls: 'dv-wait' },
                 { label: 'Не оценивается', value: cnt(x => x.text === 'не оценивается'), cls: 'dv-na' }])}
             ${DecisionsViz.bars('Эффект по направлениям (определённые решения)', byDir.map(g => ({ label: g.key, value: g.money.sum, text: rub(g.money.sum), sub: `решений ${g.money.definite}` })), 'Рубли за окно после решения против ожидаемого по прежней цене')}
-            ${DecisionsViz.columns('Эффект по неделям решений', weekItems, 'Неделя начинается с даты внизу; только определённые решения')}
         </div>` : '';
         const sums = list.length ? `<div class="dr-sums">
             ${summaryTable('По направлениям', groupBy(list, r => r.direction || r.code), 'Направление')}
@@ -346,10 +355,8 @@ window.DecisionsReport = (function () {
                 ${toolbar}
                 ${summary}
                 ${DecisionsViz.howToRead('<span class="dp-chip dp-wait">ЖДЁМ</span> данных пока мало')}
-                ${kpis}
                 ${dash}
-                ${sums}
-                ${body ? `<div class="dr-list-title">Все решения <span class="rp-muted">· ${list.length}</span></div><div class="dp-list">${cards}</div><details class="dp-more"><summary>Подробная таблица</summary><div class="rp-scroll"><table class="rp-table dr-table">
+                ${body ? `<div class="dr-list-title">Все решения <span class="rp-muted">· ${list.length}</span></div>${DecisionsViz.toneBar(cards, toneFilter, 'dp-tone')}${DecisionsViz.list(cards, toneFilter)}<details class="dp-more"><summary>Сводки и подробная таблица</summary>${sums}<div class="dv-grid">${DecisionsViz.columns('Эффект по неделям решений', weekItems, 'Неделя начинается с даты внизу; только определённые решения')}</div><div class="rp-scroll"><table class="rp-table dr-table">
                     <thead><tr><th>Решение</th><th>Рейс</th><th>Вылет</th><th>Что</th><th title="Класс до → после (из отметки или по продажам)">Класс</th><th title="Билетов в окне после решения / сколько ожидали">Билетов</th><th>Ср. тариф до → после</th><th title="Выручка в окне минус ожидаемая по прежней цене; в строке — диапазон ≈90%">Эффект</th><th>Объём / цена</th><th>Итог</th></tr></thead>
                     <tbody>${body}</tbody></table></div></details>` : '<p class="rp-note">За период решений «снижение/повышение» нет.</p>'}
             </section>`;
@@ -388,6 +395,7 @@ window.DecisionsReport = (function () {
     }
 
     function moneyClick(btn, rerender) {
+        if (btn.dataset.dpTone != null) { toneFilter = btn.dataset.dpTone; rerender(); return true; }
         if (btn.dataset.drRecompute) {
             if (!moneyAvailable() || money.loading) return true;
             const list = rows().filter(r => { const m = moneyOf(r); return m && m.stage !== 'na'; });

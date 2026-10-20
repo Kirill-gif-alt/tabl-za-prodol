@@ -9,6 +9,7 @@ window.DecisionsTickets = (function () {
     const KIND = { down: '▼ Снижение', up: '▲ Повышение', attn: '! Внимание' };
     let period = 60;
     let kindFilter = '';
+    let toneFilter = '';
     let memo = { sig: '', rows: null };
 
     function esc(v) {
@@ -194,10 +195,9 @@ window.DecisionsTickets = (function () {
             const up = r.status === 'up';
             const tone = v.cls === 'pos' ? 'pos' : (v.cls === 'neg' ? 'neg' : (v.cls === 'wait' ? 'wait' : 'na'));
             const eff = e && e.complete && e.effect != null ? e.effect : null;
-            let big = '—';
-            if (tone === 'pos' || tone === 'neg') big = up ? (tone === 'pos' ? 'решение удачное' : 'решение неудачное') : (eff != null ? `${signed(eff)} ${plural(Math.abs(eff))} к обычному` : '');
-            else if (tone === 'wait') big = 'итог пока не ясен';
-            else big = 'мало данных';
+            let big = 'мало данных';
+            if (tone === 'pos' || tone === 'neg') big = up ? (tone === 'pos' ? 'удачно' : 'неудачно') : (eff != null ? `${signed(eff)} ${plural(eff)}` : '');
+            else if (tone === 'wait') big = 'ждём итога';
             const lines = [];
             if (e) {
                 lines.push(`За ${wd()} ДО решения продали <b>${e.before.n}</b> ${plural(e.before.n)}${e.normBefore ? ` (обычно ${e.normBefore.value})` : ''}.`);
@@ -205,16 +205,19 @@ window.DecisionsTickets = (function () {
                     : `За ${wd()} ПОСЛЕ решения продали <b>${e.after.n}</b> ${plural(e.after.n)}${e.normAfter ? ` (обычно ${e.normAfter.value})` : ''}.`);
                 if (e.before.avg != null && e.after.avg != null) lines.push(`Средний тариф был ${Math.round(e.before.avg).toLocaleString('ru-RU')} ₽, стал ${Math.round(e.after.avg).toLocaleString('ru-RU')} ₽.`);
             }
-            lines.push(`<b>Вывод:</b> ${esc(v.text)}.`);
-            return DecisionsViz.plainCard({
+            const say = tone === 'pos' ? 'Помогло: ' + esc(v.text) + '.' : (tone === 'neg' ? 'Навредило: ' + esc(v.text) + '.' : (tone === 'wait' ? esc(v.text) + '.' : 'Не считаем: ' + esc(v.text) + '.'));
+            const short = e ? (up ? `после: ${e.after.n}${e.normAfter ? ' (обычно ' + e.normAfter.value + ')' : ''}` : `продали ${e.after.n}${e.normAfter ? ' вместо ' + e.normAfter.value : ''}`) : esc(v.text);
+            return DecisionsViz.plainRow({
                 tone,
-                head: `<button type="button" class="filter-btn rp-open" data-open-base="${esc(r.base)}" data-open-code="${esc(r.code)}" data-open-date="${esc(r.dep)}" title="Открыть вылет">${esc(r.code)}</button> вылет ${esc(fmtD(r.dep))}<span>${esc(r.direction)}</span>`,
-                act: `${esc(fmtD(r.check))}${r.author ? ' (' + esc(r.author) + ')' : ''}: ${up ? 'повысили тариф' : 'снизили тариф'}`,
-                big, lines
+                head: `<span class="dp-code">${esc(r.code)}</span> <span class="dp-dir">${esc(r.direction)}</span>`,
+                dep: esc(fmtD(r.dep)),
+                act: `${up ? '▲' : '▼'} ${esc(fmtD(r.check))}${r.author ? ' · ' + esc(r.author) : ''}`,
+                big, short, say, lines,
+                tags: [`<button type="button" class="filter-btn rp-open" data-open-base="${esc(r.base)}" data-open-code="${esc(r.code)}" data-open-date="${esc(r.dep)}">Открыть вылет →</button>`]
             });
-        }).join('');
-        const summary = list.length ? `<div class="dp-summary">За ${period} дн. принято решений: <b>${total.n}</b>. Помогли: <b>${total.good}</b>, навредили: <b>${total.judged - total.good}</b>, ещё рано судить или не с чем сравнить: <b>${total.n - total.judged}</b>.${total.avg == null ? '' : ` В среднем на одно решение продавали на <b>${signed(total.avg)}</b> ${plural(Math.abs(total.avg))} ${total.avg >= 0 ? 'больше' : 'меньше'} обычного.`}</div>` : '';
-        const dash = list.length ? `<div class="dv-grid">
+        });
+        const summary = list.length ? DecisionsViz.strip([{ label: 'Решений', value: total.n }, { label: 'Помогли', value: total.good, cls: 'dr-pos' }, { label: 'Навредили', value: total.judged - total.good, cls: 'dr-neg' }, { label: 'Рано судить / нет нормы', value: total.n - total.judged }, { label: 'Билетов к обычному', value: total.avg == null ? '—' : signed(total.avg), cls: total.avg > 0 ? 'dr-pos' : (total.avg < 0 ? 'dr-neg' : '') }]) : '';
+        const dash = list.length ? `<div class="dv-grid dv-grid2">
             ${DecisionsViz.stack('Итог решений', [
                 { label: 'Сработало', value: total.good, cls: 'dv-pos' },
                 { label: 'Не сработало', value: total.judged - total.good, cls: 'dv-neg' },
@@ -242,10 +245,8 @@ window.DecisionsTickets = (function () {
                 ${toolbar}
                 ${summary}
                 ${DecisionsViz.howToRead()}
-                ${kpis}
                 ${dash}
-                ${sums}
-                ${body ? `<div class="dr-list-title">Все решения <span class="rp-muted">· ${list.length}</span></div><div class="dp-list">${cards}</div><details class="dp-more"><summary>Подробная таблица</summary><div class="rp-scroll"><table class="rp-table dr-table">
+                ${body ? `<div class="dr-list-title">Все решения <span class="rp-muted">· ${list.length}</span></div>${DecisionsViz.toneBar(cards, toneFilter, 'dp-tone')}${DecisionsViz.list(cards, toneFilter)}<details class="dp-more"><summary>Сводки и подробная таблица</summary>${sums}<div class="rp-scroll"><table class="rp-table dr-table">
                     <thead><tr><th>Решение</th><th>Рейс</th><th>Вылет</th><th>Что</th><th title="Билетов за ${wd()} до решения">До</th><th title="Билетов после решения: для снижения — за ${wd()}, для повышения — до вылета">После</th><th>Ср. тариф до → после</th><th>Итог</th></tr></thead>
                     <tbody>${body}</tbody></table></div></details>` : '<p class="rp-note">За период решений «снижение/повышение» нет.</p>'}
             </section>`;
@@ -280,6 +281,7 @@ window.DecisionsTickets = (function () {
     }
 
     function handleClick(btn, rerender) {
+        if (btn.dataset.dpTone != null) { toneFilter = btn.dataset.dpTone; rerender(); return true; }
         if (btn.dataset.drPeriod != null) { period = parseInt(btn.dataset.drPeriod, 10) || 60; rerender(); return true; }
         if (btn.dataset.drKind != null) { kindFilter = btn.dataset.drKind || ''; rerender(); return true; }
         return false;
