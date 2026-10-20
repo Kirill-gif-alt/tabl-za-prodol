@@ -69,12 +69,12 @@ window.DecisionsReport = (function () {
     }
 
     function rub(n) {
-        if (n == null || n === '') return '—';
+        if (n == null || n === '' || !Number.isFinite(Number(n))) return '—';
         const v = Math.round(n);
         return (v > 0 ? '+' : (v < 0 ? '−' : '')) + Math.abs(v).toLocaleString('ru-RU') + ' ₽';
     }
 
-    function rubPlain(n) { return n == null ? '—' : Math.round(n).toLocaleString('ru-RU') + ' ₽'; }
+    function rubPlain(n) { return n == null || !Number.isFinite(Number(n)) ? '—' : Math.round(n).toLocaleString('ru-RU') + ' ₽'; }
 
     // Состояние денежной оценки одного решения для экрана и Excel.
     function moneyState(r) {
@@ -194,11 +194,12 @@ window.DecisionsReport = (function () {
                 <td>${g.n}</td>
                 <td>${g.money.definite}${g.money.definite ? ` <span class="dr-usual">${g.money.worked} / ${g.money.failed}</span>` : ''}</td>
                 <td class="rp-nowrap">${g.money.definite ? `<span class="${g.money.sum >= 0 ? 'dr-pos' : 'dr-neg'}">${rub(g.money.sum)}</span>` : '—'}</td>
+                <td>${g.money.approx}</td>
                 <td>${g.money.unclear + g.money.na + g.money.wait}</td>
             </tr>`).join('');
         return `<div class="dr-sum">
             <div class="dr-sum-title">${esc(title)}</div>
-            <table class="rp-table dr-sum-table"><thead><tr><th>${esc(keyLabel)}</th><th>Решений</th><th title="Решения с определённым итогом (интервал не включает ноль и эффект выше порога)">Определено</th><th title="Сумма эффекта только по решениям с определённым итогом">Эффект</th><th title="Решения, по которым итог неопределённый, в сумму не входят">Неопред.</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+            <table class="rp-table dr-sum-table"><thead><tr><th>${esc(keyLabel)}</th><th>Решений</th><th title="Решения с определённым итогом (интервал не включает ноль и эффект выше порога)">Определено</th><th title="Сумма эффекта только по решениям с определённым итогом">Эффект</th><th title="Сработало или не сработало, но данных мало (доверие низкое): в сумму не входят">Ориент.</th><th title="Решения, по которым итог неопределённый, в сумму не входят">Неопред.</th></tr></thead><tbody>${rowsHtml}</tbody></table>
             ${groups.length > 10 ? `<div class="rp-muted">и ещё ${groups.length - 10} — полный список в Excel</div>` : ''}
         </div>`;
     }
@@ -280,13 +281,17 @@ window.DecisionsReport = (function () {
             else if (st.cls === 'neg') { tone = 'neg'; big = (approx ? '≈ ' : '') + rub(m.delta); }
             else if (m && m.stage === 'final') { tone = 'unk'; big = 'примерно ' + rub(m.delta); }
             else if (m && (m.stage === 'prelim' || m.stage === 'wait')) { tone = 'wait'; big = hasNum ? 'пока ' + rub(m.delta) : 'ждём данные'; }
-            else if (!m) { tone = 'wait'; big = 'считаем…'; }
+            else if (!m) { tone = money.loading ? 'wait' : 'na'; big = money.loading ? 'считаем…' : 'не считаем'; }
             const lines = [];
             let say = ''; let range = ''; const tags = [];
             if (hasNum) {
-                const exp = m.nExpPaid * m.priceBefore;
-                lines.push(`За ${m.w} дн. после решения продали <b>${m.factAll}</b> билетов, обычно в такие дни — около <b>${numRu(m.expAll)}</b>.`);
-                lines.push(`Если бы тариф не трогали (был ${rubPlain(m.priceBefore)}), выручка была бы около <b>${rubPlain(exp)}</b>. По факту — около <b>${rubPlain(exp + m.delta)}</b>.`);
+                // выручка без решения и по факту: из расчёта (у старых зафиксированных записей — из округлённых величин, не ниже нуля)
+                const exp = m.expRev != null ? m.expRev : m.nExpPaid * m.priceBefore;
+                const fact = m.revFact != null ? m.revFact : Math.max(0, exp + m.delta);
+                lines.push(m.remainder
+                    ? `От дня после решения до вылета продали <b>${m.factAll}</b> билетов, обычно за это время — около <b>${numRu(m.expAll)}</b>.`
+                    : `За ${m.w} дн. после решения продали <b>${m.factAll}</b> билетов, обычно в такие дни — около <b>${numRu(m.expAll)}</b>.`);
+                lines.push(`Если бы тариф не трогали (был ${rubPlain(m.priceBefore)}), выручка была бы около <b>${rubPlain(exp)}</b>. По факту — около <b>${rubPlain(fact)}</b>.`);
                 lines.push(`Разница <b>${rub(m.delta)}</b>: из-за количества билетов ${rub(m.volume)}, из-за цены ${rub(m.priceEffect)}.`);
                 range = DecisionsViz.rangeBar(m.lo, m.delta, m.hi, rub) + '<div class="dp-exp">Диапазон — где настоящий результат с вероятностью около 90%.</div>';
                 if (tone === 'pos') say = approx ? 'Ориентировочно помогло: даже в худшем случае плюс, но данных мало (доверие низкое).' : 'Точно помогло: даже в худшем случае заработали больше, чем без решения.';
@@ -318,7 +323,7 @@ window.DecisionsReport = (function () {
         const weeks = new Map();
         list.forEach((r, i) => {
             const m = sts[i].m;
-            if (!m || m.stage !== 'final' || (m.verdict !== 'worked' && m.verdict !== 'failed')) return;
+            if (!m || m.stage !== 'final' || m.grade === 'C' || (m.verdict !== 'worked' && m.verdict !== 'failed')) return;
             const d = parseLocalDate(r.check);
             if (!d) return;
             d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
@@ -394,7 +399,7 @@ window.DecisionsReport = (function () {
                     effect: fin ? m.delta : '', lo: fin ? m.lo : '', hi: fin ? m.hi : '', volume: fin ? m.volume : '', priceEffect: fin ? m.priceEffect : '',
                     grade: fin ? (m.grade === 'A' ? 'высокое' : (m.grade === 'B' ? 'среднее' : 'низкое')) : '', clsBefore: m ? (m.clsBefore || '') : '', clsAfter: m ? (m.clsAfter || '') : '',
                     expAll: m && m.expAll != null ? m.expAll : '', factAll: m && m.factAll != null ? m.factAll : '', analogs: m && m.k != null ? m.k : '',
-                    method: m && m.v != null ? m.v : '', verdict: st.short, text: st.text + (st.reason ? ': ' + st.reason : '') + (m && m.flags && m.flags.length ? ' [' + m.flags.join('; ') + ']' : '')
+                    method: m && m.v != null ? m.v : '', verdict: st.short, text: (st.reason ? (st.reason.indexOf(st.text) === 0 ? st.reason : st.text + ': ' + st.reason) : st.text) + (m && m.flags && m.flags.length ? ' [' + m.flags.join('; ') + ']' : '')
                 };
             })
         };

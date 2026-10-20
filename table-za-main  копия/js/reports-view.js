@@ -837,20 +837,20 @@ window.ReportsView = (function () {
         const s = sheetWriter(lib);
         const sec = style(SECTION, 'FFFFFF', true, 'left');
         const block = (r, title, groups, keyLabel) => {
-            s.title(r++, title, 9, sec);
-            const head = [keyLabel, 'Решений', 'Оценено', 'Определено', 'Сработало', 'Не сработало', 'Эффект по определённым, ₽', 'Неопределённо', 'Не оценивается'];
+            s.title(r++, title, 10, sec);
+            const head = [keyLabel, 'Решений', 'Оценено', 'Определено', 'Сработало', 'Не сработало', 'Эффект по определённым, ₽', 'Ориентировочно (доверие низкое)', 'Неопределённо', 'Не оценивается или ждёт данных'];
             return s.table(r, head,
-                groups.map(g => ({ cells: [g.key, g.n, g.money.finalN, g.money.definite, g.money.worked, g.money.failed, g.money.definite ? Math.round(g.money.sum) : '', g.money.unclear, g.money.na + g.money.wait] }))) + 1;
+                groups.map(g => ({ cells: [g.key, g.n, g.money.finalN, g.money.definite, g.money.worked, g.money.failed, g.money.definite ? Math.round(g.money.sum) : '', g.money.approx, g.money.unclear, g.money.na + g.money.wait] }))) + 1;
         };
         let r = 0;
-        s.title(r++, head, 9, style('FFFFFF', NAVY, true, 'left'));
+        s.title(r++, head, 10, style('FFFFFF', NAVY, true, 'left'));
         r++;
         const t = d.total;
         r = block(r, 'Итого', [{ key: 'Все решения', ...t }], 'Решения');
         r = block(r, 'По типу решения', d.byKind, 'Решение');
         r = block(r, 'По направлениям', d.byDir, 'Направление');
-        block(r, 'По типу решения (повторно)', d.byKind, 'Решение');
-        const wsS = s.finish([34, 10, 10, 12, 11, 13, 24, 14, 14], 0);
+        block(r, 'По людям', d.byAuthor, 'Кто');
+        const wsS = s.finish([34, 10, 10, 12, 11, 13, 24, 18, 14, 18], 0);
         const wb = lib.utils.book_new();
         lib.utils.book_append_sheet(wb, wsJ, 'Журнал');
         lib.utils.book_append_sheet(wb, wsS, 'Сводка');

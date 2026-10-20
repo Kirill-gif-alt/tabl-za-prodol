@@ -37,7 +37,7 @@ window.DecisionMoney = (function () {
     }
 
     function round1(v) { return Math.round(v * 10) / 10; }
-    function round1k(v) { return Math.round(v / 100) * 100; }   // рубли — до сотен: без ложной точности
+    function round1k(v) { return (Math.round(v / 100) * 100) || 0; }   // рубли — до сотен: без ложной точности (и без «−0», и без NaN)
 
     // ---------- чистая часть: оценка по готовым входам (проверяется отдельно, без данных сайта) ----------
 
@@ -72,7 +72,8 @@ window.DecisionMoney = (function () {
             volume: (inp.nFactPaid - nExpPaid) * priceAfter,
             price: nExpPaid * (priceAfter - inp.priceBefore),
             payback: priceAfter > 0 ? nExpPaid * inp.priceBefore / priceAfter : null,
-            dTickets: inp.nFactAll - nExpAll
+            dTickets: inp.nFactAll - nExpAll,
+            expRev: nExpPaid * inp.priceBefore, revFact: inp.rFact
         };
     }
 
@@ -98,7 +99,8 @@ window.DecisionMoney = (function () {
             volume: (inp.nFactPaid - nExpPaid) * priceAfter,
             price: nExpPaid * (priceAfter - inp.priceBefore),
             payback: null,
-            dTickets: inp.nFactAll - nExpAll
+            dTickets: inp.nFactAll - nExpAll,
+            expRev: nExpPaid * inp.priceBefore, revFact: inp.rFact
         };
     }
 
@@ -281,6 +283,7 @@ window.DecisionMoney = (function () {
             const src = before3.length ? before3 : before7;
             if (src.length) { priceBefore = mean(src.map(price)); clsBefore = lowestClass(src, ladder); }
         }
+        if (!(priceBefore > 0)) priceBefore = null;   // нулевой или пустой тариф: делить на него нельзя
         const avgAfter = afterAdult.length ? mean(afterAdult.map(price)) : null;
         if (priceBefore == null && avgAfter != null) { priceBefore = avgAfter; flags.push('до решения продаж не было: прежний тариф взят по продажам после (считается только объём; укажите «Класс до»)'); }
         if (priceBefore == null) {
@@ -346,7 +349,8 @@ window.DecisionMoney = (function () {
     function finish(base, est, extra) {
         const sampleOk = est.nExpAll + (extra.factAll || 0) >= num('MONEY_MIN_TICKETS', 4);
         const flags = base.flags || [];
-        const grade = flags.length ? 'C' : (base.k >= 5 && est.nExpAll >= 6 ? 'A' : 'B');
+        const kUsed = extra.k != null ? extra.k : base.k;   // у итога повышения — число аналогов именно для него
+        const grade = flags.length ? 'C' : (kUsed >= 5 && est.nExpAll >= 6 ? 'A' : 'B');
         // Каждый флаг расширяет диапазон на 25%: сомнительные оценки реже получают «сработало/не сработало».
         const widen = 1 + 0.25 * flags.length;
         const half = (est.hi - est.lo) / 2 * widen;
@@ -355,10 +359,13 @@ window.DecisionMoney = (function () {
         if (lo > 0 && est.delta >= est.thr) verdict = 'worked';
         else if (hi < 0 && est.delta <= -est.thr) verdict = 'failed';
         if (est.filled || extra.filled) verdict = est.verdict;
+        const delta = round1k(est.delta);
+        const volume = round1k(est.volume);
         const res = Object.assign(base, extra, {
-            priceAfter: Math.round(est.priceAfter), delta: round1k(est.delta), lo: round1k(lo), hi: round1k(hi),
-            volume: round1k(est.volume), priceEffect: round1k(est.price), payback: est.payback == null ? null : round1(est.payback),
-            thr: round1k(est.thr), nExpPaid: round1(est.nExpPaid), strengthK: Math.round(est.strengthK * 100) / 100,
+            // «цена» = эффект минус «объём» после округления: сумма двух частей точно равна эффекту
+            priceAfter: Math.round(est.priceAfter), delta, lo: round1k(lo), hi: round1k(hi),
+            volume, priceEffect: delta - volume, payback: est.payback == null ? null : round1(est.payback),
+            thr: round1k(est.thr), nExpPaid: round1(est.nExpPaid), expRev: round1k(est.expRev), revFact: round1k(est.revFact), strengthK: Math.round(est.strengthK * 100) / 100,
             dTickets: round1(est.dTickets), grade
         });
         res.verdict = sampleOk ? verdict : 'unclear';
