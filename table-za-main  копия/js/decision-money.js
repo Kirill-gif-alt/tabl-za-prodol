@@ -5,10 +5,14 @@
 //   Δ ₽ = выручка факта − ожидаемое число платных билетов × цена прежнего класса.
 //   Разложение (сумма точна): «объём» = (билетов факт − ожидалось) × новая цена; «цена» = ожидалось × (новая − прежняя).
 //
-// Ожидание — норма по аналогам: тот же рейс, тот же день недели, ±8 недель (затем шире), не меньше 3 вылетов; без вылетов,
-// где самих ставили решения, и без допов/чартеров. Поправка на силу рейса затухающая: проверка на вылетах без решений показала,
-// что темп за 3 дня почти не переносится на следующие дни (сырое отношение хуже простой нормы), а отбор «решения ставят на
-// слабых рейсах» без поправки даёт ложный минус.
+// Ожидание — норма по аналогам: вылеты того же рейса. Основа — тот же день недели, ±8 недель (затем шире), не меньше 3 вылетов; без вылетов,
+// где самих ставили решения, и без допов/чартеров. К ним добавлены соседние вылеты этого рейса (±5 дней, другие дни недели): их билеты
+// пересчитываются на день недели нашего вылета по обычному соотношению дней недели этого рейса. Вес вылета падает с давностью.
+// Дальше три поправки, все проверены на улетевших вылетах без решений («плацебо»):
+//   • уровень: как последние улетевшие вылеты сети выходили против такой же нормы (спрос идёт волнами, норма из прошлых недель отстаёт);
+//   • сила рейса, затухающая: темп за 3 дня до решения почти не переносится на следующие дни, но без поправки отбор «решения ставят на
+//     слабых рейсах» даёт ложный минус;
+//   • сдвиг рублей (biasShift): тариф сам меняется к вылету, а норма «сжата» к середине.
 // Шум большой (продажи идут пачками, разброс в 3–5 раз выше пуассоновского), поэтому у каждой оценки есть диапазон,
 // а вердикт «сработало / не сработало» только если диапазон не включает ноль и эффект не меньше порога; иначе «неопределённо».
 //
@@ -16,7 +20,7 @@
 // результат фиксируется через день после окна. Повышение: через окно — только ранний сигнал, итог после вылета по остатку продаж.
 // Зафиксированный итог лежит в shared/decision-money/ГГГГ-ММ.json и дальше не меняется (при смене данных и параметров тоже).
 window.DecisionMoney = (function () {
-    const METHOD_VERSION = 5;
+    const METHOD_VERSION = 6;
     const DAY = 86400000;
     const REGULAR = /^KV-\d{3}$/;      // допы и чартеры (KV-9xxx и т. п.) не оцениваем: покупки блоками, нормы нет
     const GAPS = [56, 84, 182, 100000]; // расширение окна поиска аналогов, дней
@@ -41,10 +45,13 @@ window.DecisionMoney = (function () {
 
     // ---------- чистая часть: оценка по готовым входам (проверяется отдельно, без данных сайта) ----------
 
-    // Допустимое отклонение ожидания (билетов): √(4 + 3E), поправка на число аналогов (оптимум — 8).
+    // Допустимое отклонение ожидания (билетов). Окно: √(0,4 + 4,7·E) — продажи идут пачками, разброс примерно в 5 раз выше
+    // пуассоновского и растёт вместе с ожиданием. Остаток: √(24 + 2,5·E) — длинный хвост, к разбросу добавляется цена и добор.
+    // Подобрано по вылетам без решений. Поправка на число аналогов — по эффективному k (оптимум — около 10).
     function sigmaTickets(E, k, tail) {
-        const base = Math.sqrt(4 + 3 * Math.max(0, E)) * (tail ? 1.2 : 1);
-        return base * Math.sqrt((1 + 1 / Math.max(1, k)) / 1.125);
+        const e = Math.max(0, E);
+        const base = Math.sqrt(tail ? 24 + 2.5 * e : 0.4 + 4.7 * e);
+        return base * Math.sqrt((1 + 1 / Math.max(1, k)) / 1.1);
     }
 
     // Окно после решения. inp: E (ожидание всех билетов), k (аналогов), nFactAll, nFactPaid, rFact, priceBefore, share,
@@ -127,6 +134,15 @@ window.DecisionMoney = (function () {
         return SalesManagement.marksFor(code, date).some(m => m.status === 'up' || m.status === 'down');
     }
 
+    // То же, с запоминанием на время одного расчёта (при переборе сотен вылетов отметки смотрим один раз на вылет).
+    let decMemo = new Map();
+    function hasDec(code, date) {
+        const k = code + '|' + date;
+        let v = decMemo.get(k);
+        if (v === undefined) { v = hasDecision(code, date); decMemo.set(k, v); }
+        return v;
+    }
+
     function seatsFor(base, code, dep) {
         const row = typeof getFlightRowForDate === 'function' ? getFlightRowForDate(base, dep, code) : null;
         let seats = row && typeof getSeatsOnSale === 'function' ? getSeatsOnSale(row) : 0;
@@ -138,8 +154,8 @@ window.DecisionMoney = (function () {
     }
 
     // Аналоги: вылеты того же рейса.
-    //  1) Тот же день недели, ±8 недель (расширяем до 12, 26 недель и всех дат) — вес 1 (дальше по времени — чуть меньше).
-    //  2) Соседние по дате вылеты этого же рейса в другие дни недели (±3 дня): вес ниже, число билетов приводится к дню недели
+    //  1) Тот же день недели, ±8 недель (расширяем до 12, 26 недель и всех дат) — вес 1, с давностью падает.
+    //  2) Соседние по дате вылеты этого же рейса в другие дни недели (±5 дней): число билетов приводится к дню недели
     //     вылета по обычному соотношению дней недели этого рейса в том же окне «дней до вылета».
     // Нужны данные по концу окна (lo). Сначала берём вылеты без ценовых решений; если их мало — и вылеты с решениями (оценка помечается).
     // «Достаточно» значит: эффективное число аналогов (Σw)²/Σw² не меньше минимума.
@@ -217,8 +233,8 @@ window.DecisionMoney = (function () {
         const sum = [0, 0, 0, 0, 0, 0, 0]; const cnt = [0, 0, 0, 0, 0, 0, 0];
         let tot = 0; let n = 0;
         basePool(an.base, an.code).forEach(it => {
-            if (it.date === an.dep || it.observedFrom > 0 && it.observedFrom + num('MONEY_OBS_MARGIN', 0) > lo || Math.abs(it.ms - an.depMs) > 182 * DAY || (an.asOfMs && it.ms > an.asOfMs)) return;
-            if (!an.withDecisions && hasDecision(it.code, it.date)) return;
+            if (it.date === an.dep || it.observedFrom > lo || Math.abs(it.ms - an.depMs) > 182 * DAY || (an.asOfMs && it.ms > an.asOfMs)) return;
+            if (!an.withDecisions && hasDec(it.code, it.date)) return;
             const v = countRange(itemCurve(it), lo, hi) / it.seats;
             sum[it.dow] += v; cnt[it.dow]++; tot += v; n++;
         });
@@ -270,7 +286,7 @@ window.DecisionMoney = (function () {
             const items = basePool(base, base);
             items.forEach(g => {
                 if (g.ms > asOfMs || g.ms < asOfMs - days * DAY) return;
-                if (hasDecision(g.code, g.date)) return;
+                if (hasDec(g.code, g.date)) return;
                 const ctx = { base, code: g.code, dep: g.date, depMs: g.ms, dow: g.dow, withDecisions: false, asOfMs };
                 let s = 0; let sw = 0; let nEq = 0;
                 items.forEach(it => {
@@ -279,7 +295,7 @@ window.DecisionMoney = (function () {
                     let w; let f = 1;
                     if (it.dow === g.dow) { if (gap > win) return; w = recency > 0 ? Math.exp(-gap / recency) : 1; nEq += 1; }
                     else { if (gap > nbDays || gap < 1 || nbW <= 0) return; w = nbW; f = dowFactor(ctx, it, lo, hi); nEq += 0.5; }
-                    if (hasDecision(it.code, it.date)) return;
+                    if (hasDec(it.code, it.date)) return;
                     s += w * countRange(itemCurve(it), lo, hi) * Math.min(2.5, Math.max(0.4, g.seats / it.seats)) * f;
                     sw += w;
                 });
@@ -296,7 +312,7 @@ window.DecisionMoney = (function () {
     function findAnalogsRaw(base, code, dep, lo, seats) {
         let cohort = [];
         try { cohort = collectSameWeekdayCohort(base, dep, code); } catch (e) { cohort = []; }
-        const usable = cohort.filter(c => c.seats > 0 && REGULAR.test(String(c.code)) && (c.observedFrom <= 0 || c.observedFrom + num('MONEY_OBS_MARGIN', 0) <= lo));
+        const usable = cohort.filter(c => c.seats > 0 && REGULAR.test(String(c.code)) && c.observedFrom <= lo);
         const depDt = parseLocalDate(dep);
         const depMs = depDt ? depDt.getTime() : 0;
         const nbDays = num('MONEY_NEIGHBOR_DAYS', 5);
@@ -307,7 +323,7 @@ window.DecisionMoney = (function () {
             const key = typeof CalendarEvents !== 'undefined' ? CalendarEvents.normKey(dep) : '';
             nbAll = basePool(base, code).filter(it => {
                 const g = Math.round(Math.abs(it.ms - depMs) / DAY);
-                if (g < 1 || g > nbDays || it.dow === depDt.getDay() || (it.observedFrom > 0 && it.observedFrom + num('MONEY_OBS_MARGIN', 0) > lo)) return false;
+                if (g < 1 || g > nbDays || it.dow === depDt.getDay() || it.observedFrom > lo) return false;
                 return (typeof CalendarEvents === 'undefined' ? '' : CalendarEvents.normKey(it.date)) === key;
             }).map(it => ({ it, gap: Math.round(Math.abs(it.ms - depMs) / DAY) }));
         }
@@ -316,18 +332,17 @@ window.DecisionMoney = (function () {
         const minA = num('MONEY_MIN_ANALOGS', 3);
         const attempts = [{ min: minA, withDec: false }, { min: minA, withDec: true }, { min: 2, withDec: true }];
         const wSame = c => (recency > 0 ? Math.exp(-c.dayGap / recency) : 1);
-        const wNb = () => nbW;
         for (let a = 0; a < attempts.length; a++) {
-            const pool = attempts[a].withDec ? usable : usable.filter(c => !hasDecision(c.code, c.date));
-            const nbPool = attempts[a].withDec ? nbAll : nbAll.filter(n => !hasDecision(n.it.code, n.it.date));
+            const pool = attempts[a].withDec ? usable : usable.filter(c => !hasDec(c.code, c.date));
+            const nbPool = attempts[a].withDec ? nbAll : nbAll.filter(n => !hasDec(n.it.code, n.it.date));
             for (let i = 0; i < tiers.length; i++) {
                 const list = pool.filter(c => c.dayGap <= tiers[i]);
-                const ws = list.map(wSame).concat(nbPool.map(wNb));
+                const ws = list.map(wSame).concat(nbPool.map(() => nbW));
                 // Достаточность — по числу вылетов (соседние считаются вполовину); разброс оценки считается по эффективному числу с весами.
                 const nEq = list.length + 0.5 * nbPool.length;
                 if (list.length + nbPool.length >= 2 && nEq >= attempts[a].min - 1e-9) {
                     const items = list.map(c => ({ c, curve: departureCurve(c.date, c.code), nb: false, w: wSame(c), scale: seats > 0 ? Math.min(2.5, Math.max(0.4, seats / c.seats)) : 1 }))
-                        .concat(nbPool.map(n => ({ c: n.it, curve: itemCurve(n.it), nb: true, w: wNb(n), dow: n.it.dow, it: n.it, scale: seats > 0 ? Math.min(2.5, Math.max(0.4, seats / n.it.seats)) : 1 })));
+                        .concat(nbPool.map(n => ({ c: n.it, curve: itemCurve(n.it), nb: true, w: nbW, dow: n.it.dow, it: n.it, scale: seats > 0 ? Math.min(2.5, Math.max(0.4, seats / n.it.seats)) : 1 })));
                     return { list: items, tier: tiers[i], withDecisions: attempts[a].withDec, few: attempts[a].min < minA, keff: keffOf(items.map(x => x.w)), nEq, nSame: list.length, nNb: nbPool.length, base, code, dep, depMs, dow: depDt ? depDt.getDay() : 0 };
                 }
             }
@@ -387,6 +402,7 @@ window.DecisionMoney = (function () {
     // Оценка одного решения по данным сайта. m: { code|flight, dep, check, status, clsFrom?, clsTo? }.
     // Почти всё считается; сомнительные случаи помечаются флагами (m.flags) и получают доверие «низкое».
     function compute(m) {
+        decMemo = new Map();
         const code = m.code || m.flight;
         const dep = m.dep;
         const kind = m.status;
@@ -451,7 +467,7 @@ window.DecisionMoney = (function () {
                     if (d <= dtdD + 7) before7.push(s);
                 }
             }
-            if (d >= dtdD + 1 && d <= dtdD + Math.max(1, Math.round(num('MONEY_STRENGTH_DAYS', 3)))) nOwn3++;
+            if (d >= dtdD + 1 && d <= dtdD + 3) nOwn3++;
         });
         const ladder = ladderIndex(code, dep);
         // Цена и класс до решения: указанные вручную, по продажам за 3 (запасной — 7) дней до решения,
@@ -477,7 +493,7 @@ window.DecisionMoney = (function () {
         // Доля платных взрослых негрупповых среди всех билетов вылета до решения.
         const share = own.beforeAll >= 10 ? own.beforeAdult / own.beforeAll : num('MONEY_PAID_SHARE', 0.9);
         // Сила рейса: билеты за 3 дня до решения у вылета и у аналогов.
-        const sDays = Math.max(1, Math.round(num('MONEY_STRENGTH_DAYS', 3)));
+        const sDays = 3;
         const normOwn = analogMean(an, dtdD + 1, dtdD + sDays) * lvK;
         const out = Object.assign(base0, { priceBefore: Math.round(priceBefore), clsBefore, clsAfter, share: round1(share * 100) / 100 });
 
@@ -535,15 +551,21 @@ window.DecisionMoney = (function () {
         return sign * y;
     }
 
-    // Доля ожидаемой выручки, которую вычитаем как сдвиг: линейно от «близко» (решение за ≤2 дней до вылета) до «далеко»
-    // (за ≥9 дней для окна, за ≥12 для остатка).
-    function biasRate(remainder, dtd, filled) {
-        if (remainder && filled) return 0;
-        const near = remainder ? num('MONEY_BIAS_REMAINDER_NEAR', -0.23) : num('MONEY_BIAS_WINDOW_NEAR', -0.21);
-        const far = remainder ? num('MONEY_BIAS_REMAINDER', -0.02) : num('MONEY_BIAS_WINDOW', 0.2);
-        const far0 = remainder ? 12 : 9;
-        const t = dtd > 0 ? Math.min(1, Math.max(0, (dtd - 2) / (far0 - 2))) : 1;
-        return near + (far - near) * t;
+    // Сдвиг, который вычитаем из эффекта (рубли). Проверка на вылетах без решений показала два устойчивых сдвига:
+    //  1) тариф сам меняется по мере приближения вылета: доля ожидаемой выручки, линейно от «решение за ≤2 дня» до «за ≥9 дней» (окно);
+    //  2) норма по аналогам «сжата» к середине: при малых ожиданиях факт выше нормы, при больших ниже. Это — добавка в билетах за каждый
+    //     день окна (у остатка — за каждый день до вылета, не больше 12).
+    // У заполненного рейса билеты не оцениваются — поправка 0.
+    function biasShift(base, est, extra, filled) {
+        const pb = base.priceBefore || 0;
+        const ticketRub = (base.share != null ? base.share : 1) * pb;   // рублей на «один ожидаемый билет»
+        if (extra.remainder) {
+            if (filled) return 0;
+            return num('MONEY_BIAS_REMAINDER', -0.32) * est.nExpPaid * pb + num('MONEY_BIAS_ADD_REMAINDER', 0.58) * ticketRub * Math.min(12, Math.max(0, base.dtd || 0));
+        }
+        const t = base.dtd > 0 ? Math.min(1, Math.max(0, (base.dtd - 2) / 7)) : 1;
+        const rate = num('MONEY_BIAS_WINDOW_NEAR', -0.36) + (num('MONEY_BIAS_WINDOW', -0.06) - num('MONEY_BIAS_WINDOW_NEAR', -0.36)) * t;
+        return rate * est.nExpPaid * pb + num('MONEY_BIAS_ADD_WINDOW', 0.41) * ticketRub * (base.w || 0);
     }
 
     function finish(base, est, extra) {
@@ -553,15 +575,13 @@ window.DecisionMoney = (function () {
         const grade = flags.length ? 'C' : (kUsed >= 5 && est.nExpAll >= 6 ? 'A' : 'B');
         // Каждый флаг расширяет диапазон на 25%: сомнительные оценки реже получают «сработало/не сработало».
         const widen = 1 + 0.25 * flags.length;
-        // Поправка на сдвиг. После поправки уровня число билетов у вылетов без решений сходится с нормой, но рубли ещё сдвинуты:
-        // тариф сам меняется по мере приближения вылета (за 2 дня и ближе «выходит» минус, за 9 дней и раньше — плюс). Доля от ожидаемой
-        // выручки, линейно между «близко» и «далеко» (на вылетах без решений). У заполненного рейса билеты не оцениваются — поправка 0.
+        // Поправка на сдвиг (см. biasShift).
         const filledNow = !!(est.filled || extra.filled);
-        const bias = biasRate(!!extra.remainder, base.dtd, filledNow) * est.nExpPaid * (base.priceBefore || 0);
+        const bias = biasShift(base, est, extra, filledNow);
         const dcorr = est.delta - bias;
         let half = (est.hi - est.lo) / 2 * widen;
         // Рейс заполнен: билетов уже не прибавить, но цена билета всё равно шумит.
-        if (filledNow) half = num('MONEY_NOISE_Z', 1.9) * num('MONEY_PRICE_NOISE', 0.1) * est.nExpPaid * (base.priceBefore || 0) * widen;
+        if (filledNow) half = num('MONEY_NOISE_Z', 1.9) * num('MONEY_PRICE_NOISE', 0.2) * est.nExpPaid * (base.priceBefore || 0) * widen;
         const lo = dcorr - half; const hi = dcorr + half;
         let verdict = 'unclear';
         if (lo > 0 && dcorr >= est.thr) verdict = 'worked';
@@ -571,7 +591,9 @@ window.DecisionMoney = (function () {
         const sd = half > 0 ? half / zc : 0;
         let pPos = null;
         if (sd > 0) {
-            const t = dcorr / sd;
+            // Продажи идут пачками: на вылетах без решений отклонения вверх длиннее, чем вниз. Плюс подтверждаем строже, минус — мягче.
+            const skew = num('MONEY_SKEW', 0.1);
+            const t = dcorr / (sd * (dcorr >= 0 ? 1 + skew : 1 - skew));
             pPos = 0.5 * (1 + erf(t / Math.SQRT2));
             if (verdict === 'unclear') {
                 if (pPos >= num('MONEY_LEAN_P', 0.75)) verdict = 'lean_pos';
