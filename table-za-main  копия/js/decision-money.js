@@ -16,7 +16,7 @@
 // результат фиксируется через день после окна. Повышение: через окно — только ранний сигнал, итог после вылета по остатку продаж.
 // Зафиксированный итог лежит в shared/decision-money/ГГГГ-ММ.json и дальше не меняется (при смене данных и параметров тоже).
 window.DecisionMoney = (function () {
-    const METHOD_VERSION = 2;
+    const METHOD_VERSION = 3;
     const DAY = 86400000;
     const REGULAR = /^KV-\d{3}$/;      // допы и чартеры (KV-9xxx и т. п.) не оцениваем: покупки блоками, нормы нет
     const GAPS = [56, 84, 182, 100000]; // расширение окна поиска аналогов, дней
@@ -61,7 +61,7 @@ window.DecisionMoney = (function () {
         const priceAfter = inp.nFactPaid > 0 ? inp.rFact / inp.nFactPaid : inp.priceBefore;
         const delta = inp.rFact - nExpPaid * inp.priceBefore;
         const sigma = sigmaTickets(nExpAll, inp.k, false);
-        const z = num('MONEY_NOISE_Z', 1.64);
+        const z = num('MONEY_NOISE_Z', 1.9);
         const half = z * sigma * share * inp.priceBefore;
         const thr = Math.max(num('MONEY_MIN_PCT', 15) / 100 * nExpPaid * inp.priceBefore, num('MONEY_MIN_RUB', 20000));
         let verdict = 'unclear';
@@ -88,7 +88,7 @@ window.DecisionMoney = (function () {
         const priceAfter = inp.nFactPaid > 0 ? inp.rFact / inp.nFactPaid : inp.priceBefore;
         const delta = inp.rFact - nExpPaid * inp.priceBefore;
         const sigma = sigmaTickets(inp.E, inp.k, true);
-        const z = num('MONEY_NOISE_Z', 1.64);
+        const z = num('MONEY_NOISE_Z', 1.9);
         const half = inp.filled ? 0 : z * sigma * share * inp.priceBefore;
         const thr = Math.max(num('MONEY_MIN_PCT', 15) / 100 * nExpPaid * inp.priceBefore, num('MONEY_MIN_RUB', 20000));
         let verdict = 'unclear';
