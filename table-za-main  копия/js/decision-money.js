@@ -50,7 +50,7 @@ window.DecisionMoney = (function () {
     // Окно после решения. inp: E (ожидание всех билетов), k (аналогов), nFactAll, nFactPaid, rFact, priceBefore, share,
     // strength: { own, norm } — билеты за 3 дня до решения у рейса и у аналогов.
     function estimateWindow(inp) {
-        const gamma = num('MONEY_STRENGTH_GAMMA', 0.25);
+        const gamma = num('MONEY_STRENGTH_GAMMA', 0.2);
         const adj = inp.strength && inp.strength.norm != null
             ? Math.pow((inp.strength.own + 0.5) / (inp.strength.norm + 0.5), gamma)
             : 1;
@@ -137,47 +137,214 @@ window.DecisionMoney = (function () {
         return seats;
     }
 
-    // Аналоги: тот же рейс и день недели, ±8 недель (расширяем до 12, 26 недель и всех дат). Нужны данные по концу окна (lo).
-    // Сначала берём вылеты без ценовых решений; если их мало — и вылеты с решениями (оценка помечается, доверие ниже).
+    // Аналоги: вылеты того же рейса.
+    //  1) Тот же день недели, ±8 недель (расширяем до 12, 26 недель и всех дат) — вес 1 (дальше по времени — чуть меньше).
+    //  2) Соседние по дате вылеты этого же рейса в другие дни недели (±3 дня): вес ниже, число билетов приводится к дню недели
+    //     вылета по обычному соотношению дней недели этого рейса в том же окне «дней до вылета».
+    // Нужны данные по концу окна (lo). Сначала берём вылеты без ценовых решений; если их мало — и вылеты с решениями (оценка помечается).
+    // «Достаточно» значит: эффективное число аналогов (Σw)²/Σw² не меньше минимума.
     // Результат поиска запоминается на время неизменных данных и отметок: у серии решений по одному вылету он один и тот же.
     const analogMemo = new Map();
+    const poolMemo = new Map();
+    const dowMemo = new Map();
     let analogMemoSig = '';
 
-    function findAnalogs(base, code, dep, lo, seats) {
-        const sg = [typeof dataEpoch === 'number' ? dataEpoch : 0, typeof SalesManagement !== 'undefined' && SalesManagement.markRevision ? SalesManagement.markRevision() : '',
+    function dataSig() {
+        return [typeof dataEpoch === 'number' ? dataEpoch : 0, typeof SalesManagement !== 'undefined' && SalesManagement.markRevision ? SalesManagement.markRevision() : '',
             typeof SalesArchive !== 'undefined' && SalesArchive.revision ? SalesArchive.revision() : 0, typeof Params !== 'undefined' && Params.revision ? Params.revision() : 0].join('|');
-        if (sg !== analogMemoSig) { analogMemo.clear(); analogMemoSig = sg; }
+    }
+
+    function ensureSig() {
+        const sg = dataSig();
+        if (sg !== analogMemoSig) { analogMemo.clear(); poolMemo.clear(); dowMemo.clear(); levelMemo.clear(); analogMemoSig = sg; }
+    }
+
+    function findAnalogs(base, code, dep, lo, seats) {
+        ensureSig();
         const key = [base, code, dep, lo, Math.round(seats || 0)].join('|');
         if (!analogMemo.has(key)) analogMemo.set(key, findAnalogsRaw(base, code, dep, lo, seats));
         return analogMemo.get(key);
     }
 
+    // Все вылеты базового рейса (любой день недели) с продажами: из файлов и из архива. Кривые считаются один раз.
+    function basePool(base, code) {
+        const key = base;
+        if (poolMemo.has(key)) return poolMemo.get(key);
+        const items = [];
+        const seen = new Set();
+        const codes = new Set([code]);
+        const rows = (typeof groupedData !== 'undefined' && groupedData[base]) || [];
+        rows.forEach(row => {
+            const dtStr = row[1];
+            if (!dtStr || seen.has(dtStr)) return;
+            const dt = parseLocalDate(dtStr);
+            if (!dt) return;
+            const orig = cleanFlight(row[0]);
+            codes.add(orig);
+            const salesCode = getFlightSalesList(dtStr, orig).length ? orig : code;
+            if (!getFlightSalesList(dtStr, salesCode).length) return;
+            const seats = typeof getSeatsOnSale === 'function' ? getSeatsOnSale(row) : 0;
+            if (!(seats > 0) || !REGULAR.test(String(salesCode))) return;
+            seen.add(dtStr);
+            items.push({ date: dtStr, code: salesCode, seats, ms: dt.getTime(), dow: dt.getDay(), observedFrom: observedFromDtd(dtStr) });
+        });
+        if (typeof SalesArchive !== 'undefined') {
+            codes.forEach(c => {
+                SalesArchive.departuresFor(c).forEach(a => {
+                    if (seen.has(a.date) || !(a.seats > 0) || !REGULAR.test(String(c))) return;
+                    const dt = parseLocalDate(a.date);
+                    if (!dt) return;
+                    seen.add(a.date);
+                    items.push({ date: a.date, code: c, seats: a.seats, ms: dt.getTime(), dow: dt.getDay(), observedFrom: 0 });
+                });
+            });
+        }
+        poolMemo.set(key, items);
+        return items;
+    }
+
+    function itemCurve(it) {
+        if (!it.curve) it.curve = departureCurve(it.date, it.code);
+        return it.curve;
+    }
+
+    // Средняя доля кресел, проданная в окне [lo..hi] дней до вылета, по дням недели этого рейса (ближние ±26 недель, без самого вылета).
+    // Сжатие к общему среднему (τ псевдо-вылета): дни недели с 1–2 вылетами не дают случайного перекоса.
+    function dowLevels(an, lo, hi) {
+        const key = [an.base, an.dep, lo, hi, an.withDecisions ? 1 : 0, an.asOfMs || 0].join('|');
+        if (dowMemo.has(key)) return dowMemo.get(key);
+        const tau = num('MONEY_DOW_TAU', 2);
+        const sum = [0, 0, 0, 0, 0, 0, 0]; const cnt = [0, 0, 0, 0, 0, 0, 0];
+        let tot = 0; let n = 0;
+        basePool(an.base, an.code).forEach(it => {
+            if (it.date === an.dep || it.observedFrom > 0 && it.observedFrom + num('MONEY_OBS_MARGIN', 0) > lo || Math.abs(it.ms - an.depMs) > 182 * DAY || (an.asOfMs && it.ms > an.asOfMs)) return;
+            if (!an.withDecisions && hasDecision(it.code, it.date)) return;
+            const v = countRange(itemCurve(it), lo, hi) / it.seats;
+            sum[it.dow] += v; cnt[it.dow]++; tot += v; n++;
+        });
+        const M = n ? tot / n : 0;
+        const lev = sum.map((x, d) => (x + tau * M) / (cnt[d] + tau));
+        const out = { lev, cnt, M };
+        dowMemo.set(key, out);
+        return out;
+    }
+
+    // Множитель «день недели соседнего вылета → день недели этого вылета» для окна [lo..hi].
+    function dowFactor(an, it, lo, hi) {
+        const L = dowLevels(an, lo, hi);
+        const a = L.lev[an.dow]; const b = L.lev[it.dow];
+        if (!(a > 0) || !(b > 0)) return 1;
+        return Math.min(2.5, Math.max(0.4, a / b));
+    }
+
+    function keffOf(ws) {
+        let s = 0; let q = 0;
+        ws.forEach(w => { s += w; q += w * w; });
+        return q > 0 ? s * s / q : 0;
+    }
+
+    // Поправка уровня. Спрос движется по времени (сезон, всплески): норма из прошлых недель отстаёт. Смотрим, как последние
+    // улетевшие вылеты (до дня решения) выходили против такой же нормы, посчитанной только по ещё более ранним вылетам:
+    // если у них факт был выше нормы на 20%, то и для этого вылета норму поднимаем (с затуханием λ и в пределах [0,6; 1,8]).
+    // Считается по кривым продаж (число билетов за 1–10 дней до вылета) по всей сети; кэшируется по дню решения.
+    const levelMemo = new Map();
+    function levelFactor(checkStr) {
+        const days = num('MONEY_LEVEL_DAYS', 10);
+        const lam = num('MONEY_LEVEL_LAMBDA', 1);
+        if (!(days > 0) || !(lam > 0)) return { k: 1, n: 0 };
+        const cdt = parseLocalDate(checkStr);
+        if (!cdt) return { k: 1, n: 0 };
+        ensureSig();
+        const cutoffMs = typeof salesDataCutoffTime === 'function' ? salesDataCutoffTime() : Date.now();
+        const asOfMs = Math.min(cdt.getTime() - DAY, cutoffMs - DAY);   // вылеты не позже дня до даты: их продажи уже закончились
+        const key = String(asOfMs);
+        const lo = 1; const hi = 10;   // окно сравнения: 1–10 дней до вылета (на других окнах поправка выходит той же, а считать дольше в разы)
+        if (levelMemo.has(key)) return levelMemo.get(key);
+        let a = 0; let e = 0; let n = 0;
+        const win = num('WEEKDAY_NORM_WINDOW_DAYS', 56);
+        const nbDays = num('MONEY_NEIGHBOR_DAYS', 5);
+        const nbW = num('MONEY_NEIGHBOR_W', 1);
+        const recency = num('MONEY_RECENCY_DAYS', 45);
+        Object.keys(groupedData || {}).forEach(base => {
+            if (typeof isValidFlightBase === 'function' && !isValidFlightBase(base)) return;
+            const items = basePool(base, base);
+            items.forEach(g => {
+                if (g.ms > asOfMs || g.ms < asOfMs - days * DAY) return;
+                if (hasDecision(g.code, g.date)) return;
+                const ctx = { base, code: g.code, dep: g.date, depMs: g.ms, dow: g.dow, withDecisions: false, asOfMs };
+                let s = 0; let sw = 0; let nEq = 0;
+                items.forEach(it => {
+                    if (it === g || it.ms > asOfMs) return;
+                    const gap = Math.round(Math.abs(it.ms - g.ms) / DAY);
+                    let w; let f = 1;
+                    if (it.dow === g.dow) { if (gap > win) return; w = recency > 0 ? Math.exp(-gap / recency) : 1; nEq += 1; }
+                    else { if (gap > nbDays || gap < 1 || nbW <= 0) return; w = nbW; f = dowFactor(ctx, it, lo, hi); nEq += 0.5; }
+                    if (hasDecision(it.code, it.date)) return;
+                    s += w * countRange(itemCurve(it), lo, hi) * Math.min(2.5, Math.max(0.4, g.seats / it.seats)) * f;
+                    sw += w;
+                });
+                if (nEq < num('MONEY_MIN_ANALOGS', 3) || !(sw > 0)) return;
+                e += s / sw; a += countRange(itemCurve(g), lo, hi); n++;
+            });
+        });
+        const raw = n >= 20 && e > 0 ? a / e : 1;
+        const out = { k: Math.pow(Math.min(1.8, Math.max(0.6, raw)), lam), raw, n };
+        levelMemo.set(key, out);
+        return out;
+    }
+
     function findAnalogsRaw(base, code, dep, lo, seats) {
         let cohort = [];
         try { cohort = collectSameWeekdayCohort(base, dep, code); } catch (e) { cohort = []; }
-        const usable = cohort.filter(c => c.seats > 0 && REGULAR.test(String(c.code)) && c.observedFrom <= lo);
+        const usable = cohort.filter(c => c.seats > 0 && REGULAR.test(String(c.code)) && (c.observedFrom <= 0 || c.observedFrom + num('MONEY_OBS_MARGIN', 0) <= lo));
+        const depDt = parseLocalDate(dep);
+        const depMs = depDt ? depDt.getTime() : 0;
+        const nbDays = num('MONEY_NEIGHBOR_DAYS', 5);
+        const nbW = num('MONEY_NEIGHBOR_W', 1);
+        const recency = num('MONEY_RECENCY_DAYS', 45);
+        let nbAll = [];
+        if (nbDays > 0 && nbW > 0 && depDt) {
+            const key = typeof CalendarEvents !== 'undefined' ? CalendarEvents.normKey(dep) : '';
+            nbAll = basePool(base, code).filter(it => {
+                const g = Math.round(Math.abs(it.ms - depMs) / DAY);
+                if (g < 1 || g > nbDays || it.dow === depDt.getDay() || (it.observedFrom > 0 && it.observedFrom + num('MONEY_OBS_MARGIN', 0) > lo)) return false;
+                return (typeof CalendarEvents === 'undefined' ? '' : CalendarEvents.normKey(it.date)) === key;
+            }).map(it => ({ it, gap: Math.round(Math.abs(it.ms - depMs) / DAY) }));
+        }
         const win = num('WEEKDAY_NORM_WINDOW_DAYS', 56);
         const tiers = [win].concat(GAPS.filter(g => g > win));
-        const attempts = [{ min: num('MONEY_MIN_ANALOGS', 3), withDec: false }, { min: num('MONEY_MIN_ANALOGS', 3), withDec: true }, { min: 2, withDec: true }];
+        const minA = num('MONEY_MIN_ANALOGS', 3);
+        const attempts = [{ min: minA, withDec: false }, { min: minA, withDec: true }, { min: 2, withDec: true }];
+        const wSame = c => (recency > 0 ? Math.exp(-c.dayGap / recency) : 1);
+        const wNb = () => nbW;
         for (let a = 0; a < attempts.length; a++) {
             const pool = attempts[a].withDec ? usable : usable.filter(c => !hasDecision(c.code, c.date));
+            const nbPool = attempts[a].withDec ? nbAll : nbAll.filter(n => !hasDecision(n.it.code, n.it.date));
             for (let i = 0; i < tiers.length; i++) {
                 const list = pool.filter(c => c.dayGap <= tiers[i]);
-                if (list.length >= attempts[a].min) {
-                    const withCurves = list.map(c => ({ c, curve: departureCurve(c.date, c.code), scale: seats > 0 ? Math.min(2.5, Math.max(0.4, seats / c.seats)) : 1 }));
-                    return { list: withCurves, tier: tiers[i], withDecisions: attempts[a].withDec, few: attempts[a].min < num('MONEY_MIN_ANALOGS', 3) };
+                const ws = list.map(wSame).concat(nbPool.map(wNb));
+                // Достаточность — по числу вылетов (соседние считаются вполовину); разброс оценки считается по эффективному числу с весами.
+                const nEq = list.length + 0.5 * nbPool.length;
+                if (list.length + nbPool.length >= 2 && nEq >= attempts[a].min - 1e-9) {
+                    const items = list.map(c => ({ c, curve: departureCurve(c.date, c.code), nb: false, w: wSame(c), scale: seats > 0 ? Math.min(2.5, Math.max(0.4, seats / c.seats)) : 1 }))
+                        .concat(nbPool.map(n => ({ c: n.it, curve: itemCurve(n.it), nb: true, w: wNb(n), dow: n.it.dow, it: n.it, scale: seats > 0 ? Math.min(2.5, Math.max(0.4, seats / n.it.seats)) : 1 })));
+                    return { list: items, tier: tiers[i], withDecisions: attempts[a].withDec, few: attempts[a].min < minA, keff: keffOf(items.map(x => x.w)), nEq, nSame: list.length, nNb: nbPool.length, base, code, dep, depMs, dow: depDt ? depDt.getDay() : 0 };
                 }
             }
         }
-        return { list: [], tier: 0 };
+        return { list: [], tier: 0, keff: 0 };
     }
 
-    // Среднее по аналогам: билетов в днях до вылета [lo..hi] (приведено к местам этого вылета).
+    // Среднее по аналогам (взвешенное): билетов в днях до вылета [lo..hi] (приведено к местам и дню недели этого вылета).
     function analogMean(an, lo, hi) {
         if (!an.list.length) return null;
-        let s = 0;
-        an.list.forEach(a => { s += countRange(a.curve, lo, hi) * a.scale; });
-        return s / an.list.length;
+        let s = 0; let sw = 0;
+        an.list.forEach(a => {
+            const f = a.nb ? dowFactor(an, a.it, lo, hi) : 1;
+            s += a.w * countRange(a.curve, lo, hi) * a.scale * f;
+            sw += a.w;
+        });
+        return sw > 0 ? s / sw : null;
     }
 
     function ladderIndex(code, dep) {
@@ -251,16 +418,19 @@ window.DecisionMoney = (function () {
         const an = findAnalogs(base, code, dep, loNeed, seats);
         if (an.list.length < 2) return na('нет похожих вылетов этого рейса и дня недели в данных: сравнивать не с чем');
         if (an.withDecisions) flags.push('у похожих вылетов тоже были ценовые решения');
-        if (an.few || an.list.length < 3) flags.push(`похожих вылетов всего ${an.list.length}`);
+        if (an.few || an.nEq < num('MONEY_MIN_ANALOGS', 3) - 1e-9) flags.push(`похожих вылетов всего ${an.list.length}`);
         // Окно: от W0 дней (для эпизода — до последней отметки плюс W0), пока ожидание не дойдёт до минимума.
+        // Уровень спроса берём по вылетам до конца окна (но не позже вылета этого рейса): продажи других рейсов в те же дни не зависят от решения.
+        const asOfStr = dayDiff(addDays(m.check, maxW + 1), dep) > 0 ? dep : addDays(m.check, maxW + 1);
+        const lvK = levelFactor(asOfStr).k;
         let w = Math.min(W0, wCap);
         w = Math.max(1, w);
-        let E = analogMean(an, dtdD - w, dtdD - 1);
-        while (w < wCap && E < minExp) { w++; E = analogMean(an, dtdD - w, dtdD - 1); }
+        let E = analogMean(an, dtdD - w, dtdD - 1) * lvK;
+        while (w < wCap && E < minExp) { w++; E = analogMean(an, dtdD - w, dtdD - 1) * lvK; }
         const windowTo = addDays(m.check, w);
         const cutoffMs = typeof salesDataCutoffTime === 'function' ? salesDataCutoffTime() : Date.now();
         const needMs = parseLocalDate(windowTo).getTime() + num('MONEY_LAG_DAYS', 1) * DAY;
-        const base0 = { w, windowFrom: addDays(m.check, 1), windowTo, k: an.list.length, tierDays: an.tier, v: METHOD_VERSION, kind, flags };
+        const base0 = { w, windowFrom: addDays(m.check, 1), windowTo, k: an.list.length, ke: round1(an.keff), kNb: an.nNb || 0, levelK: Math.round(lvK * 100) / 100, dtd: dtdD, tierDays: an.tier, v: METHOD_VERSION, kind, flags };
         if (cutoffMs < needMs) return Object.assign(base0, { stage: 'wait', reason: `ждём данные до ${windowTo}`, grade: 'C', readyOn: addDays(windowTo, num('MONEY_LAG_DAYS', 1)) });
 
         // Факт по билетам вылета.
@@ -281,7 +451,7 @@ window.DecisionMoney = (function () {
                     if (d <= dtdD + 7) before7.push(s);
                 }
             }
-            if (d >= dtdD + 1 && d <= dtdD + 3) nOwn3++;
+            if (d >= dtdD + 1 && d <= dtdD + Math.max(1, Math.round(num('MONEY_STRENGTH_DAYS', 3)))) nOwn3++;
         });
         const ladder = ladderIndex(code, dep);
         // Цена и класс до решения: указанные вручную, по продажам за 3 (запасной — 7) дней до решения,
@@ -307,7 +477,8 @@ window.DecisionMoney = (function () {
         // Доля платных взрослых негрупповых среди всех билетов вылета до решения.
         const share = own.beforeAll >= 10 ? own.beforeAdult / own.beforeAll : num('MONEY_PAID_SHARE', 0.9);
         // Сила рейса: билеты за 3 дня до решения у вылета и у аналогов.
-        const normOwn = analogMean(an, dtdD + 1, dtdD + 3);
+        const sDays = Math.max(1, Math.round(num('MONEY_STRENGTH_DAYS', 3)));
+        const normOwn = analogMean(an, dtdD + 1, dtdD + sDays) * lvK;
         const out = Object.assign(base0, { priceBefore: Math.round(priceBefore), clsBefore, clsAfter, share: round1(share * 100) / 100 });
 
         const flyDt = parseLocalDate(dep);
@@ -318,7 +489,7 @@ window.DecisionMoney = (function () {
             const an0 = findAnalogs(base, code, dep, 0, seats);
             if (an0.list.length < 2) return na('нет улетевших похожих вылетов для итога', out);
             if (an0.withDecisions && !flags.includes('у похожих вылетов тоже были ценовые решения')) flags.push('у похожих вылетов тоже были ценовые решения');
-            const Erem = analogMean(an0, 0, dtdD - 1);
+            const Erem = analogMean(an0, 0, dtdD - 1) * lvK;
             const rem = { all: 0, paid: 0, rev: 0 };
             let soldAtD = 0;
             list.forEach(s => {
@@ -330,11 +501,11 @@ window.DecisionMoney = (function () {
             const free = seats > 0 ? Math.max(0, seats - soldAtD) : null;
             const totalNow = list.length;
             const filled = seats > 0 && totalNow / seats >= num('RMS_FULL_PCT', 95) / 100;
-            const est = estimateRemainder({ E: Erem, k: an0.list.length, free, filled, nFactAll: rem.all, nFactPaid: rem.paid, rFact: rem.rev, priceBefore, share });
-            return finish(out, est, { stage: 'final', k: an0.list.length, tierDays: an0.tier, remainder: true, filled, expAll: round1(est.nExpAll), factAll: rem.all });
+            const est = estimateRemainder({ E: Erem, k: an0.keff, free, filled, nFactAll: rem.all, nFactPaid: rem.paid, rFact: rem.rev, priceBefore, share });
+            return finish(out, est, { stage: 'final', k: an0.list.length, ke: round1(an0.keff), kNb: an0.nNb || 0, tierDays: an0.tier, remainder: true, filled, expAll: round1(est.nExpAll), factAll: rem.all });
         }
 
-        const est = estimateWindow({ E, k: an.list.length, nFactAll: own.all, nFactPaid: own.paid, rFact: own.rev, priceBefore, share, strength: normOwn == null ? null : { own: nOwn3, norm: normOwn } });
+        const est = estimateWindow({ E, k: an.keff, nFactAll: own.all, nFactPaid: own.paid, rFact: own.rev, priceBefore, share, strength: normOwn == null ? null : { own: nOwn3, norm: normOwn } });
         if (kind === 'up' && nextGap == null) {
             // Через окно — только ранний сигнал: рост цены сдвигает покупки на позже, вердикт по итогу вылета.
             const res = finish(out, est, { stage: 'prelim', expAll: round1(est.nExpAll), factAll: own.all });
@@ -346,7 +517,7 @@ window.DecisionMoney = (function () {
         // Хвост и заполнение — для пояснения (без рублей): сколько продали после окна против обычного.
         if (dataCoversFlight) {
             const an0 = findAnalogs(base, code, dep, 0, seats);
-            const Etail = an0.list.length ? analogMean(an0, 0, dtdD - w - 1) : null;
+            const Etail = an0.list.length ? analogMean(an0, 0, dtdD - w - 1) * lvK : null;
             let nTail = 0;
             list.forEach(s => { const d = dayDiff(dep, s.dealDate); if (d != null && d >= 0 && d <= dtdD - w - 1) nTail++; });
             if (Etail != null) { res.tailFact = nTail; res.tailExp = round1(Etail); }
@@ -364,17 +535,29 @@ window.DecisionMoney = (function () {
         return sign * y;
     }
 
+    // Доля ожидаемой выручки, которую вычитаем как сдвиг: линейно от «близко» (решение за ≤2 дней до вылета) до «далеко»
+    // (за ≥9 дней для окна, за ≥12 для остатка).
+    function biasRate(remainder, dtd, filled) {
+        if (remainder && filled) return 0;
+        const near = remainder ? num('MONEY_BIAS_REMAINDER_NEAR', -0.23) : num('MONEY_BIAS_WINDOW_NEAR', -0.21);
+        const far = remainder ? num('MONEY_BIAS_REMAINDER', -0.02) : num('MONEY_BIAS_WINDOW', 0.2);
+        const far0 = remainder ? 12 : 9;
+        const t = dtd > 0 ? Math.min(1, Math.max(0, (dtd - 2) / (far0 - 2))) : 1;
+        return near + (far - near) * t;
+    }
+
     function finish(base, est, extra) {
         const sampleOk = est.nExpAll + (extra.factAll || 0) >= num('MONEY_MIN_TICKETS', 4);
         const flags = base.flags || [];
-        const kUsed = extra.k != null ? extra.k : base.k;   // у итога повышения — число аналогов именно для него
+        const kUsed = extra.ke != null ? extra.ke : (base.ke != null ? base.ke : base.k);   // у итога повышения — число аналогов именно для него
         const grade = flags.length ? 'C' : (kUsed >= 5 && est.nExpAll >= 6 ? 'A' : 'B');
         // Каждый флаг расширяет диапазон на 25%: сомнительные оценки реже получают «сработало/не сработало».
         const widen = 1 + 0.25 * flags.length;
-        // Поправка на сдвиг: на вылетах без решений в окне «выходило» в среднем +24% к ожидаемой выручке
-        // (норма занижена, тариф растёт сам); в остатке до вылета сдвиг в пределах шума.
+        // Поправка на сдвиг. После поправки уровня число билетов у вылетов без решений сходится с нормой, но рубли ещё сдвинуты:
+        // тариф сам меняется по мере приближения вылета (за 2 дня и ближе «выходит» минус, за 9 дней и раньше — плюс). Доля от ожидаемой
+        // выручки, линейно между «близко» и «далеко» (на вылетах без решений). У заполненного рейса билеты не оцениваются — поправка 0.
         const filledNow = !!(est.filled || extra.filled);
-        const bias = (extra.remainder ? num('MONEY_BIAS_REMAINDER', 0) : num('MONEY_BIAS_WINDOW', 0.24)) * est.nExpPaid * (base.priceBefore || 0);
+        const bias = biasRate(!!extra.remainder, base.dtd, filledNow) * est.nExpPaid * (base.priceBefore || 0);
         const dcorr = est.delta - bias;
         let half = (est.hi - est.lo) / 2 * widen;
         // Рейс заполнен: билетов уже не прибавить, но цена билета всё равно шумит.
