@@ -16,7 +16,7 @@
 // результат фиксируется через день после окна. Повышение: через окно — только ранний сигнал, итог после вылета по остатку продаж.
 // Зафиксированный итог лежит в shared/decision-money/ГГГГ-ММ.json и дальше не меняется (при смене данных и параметров тоже).
 window.DecisionMoney = (function () {
-    const METHOD_VERSION = 3;
+    const METHOD_VERSION = 4;
     const DAY = 86400000;
     const REGULAR = /^KV-\d{3}$/;      // допы и чартеры (KV-9xxx и т. п.) не оцениваем: покупки блоками, нормы нет
     const GAPS = [56, 84, 182, 100000]; // расширение окна поиска аналогов, дней
@@ -375,39 +375,45 @@ window.DecisionMoney = (function () {
         const grade = flags.length ? 'C' : (kUsed >= 5 && est.nExpAll >= 6 ? 'A' : 'B');
         // Каждый флаг расширяет диапазон на 25%: сомнительные оценки реже получают «сработало/не сработало».
         const widen = 1 + 0.25 * flags.length;
-        const half = (est.hi - est.lo) / 2 * widen;
-        const lo = est.delta - half; const hi = est.delta + half;
+        // Поправка на сдвиг: на вылетах без решений в окне «выходило» в среднем +24% к ожидаемой выручке
+        // (норма занижена, тариф растёт сам); в остатке до вылета сдвиг в пределах шума.
+        const filledNow = !!(est.filled || extra.filled);
+        const bias = (extra.remainder ? num('MONEY_BIAS_REMAINDER', 0) : num('MONEY_BIAS_WINDOW', 0.24)) * est.nExpPaid * (base.priceBefore || 0);
+        const dcorr = est.delta - bias;
+        let half = (est.hi - est.lo) / 2 * widen;
+        // Рейс заполнен: билетов уже не прибавить, но цена билета всё равно шумит.
+        if (filledNow) half = num('MONEY_NOISE_Z', 1.9) * num('MONEY_PRICE_NOISE', 0.1) * est.nExpPaid * (base.priceBefore || 0) * widen;
+        const lo = dcorr - half; const hi = dcorr + half;
         let verdict = 'unclear';
-        if (lo > 0 && est.delta >= est.thr) verdict = 'worked';
-        else if (hi < 0 && est.delta <= -est.thr) verdict = 'failed';
-        if (est.filled || extra.filled) verdict = est.verdict;
+        if (lo > 0 && dcorr >= est.thr) verdict = 'worked';
+        else if (hi < 0 && dcorr <= -est.thr) verdict = 'failed';
         // «Скорее»: диапазон включает ноль, но вероятность плюса (или минуса) по нормальной оценке не ниже 75%.
         const zc = num('MONEY_NOISE_Z', 1.9);
         const sd = half > 0 ? half / zc : 0;
         let pPos = null;
         if (sd > 0) {
-            const t = est.delta / sd;
+            const t = dcorr / sd;
             pPos = 0.5 * (1 + erf(t / Math.SQRT2));
-            if (verdict === 'unclear' && !(est.filled || extra.filled)) {
+            if (verdict === 'unclear') {
                 if (pPos >= num('MONEY_LEAN_P', 0.75)) verdict = 'lean_pos';
                 else if (pPos <= 1 - num('MONEY_LEAN_P', 0.75)) verdict = 'lean_neg';
             }
         }
-        const delta = round1k(est.delta);
+        const delta = round1k(dcorr);
         const volume = round1k(est.volume);
         const res = Object.assign(base, extra, {
             // «цена» = эффект минус «объём» после округления: сумма двух частей точно равна эффекту
             priceAfter: Math.round(est.priceAfter), delta, lo: round1k(lo), hi: round1k(hi),
             volume, priceEffect: delta - volume, payback: est.payback == null ? null : round1(est.payback),
-            thr: round1k(est.thr), nExpPaid: round1(est.nExpPaid), expRev: round1k(est.expRev), revFact: round1k(est.revFact), strengthK: Math.round(est.strengthK * 100) / 100,
+            thr: round1k(est.thr), nExpPaid: round1(est.nExpPaid), expRev: round1k(est.revFact - dcorr), revFact: round1k(est.revFact), strengthK: Math.round(est.strengthK * 100) / 100,
             dTickets: round1(est.dTickets), grade
         });
         // Остаток: эффект ниже порога значимости — «без заметного эффекта», иначе — направление по знаку («чуть лучше / хуже»).
         // Вероятность плюса (pPos) показывается рядом, поэтому слабый сигнал не выдаётся за твёрдый.
         if (!sampleOk) verdict = verdict === 'worked' ? 'lean_pos' : (verdict === 'failed' ? 'lean_neg' : verdict);
         if (verdict === 'unclear') {
-            if (Math.abs(est.delta) < est.thr) verdict = 'flat';
-            else verdict = est.delta > 0 ? 'weak_pos' : 'weak_neg';
+            if (Math.abs(dcorr) < est.thr) verdict = 'flat';
+            else verdict = dcorr > 0 ? 'weak_pos' : 'weak_neg';
         }
         res.verdict = verdict;
         res.pPos = pPos == null ? null : Math.round(pPos * 100);
