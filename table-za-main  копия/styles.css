@@ -8167,14 +8167,12 @@ html[data-theme="dark"] .cr-table tbody tr:hover td { background: #1f2a37; }
 /* «Запрос на понижение» */
 .lr-card { max-width: 1200px; }
 .lr-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.lr-group { margin: 14px 0 20px; }
-.lr-dir { margin: 0 0 6px; font-size: 15px; }
 .lr-table td, .lr-table th { vertical-align: top; }
 .lr-in { width: 100%; min-width: 90px; border: 1px solid transparent; background: transparent; padding: 4px 6px; border-radius: 6px; font: inherit; color: inherit; }
 .lr-in:hover, .lr-in:focus { border-color: #94a3b8; background: #fff; }
 .lr-in.lr-over { background: #fffbeb; border-color: #fcd34d; font-weight: 600; }
 .lr-first { position: relative; min-width: 130px; }
-.lr-code { font-size: 11px; color: #64748b; padding-left: 6px; }
+.lr-route { white-space: nowrap; font-weight: 600; }
 .lr-del { border: 0; background: transparent; color: #b91c1c; cursor: pointer; font-size: 13px; position: absolute; right: 2px; top: 2px; }
 .lr-ask { min-width: 230px; }
 .lr-ask-ctl { display: flex; gap: 6px; margin-bottom: 4px; }
@@ -8184,4 +8182,3 @@ html[data-theme="dark"] .cr-table tbody tr:hover td { background: #1f2a37; }
 .lr-add { border: 0; background: transparent; color: #2563eb; cursor: pointer; font-size: 12px; padding: 2px 0 6px 0; }
 .lr-del2 { border: 0; background: transparent; color: #b91c1c; cursor: pointer; }
 .lr-n { width: 36px; text-align: center; color: #64748b; font-weight: 600; }
-.lr-ok { min-width: 120px; }

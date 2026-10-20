@@ -5,7 +5,7 @@
 window.LowerRequest = (function () {
     const FILE = 'lower-requests.json';
     const WD = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
-    const COLS = [['n', '№'], ['date', 'Дата'], ['load', 'Загрузка'], ['dtd', 'Дней до вылета'], ['fare', 'Тариф сейчас'], ['exp', 'Ожидаемая (откл.)'], ['sim', 'Аналогичные дни (откл.)'], ['ask', 'Просим согласовать'], ['ok', 'Согласование']];
+    const COLS = [['n', '№'], ['route', 'Маршрут'], ['date', 'Дата'], ['load', 'Загрузка'], ['dtd', 'Дней до вылета'], ['fare', 'Тариф сейчас'], ['exp', 'Ожидаемая (откл.)'], ['sim', 'Аналогичные дни (откл.)'], ['ask', 'Просим согласовать']];
 
     let store = { version: 1, items: {} };
     let loaded = false;
@@ -186,17 +186,17 @@ window.LowerRequest = (function () {
         const o = row.it.over && row.it.over[col];
         if (o != null) return o;
         if (col === 'n') return row.n;
-        if (col === 'ok') return '';   // столбец для ответа: заполняется вручную в письме или в Excel
+        if (col === 'route') return row.dir;
         if (col === 'ask') return askText(row.it, row.auto);
         return row.auto[col];
     }
 
     // ---------- отображение ----------
 
-    function groupsOf(rows) {
-        const g = [];
-        rows.forEach(r => { let x = g.find(y => y.dir === r.dir); if (!x) { x = { dir: r.dir, rows: [] }; g.push(x); } x.rows.push(r); r.n = x.rows.length; });
-        return g;
+    // Одна таблица на все направления: нумерация сквозная.
+    function numbered(rows) {
+        rows.forEach((r, i) => { r.n = i + 1; });
+        return rows;
     }
 
     function rowHtml(r) {
@@ -207,12 +207,12 @@ window.LowerRequest = (function () {
         const askRows = (asks.length ? asks : [{ places: null, cls: '' }]).map((a, i) => `<span class="lr-ask-ctl"><input type="number" min="0" step="1" class="lr-num" data-lr-places="${esc(r.key)}" data-i="${i}" value="${a.places != null ? esc(a.places) : ''}" placeholder="мест"> <select class="lr-sel" data-lr-cls="${esc(r.key)}" data-i="${i}" title="Тариф (подкласс), о котором просим">${clsOpts(a.cls)}</select>${i > 0 ? ` <button type="button" class="lr-del2" data-lr-askdel="${esc(r.key)}" data-i="${i}" title="Убрать этот подкласс">✕</button>` : ''}</span>`).join('');
         return `<tr data-lr-row="${esc(r.key)}">
             <td class="lr-n">${r.n}</td>
+            <td class="lr-route">${esc(r.dir)}</td>
             <td class="lr-first"><button type="button" class="lr-del" data-lr-del="${esc(r.key)}" title="Убрать из запроса">✕</button>
-                <input class="lr-in${over.date != null ? ' lr-over' : ''}" data-lr-cell="date" data-lr-key="${esc(r.key)}" value="${esc(cellVal(r, 'date'))}"><div class="lr-code">${esc(r.it.code)}</div></td>
+                <input class="lr-in${over.date != null ? ' lr-over' : ''}" data-lr-cell="date" data-lr-key="${esc(r.key)}" value="${esc(cellVal(r, 'date'))}"></td>
             ${cell('load')}${cell('dtd')}${cell('fare')}${cell('exp')}${cell('sim')}
             <td class="lr-ask">${askRows}<button type="button" class="lr-add" data-lr-askadd="${esc(r.key)}" title="Просить места ещё по одному подклассу">＋ ещё подкласс</button>
                 <input class="lr-in${over.ask != null ? ' lr-over' : ''}" data-lr-cell="ask" data-lr-key="${esc(r.key)}" value="${esc(cellVal(r, 'ask'))}" placeholder="текст вручную"></td>
-            <td class="lr-ok"></td>
         </tr>`;
     }
 
@@ -221,7 +221,7 @@ window.LowerRequest = (function () {
         if (!canUse()) { host.innerHTML = '<p class="rp-note">Нет доступа к этой вкладке.</p>'; return; }
         if (!loaded) { host.innerHTML = '<p class="rp-note">Загружаю…</p>'; load().then(render); return; }
         const rows = rowsOf();
-        const groups = groupsOf(rows);
+        numbered(rows);
         const hidden = Object.values(store.items).filter(it => it && !it.deleted).length - rows.length;
         host.innerHTML = `
             <section class="rp-card lr-card">
@@ -234,9 +234,8 @@ window.LowerRequest = (function () {
                 <p class="rp-card-text">Рейсы сюда попадают из «Управления продажами»: отметьте галочкой слева от номера рейса. Цифры считаются сами,
                     места и тариф впишите сами; любую ячейку можно поправить (исправленные выделены, пустая ячейка возвращает расчёт).
                     ${hidden > 0 ? `<span class="rp-muted">Улетевших и сегодняшних вылетов в списке не показано: ${hidden}.</span>` : ''}</p>
-                ${groups.length ? groups.map(g => `<div class="lr-group"><h4 class="lr-dir">${esc(g.dir)}</h4>
-                    <div class="rp-scroll"><table class="rp-table lr-table"><thead><tr>${COLS.map(c => `<th>${esc(c[1])}</th>`).join('')}</tr></thead>
-                    <tbody>${g.rows.map(rowHtml).join('')}</tbody></table></div></div>`).join('') : '<p class="rp-note">Пока нет рейсов. Откройте «Управление продажами» и отметьте нужные вылеты галочкой у номера рейса.</p>'}
+                ${rows.length ? `<div class="rp-scroll"><table class="rp-table lr-table"><thead><tr>${COLS.map(c => `<th>${esc(c[1])}</th>`).join('')}</tr></thead>
+                    <tbody>${rows.map(rowHtml).join('')}</tbody></table></div>` : '<p class="rp-note">Пока нет рейсов. Откройте «Управление продажами» и отметьте нужные вылеты галочкой у номера рейса.</p>'}
             </section>`;
     }
 
@@ -297,15 +296,14 @@ window.LowerRequest = (function () {
         }
     }
 
-    // Текст и HTML для письма: заголовок направления и таблица, как в образце.
+    // Текст и HTML для письма: одна таблица, как в образце.
     function tablesFor(rows) {
-        const groups = groupsOf(rows);
-        const text = groups.map(g => `${g.dir}\n${COLS.map(c => c[1]).join('\t')}\n${g.rows.map(r => COLS.map(c => cellVal(r, c[0])).join('\t')).join('\n')}`).join('\n\n');
+        numbered(rows);
+        const text = `${COLS.map(c => c[1]).join('\t')}\n${rows.map(r => COLS.map(c => cellVal(r, c[0])).join('\t')).join('\n')}`;
         const css = 'border:1px solid #d0d5dd;border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px';
         const tdc = 'border:1px solid #d0d5dd;padding:6px 10px;vertical-align:top';
-        const html = groups.map(g => `<p style="font-family:Arial,sans-serif;font-weight:bold;margin:14px 0 6px">${esc(g.dir)}</p>
-            <table style="${css}"><thead><tr>${COLS.map(c => `<th style="${tdc};background:#f2f4f7;text-align:left">${esc(c[1])}</th>`).join('')}</tr></thead>
-            <tbody>${g.rows.map(r => `<tr>${COLS.map(c => `<td style="${tdc}">${esc(cellVal(r, c[0]))}</td>`).join('')}</tr>`).join('')}</tbody></table>`).join('');
+        const html = `<table style="${css}"><thead><tr>${COLS.map(c => `<th style="${tdc};background:#f2f4f7;text-align:left">${esc(c[1])}</th>`).join('')}</tr></thead>
+            <tbody>${rows.map(r => `<tr>${COLS.map(c => `<td style="${tdc}">${esc(cellVal(r, c[0]))}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
         return { text, html };
     }
 
@@ -326,15 +324,10 @@ window.LowerRequest = (function () {
 
     async function exportXlsx() {
         if (typeof loadPlainXlsx !== 'function' || !(await loadPlainXlsx())) { toast('Библиотека Excel не загружена', 'error'); return; }
-        const aoa = [];
-        groupsOf(rowsOf()).forEach(g => {
-            aoa.push([g.dir]);
-            aoa.push(COLS.map(c => c[1]));
-            g.rows.forEach(r => aoa.push(COLS.map(c => cellVal(r, c[0]))));
-            aoa.push([]);
-        });
+        const aoa = [COLS.map(c => c[1])];
+        numbered(rowsOf()).forEach(r => aoa.push(COLS.map(c => cellVal(r, c[0]))));
         const ws = XLSX.utils.aoa_to_sheet(aoa);
-        ws['!cols'] = [{ wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 20 }, { wch: 24 }, { wch: 28 }, { wch: 22 }];
+        ws['!cols'] = [{ wch: 5 }, { wch: 22 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 20 }, { wch: 24 }, { wch: 40 }];
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Запрос на понижение');
         const d = new Date();
