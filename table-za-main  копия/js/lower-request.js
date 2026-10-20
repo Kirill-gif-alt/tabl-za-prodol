@@ -5,7 +5,7 @@
 window.LowerRequest = (function () {
     const FILE = 'lower-requests.json';
     const WD = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
-    const COLS = [['n', '№'], ['route', 'Маршрут'], ['date', 'Дата'], ['load', 'Загрузка'], ['dtd', 'Дней до вылета'], ['fare', 'Тариф сейчас'], ['exp', 'Ожидаемая (откл.)'], ['sim', 'Аналогичные дни (откл.)'], ['ask', 'Просим согласовать']];
+    const COLS = [['n', '№'], ['date', 'Дата'], ['load', 'Загрузка'], ['dtd', 'Дней до вылета'], ['fare', 'Тариф сейчас'], ['avg', 'Средний тариф'], ['exp', 'Ожидаемая (откл.)'], ['sim', 'Аналогичные дни (откл.)'], ['ask', 'Просим согласовать']];
 
     let store = { version: 1, items: {} };
     let loaded = false;
@@ -136,6 +136,13 @@ window.LowerRequest = (function () {
         }
         const d = typeof parseLocalDate === 'function' ? parseLocalDate(date) : null;
         const ds = d ? `${date.slice(0, 6)}${date.slice(8)} ${WD[d.getDay()]}` : date;
+        let avg = null;
+        try {
+            const base = typeof getBaseFlight === 'function' ? getBaseFlight(code) : code;
+            const row = typeof getFlightRowForDate === 'function' ? getFlightRowForDate(base, date, code) : null;
+            const m = row && typeof getRowMetrics === 'function' ? getRowMetrics(row, base) : null;
+            if (m && m.avg && (typeof hasSalesFileLoaded !== 'function' || hasSalesFileLoaded())) avg = m.avg;
+        } catch (e) { avg = null; }
         const sold = n ? n.sold : null;
         const seats = n ? n.seats : null;
         return {
@@ -144,6 +151,7 @@ window.LowerRequest = (function () {
             dtd: n && n.dtd != null ? String(n.dtd) : '—',
             fare: price != null ? fmtN(price) : '—',
             fareCls: cls,
+            avg: avg != null ? fmtN(avg) : '—',
             exp: n && n.exp != null ? `${n.exp} (${sgn(sold - n.exp)})` : '—',
             sim: n && n.ref != null ? `${n.ref} (${sgn(sold - n.ref)})` : '—',
             ladder, dtdNum: n ? n.dtd : null
@@ -186,7 +194,6 @@ window.LowerRequest = (function () {
         const o = row.it.over && row.it.over[col];
         if (o != null) return o;
         if (col === 'n') return row.n;
-        if (col === 'route') return row.dir;
         if (col === 'ask') return askText(row.it, row.auto);
         return row.auto[col];
     }
@@ -199,6 +206,13 @@ window.LowerRequest = (function () {
         return rows;
     }
 
+    // Маршруты идут подряд (строки уже отсортированы): каждому — своя плашка над строками.
+    function groupsOf(rows) {
+        const g = [];
+        rows.forEach(r => { const last = g[g.length - 1]; if (last && last.dir === r.dir) last.rows.push(r); else g.push({ dir: r.dir, rows: [r] }); });
+        return g;
+    }
+
     function rowHtml(r) {
         const over = r.it.over || {};
         const cell = (col) => `<td><input class="lr-in${over[col] != null ? ' lr-over' : ''}" data-lr-cell="${col}" data-lr-key="${esc(r.key)}" value="${esc(cellVal(r, col))}"></td>`;
@@ -207,10 +221,9 @@ window.LowerRequest = (function () {
         const askRows = (asks.length ? asks : [{ places: null, cls: '' }]).map((a, i) => `<span class="lr-ask-ctl"><input type="number" min="0" step="1" class="lr-num" data-lr-places="${esc(r.key)}" data-i="${i}" value="${a.places != null ? esc(a.places) : ''}" placeholder="мест"> <select class="lr-sel" data-lr-cls="${esc(r.key)}" data-i="${i}" title="Тариф (подкласс), о котором просим">${clsOpts(a.cls)}</select>${i > 0 ? ` <button type="button" class="lr-del2" data-lr-askdel="${esc(r.key)}" data-i="${i}" title="Убрать этот подкласс">✕</button>` : ''}</span>`).join('');
         return `<tr data-lr-row="${esc(r.key)}">
             <td class="lr-n">${r.n}</td>
-            <td class="lr-route">${esc(r.dir)}</td>
             <td class="lr-first"><button type="button" class="lr-del" data-lr-del="${esc(r.key)}" title="Убрать из запроса">✕</button>
                 <input class="lr-in${over.date != null ? ' lr-over' : ''}" data-lr-cell="date" data-lr-key="${esc(r.key)}" value="${esc(cellVal(r, 'date'))}"></td>
-            ${cell('load')}${cell('dtd')}${cell('fare')}${cell('exp')}${cell('sim')}
+            ${cell('load')}${cell('dtd')}${cell('fare')}${cell('avg')}${cell('exp')}${cell('sim')}
             <td class="lr-ask">${askRows}<button type="button" class="lr-add" data-lr-askadd="${esc(r.key)}" title="Просить места ещё по одному подклассу">＋ ещё подкласс</button>
                 <input class="lr-in${over.ask != null ? ' lr-over' : ''}" data-lr-cell="ask" data-lr-key="${esc(r.key)}" value="${esc(cellVal(r, 'ask'))}" placeholder="текст вручную"></td>
         </tr>`;
@@ -235,7 +248,7 @@ window.LowerRequest = (function () {
                     места и тариф впишите сами; любую ячейку можно поправить (исправленные выделены, пустая ячейка возвращает расчёт).
                     ${hidden > 0 ? `<span class="rp-muted">Улетевших и сегодняшних вылетов в списке не показано: ${hidden}.</span>` : ''}</p>
                 ${rows.length ? `<div class="rp-scroll"><table class="rp-table lr-table"><thead><tr>${COLS.map(c => `<th>${esc(c[1])}</th>`).join('')}</tr></thead>
-                    <tbody>${rows.map(rowHtml).join('')}</tbody></table></div>` : '<p class="rp-note">Пока нет рейсов. Откройте «Управление продажами» и отметьте нужные вылеты галочкой у номера рейса.</p>'}
+                    <tbody>${groupsOf(rows).map(g => `<tr class="lr-grp-head"><td colspan="${COLS.length}">${esc(g.dir)} <span class="lr-grp-n">· вылетов: ${g.rows.length}</span></td></tr>${g.rows.map(rowHtml).join('')}`).join('')}</tbody></table></div>` : '<p class="rp-note">Пока нет рейсов. Откройте «Управление продажами» и отметьте нужные вылеты галочкой у номера рейса.</p>'}
             </section>`;
     }
 
@@ -296,14 +309,16 @@ window.LowerRequest = (function () {
         }
     }
 
-    // Текст и HTML для письма: одна таблица, как в образце.
+    // Текст и HTML для письма: одна таблица, маршрут — плашкой над своими строками.
     function tablesFor(rows) {
         numbered(rows);
-        const text = `${COLS.map(c => c[1]).join('\t')}\n${rows.map(r => COLS.map(c => cellVal(r, c[0])).join('\t')).join('\n')}`;
+        const groups = groupsOf(rows);
+        const text = `${COLS.map(c => c[1]).join('\t')}\n${groups.map(g => `${g.dir}\n${g.rows.map(r => COLS.map(c => cellVal(r, c[0])).join('\t')).join('\n')}`).join('\n')}`;
         const css = 'border:1px solid #d0d5dd;border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px';
         const tdc = 'border:1px solid #d0d5dd;padding:6px 10px;vertical-align:top';
+        const band = `${tdc};background:#1e3a5f;color:#ffffff;font-weight:bold;border-top:3px solid #0f172a`;
         const html = `<table style="${css}"><thead><tr>${COLS.map(c => `<th style="${tdc};background:#f2f4f7;text-align:left">${esc(c[1])}</th>`).join('')}</tr></thead>
-            <tbody>${rows.map(r => `<tr>${COLS.map(c => `<td style="${tdc}">${esc(cellVal(r, c[0]))}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+            <tbody>${groups.map(g => `<tr><td colspan="${COLS.length}" style="${band}">${esc(g.dir)}</td></tr>${g.rows.map(r => `<tr>${COLS.map(c => `<td style="${tdc}">${esc(cellVal(r, c[0]))}</td>`).join('')}</tr>`).join('')}`).join('')}</tbody></table>`;
         return { text, html };
     }
 
@@ -325,9 +340,12 @@ window.LowerRequest = (function () {
     async function exportXlsx() {
         if (typeof loadPlainXlsx !== 'function' || !(await loadPlainXlsx())) { toast('Библиотека Excel не загружена', 'error'); return; }
         const aoa = [COLS.map(c => c[1])];
-        numbered(rowsOf()).forEach(r => aoa.push(COLS.map(c => cellVal(r, c[0]))));
+        groupsOf(numbered(rowsOf())).forEach(g => {
+            aoa.push([g.dir]);
+            g.rows.forEach(r => aoa.push(COLS.map(c => cellVal(r, c[0]))));
+        });
         const ws = XLSX.utils.aoa_to_sheet(aoa);
-        ws['!cols'] = [{ wch: 5 }, { wch: 22 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 20 }, { wch: 24 }, { wch: 40 }];
+        ws['!cols'] = [{ wch: 5 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 20 }, { wch: 24 }, { wch: 40 }];
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Запрос на понижение');
         const d = new Date();

@@ -8174,7 +8174,9 @@ html[data-theme="dark"] .cr-table tbody tr:hover td { background: #1f2a37; }
 .lr-in:hover, .lr-in:focus { border-color: #94a3b8; background: #fff; }
 .lr-in.lr-over { background: #fffbeb; border-color: #fcd34d; font-weight: 600; }
 .lr-first { position: relative; min-width: 130px; }
-.lr-route { white-space: nowrap; font-weight: 600; }
+.lr-table tbody tr.lr-grp-head td { background: #1e3a5f !important; color: #fff !important; font-weight: 700; font-size: 14px; padding: 7px 12px; border-top: 4px solid #0f172a; }
+.lr-table tbody tr.lr-grp-head:first-child td { border-top: 0; }
+.lr-grp-n { font-weight: 400; opacity: .8; font-size: 12px; }
 .lr-del { border: 0; background: transparent; color: #b91c1c; cursor: pointer; font-size: 13px; position: absolute; right: 2px; top: 2px; }
 .lr-ask { min-width: 300px; }
 .lr-ask-ctl { display: flex; gap: 6px; margin-bottom: 4px; }
