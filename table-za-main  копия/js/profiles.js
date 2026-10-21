@@ -1236,6 +1236,10 @@ window.ProfileAuth = (function () {
         if (typeof ThemeSettings !== 'undefined') ThemeSettings.init();
         document.getElementById('profile-admin-btn')?.addEventListener('click', openAdminPanel);
         document.getElementById('profile-admin-close')?.addEventListener('click', closeAdminPanel);
+        if (typeof enhanceModalA11y === 'function') {
+            const m = document.getElementById('profile-admin-modal');
+            enhanceModalA11y(m, m?.querySelector('.profile-admin-panel'), 'open', closeAdminPanel);
+        }
         document.getElementById('profile-admin-save')?.addEventListener('click', saveAdminPanel);
         document.getElementById('profile-link-folder-btn')?.addEventListener('click', () => handleLinkFolder(true));
         document.getElementById('profile-history-btn')?.addEventListener('click', () => {

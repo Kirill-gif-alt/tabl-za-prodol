@@ -171,12 +171,12 @@ window.DataBoardFilters = (function () {
         modal.className = 'rms-modal';
         modal.innerHTML = `
             <div class="rms-modal-backdrop" data-data-hl-close></div>
-            <div class="rms-modal-panel data-hl-panel" role="dialog" aria-labelledby="data-hl-title">
+            <div class="rms-modal-panel data-hl-panel" role="dialog" aria-modal="true" aria-labelledby="data-hl-title">
                 <div class="rms-modal-header">
                     <div>
                         <h3 id="data-hl-title">Подсветка</h3>
                     </div>
-                    <button type="button" class="rms-modal-close" data-data-hl-close>✕</button>
+                    <button type="button" class="rms-modal-close" data-data-hl-close aria-label="Закрыть">✕</button>
                 </div>
                 <div id="data-hl-modal-body" class="rms-modal-body"></div>
                 <div class="rms-modal-footer">
@@ -187,6 +187,7 @@ window.DataBoardFilters = (function () {
             </div>
         `;
         document.body.appendChild(modal);
+        if (typeof enhanceModalA11y === 'function') enhanceModalA11y(modal, modal.querySelector('.rms-modal-panel'), 'rms-modal-open');
         modal.addEventListener('click', (e) => {
             if (e.target.closest('[data-data-hl-close]')) closeModal();
             if (e.target.closest('[data-data-hl-add]')) addRule();

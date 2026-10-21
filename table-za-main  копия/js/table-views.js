@@ -335,7 +335,7 @@ function actuallyRenderTable(base,targetDate=null){
         const salesReady = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(typeof dataLoadStatus !== 'undefined' && dataLoadStatus.sales);
         const sc = (v) => (showSales && salesReady) ? formatNum(v || 0) : '—';
 
-        return `<tr class="${cls}${showRoute ? ' segment-row' : ''}${checkFlag ? ' fc-row-problem' : ''}" data-date="${escAttr(date)}" data-flight-base="${escAttr(base)}" data-flight-code="${escAttr(orig)}" data-route="${showRoute ? escAttr(route) : ''}" style="cursor: pointer;">
+        return `<tr class="${cls}${showRoute ? ' segment-row' : ''}${checkFlag ? ' fc-row-problem' : ''}" data-date="${escAttr(date)}" data-flight-base="${escAttr(base)}" data-flight-code="${escAttr(orig)}" data-route="${showRoute ? escAttr(route) : ''}" tabindex="0" style="cursor: pointer;">
             <td class="col-date">${dateCell}</td><td class="font-medium">${escHtml(getDayOfWeek(date))}</td>${hasSegments ? `<td>${segmentCell}</td>` : ''}<td class="font-semibold">${escHtml(ac)}</td>
             <td class="font-semibold">${formatNum(seatsOnSale)}</td>
             ${showBook ? `<td class="font-semibold col-spec-book">${formatNum(avs)}</td>` : ''}
@@ -614,7 +614,7 @@ function actuallyRenderPairTable(selectedBase, targetDate = null) {
 
         const rowFlightCode = outM.flightBase || inM.flightBase || '';
         const rowFlightBase = rowFlightCode ? getBaseFlight(rowFlightCode) : selectedBase;
-        return `<tr class="${rowCls}${showRoute ? ' segment-row' : ''}${typeof FlightChecks !== 'undefined' ? FlightChecks.rowClass([outRow, inRow]) : ''}" data-date="${escAttr(date)}" data-flight-base="${escAttr(rowFlightBase)}" data-flight-code="${escAttr(rowFlightCode)}" style="cursor: pointer;">
+        return `<tr class="${rowCls}${showRoute ? ' segment-row' : ''}${typeof FlightChecks !== 'undefined' ? FlightChecks.rowClass([outRow, inRow]) : ''}" data-date="${escAttr(date)}" data-flight-base="${escAttr(rowFlightBase)}" data-flight-code="${escAttr(rowFlightCode)}" tabindex="0" style="cursor: pointer;">
             <td class="col-date font-semibold">${dateCell}</td>
             <td class="font-medium">${escHtml(formatPairDayOfWeek(outRow, inRow, date))}</td>
             ${hasSegments ? `<td>${segmentCell}</td>` : ''}
@@ -694,6 +694,15 @@ function bindTableRowDelegation(cont) {
         const row = e.target.closest('tr[data-date][data-flight-base]');
         if (row) openDetail(row.dataset.flightBase, row.dataset.date, row.dataset.flightCode);
     });
+
+    // С клавиатуры: Enter или Пробел на строке — как двойной клик
+    cont.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        const row = e.target;
+        if (!row || row.tagName !== 'TR' || !row.dataset.date || !row.dataset.flightBase) return;
+        e.preventDefault();
+        openDetail(row.dataset.flightBase, row.dataset.date, row.dataset.flightCode);
+    });
 }
 
 function createPairTableView(c) {
@@ -727,6 +736,7 @@ function createPairTableView(c) {
     } else {
         const bases = getValidFlightBases();
         if (bases.length) actuallyRenderPairTable(bases[0]);
+        else renderTableEmptyState(document.getElementById('pair-table-container'), 'Нет данных', 'Загрузите файл кнопкой «Загрузить» или «Последние» вверху', '📂');
     }
 }
 
@@ -761,6 +771,7 @@ function createTableView(c){
     } else {
         const bases = getValidFlightBases();
         if (bases.length) actuallyRenderTable(bases[0]);
+        else renderTableEmptyState(document.getElementById('table-container'), 'Нет данных', 'Загрузите файл кнопкой «Загрузить» или «Последние» вверху', '📂');
     }
 }
 
@@ -795,6 +806,7 @@ function createPkzView(c) {
     } else {
         const bases = getValidFlightBases();
         if (bases.length) actuallyRenderPkzTable(bases[0]);
+        else renderTableEmptyState(document.getElementById('pkz-table-container'), 'Нет данных', 'Загрузите файл кнопкой «Загрузить» или «Последние» вверху', '📂');
     }
 }
 
@@ -1068,7 +1080,7 @@ function actuallyRenderPkzTable(base, targetDate = null) {
             ? `${escHtml(date)} <span class="font-semibold">${escHtml(orig)}</span> <span class="extra-badge ml-1">(ДОП)</span>`
             : escHtml(date);
 
-        return `<tr class="${cls}${showRoute ? ' segment-row' : ''}" data-date="${escAttr(date)}" data-flight-base="${escAttr(base)}" data-flight-code="${escAttr(orig)}" style="cursor:pointer;">
+        return `<tr class="${cls}${showRoute ? ' segment-row' : ''}" data-date="${escAttr(date)}" data-flight-base="${escAttr(base)}" data-flight-code="${escAttr(orig)}" tabindex="0" style="cursor:pointer;">
             <td class="col-date">${dateCell}</td>
             <td class="font-medium">${escHtml(getDayOfWeek(date))}</td>
             ${hasSegments ? `<td>${segmentCell}</td>` : ''}

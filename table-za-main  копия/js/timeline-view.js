@@ -946,6 +946,7 @@ function renderTimeline() {
             <div class="timeline-empty">
                 <div class="timeline-empty-icon">📅</div>
                 <div class="timeline-empty-title">Графический план полетов</div>
+                <div class="table-empty-hint">Нет данных. Нажмите «Загрузить» или «Последние» вверху.</div>
             </div>
         `;
         updateTimelineCollapseBtn();

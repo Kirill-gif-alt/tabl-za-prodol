@@ -1260,7 +1260,7 @@ function addExportButtonToTable(container, kind) {
 
     const btn = document.createElement('button');
     btn.className = 'export-excel-btn';
-    btn.innerHTML = `📥 В Excel`;
+    btn.textContent = 'В Excel';
 
     btn.onclick = () => {
         const handle = container._tvHandle;

@@ -60,7 +60,7 @@ function createRmsView(c) {
                         </div>
                         <div class="table-controls-spacer"></div>
                         <button type="button" onclick="exportRmsToExcel()" class="filter-btn rms-export-btn">
-                            📥 Экспорт
+                            В Excel
                         </button>
                     </div>
                 </div>

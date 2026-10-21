@@ -2394,8 +2394,8 @@ table.pair-table button {
 }
 
 .extra-badge {
-    color: #7c3aed;
-    background: #f5f3ff;
+    color: #475569;
+    background: var(--hover-bg, #f1f5f9);
     padding: 2px 8px;
     border-radius: 9999px;
     font-size: 11px;
@@ -4592,7 +4592,7 @@ table.pair-table button {
 .stats-action-login { background: #dcfce7; color: #166534; }
 .stats-action-logout { background: #fee2e2; color: #991b1b; }
 .stats-action-flight { background: #dbeafe; color: #1e40af; }
-.stats-action-tab { background: #f3e8ff; color: #6b21a8; }
+.stats-action-tab { background: #e2e8f0; color: #334155; }
 .stats-action-data_load,
 .stats-action-data_restore,
 .stats-action-data_share { background: #ffedd5; color: #9a3412; }
@@ -7346,7 +7346,7 @@ html[data-theme="dark"] .rms-row-warn:hover { background: #3a3016 !important; }
 }
 .fc-ins-up { background: rgba(4, 120, 87, 0.12); color: #047857; }
 .fc-ins-down { background: rgba(185, 28, 28, 0.1); color: #b91c1c; }
-.fc-ins-group { background: rgba(109, 40, 217, 0.1); color: #6d28d9; }
+.fc-ins-group { background: rgba(29, 78, 216, 0.1); color: #1d4ed8; }
 .fc-ins-body { padding: 0 10px 10px; display: flex; flex-direction: column; gap: 8px; }
 .fc-it-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; }
 .fc-it {
@@ -7371,15 +7371,15 @@ html[data-theme="dark"] .rms-row-warn:hover { background: #3a3016 !important; }
 .fc-advice-down { background: rgba(185, 28, 28, 0.08); color: #b91c1c; }
 .fc-advice-hold { background: var(--muted-bg, #f1f5f9); color: var(--text); font-weight: 500; }
 .fc-advice + .fc-advice { margin-top: 6px; }
-.fc-groups { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 6px 9px; border-radius: 8px; background: rgba(109, 40, 217, 0.07); }
-.fc-groups-title { font-weight: 700; color: #6d28d9; }
-.fc-grp-item { padding: 0 7px; border-radius: 999px; background: var(--surface); border: 1px solid rgba(109, 40, 217, 0.25); font-size: 0.72rem; }
+.fc-groups { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 6px 9px; border-radius: 8px; background: rgba(29, 78, 216, 0.07); }
+.fc-groups-title { font-weight: 700; color: #1d4ed8; }
+.fc-grp-item { padding: 0 7px; border-radius: 999px; background: var(--surface); border: 1px solid rgba(29, 78, 216, 0.25); font-size: 0.72rem; }
 .fc-groups .fc-it-note { width: 100%; }
 html[data-theme="dark"] .fc-ins-up, html[data-theme="dark"] .fc-advice-up,
 html[data-theme="dark"] .fc-it-up .fc-it-value { color: #34d399; }
 html[data-theme="dark"] .fc-ins-down, html[data-theme="dark"] .fc-advice-down,
 html[data-theme="dark"] .fc-it-down .fc-it-value { color: #f87171; }
-html[data-theme="dark"] .fc-ins-group, html[data-theme="dark"] .fc-groups-title { color: #a78bfa; }
+html[data-theme="dark"] .fc-ins-group, html[data-theme="dark"] .fc-groups-title { color: #93c5fd; }
 .fc-cal { color: #b45309; font-weight: 600; }
 
 .grp-badge {
@@ -7387,8 +7387,8 @@ html[data-theme="dark"] .fc-ins-group, html[data-theme="dark"] .fc-groups-title 
     margin-left: 6px;
     padding: 0 6px;
     border-radius: 999px;
-    background: #ede9fe;
-    color: #6d28d9;
+    background: #dbeafe;
+    color: #1d4ed8;
     font-size: 0.7rem;
     font-weight: 700;
     line-height: 1.5;
@@ -7479,7 +7479,7 @@ html[data-theme="dark"] .fc-ins-group, html[data-theme="dark"] .fc-groups-title 
 .dr-pos { color: #047857; font-weight: 700; }
 .dr-neg { color: #b91c1c; font-weight: 700; }
 
-html[data-theme="dark"] .grp-badge { background: #2e1065; color: #ddd6fe; }
+html[data-theme="dark"] .grp-badge { background: #172554; color: #93c5fd; }
 html[data-theme="dark"] .cal-type { background: #3a2c0a; color: #fde68a; }
 html[data-theme="dark"] .cal-type-holiday { background: #3b1219; color: #fda4af; }
 html[data-theme="dark"] .cal-type-school { background: #172554; color: #93c5fd; }
@@ -7870,7 +7870,7 @@ html[data-theme="dark"] .fs-lf-lo { color: #f87171; }
 .fl-infl { display: grid; grid-template-columns: minmax(150px, 1fr) 2fr 44px; gap: 8px; align-items: center; padding: 4px 0; font-size: 0.8rem; }
 .fl-infl-label { color: var(--text); }
 .fl-infl-bar { height: 8px; border-radius: 4px; background: var(--muted-bg, #eef2f7); overflow: hidden; }
-.fl-infl-bar span { display: block; height: 100%; background: #6d28d9; border-radius: 4px; }
+.fl-infl-bar span { display: block; height: 100%; background: #1d4ed8; border-radius: 4px; }
 .fl-infl-val { text-align: right; font-weight: 700; color: var(--text-muted); }
 
 /* Карточка: загрузка — в пассажирах крупно, процент — подписью */
@@ -8131,6 +8131,57 @@ html[data-theme="dark"] .filter-btn { color: var(--text-muted); }
 #profile-settings-reset[hidden] { display: none; }
 html[data-theme="dark"] .cr-table td { background: var(--surface); border-color: #30363d; }
 html[data-theme="dark"] .cr-table tbody tr:hover td { background: #1f2a37; }
+
+/* ---------- Дизайн и доступность: правки по отчёту веб-дизайнера ---------- */
+/* «Загрузка рейсов», тёмная тема: при наведении фон светлый — текст тёмный */
+html[data-theme="dark"] .data-board-table tbody tr:hover:not(.flew-flight):not(.closed-flight) td { color: #0f172a !important; }
+/* «Загрузка рейсов»: подписи и кнопки в синей шапке читаются */
+.data-hero-toolbar .data-hide-flew-label { color: rgba(255, 255, 255, 0.88); }
+.data-hero-toolbar .filter-btn.data-ctrl-sm { color: #fff; border-color: rgba(255, 255, 255, 0.5); }
+.data-hero-toolbar .filter-btn.data-ctrl-sm:hover { background: rgba(255, 255, 255, 0.16); color: #fff; border-color: #fff; }
+.data-hero-toolbar-top-right { gap: 6px 12px; }
+.data-hero-toolbar .data-hide-flew-label.data-ctrl-sm { max-width: none; }
+.data-hero-toolbar .data-board-stats { color: rgba(255, 255, 255, 0.78); }
+/* RMS: «ПРИЧИНА» в шапке и мелкая подпись под загрузкой */
+.rms-table th.rms-col-reason { color: #fff; }
+.rms-load-sub { color: #475569; font-size: 0.72rem; }
+html[data-theme="dark"] .rms-load-sub, html[data-theme="dark"] .extra-badge { color: #b1bac4; }
+/* Светлая тема: зелёный на белом и белый на зелёном — тёмно-зелёный */
+html:not([data-theme="dark"]) #rp-page .btn-primary.rp-btn { background: #047857; border-color: #047857; }
+html:not([data-theme="dark"]) #rp-page .btn-primary.rp-btn:hover { background: #065f46; }
+html:not([data-theme="dark"]) .td-link, html:not([data-theme="dark"]) .td-go, html:not([data-theme="dark"]) .dr-help summary { color: #047857; }
+/* Кнопки-действия (Excel, меню, обновить): рамка, фон поверхности, наведение */
+#cr-menu-btn, #cr-export, #cr-filters-btn:not(.filter-btn-active), #sm-export, #sm-reload,
+.rms-export-btn, [data-lr-xlsx], [data-ref-xl-export], [data-ref-xl-import] {
+    background: var(--surface); border-color: var(--border); color: var(--text);
+}
+#cr-menu-btn:hover, #cr-export:hover, #cr-filters-btn:not(.filter-btn-active):hover, #sm-export:hover, #sm-reload:hover,
+.rms-export-btn:hover, [data-lr-xlsx]:hover, [data-ref-xl-export]:hover, [data-ref-xl-import]:hover {
+    background: var(--hover-bg, #eef2f7); border-color: var(--accent); color: var(--text);
+}
+.filter-btn.rp-open:hover, .filter-btn.rp-open:focus-visible { border-color: var(--accent); }
+/* Тёмная тема: только цвет текста там, где был жёстко задан тёмный */
+html[data-theme="dark"] .stats-total-badge,
+html[data-theme="dark"] .stats-user-chip:not(.active),
+html[data-theme="dark"] .timeline-count,
+html[data-theme="dark"] .flew-text { color: #b1bac4; }
+html[data-theme="dark"] .timeline-date-head-today .timeline-count { color: #92400e; }
+html[data-theme="dark"] .cr-table td.cr-neg { color: #fca5a5; }
+html[data-theme="dark"] .cr-table td.cr-pos { color: #6ee7b7; }
+html[data-theme="dark"] .delta-yellow { color: #854d0e; }
+html[data-theme="dark"] .rp-rule-child50_subsidy { color: #fca5a5; }
+html[data-theme="dark"] .export-excel-btn { color: #34d399; }
+html[data-theme="dark"] .rc-more { color: #fbbf24; }
+/* «Отчёты» на узком экране: подвкладки переносятся, а не режутся */
+@media (max-width: 1000px) {
+    #rp-page .rp-subtabs { flex-wrap: wrap; overflow-x: visible; }
+}
+/* «Управление продажами»: цветные плашки — подпись-легенда, не кнопки */
+.sm-legend { align-items: center; }
+.sm-legend::before { content: "Обозначения:"; font-size: 0.72rem; color: var(--text-muted); margin-right: 2px; }
+.sm-legend-item { border-radius: 4px; font-weight: 500; cursor: default; }
+/* Строки таблиц с клавиатуры: видимая рамка фокуса */
+.data-table tbody tr:focus-visible, .pair-table tbody tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* Настройки → Параметры расчётов (администратор) */
 .theme-params-bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
