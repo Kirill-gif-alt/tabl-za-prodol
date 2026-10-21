@@ -301,7 +301,7 @@ window.PriceAdvisor = (function () {
             const pNow = curFull && !overCap ? curFull.price : prices[0];
             let base0 = 0;
             const betaNow = betaFor();
-            for (let t = 1; t <= dtd; t++) base0 += info.a[t] * Math.exp(betaNow * (pNow / info.pRef - 1));
+            for (let t = 0; t <= dtd; t++) base0 += info.a[t] * Math.exp(betaNow * (pNow / info.pRef - 1));
             // Прогноз не больше кресел: если он упёрся в кресла — спрос не меньше, берём верх интервала.
             const want = Math.max(0, (fc.final >= C && fc.hiRaw != null ? Math.max(fc.final, fc.hiRaw) : fc.final) - sold);
             if (base0 > 0.2) scale = Math.max(0.25, Math.min(4, want / base0));

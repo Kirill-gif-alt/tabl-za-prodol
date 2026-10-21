@@ -20,17 +20,22 @@ function getDataBoardLegColCount() {
     return n;
 }
 
+// ЗПК пары по местам: (загрузка туда + обратно) / (места туда + обратно); нога без продаж даёт 0, закрытая не считается.
+function getEntryPairZpk(entry) {
+    let sold = 0, seats = 0;
+    [entry.outRow, entry.inRow].forEach(row => {
+        if (!row || isDataLegClosed(row)) return;
+        const m = getDataLegMetrics(row);
+        if (m.zpk === null || !(m.seats > 0)) return;
+        sold += m.load || 0;
+        seats += m.seats;
+    });
+    return seats > 0 ? Math.round(sold / seats * 100) : null;
+}
+
 function getEntryAvgZpk(entry) {
-    const pcts = [];
-    if (entry.outRow && !isDataLegClosed(entry.outRow)) {
-        const z = getDataLegMetrics(entry.outRow).zpk;
-        if (z !== null) pcts.push(z);
-    }
-    if (entry.inRow && !isDataLegClosed(entry.inRow)) {
-        const z = getDataLegMetrics(entry.inRow).zpk;
-        if (z !== null) pcts.push(z);
-    }
-    return pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : -1;
+    const z = getEntryPairZpk(entry);
+    return z === null ? -1 : z;
 }
 
 function getDataPairEntries(pair, todayStart) {
@@ -145,7 +150,7 @@ function getDataLegMetrics(row) {
     const seats = typeof getSeatsOnSale === 'function' ? getSeatsOnSale(row) : Math.max(0, (parseInt(row[5] || 0, 10) || 0) - avs);
     const denom = seats;
     let zpk = null;
-    if (sold >= 1 && denom > 0) {
+    if (denom > 0) {   // нога без продаж — 0%, как на других вкладках
         zpk = Math.round(sold / denom * 100);
     }
     return { seats, load: sold, zpk, bookings: avs };
@@ -243,12 +248,7 @@ function renderDataRouteTableRows(pair, todayStart) {
         if (bothClosed) rowCls = 'data-row-clickable closed-flight data-row-both-closed';
         else if (bothFlew) rowCls = 'data-row-clickable flew-flight';
 
-        const openPcts = [];
-        if (entry.outRow && !closedOut && outM.zpk !== null) openPcts.push(outM.zpk);
-        if (entry.inRow && !closedIn && inM.zpk !== null) openPcts.push(inM.zpk);
-        const avgPctOpen = openPcts.length
-            ? Math.round(openPcts.reduce((a, b) => a + b, 0) / openPcts.length)
-            : null;
+        const avgPctOpen = getEntryPairZpk(entry);
 
         const yellowOut = !flewOut && !closedOut && outM.zpk !== null && outM.zpk >= 100;
         const yellowIn = !flewIn && !closedIn && inM.zpk !== null && inM.zpk >= 100;

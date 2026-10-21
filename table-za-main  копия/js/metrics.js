@@ -162,7 +162,7 @@ function getAllUpcomingFlights(daysAhead = 30) {
     const results = [];
     Object.values(cache.byKey).forEach(m => {
         if (m.closed || m.flew) return;
-        if (m.dtd === null || m.dtd < 0 || m.dtd > daysAhead) return;
+        if (m.dtd === null || m.dtd < 0 || m.dtd >= daysAhead) return;   // окно: сегодня и ещё N−1 дней, как «7 дней» на «Сегодня»
         results.push(m);
     });
     const sorted = results.sort((a, b) => {
@@ -185,7 +185,14 @@ function getGlobalKPIs() {
     const upcoming = getAllUpcomingFlights(30);
     const alerts = upcoming.filter(f => f.alertLevel >= 2);
     const avgFare = todaySales > 0 ? Math.round(todayRevenue / todaySales) : 0;
-    globalKpiCache = { todaySales, todayRevenue, avgFare, alertCount: alerts.length, openFlights: upcoming.length };
+    // Продажи сегодня по вылетам, которых нет в файле загрузки (чартеры, доп. номера): в сумме по рейсам их не видно.
+    let todayOutside = 0;
+    try {
+        const have = new Set();
+        (allData || []).forEach(r => { if (r && r[0] && r[1]) have.add(getSalesLookupKey(r)); });
+        Object.keys(salesMap || {}).forEach(sk => { const b = salesMap[sk]; if (b && b.today && !have.has(sk)) todayOutside += b.today; });
+    } catch (e) { todayOutside = 0; }
+    globalKpiCache = { todaySales, todayRevenue, avgFare, todayOutside, alertCount: alerts.length, openFlights: upcoming.length };
     globalKpiCacheKey = key;
     return globalKpiCache;
 }

@@ -215,7 +215,7 @@ window.SalesArchive = (function () {
             const dtd = Math.round((fly.getTime() - deal.getTime()) / 86400000);
             if (dtd < 0 || dtd > MAX_DTD) return;
             c[dtd] = (c[dtd] || 0) + 1;
-            rev += x.adjustedFare || x.fare || 0;
+            rev += x.fare || 0;
         });
         for (let i = 0; i < c.length; i++) if (!c[i]) c[i] = 0;
         if (!c.length) return null;

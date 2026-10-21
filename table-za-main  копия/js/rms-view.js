@@ -215,7 +215,7 @@ function renderRmsWatchlist() {
                     ${hasExpected ? '<th class="rms-col-forecast" title="Ожидаемая загрузка.xlsx">Ожидаемая</th><th class="rms-col-delta">Δ к ожидаемой</th>' : ''}
                     <th class="rms-col-pickup" title="Билеты сегодня+вчера из файла 14д">Продано за 1–2 дн.</th>
                     <th class="rms-col-today" title="Билеты с DEALDATE=сегодня из файла 14д">Сегодня (файл 14д)</th>
-                    <th class="rms-col-fare" title="Среднее по билетам файла 14д">Ср. тариф 14д</th>
+                    <th class="rms-col-fare" title="Среднее по всем билетам вылета в файле продаж">Ср. тариф по всем билетам</th>
                     <th class="rms-col-reason">Причина</th>
                     ${markOn ? '<th class="rms-col-mark" title="Отметка «Управления продажами» за сегодня: клик по чипу или клавиши 1–4 на строке (1 без изменений, 2 внимание, 3 снижение, 4 повышение)">Сегодня</th>' : ''}
                 </tr>

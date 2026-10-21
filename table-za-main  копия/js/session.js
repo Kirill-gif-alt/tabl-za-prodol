@@ -407,6 +407,7 @@ window.SessionStore = (function () {
         }
         if (typeof childrenByFlightDate !== 'undefined') {
             childrenByFlightDate = snap.childrenByFlightDate || {};
+            if (typeof childrenFileCount !== 'undefined') childrenFileCount = Object.keys(childrenByFlightDate).length;
         }
         if (typeof RouteCosts !== 'undefined') {
             RouteCosts.applySnapshot(snap.routeCosts || null);

@@ -176,17 +176,17 @@ window.CreativeView = (function () {
         { key: 'seats', group: 'load', label: 'Кресла в продаже', type: 'num', agg: 'sum', get: c => (typeof getSeatsOnSale === 'function' ? getSeatsOnSale(c.row) : null) },
         { key: 'sold', group: 'load', label: 'Загрузка, пасс.', type: 'num', agg: 'sum', get: c => (typeof getSoldFromRow === 'function' ? getSoldFromRow(c.row) : null) },
         { key: 'zpk', group: 'load', label: 'ЗПК, %', type: 'pct', agg: 'ratio', num: 'sold', den: 'seats', scale: 100, get: c => { const m = metricsOf(c); return m ? m.pct : null; } },
-        { key: 'remainder', group: 'load', label: 'Остаток мест', type: 'num', agg: 'sum', get: c => (typeof getSeatRemainder === 'function' ? getSeatRemainder(c.row) : null) },
+        { key: 'remainder', group: 'load', label: 'Остаток мест', type: 'num', agg: 'sum', sumFloor0: true, get: c => (typeof getSeatRemainder === 'function' ? getSeatRemainder(c.row) : null) },
 
         { key: 'salesToday', group: 'sales', label: 'Продано сегодня', type: 'num', agg: 'sum', get: c => bucketValue(c, 'today') },
         { key: 'salesYesterday', group: 'sales', label: 'Продано вчера', type: 'num', agg: 'sum', get: c => bucketValue(c, 'yesterday') },
         { key: 'salesDay2', group: 'sales', label: 'Продано позавчера', type: 'num', agg: 'sum', get: c => bucketValue(c, 'day2') },
-        { key: 'sales7', group: 'sales', label: 'Продано за 7 дней', type: 'num', agg: 'sum', get: c => bucketValue(c, 'd7') },
+        { key: 'sales7', group: 'sales', label: 'Продано за 7 дн. (с сегодня)', type: 'num', agg: 'sum', get: c => bucketValue(c, 'd7') },
         { key: 'sales14', group: 'sales', label: 'Продано за 14 дней', type: 'num', agg: 'sum', get: c => bucketValue(c, 'd14') },
         { key: 'sales30', group: 'sales', label: 'Продано за 30 дней', type: 'num', agg: 'sum', get: c => bucketValue(c, 'd30') },
         { key: 'pickup', group: 'sales', label: 'Подбор (сегодня + вчера)', type: 'num', agg: 'sum', get: c => { const s = salesBucket(c); return s ? (s.today || 0) + (s.yesterday || 0) : null; } },
         { key: 'tickets', group: 'sales', label: 'Билетов в файле продаж', type: 'num', agg: 'sum', get: c => salesCount(c) },
-        { key: 'avgFare', group: 'sales', label: 'Средний тариф', type: 'rub', agg: 'ratio', num: 'revenue', den: 'tickets', scale: 1, get: c => { const a = salesAgg(c); return a && a.avg ? a.avg : null; } },
+        { key: 'avgFare', group: 'sales', label: 'Средний тариф', type: 'rub', agg: 'ratio', numFn: c => { const a = salesAgg(c); return a ? a.sum : null; }, denFn: c => { const a = salesAgg(c); return a ? a.paid : null; }, scale: 1, get: c => { const a = salesAgg(c); return a && a.avg ? a.avg : null; } },
         { key: 'lastFare', group: 'sales', label: 'Последний тариф', type: 'rub', agg: 'avg', get: c => { const a = salesAgg(c); return a && a.last ? a.last : null; } },
         { key: 'revenue', group: 'sales', label: 'Выручка', type: 'rub', agg: 'sum', get: c => revenueOf(c) },
 
@@ -563,8 +563,8 @@ window.CreativeView = (function () {
             let den = 0;
             let any = false;
             ctxs.forEach(c => {
-                const a = valueOf(c, f.num);
-                const b = valueOf(c, f.den);
+                const a = f.numFn ? f.numFn(c) : valueOf(c, f.num);
+                const b = f.denFn ? f.denFn(c) : valueOf(c, f.den);
                 if (a == null || b == null) return;
                 num += a;
                 den += b;
@@ -579,7 +579,7 @@ window.CreativeView = (function () {
             if (v != null) vals.push(v);
         });
         if (!vals.length) return null;
-        if (f.agg === 'sum') return vals.reduce((a, b) => a + b, 0);
+        if (f.agg === 'sum') return vals.reduce((a, b) => a + (f.sumFloor0 ? Math.max(0, b) : b), 0);   // перепроданный рейс остаток не уменьшает
         if (f.agg === 'avg') return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length * 10) / 10;
         if (f.agg === 'min') return Math.min.apply(null, vals);
         if (f.agg === 'max') return Math.max.apply(null, vals);

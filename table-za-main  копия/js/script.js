@@ -205,16 +205,18 @@ function renderHeaderKpi() {
     const revK = Math.round((Number(k.todayRevenue) || 0) / 1000);
     const alerts = Number(k.alertCount) || 0;
     const canRms = typeof ProfileAuth === 'undefined' || ProfileAuth.canAccessTab('rms');
-    const item = (strong, rest) => {
+    const item = (strong, rest, title) => {
         const wrap = document.createElement('span');
         wrap.className = 'header-kpi-item';
+        if (title) wrap.title = title;
         const b = document.createElement('strong');
         b.textContent = String(strong);
         wrap.append(b, document.createTextNode(' ' + rest));
         return wrap;
     };
     if (featureOn('header_kpi')) {
-        items.push(item(salesReady ? sales : '—', 'продаж'), item(salesReady ? (revK + 'к') : '—', '₽'));
+        const outside = Number(k.todayOutside) || 0;
+        items.push(item(salesReady ? sales : '—', 'продаж', salesReady && outside ? `Продано сегодня, из них вне загрузки: ${outside}` : ''), item(salesReady ? (revK + 'к') : '—', '₽'));
     }
     if (alerts && featureOn('rms_header_alerts')) {
         safe(() => {

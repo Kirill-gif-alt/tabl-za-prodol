@@ -278,9 +278,9 @@ function actuallyRenderTable(base,targetDate=null){
         <th class="col-sales-day" title="DEALDATE=сегодня в файле 14д"><span class="th-sales-ico th-sales-day" aria-hidden="true">①</span> Сегодня</th>
         <th class="col-sales-day"><span class="th-sales-ico th-sales-day" aria-hidden="true">①</span> Вчера</th>
         <th class="col-sales-day"><span class="th-sales-ico th-sales-day" aria-hidden="true">①</span> Позавчера</th>
-        <th class="col-sales-cum"><span class="th-sales-ico th-sales-cum" aria-hidden="true">Σ</span> 7 дн.</th>
+        <th class="col-sales-cum"><span class="th-sales-ico th-sales-cum" aria-hidden="true">Σ</span> 7 дн. (с сегодня)</th>
         <th class="col-sales-cum" title="Выручка/продажи за окно файла Tickets_SALE_Last14Days"><span class="th-sales-ico th-sales-cum" aria-hidden="true">Σ</span> 14 дн. файла</th>
-        <th class="col-sales-cum"><span class="th-sales-ico th-sales-cum" aria-hidden="true">Σ</span> Месяц</th>
+        <th class="col-sales-cum"><span class="th-sales-ico th-sales-cum" aria-hidden="true">Σ</span> 30 дн.</th>
         <th title="Загрузка / (AU снимка − спец.брони)">ЗПК %</th>
         <th class="col-comment">Комментарий</th>
     </tr>${salesSumRow}</thead><tbody>`;
@@ -322,12 +322,10 @@ function actuallyRenderTable(base,targetDate=null){
         const ac=getAircraftType(row[4]);
         let expectedCells = '';
         if (showExpectedLoadColumn) {
-            const cap=getCapacityFromAircraft(ac);
-            const du=getDaysUntil(date);
-            const wk=getWeekForExpectedLoad(date);
-            const ev=getExpectedLoad(cap,base,du,wk);
-            const evR=ev!==null?Math.ceil(ev):null;
-            const {delta,cls:deltaCls}=getDeltaFromExpected(free,evR);
+            // Ожидаемая и Δ — как в RMS и на графплане (сдвиг на дату среза продаж, не больше кресел в продаже).
+            const rm=getRowMetrics(row,base);
+            // У улетевшего рейса ожидаемой нет, как и раньше.
+            const evR=rm.flew?null:rm.evR, delta=rm.flew?null:rm.delta, deltaCls=rm.deltaCls;
             const deltaCell=delta!==null?`<span class="${deltaCls}">${delta>0?'+':''}${delta}</span>`:'—';
             expectedCells = `<td class="font-semibold">${evR!==null?evR:'—'}</td><td class="font-semibold">${deltaCell}</td>`;
         }

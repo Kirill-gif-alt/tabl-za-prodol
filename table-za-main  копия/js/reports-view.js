@@ -102,6 +102,8 @@ window.ReportsView = (function () {
                 const t = d.getTime();
                 if (t < fromT || t > toT) return;
                 const code = cleanFlight(row[0]);
+                // Закрытые рейсы кресел в продаже не дают (как в RMS).
+                if (typeof closedFlights !== 'undefined' && closedFlights.has(typeof getSalesLookupKey === 'function' ? getSalesLookupKey(row) : `${row[1]}|${code}`)) return;
                 const once = code + '|' + row[1];
                 if (seen.has(once)) return;
                 seen.add(once);

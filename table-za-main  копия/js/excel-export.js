@@ -6,9 +6,37 @@ function excelSafeCell(v) {
     if (v === null || v === undefined) return '';
     if (typeof v === 'number' && isFinite(v)) return v;
     if (typeof v === 'boolean') return v;
+    if (v && typeof v === 'object' && v.t === 'n' && isFinite(v.v)) return v;   // число с форматом (дата, проценты)
     const s = String(v);
     if (/^[=+\-@\t\r]/.test(s)) return { t: 's', v: s };
     return v;
+}
+
+// Текст экрана → число с форматом ячейки: дата, проценты, «+3», «Σ 125». Иначе null (остаётся текстом).
+function excelTypedCell(text) {
+    let m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(text);
+    if (m) {
+        const d = +m[1], mo = +m[2], y = +m[3];
+        const t = Date.UTC(y, mo - 1, d);
+        const chk = new Date(t);
+        if (chk.getUTCFullYear() === y && chk.getUTCMonth() === mo - 1 && chk.getUTCDate() === d) {
+            return { t: 'n', v: Math.round(t / 86400000) + 25569, z: 'dd.mm.yyyy' };
+        }
+        return null;
+    }
+    m = /^(-?\d+(?:[.,]\d+)?)\s?%$/.exec(text);
+    if (m) {
+        const n = Number(m[1].replace(',', '.'));
+        if (isFinite(n)) return { t: 'n', v: Math.round(n * 100) / 10000, z: /[.,]/.test(m[1]) ? '0.0%' : '0%' };
+    }
+    m = /^([+\u2212])(\d+(?:[.,]\d+)?)$/.exec(text);
+    if (m) {
+        const n = Number(m[2].replace(',', '.'));
+        if (isFinite(n)) return { t: 'n', v: m[1] === '+' ? n : -n, z: '+0;-0;0' };
+    }
+    m = /^Σ\s*(\d+)$/.exec(text);
+    if (m) return { t: 'n', v: Number(m[1]), z: '"Σ "0' };
+    return null;
 }
 
 function excelSafeRow(row) {
@@ -1132,14 +1160,14 @@ function exportRmsToExcel() {
     const salesReady = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(typeof dataLoadStatus !== 'undefined' && dataLoadStatus.sales);
     const headers = ['Код рейса', 'Тип рейса', 'Направление', 'Дата вылета', 'Дней до вылета', 'ЗПК %', 'Загрузка', 'Остаток', 'Прогноз к вылету', 'Прогноз ЗПК %'];
     if (hasExpected) headers.push('Ожидаемая', 'Δ к ожидаемой');
-    headers.push('Продано за 1–2 дн. (файл 14д)', 'Сегодня (файл 14д)', 'Ср. тариф 14д', 'Уровень предупреждения', 'Причина');
+    headers.push('Продано за 1–2 дн. (файл 14д)', 'Сегодня (файл 14д)', 'Ср. тариф по всем билетам', 'Уровень предупреждения', 'Причина');
 
     const rows = flights.map(f => {
         const row = [
             f.orig || f.base,
             typeof getFlightRouteTypeLabel === 'function' ? getFlightRouteTypeLabel(f.orig || f.base) : '',
             getFlightDirection(f.orig || f.base),
-            f.date,
+            excelTypedCell(String(f.date || '')) || f.date,
             f.dtd,
             f.pct,
             f.free,
@@ -1220,7 +1248,7 @@ async function exportTableToExcel(tableElement, filename = 'КРАСАВИА_э�
                 const num = Number(m[1].replace(/[\s\u00a0\u202f]/g, '').replace(',', '.'));
                 if (isFinite(num) && Math.abs(num) < 1e13) return num;
             }
-            return text;
+            return excelTypedCell(text) || text;
         }));
         const aoa = [[`Дата выгрузки: ${stamp}`]].concat(body);
         const ws = lib.utils.aoa_to_sheet(aoa.map(excelSafeRow));

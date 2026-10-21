@@ -22,12 +22,13 @@ function getSalesAggForKey(key) {
             return {
                 avg: st.paidCount ? Math.round(st.fareSum / st.paidCount) : 0,   // средний оплаченный: билеты за 0 ₽ не в счёт
                 last: st.lastFare || 0,
-                lettr: String(st.lastBasicFare || '').trim()[0] || ''
+                lettr: String(st.lastBasicFare || '').trim()[0] || '',
+                paid: st.paidCount, sum: st.fareSum   // для среднего тарифа по группе рейсов
             };
         }
     }
     const sl = salesDetails[key] || [];
-    if (!sl.length) return { avg: 0, last: 0, lettr: '' };
+    if (!sl.length) return { avg: 0, last: 0, lettr: '', paid: 0, sum: 0 };
     let sum = 0, paid = 0;
     for (let i = 0; i < sl.length; i++) { const v = sl[i].adjustedFare || sl[i].fare || 0; sum += v; if (v > 0) paid++; }
     let last = 0, lettr = '', lastTs = 0;
@@ -41,16 +42,16 @@ function getSalesAggForKey(key) {
             lettr = String(x.basicFareStr || '').trim()[0] || '';
         }
     }
-    return { avg: paid ? Math.round(sum / paid) : 0, last, lettr };
+    return { avg: paid ? Math.round(sum / paid) : 0, last, lettr, paid, sum };
 }
 
 function getRevenueForRow(row, firstSalesByKey) {
     if (!row || !shouldAttachSalesToRowCached(row, firstSalesByKey)) return 0;
     if (typeof PerfCache !== 'undefined') {
         const st = PerfCache.getSalesStats(resolveSalesKey(row));
-        if (st && st.fareSum) return st.fareSum;
+        if (st && st.count) return st.paidSum || 0;   // выручка — по фактически оплаченному, не по пересчитанному детскому тарифу
     }
-    return getSalesDetailsForRow(row).reduce((sum, x) => sum + (x.adjustedFare || x.fare || 0), 0);
+    return getSalesDetailsForRow(row).reduce((sum, x) => sum + (x.fare || 0), 0);
 }
 
 async function toFile(src) {
@@ -163,6 +164,7 @@ function resetDataBeforeLoad() {
     lastSalesUpdate = null;
     if (typeof baggageWeightsData !== 'undefined') baggageWeightsData = {};
     if (typeof childrenByFlightDate !== 'undefined') childrenByFlightDate = {};
+    if (typeof childrenFileCount !== 'undefined') childrenFileCount = 0;
     CACHED_TODAY = null;
     CACHED_YESTERDAY = null;
     if (typeof PerfCache !== 'undefined') PerfCache.reset();
@@ -580,7 +582,7 @@ function loadSalesFile(fh) {
 
             const daysAgo = daysBetweenDates(deal, todayStart);
             if (daysAgo !== null && daysAgo >= 0) {
-                if (daysAgo < 7) bucket.d7++;
+                if (daysAgo < 7) bucket.d7++;   // 7, 14 и 30 дней считаются с сегодняшнего дня
                 if (daysAgo < 14) bucket.d14++;
                 if (daysAgo < 30) bucket.d30++;
             }

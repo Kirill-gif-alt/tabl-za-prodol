@@ -270,6 +270,27 @@ function getChildrenCountFromFile(dateStr, flight) {
     return childrenByFlightDate[k] || 0;
 }
 
+// Файл «Дети» покрывает только свои даты: границы считаем по его ключам (один раз на загрузку).
+let childrenRangeCache = { src: null, n: -1, lo: 0, hi: 0 };
+function isDateInChildrenFile(dateStr) {
+    if (!(childrenFileCount > 0)) return false;
+    const c = childrenRangeCache;
+    if (c.src !== childrenByFlightDate || c.n !== childrenFileCount) {
+        let lo = Infinity, hi = -Infinity;
+        Object.keys(childrenByFlightDate).forEach(k => {
+            const d = typeof parseLocalDate === 'function' ? parseLocalDate(k.split('|')[0]) : null;
+            if (!d) return;
+            const t = d.getTime();
+            if (t < lo) lo = t;
+            if (t > hi) hi = t;
+        });
+        childrenRangeCache = { src: childrenByFlightDate, n: childrenFileCount, lo, hi };
+    }
+    const r = childrenRangeCache;
+    const d = typeof parseLocalDate === 'function' ? parseLocalDate(dateStr) : null;
+    return !!d && d.getTime() >= r.lo && d.getTime() <= r.hi;
+}
+
 function parseChildrenCsvText(text) {
     const map = {};
     if (!text) return map;
@@ -377,7 +398,8 @@ function resolvePassengerSplit(totalPax, salesList, showSales, options = {}) {
     // Приоритет: Дети.csv (точное число детей 2–12)
     if (options.dateStr && options.flight) {
         const fromFile = getChildrenCountFromFile(options.dateStr, options.flight);
-        if (childrenFileCount > 0) {
+        // Файл — только для дат из его диапазона; за его пределами дети по билетам.
+        if (isDateInChildrenFile(options.dateStr)) {
             const children = Math.min(fromFile, total);
             return { adults: total - children, children };
         }

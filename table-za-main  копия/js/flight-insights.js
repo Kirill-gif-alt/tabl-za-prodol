@@ -214,8 +214,9 @@ window.FlightInsights = (function () {
 
     // ---------- экономика: безубыточность и прогноз результата ----------
 
+    // Деньги — по фактически оплаченному (детский билет со скидкой считается за столько, сколько заплатили).
     function paidFares(list) {
-        return (list || []).map(s => s.adjustedFare || s.fare || 0).filter(v => v > 0);
+        return (list || []).map(s => s.fare || 0).filter(v => v > 0);
     }
 
     // Средний тариф: свой (если платных билетов не меньше порога), иначе по рейсу за окно дней из параметров расчётов.
@@ -224,22 +225,25 @@ window.FlightInsights = (function () {
         const key = code + '|' + date;
         if (m.fare.has(key)) return m.fare.get(key);
         let res = null;
-        const own = paidFares(typeof getFlightSalesList === 'function' ? getFlightSalesList(date, code) : []);
+        const ownList = typeof getFlightSalesList === 'function' ? getFlightSalesList(date, code) : [];
+        const own = paidFares(ownList);
         if (own.length >= PV.OWN_FARE_MIN) {
-            res = { value: Math.round(own.reduce((a, b) => a + b, 0) / own.length), source: 'own', n: own.length };
+            res = { value: Math.round(own.reduce((a, b) => a + b, 0) / own.length), source: 'own', n: own.length, share: own.length / ownList.length };
         } else {
             const fly = parseLocalDate(date);
             let sum = 0;
             let n = 0;
+            let all = 0;   // все билеты выборки, с нулевыми: из них считается доля платных
             Object.keys(typeof salesDetails !== 'undefined' && salesDetails ? salesDetails : {}).forEach(k => {
                 const i = k.lastIndexOf('|');
                 if (k.slice(i + 1) !== code || k.slice(0, i) === date) return;
                 const d = parseLocalDate(k.slice(0, i));
                 if (!d || !fly || Math.abs(d - fly) > PV.ROUTE_FARE_DAYS * 86400000) return;
+                all += (salesDetails[k] || []).length;
                 paidFares(salesDetails[k]).forEach(v => { sum += v; n++; });
             });
-            if (own.length) own.forEach(v => { sum += v; n++; });
-            if (n) res = { value: Math.round(sum / n), source: 'route', n };
+            if (own.length) { own.forEach(v => { sum += v; n++; }); all += ownList.length; }
+            if (n) res = { value: Math.round(sum / n), source: 'route', n, share: all ? n / all : 1 };
         }
         m.fare.set(key, res);
         return res;
@@ -271,13 +275,15 @@ window.FlightInsights = (function () {
         const gap = cost - subsidy;
         const out = { cost, subsidy, fare: fare ? fare.value : null, fareSource: fare ? fare.source : '', seats, breakeven: null, final: fc ? fc.final : null, finResult: null, need: null, needFare: null, belowCost: false };
         if (!fare || !(fare.value > 0)) return out;
-        out.breakeven = gap <= 0 ? 0 : Math.ceil(gap / fare.value);
+        // Билеты за 0 ₽ места занимают, но денег не дают: на пассажира приходится тариф × доля платных.
+        const perPax = fare.value * (fare.share > 0 ? fare.share : 1);
+        out.breakeven = gap <= 0 ? 0 : Math.ceil(gap / perPax);
         out.belowCost = out.breakeven > seats;
         if (fc && fc.final != null) {
-            out.finResult = Math.round(fc.final * fare.value + subsidy - cost);
+            out.finResult = Math.round(fc.final * perPax + subsidy - cost);
             if (out.finResult < 0) {
                 out.need = Math.max(0, out.breakeven - fc.final);
-                out.needFare = fc.final > 0 ? Math.ceil(gap / fc.final - fare.value) : null;
+                out.needFare = fc.final > 0 ? Math.ceil(gap / (fc.final * (fare.share > 0 ? fare.share : 1)) - fare.value) : null;
             }
         }
         return out;
