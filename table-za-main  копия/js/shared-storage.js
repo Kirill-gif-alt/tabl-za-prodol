@@ -38,6 +38,7 @@ window.SharedStorage = (function () {
     };
     const lastBackupAt = {};
     let serverHistory = false;
+    let serverCas = false;   // сервер умеет проверять отпечаток файла при записи (X-Krasavia-If-Match)
 
     let rootHandle = null;
     let linkStatus = 'unknown'; // unknown | linked | server | fetch | none
@@ -49,8 +50,8 @@ window.SharedStorage = (function () {
     async function detectServerWrite() {
         if (serverWrite !== null) return serverWrite;
         if (typeof location === 'undefined' || location.protocol !== 'http:') { serverWrite = false; return serverWrite; }
-        // Разовый сбой сети не отключает запись через сервер на всю сессию: повторяем не чаще раза в 30 с.
-        if (capsFailedAt && Date.now() - capsFailedAt < 30000) return false;
+        // Разовый сбой сети не отключает запись через сервер на всю сессию: повторяем не чаще раза в 4 с.
+        if (capsFailedAt && Date.now() - capsFailedAt < 4000) return false;
         serverWrite = false;
         try {
             const res = await fetch('./__krasavia/caps', { cache: 'no-store' });
@@ -58,6 +59,7 @@ window.SharedStorage = (function () {
                 const caps = await res.json();
                 serverWrite = !!caps.sharedWrite;
                 serverHistory = !!caps.history;
+                serverCas = !!caps.cas;
             }
             capsFailedAt = 0;
         } catch { serverWrite = null; capsFailedAt = Date.now(); return false; }
@@ -70,11 +72,14 @@ window.SharedStorage = (function () {
         try {
             const headers = { 'Content-Type': 'application/json' };
             if (opts && opts.forceBackup) headers['X-Krasavia-Backup'] = 'force';
+            // Запись «только если файл не менялся с прочтения» (сервер сверяет отпечаток под замком записи).
+            if (opts && opts.ifMatch) headers['X-Krasavia-If-Match'] = opts.ifMatch;
             const res = await fetch(`./${SHARED_DIR}/${filename}`, {
                 method: 'PUT',
                 headers,
                 body: JSON.stringify(data)
             });
+            if (res.status === 409 && opts) opts.conflict = true;
             return res.ok;
         } catch (e) {
             console.warn('writeViaServer', filename, e);
@@ -210,15 +215,24 @@ window.SharedStorage = (function () {
 
     // Чтение с различием «файла нет» и «не удалось прочитать»: писать поверх непрочитанного нельзя.
     // { ok: true, data } — прочитан; { ok: true, data: null } — файла нет; { ok: false } — ошибка/нет доступа.
-    async function readJsonFileStrict(filename) {
+    // withSha — вернуть отпечаток прочитанных байтов (sha): сервер по нему проверяет, что файл не менялся до записи.
+    async function readJsonFileStrict(filename, withSha) {
         if (!isAllowedSharedFile(filename)) return { ok: false };
         if (await detectServerWrite()) {
             try {
                 const res = await fetch(`./${SHARED_DIR}/${filename}`, { cache: 'no-store' });
-                if (res.status === 404) return { ok: true, data: null };
+                if (res.status === 404) return { ok: true, data: null, sha: 'absent' };
                 if (!res.ok) return { ok: false };
-                const text = await res.text();
-                return { ok: true, data: text.trim() ? JSON.parse(text) : null };
+                let sha = '';
+                let text;
+                if (withSha && typeof crypto !== 'undefined' && crypto.subtle && serverCas) {
+                    const buf = await res.arrayBuffer();
+                    sha = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-1', buf)), b => b.toString(16).padStart(2, '0')).join('');
+                    text = new TextDecoder('utf-8').decode(buf);
+                } else {
+                    text = await res.text();
+                }
+                return { ok: true, data: text.trim() ? JSON.parse(text) : null, sha };
             } catch (e) {
                 return { ok: false };
             }
@@ -476,6 +490,7 @@ window.SharedStorage = (function () {
         if (!isAllowedSharedFile(filename)) return false;
         // Сначала сервер — он всегда может записать; папка браузера — запасной путь.
         if (await writeViaServer(filename, data, opts)) return true;
+        if (opts && opts.conflict) return false;   // файл изменился после прочтения — через папку поверх не пишем
         const handle = rootHandle || await restoreRootHandle();
         if (!handle) return false;
         try {
@@ -729,6 +744,37 @@ window.SharedStorage = (function () {
         return writeViaHandle(filename, data);
     }
 
+    // Правка общего справочника без потери чужих правок: перечитать файл → применить своё изменение
+    // (mutate получает свежее содержимое и возвращает новое; false — ничего не писать) → записать.
+    // Через сервер запись идёт «только если файл не менялся с прочтения»: при расхождении всё повторяется.
+    // Без этого (запись через папку) файл перечитывается перед записью и проверяется после.
+    // Результат: { ok, data } | { ok:false, readFailed | writeFailed | aborted }.
+    async function updateJsonFile(filename, mutate) {
+        const sig = (d) => { try { return JSON.stringify(d === undefined ? null : d); } catch { return ''; } };
+        for (let attempt = 0; attempt < 5; attempt++) {
+            const last = attempt >= 2;
+            const r = await readJsonFileStrict(filename, true);
+            if (!r.ok) return { ok: false, readFailed: true };
+            const before = sig(r.data);
+            const next = await mutate(r.data);
+            if (next === false || next == null) return { ok: false, aborted: true };
+            const opts = r.sha ? { ifMatch: r.sha } : {};
+            if (!r.sha && !last) {
+                const r2 = await readJsonFileStrict(filename);
+                if (r2.ok && sig(r2.data) !== before) continue;   // файл изменили, пока считали, — берём свежий
+            }
+            if (!(await writeViaHandle(filename, next, opts))) {
+                if (opts.conflict) continue;   // кто-то записал раньше — применяем правку к его файлу
+                return { ok: false, writeFailed: true, data: next };
+            }
+            if (r.sha || last) return { ok: true, data: next };
+            const r3 = await readJsonFileStrict(filename);
+            if (!r3.ok || sig(r3.data) === sig(next)) return { ok: true, data: next };
+            // Другой человек записал свой вариант поверх нашего — применяем правку к его файлу.
+        }
+        return { ok: false, writeFailed: true };
+    }
+
     return {
         init,
         linkAppFolder,
@@ -749,6 +795,7 @@ window.SharedStorage = (function () {
         readJsonFileStrict,
         listSharedDir,
         writeJsonFile,
+        updateJsonFile,
         canWrite,
         listHistory,
         readHistory,

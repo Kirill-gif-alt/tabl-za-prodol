@@ -1,6 +1,7 @@
 # Локальный сервер статики для аналитики (http://127.0.0.1:8765).
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -185,7 +186,7 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path.split("?")[0] == "/__krasavia/caps":
             if not self._same_origin():
                 return self._send_json(403, {"error": "forbidden"})
-            return self._send_json(200, {"sharedWrite": os.access(SHARED_DIR if os.path.isdir(SHARED_DIR) else ROOT, os.W_OK), "history": True})
+            return self._send_json(200, {"sharedWrite": os.access(SHARED_DIR if os.path.isdir(SHARED_DIR) else ROOT, os.W_OK), "history": True, "cas": True})
         if self.path.split("?")[0] == "/__krasavia/history":
             if not self._same_origin():
                 return self._send_json(403, {"error": "forbidden"})
@@ -235,9 +236,21 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             with WRITE_LOCK:
                 os.makedirs(SHARED_DIR, exist_ok=True)
+                target = os.path.join(SHARED_DIR, *name.split("/"))
+                # Запись «только если файл не менялся с прочтения»: отпечаток SHA-1 прочитанных байтов или absent (файла не было).
+                want = self.headers.get("X-Krasavia-If-Match")
+                if want:
+                    try:
+                        with open(target, "rb") as cf:
+                            have = hashlib.sha1(cf.read()).hexdigest()
+                    except FileNotFoundError:
+                        have = "absent"
+                    except OSError:
+                        have = None
+                    if have != want:
+                        return self._send_json(409, {"error": "changed"})
                 backup_if_due(name, self.headers.get("X-Krasavia-Backup") == "force")
                 # Сначала во временный файл, потом подмена: другие ПК не прочитают недописанный файл.
-                target = os.path.join(SHARED_DIR, *name.split("/"))
                 target_dir = os.path.dirname(target)
                 os.makedirs(target_dir, exist_ok=True)
                 fd, tmp = tempfile.mkstemp(prefix="." + os.path.basename(target) + ".", suffix=".tmp", dir=target_dir)

@@ -255,29 +255,30 @@ window.FareGrid = (function () {
         if (r.ok && r.data && typeof r.data === 'object') { store = { version: 1, routes: r.data.routes || {}, official: r.data.official || null }; rev++; }
     }
 
+    // Запись через общий помощник: файл перечитывается, меняется только своё, правки других не теряются.
+    async function saveShared(change) {
+        if (typeof SharedStorage === 'undefined' || !SharedStorage.updateJsonFile) return false;
+        const by = typeof ProfileAuth !== 'undefined' ? (ProfileAuth.getCurrentProfile() || {}).name || '' : '';
+        const res = await SharedStorage.updateJsonFile(FILE, (cur) => {
+            const routes = (cur && cur.routes) || {};
+            let official = (cur && cur.official) || null;
+            official = change(routes, official);
+            return { version: 1, updatedAt: new Date().toISOString(), by, routes, official };
+        });
+        if (!res.ok) return false;
+        store = { version: 1, routes: res.data.routes, official: res.data.official };
+        rev++;
+        return true;
+    }
+
     async function saveRoute(dir, entries) {
         if (!canEdit()) return false;
-        // Свежая копия файла: правки других направлений не теряются.
-        const r = typeof SharedStorage !== 'undefined' ? await SharedStorage.readJsonFileStrict(FILE).catch(() => ({ ok: false })) : { ok: true, data: null };
-        if (!r.ok) return false;
-        const routes = (r.data && r.data.routes) || {};
-        routes[dir] = entries;
-        const official = (r.data && r.data.official) || null;
-        const by = typeof ProfileAuth !== 'undefined' ? (ProfileAuth.getCurrentProfile() || {}).name || '' : '';
-        const ok = await SharedStorage.writeJsonFile(FILE, { version: 1, updatedAt: new Date().toISOString(), by, routes, official });
-        if (ok) { store = { version: 1, routes, official }; rev++; }
-        return ok;
+        return saveShared((routes, official) => { routes[dir] = entries; return official; });
     }
 
     async function saveOfficial(official) {
         if (!canEdit()) return false;
-        const r = typeof SharedStorage !== 'undefined' ? await SharedStorage.readJsonFileStrict(FILE).catch(() => ({ ok: false })) : { ok: true, data: null };
-        if (!r.ok) return false;
-        const routes = (r.data && r.data.routes) || {};
-        const by = typeof ProfileAuth !== 'undefined' ? (ProfileAuth.getCurrentProfile() || {}).name || '' : '';
-        const ok = await SharedStorage.writeJsonFile(FILE, { version: 1, updatedAt: new Date().toISOString(), by, routes, official });
-        if (ok) { store = { version: 1, routes, official }; rev++; }
-        return ok;
+        return saveShared((routes) => official);
     }
 
     async function importFile(file, rerender) {

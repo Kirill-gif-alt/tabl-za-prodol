@@ -198,9 +198,24 @@
         if (!p || !p.isAdmin) return { ok: false, error: 'Только администратор' };
         const bad = validate(newValues);
         if (bad) return { ok: false, error: bad, invalid: true };
+        // В общий файл идут только поля, которые этот администратор изменил: чужие правки параметров не теряются.
+        const changed = {};
+        Object.keys(newValues || {}).forEach(k => { const v = clean(k, newValues[k]); if (v !== undefined && v !== values[k]) changed[k] = v; });
         applyObj(newValues);
         meta = { updatedAt: new Date().toISOString(), by: p.name || '' };
-        const ok = typeof SharedStorage !== 'undefined' ? await SharedStorage.writeJsonFile(FILE, { version: 1, ...meta, values: overrides() }) : false;
+        let ok = false;
+        if (typeof SharedStorage !== 'undefined' && SharedStorage.updateJsonFile) {
+            const res = await SharedStorage.updateJsonFile(FILE, (cur) => {
+                const out = cur && cur.values && typeof cur.values === 'object' ? { ...cur.values } : overrides();
+                Object.keys(changed).forEach(k => {
+                    const d = DEFS.find(x => x[0] === k);
+                    if (d && changed[k] === d[1]) delete out[k]; else out[k] = changed[k];
+                });
+                return { version: 1, ...meta, values: out };
+            });
+            ok = res.ok;
+            if (ok) applyObj(res.data.values);   // подхватить правки, которые успели сделать другие
+        }
         try { localStorage.setItem(LOCAL_KEY, JSON.stringify({ values: overrides(), meta })); } catch (e) { /* ignore */ }
         return { ok: !!ok };
     }

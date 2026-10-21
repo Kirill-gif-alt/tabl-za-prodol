@@ -129,13 +129,16 @@ window.FlightRegistry = (function () {
     async function apply(changes) {
         if (!canEdit()) return { ok: false, error: 'Нет права менять справочник рейсов' };
         if (typeof SharedStorage === 'undefined') return { ok: false, error: 'Общая папка не подключена' };
-        const r = await SharedStorage.readJsonFileStrict(FILE).catch(() => ({ ok: false }));
-        if (!r.ok) return { ok: false, error: 'Не удалось прочитать общий справочник рейсов — изменения не сохранены' };
-        const merged = mergeInto({}, r.data && r.data.flights);
-        const at = new Date().toISOString();
-        changes.forEach(([id, entry]) => { merged[id] = { ...entry, at, by: profileName() }; });
-        const okWrite = await SharedStorage.writeJsonFile(FILE, { version: 1, updatedAt: new Date().toISOString(), flights: merged });
-        if (!okWrite) return { ok: false, error: 'Не удалось записать общий справочник рейсов' };
+        // Файл перечитывается перед записью, меняются только эти рейсы: правки других не теряются.
+        const res = await SharedStorage.updateJsonFile(FILE, (cur) => {
+            const merged = mergeInto({}, cur && cur.flights);
+            const at = new Date().toISOString();
+            changes.forEach(([id, entry]) => { merged[id] = { ...entry, at, by: profileName() }; });
+            return { version: 1, updatedAt: new Date().toISOString(), flights: merged };
+        });
+        if (res.readFailed) return { ok: false, error: 'Не удалось прочитать общий справочник рейсов — изменения не сохранены' };
+        if (!res.ok) return { ok: false, error: 'Не удалось записать общий справочник рейсов' };
+        const merged = res.data.flights;
         entries = mergeInto({}, merged);
         applyAll();
         regroup();

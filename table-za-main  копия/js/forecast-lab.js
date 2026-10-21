@@ -825,7 +825,7 @@ window.ForecastLab = (function () {
                 b[a] += wi * x[a] * y[i];
                 for (let c = a; c < k; c++) A[a][c] += wi * x[a] * x[c];
             }
-            if ((i & 255) === 255) await tick();
+            if ((i & 63) === 63) await tick();
         }
         for (let a = 0; a < k; a++) for (let c = 0; c < a; c++) A[a][c] = A[c][a];
         // Штраф — в той же мере, что без весов: λ·(Σw/n).
@@ -1486,8 +1486,11 @@ window.ForecastLab = (function () {
             if (lo != null) { lo = Math.max(0, Math.min(final, lo + dlt)); hi = Math.max(final, Math.min(Math.max(r.s, r.o), hi + dlt)); }
         }
         const hiRaw = lo != null ? Math.ceil(final + c.hi * r.s) : null;   // без ограничения креслами — спрос сверх ёмкости
+        // Ошибка в карточке — по честной проверке (выбор по ранним неделям, ошибка на поздних): выбор «по всем неделям» оптимистичен.
+        const hon = ev.byH[h] && ev.byH[h].honest;
+        const errShown = hon && hon.n >= PV.MIN_CHOICE ? hon.sum / hon.n : pick.v;
         const mlNow = ml ? one('ens') : null;   // прогноз самих моделей на сейчас — для сравнения с записью недельной давности
-        return { final, lo, hi, hiRaw, mlNow, sold: r.o, d, plan: r.p, team, cover: lo != null ? Math.round(PV.CONF_LEVEL * 100) : null, seats: r.s, lf: Math.round(final / r.s * 100), method: METHOD_LABEL[usedK], err: Math.round(pick.v * 10) / 10, trainedOn: pick.n, h };
+        return { final, lo, hi, hiRaw, mlNow, sold: r.o, d, plan: r.p, team, cover: lo != null ? Math.round(PV.CONF_LEVEL * 100) : null, seats: r.s, lf: Math.round(final / r.s * 100), method: METHOD_LABEL[usedK], err: Math.round(errShown * 10) / 10, trainedOn: pick.n, h };
     }
 
     // ---------- запись журнала ----------
