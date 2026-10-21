@@ -55,7 +55,7 @@ window.LowerRequest = (function () {
         let items = null;
         const res = typeof SharedStorage !== 'undefined' && SharedStorage.updateJsonFile
             ? await SharedStorage.updateJsonFile(FILE, (cur) => {
-                items = cur && cur.items && typeof cur.items === 'object' ? cur.items : {};
+                items = cur && cur.items && typeof cur.items === 'object' ? cur.items : { ...store.items };   // файла ещё нет — начинаем с того, что уже есть на экране
                 mutate(items);
                 Object.keys(unsynced).forEach(k => { if (!(k in items)) items[k] = unsynced[k]; });
                 return { version: 1, updatedAt: new Date().toISOString(), by, items };
