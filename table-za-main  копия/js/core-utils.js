@@ -353,6 +353,87 @@ function renderTableEmptyState(cont, title, hint, icon = '📭') {
         </div>`;
 }
 
+// Окно как диалог: aria-modal, фокус внутрь при открытии, Tab по кругу, возврат фокуса при закрытии.
+// openClass — класс «открыто» на modal; onClose — закрыть по Esc (если окно не закрывает себя само).
+function enhanceModalA11y(modal, panel, openClass, onClose) {
+    if (!modal || !panel || modal._a11yBound) return;
+    modal._a11yBound = true;
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-modal', 'true');
+    const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+    const items = () => [...panel.querySelectorAll(FOCUSABLE)].filter(el => !el.disabled && el.offsetParent !== null);
+    let opener = null;
+    let wasOpen = modal.classList.contains(openClass);
+    new MutationObserver(() => {
+        const isOpen = modal.classList.contains(openClass);
+        if (isOpen === wasOpen) return;
+        wasOpen = isOpen;
+        if (isOpen) {
+            opener = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
+            setTimeout(() => {
+                if (panel.contains(document.activeElement)) return;
+                const all = items();
+                const first = all.find(el => !/(^|\s)(profile-admin-close|rms-modal-close)(\s|$)/.test(el.className)) || all[0];
+                if (first) first.focus();
+                else { panel.tabIndex = -1; panel.focus(); }
+            }, 0);
+        } else if (opener && document.contains(opener) && !panel.contains(opener)) {
+            try { opener.focus(); } catch (e) { /* ignore */ }
+            opener = null;
+        }
+    }).observe(modal, { attributes: true, attributeFilter: ['class'] });
+    modal.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && onClose) {
+            e.preventDefault();
+            e.stopPropagation();
+            onClose();
+            return;
+        }
+        if (e.key !== 'Tab') return;
+        const all = items();
+        if (!all.length) { e.preventDefault(); return; }
+        const first = all[0];
+        const last = all[all.length - 1];
+        if (e.shiftKey && (document.activeElement === first || !panel.contains(document.activeElement))) {
+            e.preventDefault();
+            last.focus();
+        } else if (!e.shiftKey && (document.activeElement === last || !panel.contains(document.activeElement))) {
+            e.preventDefault();
+            first.focus();
+        }
+    });
+}
+
+// Таблицы с сотнями остановок Tab (графплан, «Загрузка рейсов»): Tab выходит из таблицы, стрелки ходят по плашкам и строкам.
+(function () {
+    const HOSTS = { 'timeline-content': '.timeline-chip', 'data-board-track': 'tr[tabindex="0"]' };
+    const ARROWS = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey || e.altKey || e.metaKey) return;
+        if (e.key !== 'Tab' && !ARROWS[e.key]) return;
+        const t = e.target;
+        if (!t || !t.closest) return;
+        const host = t.closest('#timeline-content, #data-board-track');
+        if (!host) return;
+        const sel = HOSTS[host.id];
+        if (!t.matches(sel)) return;
+        const list = host.querySelectorAll(sel);
+        if (e.key === 'Tab') {
+            // переносим фокус на край таблицы: обычное действие Tab уведёт дальше
+            const edge = e.shiftKey ? list[0] : list[list.length - 1];
+            if (edge && edge !== t) edge.focus({ preventScroll: true });
+            return;
+        }
+        const arr = Array.prototype.indexOf.call(list, t);
+        for (let i = arr + ARROWS[e.key]; i >= 0 && i < list.length; i += ARROWS[e.key]) {
+            if (list[i].offsetParent === null) continue;
+            e.preventDefault();
+            list[i].focus();
+            return;
+        }
+        e.preventDefault();
+    });
+})();
 
 // Числовой ключ даты «ДД.ММ.ГГГГ» запоминается: сортировки сравнивают одни и те же строки тысячи раз.
 const dateKeyCache = new Map();

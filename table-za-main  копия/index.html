@@ -59,13 +59,13 @@
     <!-- Настройки профиля (оформление) -->
     <div id="profile-settings-modal" class="profile-admin-modal">
         <div class="profile-admin-backdrop"></div>
-        <div class="profile-admin-panel profile-settings-panel">
+        <div class="profile-admin-panel profile-settings-panel" role="dialog" aria-modal="true" aria-labelledby="profile-settings-title">
             <div class="profile-admin-header">
                 <div>
-                    <h3>Настройки профиля</h3>
+                    <h3 id="profile-settings-title">Настройки профиля</h3>
                     <p class="profile-settings-subtitle">Оформление, вкладки, папки для Excel и пароль — для вашего профиля</p>
                 </div>
-                <button type="button" id="profile-settings-close" class="profile-admin-close">✕</button>
+                <button type="button" id="profile-settings-close" class="profile-admin-close" aria-label="Закрыть">✕</button>
             </div>
             <div id="profile-settings-body" class="profile-admin-body"></div>
             <div class="profile-admin-footer">
@@ -79,10 +79,10 @@
     <!-- Управление профилями (админ) -->
     <div id="profile-admin-modal" class="profile-admin-modal">
         <div class="profile-admin-backdrop"></div>
-        <div class="profile-admin-panel">
+        <div class="profile-admin-panel" role="dialog" aria-modal="true" aria-labelledby="profile-admin-title">
             <div class="profile-admin-header">
-                <h3>Управление профилями</h3>
-                <button type="button" id="profile-admin-close" class="profile-admin-close">✕</button>
+                <h3 id="profile-admin-title">Управление профилями</h3>
+                <button type="button" id="profile-admin-close" class="profile-admin-close" aria-label="Закрыть">✕</button>
             </div>
             <div id="profile-admin-body" class="profile-admin-body"></div>
             <div class="profile-admin-footer">

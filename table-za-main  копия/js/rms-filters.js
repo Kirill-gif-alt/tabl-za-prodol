@@ -133,12 +133,12 @@ function ensureRmsConditionsModal() {
     modal.className = 'rms-modal';
     modal.innerHTML = `
         <div class="rms-modal-backdrop" onclick="closeRmsConditionsModal()"></div>
-        <div class="rms-modal-panel" role="dialog" aria-labelledby="rms-modal-title">
+        <div class="rms-modal-panel" role="dialog" aria-modal="true" aria-labelledby="rms-modal-title">
             <div class="rms-modal-header">
                 <div>
                     <h3 id="rms-modal-title">Условия отбора</h3>
                 </div>
-                <button type="button" class="rms-modal-close" onclick="closeRmsConditionsModal()" >✕</button>
+                <button type="button" class="rms-modal-close" onclick="closeRmsConditionsModal()" aria-label="Закрыть">✕</button>
             </div>
             <div id="rms-conditions-modal-body" class="rms-modal-body"></div>
             <div class="rms-modal-footer">
@@ -150,6 +150,7 @@ function ensureRmsConditionsModal() {
         </div>
     `;
     document.body.appendChild(modal);
+    if (typeof enhanceModalA11y === 'function') enhanceModalA11y(modal, modal.querySelector('.rms-modal-panel'), 'rms-modal-open');
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && modal.classList.contains('rms-modal-open')) closeRmsConditionsModal();
     });

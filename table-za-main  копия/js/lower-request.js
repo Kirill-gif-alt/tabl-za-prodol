@@ -252,7 +252,7 @@ window.LowerRequest = (function () {
                 <div class="rp-card-head"><h3 class="rp-card-title">Запрос на понижение</h3>
                     <span class="lr-actions">
                         <button type="button" class="filter-btn" data-lr-copy ${rows.length ? '' : 'disabled'}>Скопировать для письма</button>
-                        <button type="button" class="filter-btn" data-lr-xlsx ${rows.length ? '' : 'disabled'}>Выгрузить в Excel</button>
+                        <button type="button" class="filter-btn" data-lr-xlsx ${rows.length ? '' : 'disabled'}>В Excel</button>
                         <button type="button" class="filter-btn rp-danger" data-lr-clear ${rows.length ? '' : 'disabled'}>Очистить</button>
                     </span></div>
                 <p class="rp-card-text">Рейсы сюда попадают из «Управления продажами»: отметьте галочкой слева от номера рейса. Цифры считаются сами,

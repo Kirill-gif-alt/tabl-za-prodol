@@ -846,6 +846,10 @@ window.ThemeSettings = (function () {
             if (e.key === 'Escape' && document.getElementById('profile-settings-modal')?.classList.contains('open')) closeModal();
         });
         document.getElementById('profile-settings-close')?.addEventListener('click', closeModal);
+        if (typeof enhanceModalA11y === 'function') {
+            const m = document.getElementById('profile-settings-modal');
+            enhanceModalA11y(m, m?.querySelector('.profile-admin-panel'), 'open', closeModal);
+        }
         document.getElementById('profile-settings-save')?.addEventListener('click', () => {
             const bodyEl = document.getElementById('profile-settings-body');
             if (!saveSalesRanges(bodyEl)) return;

@@ -708,7 +708,7 @@ function createDataView(c) {
                         <button type="button" id="data-hl-btn" class="filter-btn data-ctrl-sm rms-conditions-open-btn">
                             Подсветка <span id="data-hl-badge" class="rms-cond-badge"></span>
                         </button>
-                        <button type="button" id="data-export-btn" class="filter-btn data-export-btn data-ctrl-sm">Excel</button>
+                        <button type="button" id="data-export-btn" class="filter-btn data-export-btn data-ctrl-sm">В Excel</button>
                         <span id="data-board-stats" class="data-board-stats"></span>
                     </div>
                 </div>

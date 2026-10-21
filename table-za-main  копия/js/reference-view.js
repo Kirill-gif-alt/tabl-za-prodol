@@ -1099,7 +1099,7 @@ window.ReferenceView = (function () {
         const canImport = ['fares', 'periods', 'amounts', 'nav'].some(id => viewSection(id) && canEditSection(id));
         return `
             <div class="ref-excel">
-                <button type="button" class="filter-btn" data-ref-xl-export title="Все разделы справочника, которые вам видны, — отдельными листами">⬇ Выгрузить в Excel</button>
+                <button type="button" class="filter-btn" data-ref-xl-export title="Все разделы справочника, которые вам видны, — отдельными листами">В Excel</button>
                 ${canImport ? `<button type="button" class="filter-btn" data-ref-xl-import title="Тот же формат, что у выгрузки: можно выгрузить, поправить и загрузить обратно">⬆ Загрузить из Excel</button>
                 <input type="file" id="ref-xl-file" accept=".xlsx,.xls" hidden>` : ''}
             </div>`;

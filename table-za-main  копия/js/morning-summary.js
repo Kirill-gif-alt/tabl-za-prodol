@@ -177,14 +177,15 @@ window.MorningSummary = (function () {
         m.className = 'profile-admin-modal morning-modal';
         m.innerHTML = `
             <div class="profile-admin-backdrop" data-ms-close></div>
-            <div class="profile-admin-panel morning-panel" role="dialog" aria-label="Сводка на сегодня">
+            <div class="profile-admin-panel morning-panel" role="dialog" aria-modal="true" aria-labelledby="morning-title">
                 <div class="profile-admin-header">
                     <h3 id="morning-title">Сводка</h3>
-                    <button type="button" class="profile-admin-close" data-ms-close>✕</button>
+                    <button type="button" class="profile-admin-close" data-ms-close aria-label="Закрыть">✕</button>
                 </div>
                 <div class="profile-admin-body" id="morning-body"></div>
             </div>`;
         document.body.appendChild(m);
+        if (typeof enhanceModalA11y === 'function') enhanceModalA11y(m, m.querySelector('.morning-panel'), 'open');
         m.addEventListener('click', onClick);
         document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && m.classList.contains('open')) close(); });
         return m;
