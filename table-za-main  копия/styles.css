@@ -8246,8 +8246,8 @@ html[data-theme="dark"] .dv-na { color: #0f172a; }
 .dp-row { background: var(--surface, #fff); border: 1px solid var(--border, #e2e8f0); border-left: 5px solid #94a3b8; border-radius: 8px; cursor: default; }
 .dp-row.dp-pos { border-left-color: #059669; } .dp-row.dp-neg { border-left-color: #dc2626; } .dp-row.dp-wait { border-left-color: #f59e0b; } .dp-row.dp-na { border-left-color: #cbd5e1; }
 .dp-row:hover { background: var(--muted-bg, #f8fafc); }
-.dp-main { display: grid; grid-template-columns: 92px minmax(190px, 1.3fr) 100px minmax(120px, 0.8fr) minmax(120px, 0.8fr) minmax(150px, 1.6fr) 24px; gap: 12px; align-items: center; padding: 7px 12px; user-select: none; }
-.dp-badge { padding: 2px 0; border-radius: 5px; font-size: 0.68rem; font-weight: 800; color: #fff; background: #94a3b8; text-align: center; }
+.dp-main { display: grid; grid-template-columns: 122px minmax(190px, 1.3fr) 100px minmax(120px, 0.8fr) minmax(120px, 0.8fr) minmax(150px, 1.6fr) 24px; gap: 12px; align-items: center; padding: 7px 12px; user-select: none; }
+.dp-badge { padding: 2px 0; border-radius: 5px; font-size: 0.68rem; font-weight: 800; color: #fff; background: #94a3b8; text-align: center; white-space: nowrap; }
 .dp-pos .dp-badge { background: #059669; } .dp-neg .dp-badge { background: #dc2626; } .dp-wait .dp-badge { background: #f59e0b; } .dp-na .dp-badge { background: #cbd5e1; color: #334155; }
 .dp-who { font-weight: 700; font-size: 0.85rem; color: var(--text); min-width: 0; }
 .dp-who .filter-btn { padding: 1px 7px; font-size: 0.78rem; }
@@ -8264,7 +8264,7 @@ html[data-theme="dark"] .dv-na { color: #0f172a; }
 .dp-row.open .dp-lines { display: block; }
 .dp-lines li::before { content: '•'; color: var(--text-muted); margin-right: 8px; }
 details.dp-more { margin-top: 8px; } details.dp-more > summary { cursor: pointer; font-weight: 600; color: var(--text-muted); font-size: 0.85rem; margin-bottom: 8px; }
-@media (max-width: 1000px) { .dp-main { grid-template-columns: 90px 1fr 24px; } .dp-dep, .dp-act, .dp-short, .dp-big { grid-column: 2; } .dp-lines { padding-left: 16px; } }
+@media (max-width: 1000px) { .dp-main { grid-template-columns: 122px 1fr 24px; } .dp-dep, .dp-act, .dp-short, .dp-big { grid-column: 2; } .dp-lines { padding-left: 16px; } }
 
 .dp-strip { display: flex; flex-wrap: wrap; gap: 8px 34px; align-items: flex-end; margin: 0 0 12px; }
 .dp-strip small { display: block; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }

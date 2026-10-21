@@ -3,7 +3,7 @@
 // Идея. После решения (снижение или повышение цены) смотрим, сколько реально продали и на какую сумму, и сравниваем с тем,
 // что вероятно продали бы без решения, по цене класса, который был открыт до него.
 //   Δ ₽ = выручка факта − ожидаемое число платных билетов × цена прежнего класса.
-//   Разложение (сумма точна): «объём» = (билетов факт − ожидалось) × новая цена; «цена» = ожидалось × (новая − прежняя).
+//   Разложение (сумма точна): «цена» = ожидалось × (новая − прежняя); «объём» = всё остальное (в том числе поправка на сдвиг).
 //
 // Ожидание — норма по аналогам: вылеты того же рейса. Основа — тот же день недели, ±8 недель (затем шире), не меньше 3 вылетов; без вылетов,
 // где самих ставили решения, и без допов/чартеров. К ним добавлены соседние вылеты этого рейса (±5 дней, другие дни недели): их билеты
@@ -14,13 +14,14 @@
 //     слабых рейсах» даёт ложный минус;
 //   • сдвиг рублей (biasShift): тариф сам меняется к вылету, а норма «сжата» к середине.
 // Шум большой (продажи идут пачками, разброс в 3–5 раз выше пуассоновского), поэтому у каждой оценки есть диапазон,
-// а вердикт «сработало / не сработало» только если диапазон не включает ноль и эффект не меньше порога; иначе «неопределённо».
+// а вердикт «помогло / навредило» только если диапазон не включает ноль и эффект не меньше порога; иначе слабее («скорее», «чуть») или «без эффекта».
+// Диапазон несимметричный (MONEY_RANGE_LOW / MONEY_RANGE_HIGH): на вылетах без решений случайные плюсы чаще случайных минусов.
 //
 // Понижение: окно от 4 до 10 дней (так, чтобы ожидалось не меньше ~6 билетов), без дня решения (время сделки неизвестно);
 // результат фиксируется через день после окна. Повышение: через окно — только ранний сигнал, итог после вылета по остатку продаж.
 // Зафиксированный итог лежит в shared/decision-money/ГГГГ-ММ.json и дальше не меняется (при смене данных и параметров тоже).
 window.DecisionMoney = (function () {
-    const METHOD_VERSION = 6;
+    const METHOD_VERSION = 7;
     const DAY = 86400000;
     const REGULAR = /^KV-\d{3}$/;      // допы и чартеры (KV-9xxx и т. п.) не оцениваем: покупки блоками, нормы нет
     const GAPS = [56, 84, 182, 100000]; // расширение окна поиска аналогов, дней
@@ -96,13 +97,16 @@ window.DecisionMoney = (function () {
         const delta = inp.rFact - nExpPaid * inp.priceBefore;
         const sigma = sigmaTickets(inp.E, inp.k, true);
         const z = num('MONEY_NOISE_Z', 1.9);
-        const half = inp.filled ? 0 : z * sigma * share * inp.priceBefore;
+        let half = inp.filled ? 0 : z * sigma * share * inp.priceBefore;
+        // Разброс не больше возможного: выручка остатка не может отличаться больше, чем на все свободные места по прежней цене.
+        let halfMax = null;
+        if (!inp.filled && inp.free != null) { halfMax = inp.free * share * inp.priceBefore; half = Math.min(half, halfMax); }
         const thr = Math.max(num('MONEY_MIN_PCT', 15) / 100 * nExpPaid * inp.priceBefore, num('MONEY_MIN_RUB', 20000));
         let verdict = 'unclear';
         if (delta - half > 0 && delta >= thr) verdict = 'worked';
         else if (delta + half < 0 && delta <= -thr) verdict = 'failed';
         return {
-            nExpAll, nExpPaid, strengthK: 1, priceAfter, delta, lo: delta - half, hi: delta + half, thr, verdict, sigma,
+            nExpAll, nExpPaid, strengthK: 1, priceAfter, delta, lo: delta - half, hi: delta + half, thr, verdict, sigma, halfMax,
             volume: (inp.nFactPaid - nExpPaid) * priceAfter,
             price: nExpPaid * (priceAfter - inp.priceBefore),
             payback: null,
@@ -121,7 +125,9 @@ window.DecisionMoney = (function () {
         return Math.max(0, curveAt(curve, lo) - curveAt(curve, hi + 1));
     }
 
-    function price(s) { return s.adjustedFare || s.fare || 0; }
+    // Деньги — по фактическому тарифу (fare): у детского билета со скидкой в выручку идёт столько, сколько заплатили.
+    // Пересчитанный тариф (adjustedFare) — только если фактического нет.
+    function price(s) { return s.fare > 0 ? s.fare : (s.adjustedFare || 0); }
     // Считаем все билеты с ненулевым тарифом: взрослые, дети, группы. Нулевой тариф (служебные, бесплатные) не считаем.
     function isPaid(s) { return price(s) > 0; }
     function classOf(s) {
@@ -491,7 +497,9 @@ window.DecisionMoney = (function () {
             flags.push('по продажам тариф не изменился: эффект в основном объёмный');
         }
         // Доля платных взрослых негрупповых среди всех билетов вылета до решения.
-        const share = own.beforeAll >= 10 ? own.beforeAdult / own.beforeAll : num('MONEY_PAID_SHARE', 0.9);
+        // Слишком малая доля (почти нет платных до решения) ненадёжна: берём долю по умолчанию.
+        let share = own.beforeAll >= 10 ? own.beforeAdult / own.beforeAll : num('MONEY_PAID_SHARE', 0.9);
+        if (share < 0.3) share = num('MONEY_PAID_SHARE', 0.9);
         // Сила рейса: билеты за 3 дня до решения у вылета и у аналогов.
         const sDays = 3;
         const normOwn = analogMean(an, dtdD + 1, dtdD + sDays) * lvK;
@@ -581,8 +589,11 @@ window.DecisionMoney = (function () {
         const dcorr = est.delta - bias;
         let half = (est.hi - est.lo) / 2 * widen;
         // Рейс заполнен: билетов уже не прибавить, но цена билета всё равно шумит.
-        if (filledNow) half = num('MONEY_NOISE_Z', 1.9) * num('MONEY_PRICE_NOISE', 0.2) * est.nExpPaid * (base.priceBefore || 0) * widen;
-        const lo = dcorr - half; const hi = dcorr + half;
+        if (filledNow) half = num('MONEY_NOISE_Z', 1.9) * num('MONEY_PRICE_NOISE', 0.32) * est.nExpPaid * (base.priceBefore || 0) * widen;
+        else if (est.halfMax != null) half = Math.min(half, est.halfMax);
+        // Отклонения на вылетах без решений несимметричны: вверх хвост длиннее. Вниз от оценки диапазон шире (строже «помогло»),
+        // вверх уже («навредило» подтверждается мягче).
+        const lo = dcorr - half * num('MONEY_RANGE_LOW', 1.2); const hi = dcorr + half * num('MONEY_RANGE_HIGH', 0.65);
         let verdict = 'unclear';
         if (lo > 0 && dcorr >= est.thr) verdict = 'worked';
         else if (hi < 0 && dcorr <= -est.thr) verdict = 'failed';
@@ -601,11 +612,13 @@ window.DecisionMoney = (function () {
             }
         }
         const delta = round1k(dcorr);
-        const volume = round1k(est.volume);
+        // «цена» — только видимая смена тарифа (ожидаемые билеты × разница цен); поправка на сдвиг и добавка относятся к «объёму».
+        // Сумма двух частей точно равна эффекту.
+        const priceEffect = round1k(est.price);
+        const volume = delta - priceEffect;
         const res = Object.assign(base, extra, {
-            // «цена» = эффект минус «объём» после округления: сумма двух частей точно равна эффекту
-            priceAfter: Math.round(est.priceAfter), delta, lo: round1k(lo), hi: round1k(hi),
-            volume, priceEffect: delta - volume, payback: est.payback == null ? null : round1(est.payback),
+            priceAfter: Math.round(est.priceAfter), delta, lo: round1k(lo), hi: round1k(hi), sd: round1k(sd),
+            volume, priceEffect, payback: est.payback == null ? null : round1(est.payback),
             thr: round1k(est.thr), nExpPaid: round1(est.nExpPaid), expRev: round1k(est.revFact - dcorr), revFact: round1k(est.revFact), strengthK: Math.round(est.strengthK * 100) / 100,
             dTickets: round1(est.dTickets), grade
         });
@@ -731,5 +744,5 @@ window.DecisionMoney = (function () {
         return !!(flyDt && flyDt.getTime() < cutoff);
     }
 
-    return { compute, estimateWindow, estimateRemainder, sigmaTickets, keyOf, get, ensureMonths, resolveAll, recompute, canFreeze, revision: () => rev, METHOD_VERSION };
+    return { compute, estimateWindow, estimateRemainder, sigmaTickets, keyOf, get, ensureMonths, resolveAll, recompute, canFreeze, revision: () => rev, METHOD_VERSION, erf };
 })();
