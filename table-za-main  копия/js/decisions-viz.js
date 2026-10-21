@@ -42,11 +42,11 @@ window.DecisionsViz = (function () {
     }
 
     // Компактная строка решения; по двойному клику раскрываются подробности. tone: pos / neg / unk / wait / na.
-    const TONE = { pos: 'ЛУЧШЕ', neg: 'ХУЖЕ', lpos: 'СКОРЕЕ ЛУЧШЕ', lneg: 'СКОРЕЕ ХУЖЕ', wpos: 'ЧУТЬ ЛУЧШЕ', wneg: 'ЧУТЬ ХУЖЕ', flat: 'БЕЗ ЭФФЕКТА', unk: 'НЕ ПОНЯТНО', wait: 'ЖДЁМ', ser: 'В СЕРИИ', na: 'НЕ СЧИТАЕМ' };
-    // Фильтры сгруппированы: «Лучше» = ЛУЧШЕ, СКОРЕЕ ЛУЧШЕ и ЧУТЬ ЛУЧШЕ; «Хуже» — аналогично.
-    const GROUP = { pos: 'good', lpos: 'good', wpos: 'good', neg: 'bad', lneg: 'bad', wneg: 'bad', flat: 'flat', unk: 'unk', wait: 'wait', ser: 'ser', na: 'na' };
+    const TONE = { pos: 'ПОМОГЛО', neg: 'НАВРЕДИЛО', lpos: 'СКОРЕЕ ПОМОГЛО', lneg: 'СКОРЕЕ НАВРЕДИЛО', wpos: 'ЧУТЬ ПОМОГЛО', wneg: 'ЧУТЬ НАВРЕДИЛО', flat: 'БЕЗ ЭФФЕКТА', unk: 'МАЛО ДАННЫХ', wait: 'ЖДЁМ ИТОГА', ser: 'В СЕРИИ', na: 'МАЛО ДАННЫХ' };
+    // Фильтры сгруппированы: «Помогло» = ПОМОГЛО, СКОРЕЕ ПОМОГЛО и ЧУТЬ ПОМОГЛО; «Навредило» — аналогично.
+    const GROUP = { pos: 'good', lpos: 'good', wpos: 'good', neg: 'bad', lneg: 'bad', wneg: 'bad', flat: 'flat', unk: 'na', wait: 'wait', ser: 'ser', na: 'na' };
     const TONE_ORDER = ['good', 'bad', 'flat', 'unk', 'wait', 'ser', 'na'];
-    const TONE_FILTER = { good: 'Лучше', bad: 'Хуже', flat: 'Без эффекта', unk: 'Не понятно', wait: 'Ждём', ser: 'В серии', na: 'Не считаем' };
+    const TONE_FILTER = { good: 'Помогло', bad: 'Навредило', flat: 'Без заметного эффекта', unk: 'Мало данных', wait: 'Ждём итога', ser: 'В серии', na: 'Мало данных' };
 
     // Раскрытые строки помним по ключу: список перерисовывается (данные, расчёт денег), а открытое закрываться не должно.
     const openKeys = new Set();
@@ -106,11 +106,11 @@ window.DecisionsViz = (function () {
 
     function howToRead(extra) {
         return `<div class="dp-read">
-            <span class="dp-chip dp-pos">ЛУЧШЕ</span> решение помогло
-            <span class="dp-chip dp-neg">ХУЖЕ</span> навредило
+            <span class="dp-chip dp-pos">ПОМОГЛО</span> решение помогло
+            <span class="dp-chip dp-neg">НАВРЕДИЛО</span> навредило
             <span class="dp-chip dp-lpos">СКОРЕЕ / ЧУТЬ</span> направление есть, но слабое
             <span class="dp-chip dp-unk">БЕЗ ЭФФЕКТА</span> разница меньше значимой
-            <span class="dp-chip dp-na">НЕ СЧИТАЕМ</span> сравнивать не с чем
+            <span class="dp-chip dp-na">МАЛО ДАННЫХ</span> сравнивать не с чем
             ${extra || ''}</div>`;
     }
 

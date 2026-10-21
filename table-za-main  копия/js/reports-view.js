@@ -782,7 +782,7 @@ window.ReportsView = (function () {
         const pct = (v) => (v == null ? '' : v);   // число, а не «67%»: в Excel его можно сортировать и складывать
         const block = (r, title, groups, keyLabel) => {
             s.title(r++, title, 8, sec);
-            const head = [keyLabel, 'Решений', 'С итогом', 'Можно судить', 'Сработало', 'Сработало, %', 'Средний итог, бил.'];
+            const head = [keyLabel, 'Решений', 'С итогом', 'Можно судить', 'Помогло', 'Помогло, %', 'Средний итог, бил.'];
             return s.table(r, head,
                 groups.map(g => ({ cells: [g.key, g.n, g.done, g.judged, g.good, pct(g.share), g.avg == null ? '' : g.avg] }))) + 1;
         };
@@ -839,20 +839,21 @@ window.ReportsView = (function () {
         const s = sheetWriter(lib);
         const sec = style(SECTION, 'FFFFFF', true, 'left');
         const block = (r, title, groups, keyLabel) => {
-            s.title(r++, title, 10, sec);
-            const head = [keyLabel, 'Решений', 'Оценено', 'Определено', 'Сработало', 'Не сработало', 'Эффект по определённым, ₽', 'Ориентировочно (доверие низкое)', 'Неопределённо', 'Не оценивается или ждёт данных'];
+            s.title(r++, title, 11, sec);
+            const head = [keyLabel, 'Решений', 'Оценено', 'Определено', 'Помогло', 'Навредило', 'Эффект по определённым, ₽', 'Эффект по всем оценённым, ₽', 'Ориентировочно (доверие низкое)', 'Мало данных', 'Не считаем или ждём итога'];
             return s.table(r, head,
-                groups.map(g => ({ cells: [g.key, g.n, g.money.finalN, g.money.definite, g.money.worked, g.money.failed, g.money.definite ? Math.round(g.money.sum) : '', g.money.approx, g.money.unclear, g.money.na + g.money.wait] }))) + 1;
+                groups.map(g => ({ cells: [g.key, g.n, g.money.finalN, g.money.definite, g.money.worked, g.money.failed, g.money.definite ? Math.round(g.money.sum) : '', g.money.finalN ? Math.round(g.money.sumAll) : '', g.money.approx, g.money.unclear, g.money.na + g.money.wait] }))) + 1;
         };
         let r = 0;
-        s.title(r++, head, 10, style('FFFFFF', NAVY, true, 'left'));
+        s.title(r++, head, 11, style('FFFFFF', NAVY, true, 'left'));
         r++;
         const t = d.total;
         r = block(r, 'Итого', [{ key: 'Все решения', ...t }], 'Решения');
         r = block(r, 'По типу решения', d.byKind, 'Решение');
         r = block(r, 'По направлениям', d.byDir, 'Направление');
+        r = block(r, 'За сколько дней до вылета принято решение', d.byLead, 'Срок');
         block(r, 'По людям', d.byAuthor, 'Кто');
-        const wsS = s.finish([34, 10, 10, 12, 11, 13, 24, 18, 14, 18], 0);
+        const wsS = s.finish([34, 10, 10, 12, 11, 13, 24, 24, 18, 14, 18], 0);
         const wb = lib.utils.book_new();
         lib.utils.book_append_sheet(wb, wsJ, 'Журнал');
         lib.utils.book_append_sheet(wb, wsS, 'Сводка');

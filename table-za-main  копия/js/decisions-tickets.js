@@ -119,7 +119,7 @@ window.DecisionsTickets = (function () {
 
     function shareBar(share) {
         if (share == null) return '<span class="rp-muted">—</span>';
-        return `<span class="dr-bar" title="Сработало ${share}%"><span class="dr-bar-fill ${share >= 50 ? 'dr-bar-pos' : 'dr-bar-neg'}" style="width:${Math.max(0, Math.min(100, share))}%"></span></span><span class="${share >= 50 ? 'dr-pos' : 'dr-neg'}">${share}%</span>`;
+        return `<span class="dr-bar" title="Помогло ${share}%"><span class="dr-bar-fill ${share >= 50 ? 'dr-bar-pos' : 'dr-bar-neg'}" style="width:${Math.max(0, Math.min(100, share))}%"></span></span><span class="${share >= 50 ? 'dr-pos' : 'dr-neg'}">${share}%</span>`;
     }
 
     function summaryTable(title, groups, keyLabel) {
@@ -132,7 +132,7 @@ window.DecisionsTickets = (function () {
             </tr>`).join('');
         return `<div class="dr-sum">
             <div class="dr-sum-title">${esc(title)}</div>
-            <table class="rp-table dr-sum-table"><thead><tr><th>${esc(keyLabel)}</th><th>Решений</th><th title="Из решений, по которым можно судить: выручка после решения не ниже, чем была бы без него">Сработало</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+            <table class="rp-table dr-sum-table"><thead><tr><th>${esc(keyLabel)}</th><th>Решений</th><th title="Из решений, по которым можно судить: выручка после решения не ниже, чем была бы без него">Помогло</th></tr></thead><tbody>${rowsHtml}</tbody></table>
             ${groups.length > 10 ? `<div class="rp-muted">и ещё ${groups.length - 10} — полный список в Excel</div>` : ''}
         </div>`;
     }
@@ -165,10 +165,10 @@ window.DecisionsTickets = (function () {
         const avgTxt = (t) => (t.avg == null ? '—' : `<span class="${t.avg > 0 ? 'dr-pos' : (t.avg < 0 ? 'dr-neg' : '')}">${signed(t.avg)}</span>`);
         const kpis = `<div class="dr-kpis">
             ${kpi('Решений', String(total.n), [`с итогом ${total.done}`, total.waiting ? `ждут итога: ${total.waiting}` : '', total.noNorm ? `не с чем сравнить: ${total.noNorm}` : ''].filter(Boolean).join(' · '))}
-            ${kpi('Сработало', total.share == null ? '—' : `<span class="${total.share >= 50 ? 'dr-pos' : 'dr-neg'}">${total.share}%</span>`, total.judged ? `${total.good} из ${total.judged}${total.done - total.judged ? ` · рано судить ${total.done - total.judged}` : ''}` : 'пока нет итогов')}
+            ${kpi('Помогло', total.share == null ? '—' : `<span class="${total.share >= 50 ? 'dr-pos' : 'dr-neg'}">${total.share}%</span>`, total.judged ? `${total.good} из ${total.judged}${total.done - total.judged ? ` · мало данных ${total.done - total.judged}` : ''}` : 'пока нет итогов')}
             ${kpi('Билетов к обычному', total.avg == null ? '—' : avgTxt(total), 'в среднем на решение')}
-            ${!kindFilter ? kpi('▼ Снижения', String(down.n), down.share != null ? `сработало ${down.share}%` : '', 'dr-kpi-down') : ''}
-            ${!kindFilter ? kpi('▲ Повышения', String(up.n), up.share != null ? `сработало ${up.share}%` : '', 'dr-kpi-up') : ''}
+            ${!kindFilter ? kpi('▼ Снижения', String(down.n), down.share != null ? `помогло ${down.share}%` : '', 'dr-kpi-down') : ''}
+            ${!kindFilter ? kpi('▲ Повышения', String(up.n), up.share != null ? `помогло ${up.share}%` : '', 'dr-kpi-up') : ''}
         </div>`;
         const body = list.map(r => {
             const e = r.e;
@@ -212,19 +212,18 @@ window.DecisionsTickets = (function () {
                 key: [r.code, r.dep, r.check, r.status].join('|'),
                 head: `<span class="dp-code">${esc(r.code)}</span> <span class="dp-dir">${esc(r.direction)}</span>`,
                 dep: esc(fmtD(r.dep)),
-                act: `<span class="dp-ud dp-ud-${up ? 'up' : 'down'}" title="${up ? 'Повышение' : 'Понижение'}">${up ? '▲' : '▼'} ${esc(fmtD(r.check))}${r.author ? ' · ' + esc(r.author) : ''}</span>`,
+                act: `<span class="dp-ud dp-ud-${up ? 'up' : 'down'}" title="${up ? 'Повышение' : 'Снижение'}">${up ? '▲' : '▼'} ${esc(fmtD(r.check))}${r.author ? ' · ' + esc(r.author) : ''}</span>`,
                 big, short, say, lines,
                 tags: [`<button type="button" class="filter-btn rp-open" data-open-base="${esc(r.base)}" data-open-code="${esc(r.code)}" data-open-date="${esc(r.dep)}">Открыть вылет →</button>`]
             });
         });
-        const summary = list.length ? DecisionsViz.strip([{ label: 'Решений', value: total.n }, { label: 'Помогли', value: total.good, cls: 'dr-pos' }, { label: 'Навредили', value: total.judged - total.good, cls: 'dr-neg' }, { label: 'Рано судить / нет нормы', value: total.n - total.judged }, { label: 'Билетов к обычному', value: total.avg == null ? '—' : signed(total.avg), cls: total.avg > 0 ? 'dr-pos' : (total.avg < 0 ? 'dr-neg' : '') }]) : '';
+        const summary = list.length ? DecisionsViz.strip([{ label: 'Решений', value: total.n }, { label: 'Помогли', value: total.good, cls: 'dr-pos' }, { label: 'Навредили', value: total.judged - total.good, cls: 'dr-neg' }, { label: 'Мало данных', value: total.n - total.judged }, { label: 'Билетов к обычному', value: total.avg == null ? '—' : signed(total.avg), cls: total.avg > 0 ? 'dr-pos' : (total.avg < 0 ? 'dr-neg' : '') }]) : '';
         const dash = list.length ? `<div class="dv-grid dv-grid2">
             ${DecisionsViz.stack('Итог решений', [
-                { label: 'Сработало', value: total.good, cls: 'dv-pos' },
-                { label: 'Не сработало', value: total.judged - total.good, cls: 'dv-neg' },
-                { label: 'Рано судить', value: total.done - total.judged, cls: 'dv-unk' },
-                { label: 'Ждут итога', value: total.waiting, cls: 'dv-wait' },
-                { label: 'Не с чем сравнить', value: total.noNorm, cls: 'dv-na' }])}
+                { label: 'Помогло', value: total.good, cls: 'dv-pos' },
+                { label: 'Навредило', value: total.judged - total.good, cls: 'dv-neg' },
+                { label: 'Мало данных', value: total.done - total.judged + total.noNorm, cls: 'dv-na' },
+                { label: 'Ждём итога', value: total.waiting, cls: 'dv-wait' }])}
             ${DecisionsViz.bars('Билетов к обычному, в среднем на решение', groupBy(list, r => r.direction || r.code).filter(g => g.avg != null).slice(0, 8).map(g => ({ label: g.key, value: g.avg, text: signed(g.avg), sub: `решений ${g.n}` })), 'Больше нуля — продали больше обычного')}
         </div>` : '';
         const sums = list.length ? `<div class="dr-sums">
@@ -239,9 +238,9 @@ window.DecisionsTickets = (function () {
                 </div>
                 <details class="dr-help"><summary>Как считается</summary>
                     <p>Решения судятся по <strong>билетам</strong>, а не по рублям: выручка за несколько дней зависит от того, кто купил (группа, дети, лайт или оптимум), сильнее, чем от самого решения.</p>
-                    <p><strong>«▼ Снижение»</strong> — продажи за ${wd()} после решения против обычных для этих дней (норма по тому же дню недели), с поправкой на то, как рейс шёл до решения. Продали больше обычного — сработало.</p>
-                    <p><strong>«▲ Повышение»</strong> — по итогу вылета: дороже продают медленнее, это нормально. Сработало, если рейс заполнился (от 95%) или с дня решения до вылета добрали не меньше обычного (допуск 10%). До вылета — «итог повышения — после вылета».</p>
-                    <p>Если билетов слишком мало для вывода — «рано судить», такие решения в «Сработало» не считаются.</p>
+                    <p><strong>«▼ Снижение»</strong> — продажи за ${wd()} после решения против обычных для этих дней (норма по тому же дню недели), с поправкой на то, как рейс шёл до решения. Продали больше обычного — помогло.</p>
+                    <p><strong>«▲ Повышение»</strong> — по итогу вылета: дороже продают медленнее, это нормально. Помогло, если рейс заполнился (от 95%) или с дня решения до вылета добрали не меньше обычного (допуск 10%). До вылета — «итог повышения — после вылета».</p>
+                    <p>Если билетов слишком мало для вывода — «мало данных», такие решения в «Помогло» не считаются.</p>
                 </details>
                 ${toolbar}
                 ${summary}
