@@ -214,13 +214,14 @@ function renderHeaderKpi() {
         return wrap;
     };
     if (featureOn('header_kpi')) {
-        items.push(item(salesReady ? sales : '—', 'продаж'), item(salesReady ? (revK + 'к') : '—', '₽'));
+        items.push(item(salesReady ? sales : '—', 'продаж'), item(salesReady ? (revK + ' тыс.') : '—', '₽'));
     }
     if (alerts && featureOn('rms_header_alerts')) {
         safe(() => {
             const al = document.createElement('span');
             al.className = 'header-kpi-alert';
             al.textContent = '⚠ ' + alerts;
+            al.title = 'Сигналов RMS: ' + alerts + (canRms ? '. Нажмите, чтобы открыть' : '');
             if (canRms) al.addEventListener('click', () => switchMainTab('rms'));
             return al;
         });

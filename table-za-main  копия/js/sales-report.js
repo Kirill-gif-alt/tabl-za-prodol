@@ -377,7 +377,7 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
     let refBand = null;
     let normInfo = null;
     let refLabel = '';
-    let caption = 'Кривая 14д: накоплено билетов к моменту «N дней до вылета» (окно файла Tickets_SALE_Last14Days, не полный pickup −21).';
+    let caption = 'Кривая за 14 дней: накоплено билетов к моменту «N дней до вылета». Данные только за последние 14 дней продаж.';
     const dowName = typeof getDayOfWeek === 'function' ? getDayOfWeek(flyDateStr) : '';
 
     // «Обычно к этому дню» — по нынешним продажам: норма по тем же дням недели (вылеты ±8 недель).
@@ -720,7 +720,7 @@ function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode)
                 ${chip('Ожидаемая', expR != null ? expR : '—', deltaNow != null ? ` <span class="${deltaNow < 0 ? 'sd-neg' : 'sd-pos'}">${deltaNow > 0 ? '+' : ''}${deltaNow}</span>` : '')}
             </div>
             <div class="sd-tools">
-                <span class="sd-period">${[7, 14, 30, 90].map(periodBtn).join('')}<input type="number" id="sales-period-custom" class="sd-period-input" min="1" max="400" value="${period}" title="Свой период, дней"><button type="button" class="sd-period-btn" id="sales-period-apply">OK</button></span>
+                <span class="sd-period">${[7, 14, 30, 90].map(periodBtn).join('')}<input type="number" id="sales-period-custom" class="sd-period-input" min="1" max="400" value="${period}" title="Свой период, дней"><button type="button" class="sd-period-btn" id="sales-period-apply">Применить</button></span>
                 <button type="button" class="sd-comment-btn${comment ? ' sd-has' : ''}" data-sd="comment" title="${comment ? escAttr(comment) : 'Добавить комментарий'}">💬${comment ? ' 1' : ''}</button>
             </div>
         </div>

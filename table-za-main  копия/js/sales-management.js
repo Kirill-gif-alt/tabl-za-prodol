@@ -1618,7 +1618,7 @@ function renderSalesFlightList() {
         <button type="button" class="sm-flight ${flight.code === salesFlightPick ? 'sm-flight-on' : ''}" data-code="${salesAttr(flight.code)}">
             <strong>${salesEsc(flight.code)}</strong>
             <span>${salesEsc(flight.route)}</span>
-            <small>${flight.departures.length} дат${salesEsc(extraText)}</small>
+            <small>${flight.departures.length} ${pluralRu(flight.departures.length, 'дата', 'даты', 'дат')}${salesEsc(extraText)}</small>
         </button>`;
     }).join('');
 }
@@ -1891,7 +1891,7 @@ function createSalesManagementView(panel) {
                         <span class="table-controls-spacer"></span>
                         <button type="button" id="sm-today" class="filter-btn filter-btn-active">Сегодня</button>
                         <button type="button" id="sm-reload" class="filter-btn">Обновить</button>
-                        <button type="button" id="sm-export" class="filter-btn">В Excel</button>
+                        <button type="button" id="sm-export" class="filter-btn">Выгрузить в Excel</button>
                     </div>
                     <div class="sm-legend" aria-hidden="true">
                         <span class="sm-legend-item sm-st-keep">Проверено без изменений</span>
@@ -2296,7 +2296,7 @@ function buildSalesWorkbook(lib, flights, stamp, colored) {
 
 async function exportSalesManagementExcel() {
     if (typeof ProfileAuth !== 'undefined' && !ProfileAuth.hasPermission('export_excel')) {
-        if (typeof showToast === 'function') showToast('Экспорт в Excel недоступен для вашего профиля', 'error');
+        if (typeof showToast === 'function') showToast('Выгрузка недоступна для вашего профиля', 'error');
         return;
     }
     if (!SalesManagement.canView()) {
@@ -2329,9 +2329,9 @@ async function exportSalesManagementExcel() {
             : (lib.writeFile(wb, filename), { where: 'download' });
         if (typeof ActivityLog !== 'undefined') ActivityLog.log('export', 'Управление продажами');
         if (typeof excelAnnounceSaved === 'function') {
-            excelAnnounceSaved(saved, `Файл готов: ${flights.length} рейсов, дата выгрузки ${stamp}`);
+            excelAnnounceSaved(saved, `Файл готов: ${flights.length} ${pluralRu(flights.length, 'рейс', 'рейса', 'рейсов')}, дата выгрузки ${stamp}`);
         } else if (typeof showToast === 'function') {
-            showToast(`Файл готов: ${flights.length} рейсов, дата выгрузки ${stamp}`);
+            showToast(`Файл готов: ${flights.length} ${pluralRu(flights.length, 'рейс', 'рейса', 'рейсов')}, дата выгрузки ${stamp}`);
         }
     } catch (e) {
         console.error(e);

@@ -379,10 +379,11 @@ window.ReferenceView = (function () {
             <section class="rp-card">
                 <div class="rp-card-head"><h3 class="rp-card-title">Суммы субсидии и себестоимость по маршрутам</h3>
                     ${can && !ae ? '<button type="button" class="btn-primary rp-btn" data-refa-new>Добавить маршрут</button>' : ''}</div>
-                <p class="rp-card-text">В каждой ячейке: сверху <strong>субсидия</strong>, ниже себестоимость и на скольких рейсах она посчитана — тыс. ₽ за пару рейсов туда-обратно (на один рейс — половина).
-                    Месяцы — из файла себестоимости и субсидий («Отчёты» → «Себестоимость и субсидии»), «Среднее» идёт в экономическую таблицу.
-                    Краевым направлениям субсидия всегда 0. Субсидия одна на все месяцы: если она есть хотя бы в одном месяце файла, ставится во все. Если у межрегионального направления в файле нет субсидии ни в одном месяце — берётся субсидия из этого справочника.
-                    Маршрут, которого нет в файле, — целиком из справочника.</p>
+                <p class="rp-card-text">В каждой ячейке: сверху <strong>субсидия</strong>, ниже себестоимость и число рейсов, по которым она посчитана. Суммы в тыс. ₽ за пару рейсов туда-обратно (на один рейс — половина).
+                    Месяцы — из файла себестоимости и субсидий («Отчёты» → «Себестоимость и субсидии»). «Среднее» идёт в экономическую таблицу.
+                    Краевым направлениям субсидия всегда 0. Субсидия одна на все месяцы: если она есть хотя бы в одном месяце файла, ставится во все.
+                    Если у межрегионального направления в файле нет субсидии ни в одном месяце, берётся субсидия из этого справочника.
+                    Маршрут, которого нет в файле, берётся из справочника целиком.</p>
                 ${importHtml()}
                 ${form}
                 <div class="ref-toolbar"><input type="search" class="cr-input" id="ref-a-filter" placeholder="Поиск: город или тип ВС" value="${esc(amountFilter)}"></div>
@@ -637,7 +638,7 @@ window.ReferenceView = (function () {
             <section class="rp-card">
                 <div class="rp-card-head"><h3 class="rp-card-title">Рейсы</h3>
                     ${can && !fe ? '<button type="button" class="btn-primary rp-btn" data-reff-new>Добавить рейс</button>' : ''}</div>
-                <p class="rp-card-text">Номер, маршрут, обратный номер и доп. номера рейса. Новый рейс сразу появляется везде: направление на Графплане и в таблицах,
+                <p class="rp-card-text">Номер, маршрут, обратный номер и доп. номера рейса. Новый рейс сразу появляется везде: направление в «Графическом плане» и в таблицах,
                     пара туда–обратно в «Экономической таблице», доп. номера сводятся к основному. Менять может тот, кому администратор дал право «Справочник рейсов».</p>
                 ${form}
                 <div class="ref-toolbar">
@@ -695,9 +696,9 @@ window.ReferenceView = (function () {
                 <div class="rp-card-head"><h3 class="rp-card-title">Календарь событий</h3>
                     ${can && !ce ? '<button type="button" class="btn-primary rp-btn" data-refc-new>Добавить событие</button>' : ''}</div>
                 <p class="rp-card-text">Праздники, школьные каникулы и свои события (форум, концерт, отмена рейсов). Встроены нерабочие праздничные дни РФ
-                    на 2025–2027 годы и школьные каникулы по рекомендациям Минпросвещения — если в крае даты другие, их можно поправить.
-                    <strong>Особые дни для нормы</strong>: обычный вылет не сравнивается с праздничными, а праздничный — сравнивается с такими же праздничными
-                    (если их мало — с обычными). Отметки видны на Графплане, на вкладке «Сегодня» и в карточке рейса.</p>
+                    на 2025–2027 годы и школьные каникулы по рекомендациям Минпросвещения. Если в крае даты другие, их можно поправить.
+                    <strong>Особые дни для нормы</strong>: обычный вылет не сравнивается с праздничными. Праздничный сравнивается с такими же праздничными
+                    (если их мало — с обычными). Отметки видны в «Графическом плане», на вкладке «Сегодня» и в карточке рейса.</p>
                 ${form}
                 <div class="ref-toolbar">
                     <label>Год <select class="cr-input" id="ref-c-year">${years.map(y => `<option${y === calYear ? ' selected' : ''}>${esc(y)}</option>`).join('')}</select></label>
@@ -1030,10 +1031,10 @@ window.ReferenceView = (function () {
         }
         const nP = Object.keys(plan.periods).length;
         const lines = [
-            plan.fares.length ? `Тарифы: ${plan.fares.length} записей` : '',
-            nP ? `Периоды: ${nP} рейсов (периоды этих рейсов заменятся)` : '',
-            plan.amounts.length ? `Суммы: ${plan.amounts.length} маршрутов` : '',
-            plan.nav.length ? `ПКЗ: ${plan.nav.length} правил` : ''
+            plan.fares.length ? `Тарифы: ${plan.fares.length} ${pluralRu(plan.fares.length, 'запись', 'записи', 'записей')}` : '',
+            nP ? `Периоды: ${nP} ${pluralRu(nP, 'рейс', 'рейса', 'рейсов')} (периоды этих рейсов заменятся)` : '',
+            plan.amounts.length ? `Суммы: ${plan.amounts.length} ${pluralRu(plan.amounts.length, 'маршрут', 'маршрута', 'маршрутов')}` : '',
+            plan.nav.length ? `ПКЗ: ${plan.nav.length} ${pluralRu(plan.nav.length, 'правило', 'правила', 'правил')}` : ''
         ].filter(Boolean);
         if (!lines.length) {
             toast('В файле нет строк для загрузки' + (plan.errors.length ? ` (ошибок: ${plan.errors.length})` : ''), 'error');
@@ -1349,7 +1350,7 @@ window.ReferenceView = (function () {
             if (!own) return true;
             const builtin = FlightRegistry.isBuiltin(d.reffDel);
             if (!window.confirm(builtin
-                ? `Вернуть рейс ${own.code} к встроенному описанию (routes.js)?`
+                ? `Вернуть рейс ${own.code} к встроенному описанию рейса?`
                 : `Удалить рейс ${own.code}${own.back ? ' / ' + own.back : ''} (${own.from} — ${own.to}) из справочника?`)) return true;
             run(btn, () => FlightRegistry.remove(d.reffDel), null, () => { refreshAll(); rerender(); });
             return true;

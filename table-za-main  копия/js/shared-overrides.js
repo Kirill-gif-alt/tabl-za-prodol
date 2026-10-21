@@ -135,9 +135,9 @@ window.SharedOverrides = (function () {
         } catch { /* ignore */ }
         if (read.ok && typeof SharedStorage !== 'undefined' && SharedStorage.writeJsonFile) {
             const written = await SharedStorage.writeJsonFile(filename, payload);
-            if (!written && typeof showToast === 'function') showToast('Правка не записана в общую папку — видна только на этом ПК', 'error');
+            if (!written && typeof showToast === 'function') showToast('Правка не записана в общую папку — видна только на этом компьютере', 'error');
         } else if (typeof showToast === 'function') {
-            showToast('Общий файл недоступен — правка видна только на этом ПК', 'error');
+            showToast('Общий файл недоступен — правка видна только на этом компьютере', 'error');
         }
         if (typeof SalesSync !== 'undefined') {
             try {

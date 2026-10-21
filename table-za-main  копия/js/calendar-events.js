@@ -179,11 +179,11 @@ window.CalendarEvents = (function () {
         if (!canEdit()) return { ok: false, error: 'Нет права менять календарь' };
         if (typeof SharedStorage === 'undefined') return { ok: false, error: 'Общая папка не подключена' };
         const r = await SharedStorage.readJsonFileStrict(FILE).catch(() => ({ ok: false }));
-        if (!r.ok) return { ok: false, error: 'Не удалось прочитать calendar.json — изменения не сохранены' };
+        if (!r.ok) return { ok: false, error: 'Не удалось прочитать общий файл календаря — изменения не сохранены' };
         const merged = mergeInto({}, r.data && r.data.events);
         merged[id] = { ...entry, at: new Date().toISOString(), by: profileName() };
         const okWrite = await SharedStorage.writeJsonFile(FILE, { version: 1, updatedAt: new Date().toISOString(), events: merged });
-        if (!okWrite) return { ok: false, error: 'Не удалось записать calendar.json' };
+        if (!okWrite) return { ok: false, error: 'Не удалось записать общий файл календаря' };
         custom = mergeInto({}, merged);
         rev++;
         if (typeof invalidateMetricsCache === 'function') invalidateMetricsCache();

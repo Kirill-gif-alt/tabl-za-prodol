@@ -125,7 +125,7 @@ window.MorningSummary = (function () {
         const chip = document.createElement('span');
         chip.className = 'header-kpi-morning';
         chip.textContent = '☀ ' + n;
-        chip.title = `Сводка: ${n} ${pluralRu(n, 'вылет', 'вылета', 'вылетов')} на ${aheadDays()} дней ждут решения сегодня. Нажмите, чтобы открыть.`;
+        chip.title = `Сводка: ${n} ${pluralRu(n, 'вылет', 'вылета', 'вылетов')} на ${aheadDays()} ${pluralRu(aheadDays(), 'день', 'дня', 'дней')} ждут отметки сегодня. Нажмите, чтобы открыть.`;
         chip.addEventListener('click', open);
         return chip;
     }
@@ -149,19 +149,19 @@ window.MorningSummary = (function () {
                 <td class="ms-nowrap"><strong>${esc(a.code)}</strong> ${esc(a.date)}</td>
                 <td class="ms-muted">${esc(dir(a.code))}</td>
                 <td>${esc(a.text)}</td>
-                <td class="ms-nowrap"><button type="button" class="filter-btn rp-open" data-ms-sales="${esc(a.code)}" data-ms-date="${esc(a.date)}">В УП</button></td>
+                <td class="ms-nowrap"><button type="button" class="filter-btn rp-open" data-ms-sales="${esc(a.code)}" data-ms-date="${esc(a.date)}">В «Управление продажами»</button></td>
             </tr>`).join('');
         box.innerHTML = `
             <div class="ms-tiles">
-                ${adviceAllowed() ? `<div class="ms-tile"><div class="ms-tile-n">${list.length}</div><div class="ms-tile-l">ждут решения<br><span class="ms-muted">▼ ${counts.down} · ! ${counts.attn} · ▲ ${counts.up}</span></div></div>` : ''}
-                ${typeof FlightChecks !== 'undefined' && FlightChecks.enabled() ? `<button type="button" class="ms-tile ms-tile-btn" data-ms-open="checks"><div class="ms-tile-n${fe ? ' ms-bad' : ''}">${fe}</div><div class="ms-tile-l">рейсов с ошибкой тарифа<br><span class="ms-muted">открыть проверку →</span></div></button>` : ''}
-                ${typeof SubsidyRef !== 'undefined' && SubsidyRef.canView() ? `<button type="button" class="ms-tile ms-tile-btn" data-ms-open="refs"><div class="ms-tile-n${gaps ? ' ms-warn' : ''}">${gaps}</div><div class="ms-tile-l">пропусков в справочнике<br><span class="ms-muted">открыть проверку →</span></div></button>` : ''}
+                ${adviceAllowed() ? `<div class="ms-tile"><div class="ms-tile-n">${list.length}</div><div class="ms-tile-l">${pluralRu(list.length, 'ждёт отметки', 'ждут отметки', 'ждут отметки')}<br><span class="ms-muted">▼ ${counts.down} · ! ${counts.attn} · ▲ ${counts.up}</span></div></div>` : ''}
+                ${typeof FlightChecks !== 'undefined' && FlightChecks.enabled() ? `<button type="button" class="ms-tile ms-tile-btn" data-ms-open="checks"><div class="ms-tile-n${fe ? ' ms-bad' : ''}">${fe}</div><div class="ms-tile-l">${pluralRu(fe, 'рейс', 'рейса', 'рейсов')} с ошибкой тарифа<br><span class="ms-muted">открыть проверку →</span></div></button>` : ''}
+                ${typeof SubsidyRef !== 'undefined' && SubsidyRef.canView() ? `<button type="button" class="ms-tile ms-tile-btn" data-ms-open="refs"><div class="ms-tile-n${gaps ? ' ms-warn' : ''}">${gaps}</div><div class="ms-tile-l">${pluralRu(gaps, 'пропуск', 'пропуска', 'пропусков')} в справочнике<br><span class="ms-muted">открыть проверку →</span></div></button>` : ''}
             </div>
             ${adviceAllowed() ? (list.length ? `
-                <p class="ms-note">Вылеты из «Управления продажами» на ${aheadDays()} дней, где продажи заметно расходятся с нормой и планом, а отметки за сегодня ещё нет. Нажмите строку — карточка рейса, «В УП» — поставить отметку.</p>
+                <p class="ms-note">Вылеты из «Управления продажами» на ${aheadDays()} ${pluralRu(aheadDays(), 'день', 'дня', 'дней')}, где продажи заметно расходятся с нормой и планом, а отметки за сегодня ещё нет. Нажмите строку — карточка рейса, кнопка в конце строки — поставить отметку.</p>
                 <div class="ms-scroll"><table class="ms-table"><tbody>${rows}</tbody></table></div>
                 ${list.length > shown.length ? `<p class="ms-note">Показаны первые ${shown.length} из ${list.length}.</p>` : ''}`
-                : '<p class="ms-note ms-ok">По вылетам на ' + aheadDays() + ' дней всё в норме или уже отмечено сегодня.</p>') : ''}`;
+                : '<p class="ms-note ms-ok">По вылетам на ' + aheadDays() + ' ' + pluralRu(aheadDays(), 'день', 'дня', 'дней') + ' всё в норме или уже отмечено сегодня.</p>') : ''}`;
     }
 
     function ensureModal() {

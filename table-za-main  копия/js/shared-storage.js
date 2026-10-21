@@ -164,7 +164,7 @@ window.SharedStorage = (function () {
                 return false;
             })();
             if (!looksLikeApp) {
-                return { ok: false, error: 'Это не папка приложения (нет index.html / js / shared)' };
+                return { ok: false, error: 'Выбрана не та папка: в ней нет файлов приложения' };
             }
             await saveRootHandle(handle);
             return { ok: true };
@@ -532,7 +532,7 @@ window.SharedStorage = (function () {
         };
         const ok = await writeViaHandle(PROFILES_FILE, payload);
         if (!ok && !silent && typeof showToast === 'function') {
-            showToast('Подключите папку приложения, чтобы профили увидели другие ПК', 'error');
+            showToast('Подключите общую папку, чтобы профили увидели другие компьютеры', 'error');
         }
         return ok;
     }
@@ -588,7 +588,7 @@ window.SharedStorage = (function () {
         if (announce && ok && typeof showToast === 'function') {
             showToast('Данные опубликованы для всех пользователей');
         } else if (announce && !ok && typeof showToast === 'function') {
-            showToast('Подключите папку приложения (⚙ Профили), чтобы данные увидели другие ПК', 'error');
+            showToast('Подключите общую папку в окне «Профили», чтобы данные увидели другие компьютеры', 'error');
         }
         return ok;
     }

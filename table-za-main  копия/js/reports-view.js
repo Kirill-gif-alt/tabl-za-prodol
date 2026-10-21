@@ -300,7 +300,7 @@ window.ReportsView = (function () {
         const notes = [
             'Кресла в продаже = AU снимка − спец. брони, как на вкладке «Загрузка рейсов». Для прошлой недели — значения из последней загрузки.',
             'План загрузки — ожидаемое число пассажиров в день вылета по файлу прогноза загрузки. Рейсы, которых нет в файле прогноза, в план не входят (их число — в последнем столбце), план ЗПК считается только по рейсам с прогнозом.',
-            'МВЛ — рейсы с международным городом (список INTERNATIONAL_CITIES в js/cities.js), остальные — ВВЛ. Внутри ВВЛ — деление на краевые и межрегиональные.'
+            'МВЛ — рейсы, где хотя бы один город за границей; остальные — ВВЛ. Внутри ВВЛ рейсы делятся на краевые и межрегиональные.'
         ];
         if (!rep.hasExpected) notes.unshift('Файл прогноза загрузки не загружен — план загрузки пуст.');
         const emptyPast = rep.pastDays.filter(d => !d.all.flights).map(d => d.date);
@@ -455,9 +455,9 @@ window.ReportsView = (function () {
             <section class="rp-card rp-checks" id="rp-checks">
                 <div class="rp-card-head">
                     <h3 class="rp-card-title"><span class="fc-flag fc-flag-big" aria-hidden="true"></span> Проверка рейсов</h3>
-                    <button type="button" class="btn-primary rp-btn" id="rp-checks-export"${all.length && hasPerm('export_excel') ? '' : ' disabled'}>В Excel</button>
+                    <button type="button" class="btn-primary rp-btn" id="rp-checks-export"${all.length && hasPerm('export_excel') ? '' : ' disabled'}>Выгрузить в Excel</button>
                 </div>
-                <p class="rp-card-text">Проверяются субсидированные рейсы: межрегиональные с суммой субсидии больше 0 в «Экономической таблице» (краевые не субсидированные). Ошибка — если продан детский тариф со скидкой 50% (…/CN50) или билет дороже предельного тарифа из справочника субсидированных тарифов. Рейс с ошибкой помечен «!» в «Загрузке рейсов», «Экономической таблице» и «Динамике продаж».</p>
+                <p class="rp-card-text">Проверяем субсидированные рейсы: межрегиональные, у которых в «Экономической таблице» субсидия больше 0. Краевые не субсидируются. Ошибка — если продан детский билет со скидкой 50% (…/CN50) или билет дороже предельного тарифа из справочника. Рейс с ошибкой помечен «!» в «Загрузке рейсов», «Экономической таблице» и «Динамике продаж».</p>
                 <p class="rp-note">${summary}</p>
                 ${all.length ? `
                 <label class="rp-check"><input type="checkbox" id="rp-checks-future"${checksFutureOnly ? ' checked' : ''}> только рейсы до вылета</label>
@@ -700,7 +700,7 @@ window.ReportsView = (function () {
         if (typeof FlightChecks !== 'undefined') FlightChecks.refreshViews();
         renderBody();
         if (shared) toast(msg + ' — видно всем');
-        else toast(msg + ' на этом компьютере. Подключите папку приложения, чтобы справочник увидели остальные.', 'error');
+        else toast(msg + ' на этом компьютере. Подключите общую папку, чтобы справочник увидели остальные.', 'error');
         if (typeof ActivityLog !== 'undefined') ActivityLog.log('fare_refs', msg);
     }
 
@@ -715,7 +715,7 @@ window.ReportsView = (function () {
 
     async function exportChecks() {
         if (!hasPerm('export_excel')) {
-            toast('Экспорт недоступен для вашего профиля', 'error');
+            toast('Выгрузка недоступна для вашего профиля', 'error');
             return;
         }
         const all = checksList();
@@ -753,7 +753,7 @@ window.ReportsView = (function () {
     // «Решения» → Excel: лист «Журнал» (каждое решение) и «Сводка» (по типу, направлениям, людям).
     async function exportDecisionsTickets() {
         if (!hasPerm('export_excel')) {
-            toast('Экспорт недоступен для вашего профиля', 'error');
+            toast('Выгрузка недоступна для вашего профиля', 'error');
             return;
         }
         if (typeof DecisionsTickets === 'undefined') return;
@@ -812,7 +812,7 @@ window.ReportsView = (function () {
     // «Решения» → Excel: лист «Журнал» (каждое решение) и «Сводка» (по типу, направлениям, людям).
     async function exportDecisions() {
         if (!hasPerm('export_excel')) {
-            toast('Экспорт недоступен для вашего профиля', 'error');
+            toast('Выгрузка недоступна для вашего профиля', 'error');
             return;
         }
         if (typeof DecisionsReport === 'undefined') return;
@@ -897,7 +897,7 @@ window.ReportsView = (function () {
             <section class="rp-card">
                 <div class="rp-card-head">
                     <h3 class="rp-card-title">${esc(title)}</h3>
-                    <button type="button" class="btn-primary rp-btn" id="${id}"${allowed ? '' : ' disabled'}>${id === 'rp-costs-upload' ? 'Загрузить' : 'Выгрузить'}</button>
+                    <button type="button" class="btn-primary rp-btn" id="${id}"${allowed ? '' : ' disabled'}>${id === 'rp-costs-upload' ? 'Загрузить файл расходов' : 'Выгрузить'}</button>
                 </div>
                 <p class="rp-card-text">${esc(text)}</p>
                 ${allowed ? '' : `<p class="rp-note rp-warn">${esc(denyText)}</p>`}
@@ -963,10 +963,10 @@ window.ReportsView = (function () {
             content = `<div class="rp-export-grid">${[
                 card('rp-data', 'Загрузка рейсов',
                     'Excel с карточками маршрутов, как на вкладке «Загрузка рейсов» (с её текущими фильтрами).',
-                    canData(), 'Нужны вкладка «Загрузка рейсов» и право на экспорт Excel.'),
-                card('rp-data-split', 'Загрузка: КК и межрегионалка',
-                    'Два файла с карточками маршрутов: «Загрузка - КК» — только краевые рейсы, «Загрузка - Межрегионалка» — межрегиональные и международные. Все направления, без фильтров вкладки. Файлы не плодятся: каждая выгрузка добавляет в них вкладку с датой (15.10.26, 16.10.26…, не больше 30), повторная выгрузка за день заменяет вкладку этого дня. Вкладки прошлых дней хранятся в общей папке сайта — файл одинаков у всех администраторов.',
-                    canData(), 'Нужны вкладка «Загрузка рейсов» и право на экспорт Excel.'),
+                    canData(), 'Нужны вкладка «Загрузка рейсов» и право на выгрузку в Excel.'),
+                card('rp-data-split', 'Загрузка: краевые и межрегиональные',
+                    'Два файла: «Загрузка - КК» (краевые рейсы) и «Загрузка - Межрегионалка» (межрегиональные и международные). Фильтры вкладки не действуют. Каждая выгрузка добавляет лист с датой (не больше 30), повторная за день заменяет лист этого дня. Листы прошлых дней лежат в общей папке.',
+                    canData(), 'Нужны вкладка «Загрузка рейсов» и право на выгрузку в Excel.'),
                 card('rp-sales', 'Управление продажами',
                     'Excel вкладки «Управление продажами»: лист на каждый рейс с отметками по дням.',
                     canSales(), 'Нужна вкладка «Управление продажами».'),
@@ -976,7 +976,7 @@ window.ReportsView = (function () {
             ].join('')}</div>
             ${card('rp-econ', 'Для экономистов',
                 `Факт кресел в продаже за прошлую неделю (${weekLabel(weeks.past)}) и план загрузки на следующую (${weekLabel(weeks.next)}), отдельно ВВЛ и МВЛ. Листы: сводка, факт по рейсам, план по рейсам.`,
-                canEcon(), 'Нужны право на экспорт Excel и одна из вкладок: «Загрузка рейсов», «Экономическая таблица», «Расчёт расходов».',
+                canEcon(), 'Нужны право на выгрузку в Excel и одна из вкладок: «Загрузка рейсов», «Экономическая таблица», «Расчёт расходов».',
                 canEcon() ? `<div class="rp-preview" id="rp-preview">${previewHtml()}</div>` : '')}`;
         }
         body.innerHTML = `
@@ -1077,7 +1077,7 @@ window.ReportsView = (function () {
             }
             if (btn.id === 'rp-suggest-all') {
                 const ready = lastSuggestions.filter(x => x.enough);
-                if (!ready.length || !window.confirm(`Добавить в справочник ${ready.length} пределов по подсказкам?\n\n${ready.map(x => `${x.flights.join(', ')} — ${fmt(x.adult)} ₽ ${x.fareCode}`).join('\n')}`)) return;
+                if (!ready.length || !window.confirm(`Добавить в справочник ${ready.length} ${pluralRu(ready.length, 'предел', 'предела', 'пределов')} по подсказкам?\n\n${ready.map(x => `${x.flights.join(', ')} — ${fmt(x.adult)} ₽ ${x.fareCode}`).join('\n')}`)) return;
                 btn.disabled = true;
                 acceptSuggestions(ready).catch(e => { console.error(e); toast('Не удалось сохранить', 'error'); }).finally(() => { btn.disabled = false; });
                 return;

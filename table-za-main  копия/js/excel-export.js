@@ -608,7 +608,7 @@ function dataBoardExcelLegSpec() {
     const labels = [];
     const kinds = [];
     if (dataBoardExcelShowTimes()) {
-        labels.push('ВР. ВЫЛЕТА', 'ВР. ПРИЛЕТА');
+        labels.push('ВР. ВЫЛЕТА', 'ВР. ПРИЛЁТА');
         kinds.push('time', 'time');
     }
     labels.push('КРЕС.');
@@ -939,10 +939,10 @@ function buildDataBoardWorksheet(lib, pairs, todayStart) {
 }
 
 function exportDataBoardToExcel() {
-    if (typeof ProfileAuth !== 'undefined' && !ProfileAuth.guardPermission('export_excel', 'Экспорт недоступен для вашего профиля')) return;
+    if (typeof ProfileAuth !== 'undefined' && !ProfileAuth.guardPermission('export_excel', 'Выгрузка недоступна для вашего профиля')) return;
     if (typeof ActivityLog !== 'undefined') ActivityLog.log('export', 'Данные');
     if (typeof groupedData === 'undefined' || !Object.keys(groupedData).length) {
-        showToast('Нет данных для экспорта', 'error');
+        showToast('Нет данных для выгрузки', 'error');
         return;
     }
     const todayStart = new Date();
@@ -950,16 +950,16 @@ function exportDataBoardToExcel() {
     const pairs = typeof getDataRoutePairs === 'function' ? getDataRoutePairs(todayStart) : [];
     exportDataBoardWorkbook(pairs, todayStart).catch(e => {
         console.error(e);
-        if (typeof showToast === 'function') showToast('Ошибка экспорта', 'error');
+        if (typeof showToast === 'function') showToast('Ошибка выгрузки', 'error');
     });
 }
 
 // «Отчёты» → «Выгрузки в Excel»: два файла — «Загрузка - КК» (краевые) и «Загрузка - Межрегионалка»
 // (межрегиональные и международные). Все направления, без поиска и фильтра типа вкладки.
 async function exportDataBoardSplit() {
-    if (typeof ProfileAuth !== 'undefined' && !ProfileAuth.guardPermission('export_excel', 'Экспорт недоступен для вашего профиля')) return;
-    if (typeof groupedData === 'undefined' || !Object.keys(groupedData).length) { showToast('Нет данных для экспорта', 'error'); return; }
-    if (typeof ActivityLog !== 'undefined') ActivityLog.log('export', 'Загрузка: КК и межрегионалка');
+    if (typeof ProfileAuth !== 'undefined' && !ProfileAuth.guardPermission('export_excel', 'Выгрузка недоступна для вашего профиля')) return;
+    if (typeof groupedData === 'undefined' || !Object.keys(groupedData).length) { showToast('Нет данных для выгрузки', 'error'); return; }
+    if (typeof ActivityLog !== 'undefined') ActivityLog.log('export', 'Загрузка: краевые и межрегиональные');
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const keep = { type: dataRouteTypeFilter, q: dataSearchQuery };
@@ -1088,7 +1088,7 @@ async function exportDataBoardWorkbook(pairs, todayStart, fileBase, history) {
     const lib = styled || XLSX;
     const built = buildDataBoardWorksheet(lib, pairs, todayStart);
     if (!built.cards) {
-        if (typeof showToast === 'function') showToast('Нет данных для экспорта', 'error');
+        if (typeof showToast === 'function') showToast('Нет данных для выгрузки', 'error');
         return;
     }
     const wb = lib.utils.book_new();
@@ -1119,12 +1119,12 @@ async function exportDataBoardWorkbook(pairs, todayStart, fileBase, history) {
 }
 
 function exportRmsToExcel() {
-    if (typeof ProfileAuth !== 'undefined' && !ProfileAuth.guardPermission('export_excel', 'Экспорт недоступен для вашего профиля')) return;
+    if (typeof ProfileAuth !== 'undefined' && !ProfileAuth.guardPermission('export_excel', 'Выгрузка недоступна для вашего профиля')) return;
     if (typeof ActivityLog !== 'undefined') ActivityLog.log('export', 'RMS');
     const flights = getRmsFilteredFlights();
 
     if (!flights.length) {
-        showToast('Нет данных для экспорта', 'error');
+        showToast('Нет данных для выгрузки', 'error');
         return;
     }
 
@@ -1164,7 +1164,7 @@ function exportRmsToExcel() {
     const fileDate = typeof getTodayDate === 'function' ? getTodayDate() : excelExportStamp();
     excelWriteBook('Сводка', [headers, ...rows], excelDailyFilename('КРАСАВИА_сводка', fileDate), { freezeCols: 1, kind: 'rms' }).catch(e => {
         console.error(e);
-        showToast('Ошибка экспорта', 'error');
+        showToast('Ошибка выгрузки', 'error');
     });
 }
 
@@ -1186,10 +1186,10 @@ function excelSafeWorkbook(wb) {
 }
 
 async function exportTableToExcel(tableElement, filename = 'КРАСАВИА_экспорт.xlsx', kind) {
-    if (typeof ProfileAuth !== 'undefined' && !ProfileAuth.guardPermission('export_excel', 'Экспорт недоступен для вашего профиля')) return;
+    if (typeof ProfileAuth !== 'undefined' && !ProfileAuth.guardPermission('export_excel', 'Выгрузка недоступна для вашего профиля')) return;
     if (typeof ActivityLog !== 'undefined') ActivityLog.log('export', filename);
     if (!tableElement) {
-        showToast('Нет данных для экспорта', 'error');
+        showToast('Нет данных для выгрузки', 'error');
         return;
     }
     const folder = await excelPrepareFolder(kind || 'table');
@@ -1201,7 +1201,7 @@ async function exportTableToExcel(tableElement, filename = 'КРАСАВИА_э�
         if (typeof showToast === 'function') showToast('Готовлю Excel…');
         const parsed = readHtmlTableForExcel(tableElement);
         if (!parsed.rows.length) {
-            showToast('Нет данных для экспорта', 'error');
+            showToast('Нет данных для выгрузки', 'error');
             return;
         }
         const styled = await loadStyledXlsx();
@@ -1246,7 +1246,7 @@ async function exportTableToExcel(tableElement, filename = 'КРАСАВИА_э�
         excelAnnounceSaved(saved, `Файл готов, дата выгрузки ${stamp}`);
     } catch (e) {
         console.error(e);
-        showToast('Ошибка экспорта в Excel', 'error');
+        showToast('Ошибка выгрузки', 'error');
     }
 }
 

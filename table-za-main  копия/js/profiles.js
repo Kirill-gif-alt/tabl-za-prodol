@@ -62,7 +62,7 @@ window.ProfileAuth = (function () {
     // def — значение, пока админ ничего не менял. Хранятся в profile.features.
     const FEATURES = {
         flight_checks: { label: 'Проверка рейсов', hint: 'детский −50% и тариф выше субсидированного: «!», счётчик в шапке, раздел в «Отчётах»', def: true },
-        subsidy_mode: { label: 'Метки «С» / «К» у дат вылета', hint: 'субсидия или коммерция — на Графплане, в «Динамике продаж» и RMS', def: true },
+        subsidy_mode: { label: 'Метки «С» / «К» у дат вылета', hint: 'субсидия или коммерция — в «Графическом плане», в «Динамике продаж» и RMS', def: true },
         flight_card: { label: 'Карточка рейса', hint: 'клик по рейсу открывает панель с графиком, прогнозом и отметкой решения', def: 'admin' },
         header_kpi: { label: 'Продажи за сегодня в шапке', hint: 'билеты и выручка', def: true },
         morning_summary: { label: 'Утренняя сводка', hint: 'при входе и значок «☀ N»: вылеты на 20 дней, решения, ошибки тарифов, пропуски справочника', def: 'admin' },
@@ -445,7 +445,7 @@ window.ProfileAuth = (function () {
             el.textContent = 'Общая папка подключена';
             el.className = 'profile-shared-status profile-shared-ok';
         } else if (SharedStorage.needsLinkPrompt()) {
-            el.textContent = 'Подключите папку — иначе изменения не увидят другие ПК';
+            el.textContent = 'Подключите общую папку — иначе изменения не увидят другие компьютеры';
             el.className = 'profile-shared-status profile-shared-warn';
         } else {
             el.textContent = '';
@@ -621,7 +621,7 @@ window.ProfileAuth = (function () {
         const profile = profilesCache.find(p => p.id === profileId);
         if (!profile) return { ok: false, error: 'Профиль не найден' };
         if (!profile.hash || !profile.salt) {
-            return { ok: false, error: 'Нет пароля профиля — подключите общую папку приложения' };
+            return { ok: false, error: 'Нет пароля профиля — подключите общую папку' };
         }
         const ok = await verifyPassword(password, profile);
         if (!ok) {
@@ -1216,7 +1216,7 @@ window.ProfileAuth = (function () {
             applyPermissions();
             updateSharedStatus();
             closeAdminPanel();
-            if (typeof showToast === 'function') showToast('Профили сохранены — доступны всем на общем диске');
+            if (typeof showToast === 'function') showToast('Профили сохранены — доступны всем в общей папке');
 
             const tab = typeof currentTab !== 'undefined' ? currentTab : 'main';
             if (!canAccessTab(tab)) {

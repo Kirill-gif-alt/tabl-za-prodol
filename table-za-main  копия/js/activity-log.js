@@ -15,7 +15,7 @@ window.ActivityLog = (function () {
         data_share_blocked: 'Публикация остановлена (подозрительные данные)',
         history_restore: 'Восстановление из резервной копии',
         sales_mark: 'Отметка «Управления продажами»',
-        export: 'Экспорт',
+        export: 'Выгрузка',
         fare_refs: 'Справочник тарифов',
         password_self: 'Смена своего пароля',
         password_admin: 'Смена пароля (админ)',
@@ -358,7 +358,7 @@ window.ActivityLog = (function () {
                         <h2 class="stats-hero-title">Статистика активности</h2>
                     </div>
                     <div class="stats-hero-meta">
-                        <span class="stats-total-badge">${filtered.length} из ${events.length} записей</span>
+                        <span class="stats-total-badge">${filtered.length} из ${events.length} ${pluralRu(events.length, 'записи', 'записей', 'записей')}</span>
                         <button type="button" class="filter-btn stats-refresh-btn" id="stats-refresh-btn">Обновить</button>
                     </div>
                 </div>

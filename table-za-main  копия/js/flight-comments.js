@@ -83,9 +83,9 @@ window.FlightComments = (function () {
 
         if (read.ok && typeof SharedStorage.writeJsonFile === 'function') {
             const written = await SharedStorage.writeJsonFile(FILE, cache);
-            if (!written && typeof showToast === 'function') showToast('Комментарий не записан в общую папку — виден только на этом ПК', 'error');
+            if (!written && typeof showToast === 'function') showToast('Комментарий не записан в общую папку — виден только на этом компьютере', 'error');
         } else if (typeof showToast === 'function') {
-            showToast('Общий файл комментариев недоступен — комментарий виден только на этом ПК', 'error');
+            showToast('Общий файл комментариев недоступен — комментарий виден только на этом компьютере', 'error');
         }
         return true;
     }
