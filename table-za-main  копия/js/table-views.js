@@ -58,7 +58,7 @@ function buildTableFilterPanel(base, foundCount, totalCount, hasExpectedLoad = t
                 <select id="table-sort-select" class="table-sort-select" aria-label="Сортировка">
                     <option value="date-asc" ${tableSort.by==='date' && tableSort.dir==='asc' ? 'selected' : ''}>Дата ↑</option>
                     <option value="date-desc" ${tableSort.by==='date' && tableSort.dir==='desc' ? 'selected' : ''}>Дата ↓</option>
-                    <option value="load-desc" ${tableSort.by==='load' && tableSort.dir==='desc' ? 'selected' : ''}>Загрузка % ↓</option>
+                    <option value="load-desc" ${tableSort.by==='load' && tableSort.dir==='desc' ? 'selected' : ''}>ЗПК % ↓</option>
                     ${hasExpectedLoad ? `<option value="delta-asc" ${tableSort.by==='delta' && tableSort.dir==='asc' ? 'selected' : ''}>Δ прогноз ↑ (худшие)</option>` : ''}
                     <option value="sales-desc" ${tableSort.by==='sales' && tableSort.dir==='desc' ? 'selected' : ''}>Продажи сегодня ↓</option>
                     <option value="avgfare-desc" ${tableSort.by==='avgfare' && tableSort.dir==='desc' ? 'selected' : ''}>Средний тариф ↓</option>
@@ -183,7 +183,7 @@ function actuallyRenderTable(base,targetDate=null){
     ttl.innerHTML = `
         <span class="table-flight-code">${escHtml(base)}</span>
         <span class="table-flight-route">${escHtml(getFlightDirection(base))}</span>
-        <span class="table-flight-badge">${flightCount} вылетов</span>
+        <span class="table-flight-badge">${flightCount} ${pluralRu(flightCount, 'вылет', 'вылета', 'вылетов')}</span>
     `;
 
     showExpectedLoadColumn = false;
@@ -273,15 +273,15 @@ function actuallyRenderTable(base,targetDate=null){
         <th class="col-date">Дата рейса</th><th>День недели</th>${segmentHead}<th>Тип ВС</th>
         <th title="AU снимка − спец.брони">Кресел в продаже</th>
         ${bookHead}
-        <th title="Загрузка из поля free файла. Не свободные места">Загрузка</th>
+        <th title="Проданные места из файла, не свободные">Загрузка</th>
         ${expectedHeadHonest}
-        <th class="col-sales-day" title="DEALDATE=сегодня в файле 14д"><span class="th-sales-ico th-sales-day" aria-hidden="true">①</span> Сегодня</th>
+        <th class="col-sales-day" title="Продажи за сегодня в файле 14д"><span class="th-sales-ico th-sales-day" aria-hidden="true">①</span> Сегодня</th>
         <th class="col-sales-day"><span class="th-sales-ico th-sales-day" aria-hidden="true">①</span> Вчера</th>
         <th class="col-sales-day"><span class="th-sales-ico th-sales-day" aria-hidden="true">①</span> Позавчера</th>
         <th class="col-sales-cum"><span class="th-sales-ico th-sales-cum" aria-hidden="true">Σ</span> 7 дн. (с сегодня)</th>
-        <th class="col-sales-cum" title="Выручка/продажи за окно файла Tickets_SALE_Last14Days"><span class="th-sales-ico th-sales-cum" aria-hidden="true">Σ</span> 14 дн. файла</th>
+        <th class="col-sales-cum" title="Выручка и продажи за 14 дней, которые есть в файле продаж"><span class="th-sales-ico th-sales-cum" aria-hidden="true">Σ</span> 14 дн. файла</th>
         <th class="col-sales-cum"><span class="th-sales-ico th-sales-cum" aria-hidden="true">Σ</span> 30 дн.</th>
-        <th title="Загрузка / (AU снимка − спец.брони)">ЗПК %</th>
+        <th title="ЗПК — заполнение кресел в продаже, %: загрузка / (кресла в продаже)">ЗПК %</th>
         <th class="col-comment">Комментарий</th>
     </tr>${salesSumRow}</thead><tbody>`;
 
@@ -776,7 +776,7 @@ function createPkzView(c) {
                 <div id="pkz-detail-panel" class="table-sales-panel is-hidden">
                     <div class="table-sales-panel-head">
                         <div>
-                            <h3 class="table-sales-panel-title">Расчёт КЗ</h3>
+                            <h3 class="table-sales-panel-title">Расчёт ПКЗ</h3>
                             <p id="pkz-detail-panel-sub" class="table-sales-panel-sub"></p>
                         </div>
                         <button type="button" class="table-sales-panel-close" onclick="closeTableSalesPanel()" >✕</button>
@@ -910,7 +910,7 @@ function formatVacancyKg(navKg, kzKg) {
     if (kzKg === null || kzKg === undefined || isNaN(kzKg)) return '—';
     const v = Math.round(navKg - kzKg);
     const sign = v > 0 ? '+' : '';
-    return (typeof formatNum === 'function' ? sign + formatNum(v) : sign + String(v)) + ' кг';
+    return (typeof formatNum === 'function' ? sign + formatNum(v) : sign + String(v)).replace('-', '−') + ' кг';
 }
 
 function bindPkzNavInputs(cont) {
@@ -1012,9 +1012,9 @@ function actuallyRenderPkzTable(base, targetDate = null) {
         <th>Загрузка</th><th>Взр.</th><th>Детей</th>
         <th>Ср. багаж+р/к</th>
         <th>ПКЗ из NAV</th>
-        <th>КЗ расч.</th>
+        <th title="ПКЗ — предельная коммерческая загрузка, кг">ПКЗ расчётный</th>
         <th>Вакансия</th>
-        <th>ЗПК %</th>
+        <th title="ЗПК — заполнение кресел в продаже, %">ЗПК %</th>
     </tr></thead><tbody>`;
 
     const rowHtmls = [];

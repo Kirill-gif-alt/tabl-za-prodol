@@ -271,7 +271,7 @@ window.FlightCard = (function () {
                 <div class="fc-title-wrap"><div class="fc-title">Карточка рейса</div></div>
                 <div class="fc-nav">${modeButtons()}<button type="button" class="fc-close" data-fc="close" title="Закрыть" aria-label="Закрыть">✕</button></div>
             </div>
-            <p class="fc-empty">Выберите рейс на Графплане, в RMS или «Загрузке рейсов».</p>`;
+            <p class="fc-empty">Выберите рейс в «Графическом плане», в RMS или «Загрузке рейсов».</p>`;
     }
 
     // Прогноз к вылету, безубыточность, группы (flight-insights.js).
@@ -296,7 +296,7 @@ window.FlightCard = (function () {
         const f = FI.forecast(code, date);
         if (f && f.source !== 'flown') {
             const isModel = f.source === 'model';
-            const range = f.lo != null && f.hi != null && f.lo !== f.hi ? `${isModel ? '8 из 10: ' : 'разброс '}${f.lo}–${f.hi}` : '';
+            const range = f.lo != null && f.hi != null && f.lo !== f.hi ? `${isModel ? 'в 8 случаях из 10: ' : 'разброс '}${f.lo}–${f.hi}` : '';
             const histNote = (s) => (s.source === 'history'
                 ? `по ${s.n} ${pluralRu(s.n, 'прошлому вылету', 'прошлым вылетам', 'прошлым вылетам')} в этот день недели`
                 : 'по файлу ожидаемой загрузки');
@@ -379,7 +379,7 @@ window.FlightCard = (function () {
         const modeMark = typeof FlightChecks !== 'undefined' && FlightChecks.modeBadge ? FlightChecks.modeBadge(code, date, row) : '';
         const issues = typeof FlightChecks !== 'undefined' && FlightChecks.enabled() ? FlightChecks.issuesFor(code, date) : [];
         const comment = typeof FlightComments !== 'undefined' ? FlightComments.get(code, date) : '';
-        const dtdTxt = m && m.dtd != null ? (m.dtd < 0 ? 'улетел' : `DTD ${m.dtd}`) : '';
+        const dtdTxt = m && m.dtd != null ? (m.dtd < 0 ? 'улетел' : `за ${m.dtd} дн.`) : '';
         const status = m && m.closed ? 'закрыт' : '';
         const deltaCls = m && m.delta != null ? (m.delta < 0 ? 'fc-neg' : (m.delta > 0 ? 'fc-pos' : '')) : '';
         const canTab = (t) => typeof ProfileAuth === 'undefined' || ProfileAuth.canAccessTab(t);

@@ -1343,7 +1343,7 @@ window.CreativeView = (function () {
 
     async function exportExcel() {
         if (!hasPerm('export_excel')) {
-            toast('Экспорт недоступен для вашего профиля', 'error');
+            toast('Выгрузка недоступна для вашего профиля', 'error');
             return;
         }
         const result = buildResult();
@@ -1395,7 +1395,7 @@ window.CreativeView = (function () {
                 ? await excelSaveWorkbook(lib, wb, filename, folder)
                 : (lib.writeFile(wb, filename), { where: 'download' });
             if (typeof ActivityLog !== 'undefined') ActivityLog.log('export', 'Творческая');
-            const msg = `Файл готов: ${result.rows.length} строк`;
+            const msg = `Файл готов: ${result.rows.length} ${pluralRu(result.rows.length, 'строка', 'строки', 'строк')}`;
             if (typeof excelAnnounceSaved === 'function') excelAnnounceSaved(savedFile, msg);
             else toast(msg);
         } catch (e) {
@@ -1436,7 +1436,7 @@ window.CreativeView = (function () {
                             <span class="table-controls-spacer"></span>
                             <button type="button" id="cr-panel-toggle" class="filter-btn">Столбцы</button>
                             <span id="cr-count" class="cr-count"></span>
-                            <button type="button" id="cr-export" class="filter-btn">В Excel</button>
+                            <button type="button" id="cr-export" class="filter-btn">Выгрузить в Excel</button>
                         </div>
                         <div id="cr-chips" class="cr-chips" hidden></div>
                     </div>

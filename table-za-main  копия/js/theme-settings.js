@@ -92,7 +92,7 @@ window.ThemeSettings = (function () {
             { key: 'smFlew', label: 'Улетевшие', hint: 'Прошедшие даты', css: '--sm-flew' }
         ],
         today: [
-            { key: 'todayHead', label: 'Шапка таблицы', hint: 'Заголовки «Ждут решения», «Вылеты дня»', css: '--today-head-bg' },
+            { key: 'todayHead', label: 'Шапка таблицы', hint: 'Заголовки «Ждут отметки», «Вылеты дня»', css: '--today-head-bg' },
             { key: 'todayCard', label: 'Плитки и дни', hint: 'Фон плиток и полосы дней', css: '--today-card-bg' },
             { key: 'todayActive', label: 'Выбранный день', hint: 'Рамка выбранного дня и вкладки', css: '--today-active' }
         ],
@@ -458,7 +458,7 @@ window.ThemeSettings = (function () {
                     <span class="theme-param-def">по умолч. ${d.def ? 'включено' : 'выключено'}</span>`
         : `<input type="number" class="theme-param-input" data-param="${d.key}" value="${d.value}" min="${d.min}" max="${d.max}" step="${d.step}">
                     <span class="theme-param-def">по умолч. ${fmtN(d.def)} · ${fmtN(d.min)}…${fmtN(d.max)}</span>`}
-                    <button type="button" class="theme-param-reset" data-param-reset="${d.key}" title="Вернуть ${fmtN(d.def)}"${d.value === d.def ? ' disabled' : ''}>↺</button>
+                    <button type="button" class="theme-param-reset" data-param-reset="${d.key}" title="Вернуть стандартное: ${fmtN(d.def)}"${d.value === d.def ? ' disabled' : ''}>↺</button>
                 </label>`).join('')}</div>`).join('') || '<p class="theme-section-hint">Ничего не найдено.</p>'}
             <div class="theme-params-actions">
                 <button type="button" class="btn-primary" id="theme-params-save">Сохранить параметры</button>

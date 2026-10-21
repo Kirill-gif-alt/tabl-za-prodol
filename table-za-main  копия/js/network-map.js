@@ -1325,7 +1325,7 @@ window.NetworkMap = (function () {
             return `
             <button type="button" class="nmap-prob" data-key="${esc(l.key)}">
                 <strong>${esc(l.a.city)} — ${esc(l.b.city)}</strong>
-                <span>DTD ${dash(l.dtd)} · туда ${fmt(legs[0])} / обратно ${fmt(legs[1])}</span>
+                <span>за ${dash(l.dtd)} дн. · туда ${fmt(legs[0])} / обратно ${fmt(legs[1])}</span>
             </button>`;
         }).join('');
     }

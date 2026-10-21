@@ -439,7 +439,7 @@ window.SalesArchive = (function () {
         const head = splitLine(lines[0] || '').map(x => x.toUpperCase());
         const col = (n) => head.indexOf(n);
         const need = ['REIS', 'FLYDATE', 'TICKETS', 'CURVE'];
-        if (need.some(n => col(n) < 0)) return { ok: false, error: 'это не файл истории продаж (нужны столбцы REIS, FLYDATE, TICKETS, CURVE)' };
+        if (need.some(n => col(n) < 0)) return { ok: false, error: 'это не файл истории продаж (нет нужных столбцов: рейс, дата вылета, билеты, кривая)' };
         if (!(await SharedStorage.canWrite())) return { ok: false, error: 'нет доступа на запись в общую папку' };
         const today = parseLocalDate(todayStr());
         const byMonth = {};
@@ -505,7 +505,7 @@ window.SalesArchive = (function () {
         const split = (l) => l.split(',').map(x => x.replace(/^"|"$/g, '').trim());
         const head = split(lines[0] || '').map(x => x.toUpperCase());
         const col = (n) => head.indexOf(n);
-        if (['REIS', 'FLYDATE', 'DTD', 'NFARE', 'BASICFARE', 'REFUND_DTD'].some(n => col(n) < 0)) return { ok: false, error: 'это не файл по билетам (нужны REIS, FLYDATE, DTD, NFARE, BASICFARE, REFUND_DTD)' };
+        if (['REIS', 'FLYDATE', 'DTD', 'NFARE', 'BASICFARE', 'REFUND_DTD'].some(n => col(n) < 0)) return { ok: false, error: 'это не файл по билетам (нет нужных столбцов: рейс, дата вылета, дни до вылета, тариф, возврат)' };
         if (!(await SharedStorage.canWrite())) return { ok: false, error: 'нет доступа на запись в общую папку' };
         const today = parseLocalDate(todayStr());
         const deps = Object.create(null);

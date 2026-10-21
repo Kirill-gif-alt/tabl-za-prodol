@@ -360,16 +360,16 @@ window.SalesReconcile = (function () {
                 <td>${x.orig}</td>
                 <td><strong>${x.now}</strong></td>
                 <td class="rp-left">${x.sources.length ? esc(x.sources.map(s => s.text).join(', ')) : (x.outN ? `отдано ${x.outN}` : '—')}</td>
-                <td class="${x.big ? (x.diff > 0 ? 'dr-neg' : 'rc-more') : ''}">${x.diff > 0 ? '+' : ''}${x.diff}</td>
+                <td class="${x.big ? (x.diff > 0 ? 'dr-neg' : 'rc-more') : ''}">${x.diff > 0 ? '+' : ''}${String(x.diff).replace('-', '−')}</td>
                 <td class="rp-left">${esc(x.reason)}</td>
             </tr>`).join('');
         return `
             <section class="rp-card">
                 <div class="rp-card-head"><h3 class="rp-card-title">Сверка продаж и загрузки</h3></div>
-                <p class="rp-card-text">Будущие вылеты. <strong>Загрузка</strong> — из «загрузка таб», ей сайт верит. <strong>В файле</strong> — сколько билетов файл продаж
-                    записал на этот номер и дату. Когда рейс переносят или дают доп. номер, файл оставляет билеты на старом месте — сайт переносит их сам:
-                    в один день — между основным и доп. номером по загрузке, при переносе даты — на ближайший вылет этого рейса (±7 дней), где их не хватает.
-                    <strong>После сверки</strong> — с чем считаются нормы, подсказки и прогноз. Красным — где расхождение осталось: билеты не нашлись в файле.</p>
+                <p class="rp-card-text">Проверяем будущие вылеты. Загрузку берём из файла «загрузка таб». <strong>В файле</strong> — сколько билетов файл продаж
+                    записал на этот номер и дату. Если рейс перенесли или дали доп. номер, файл оставляет билеты на старом месте.
+                    Сайт переносит их сам: в один день — между основным и доп. номером, при переносе даты — на ближайший вылет рейса (±7 дней).
+                    <strong>После сверки</strong> — с этими числами считаются нормы, подсказки и прогноз. Красным — где расхождение осталось.</p>
                 <div class="ref-toolbar">
                     <label class="ref-check-inline"><input type="checkbox" id="rc-only"${onlyDivergent ? ' checked' : ''}> только где осталось расхождение</label>
                     <span class="rp-muted">Вылетов проверено: ${r.checked} · исправлено автоматически: ${r.fixedFlights} (билетов перенесено: ${r.fixedTickets}) · осталось расхождение: ${r.divergent}</span>

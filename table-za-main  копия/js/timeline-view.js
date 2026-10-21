@@ -70,7 +70,7 @@ function createMainTimelineView(c){
             <div class="timeline-section">
                 <div class="timeline-section-head">
                     <div class="timeline-section-head-left">
-                        <h2 class="timeline-title">Графический план полетов</h2>
+                        <h2 class="timeline-title">Графический план полётов</h2>
                         <div class="timeline-legend">
                             <span class="timeline-legend-item timeline-legend-open">открыт</span>
                             <span class="timeline-legend-item timeline-legend-low">&lt;40%</span>
@@ -945,7 +945,7 @@ function renderTimeline() {
         content.innerHTML = `
             <div class="timeline-empty">
                 <div class="timeline-empty-icon">📅</div>
-                <div class="timeline-empty-title">Графический план полетов</div>
+                <div class="timeline-empty-title">Графический план полётов</div>
             </div>
         `;
         updateTimelineCollapseBtn();

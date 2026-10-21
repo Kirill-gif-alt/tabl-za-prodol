@@ -1929,7 +1929,7 @@ function createSalesManagementView(panel) {
                         <button type="button" id="sm-legend-btn" class="filter-btn" aria-expanded="true" title="Показать или скрыть цветные плашки">Обозначения</button>
                         <button type="button" id="sm-today" class="filter-btn filter-btn-active">Сегодня</button>
                         <button type="button" id="sm-reload" class="filter-btn">Обновить</button>
-                        <button type="button" id="sm-export" class="filter-btn">В Excel</button>
+                        <button type="button" id="sm-export" class="filter-btn">Выгрузить в Excel</button>
                     </div>
                     <div class="sm-legend" id="sm-legend" aria-hidden="true">
                         <span class="sm-legend-item sm-st-keep">Проверено без изменений</span>
@@ -2348,7 +2348,7 @@ function buildSalesWorkbook(lib, flights, stamp, colored) {
 
 async function exportSalesManagementExcel() {
     if (typeof ProfileAuth !== 'undefined' && !ProfileAuth.hasPermission('export_excel')) {
-        if (typeof showToast === 'function') showToast('Экспорт в Excel недоступен для вашего профиля', 'error');
+        if (typeof showToast === 'function') showToast('Выгрузка недоступна для вашего профиля', 'error');
         return;
     }
     if (!SalesManagement.canView()) {

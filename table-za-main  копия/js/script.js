@@ -216,7 +216,7 @@ function renderHeaderKpi() {
     };
     if (featureOn('header_kpi')) {
         const outside = Number(k.todayOutside) || 0;
-        items.push(item(salesReady ? sales : '—', 'продаж', salesReady && outside ? `Продано сегодня, из них вне загрузки: ${outside}` : ''), item(salesReady ? (revK + 'к') : '—', '₽'));
+        items.push(item(salesReady ? sales : '—', 'продаж', salesReady && outside ? `Продано сегодня, из них вне загрузки: ${outside}` : ''), item(salesReady ? (revK + ' тыс.') : '—', '₽'));
     }
     if (alerts && featureOn('rms_header_alerts')) {
         safe(() => {

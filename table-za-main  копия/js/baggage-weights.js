@@ -546,7 +546,7 @@ function buildPkzAdjustPanelHtml(details, opts = {}) {
              data-adult-unit="${details.adultUnitKg != null ? details.adultUnitKg : ''}"
              data-child-unit="${details.childUnitKg != null ? details.childUnitKg : PV.CHILD_WEIGHT_FIXED_KG}">
             <div class="pkz-adjust-head">
-                <h4 class="pkz-adjust-title">КЗ расчётная</h4>
+                <h4 class="pkz-adjust-title">ПКЗ расчётный</h4>
                 <span class="pkz-adjust-season">${esc(seasonLabel)} · багаж ${esc(bagPerPax)}/пасс. · дети ${PV.CHILD_WEIGHT_FIXED_KG} кг</span>
             </div>
             <div class="pkz-adjust-grid">
@@ -581,7 +581,7 @@ function buildPkzAdjustPanelHtml(details, opts = {}) {
                            aria-label="ПКЗ из NAV">
                 </div>
                 <div class="pkz-stat pkz-stat-highlight">
-                    <span class="pkz-stat-label">КЗ расч.</span>
+                    <span class="pkz-stat-label">ПКЗ расчётный</span>
                     <span class="pkz-stat-val pkz-stat-pkz" data-pkz-value data-kz-num="${kzKg != null ? kzKg : ''}">${esc(pkzText)}</span>
                 </div>
                 <div class="pkz-stat">

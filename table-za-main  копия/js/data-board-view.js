@@ -325,11 +325,11 @@ function buildDataRouteCardHtml(pair, todayStart) {
     const legCols = getDataBoardLegColCount();
     const timeThOut = dataShowLocalTimes
         ? `<th class="pair-sub-out data-col-time">Вр. вылета</th>
-           <th class="pair-sub-out data-col-time">Вр. прилета</th>`
+           <th class="pair-sub-out data-col-time">Вр. прилёта</th>`
         : '';
     const timeThIn = dataShowLocalTimes
         ? `<th class="pair-sub-in data-col-time pair-split-start">Вр. вылета</th>
-           <th class="pair-sub-in data-col-time">Вр. прилета</th>`
+           <th class="pair-sub-in data-col-time">Вр. прилёта</th>`
         : '';
     const bookThOut = dataShowSpecBookings
         ? `<th class="pair-sub-out data-col-bookings">Спец. брони</th>`
@@ -385,15 +385,15 @@ function buildDataRouteCardHtml(pair, todayStart) {
                             ${timeThOut}
                             <th class="pair-sub-out" title="AU снимка − спец.брони">Крес.</th>
                             ${bookThOut}
-                            <th class="pair-sub-out" title="sold из снимка, не свободные места">Загр.</th>
+                            <th class="pair-sub-out" title="Проданные места из снимка, не свободные">Загр.</th>
                             ${dataShowDaySales ? '<th class="pair-sub-out data-col-bookings" title="Продано за прошлые сутки">За сутки</th>' : ''}
-                            <th class="pair-sub-out pair-split-end" title="sold / (AU − спец.брони)">ЗПК</th>
+                            <th class="pair-sub-out pair-split-end" title="Проданные / (кресла − спец. брони)">ЗПК</th>
                             ${timeThIn}
                             <th class="pair-sub-in${seatsThInSplit}" title="AU снимка − спец.брони">Крес.</th>
                             ${bookThIn}
-                            <th class="pair-sub-in" title="sold из снимка, не свободные места">Загр.</th>
+                            <th class="pair-sub-in" title="Проданные места из снимка, не свободные">Загр.</th>
                             ${dataShowDaySales ? '<th class="pair-sub-in data-col-bookings" title="Продано за прошлые сутки">За сутки</th>' : ''}
-                            <th class="pair-sub-in" title="sold / (AU − спец.брони)">ЗПК</th>
+                            <th class="pair-sub-in" title="Проданные / (кресла − спец. брони)">ЗПК</th>
                         </tr>
                     </thead>
                     <tbody>${buildDataDaySalesSumRow(pair, todayStart)}${bodyRows}</tbody>

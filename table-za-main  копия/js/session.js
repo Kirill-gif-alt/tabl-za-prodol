@@ -302,9 +302,9 @@ window.SessionStore = (function () {
             // Неудачная загрузка (файл не дописан, не та папка) не должна уйти на все ПК без спроса.
             const okToPublish = announce && typeof confirm === 'function'
                 && confirm('Новые данные заметно отличаются от прошлых:\n\n' + issues.join('\n')
-                    + '\n\nОпубликовать их для всех пользователей?\n«Отмена» — данные останутся только на этом ПК.');
+                    + '\n\nОпубликовать их для всех пользователей?\n«Отмена» — данные останутся только на этом компьютере.');
             if (!okToPublish) {
-                if (announce && typeof showToast === 'function') showToast('Данные не опубликованы — остались только на этом ПК', 'error');
+                if (announce && typeof showToast === 'function') showToast('Данные не опубликованы — остались только на этом компьютере', 'error');
                 if (typeof ActivityLog !== 'undefined') ActivityLog.log('data_share_blocked', issues.join('; ').slice(0, 300));
                 return false;
             }
@@ -469,7 +469,7 @@ window.SessionStore = (function () {
     async function restoreLastData(silent) {
         const snap = await loadSnapshot();
         if (!snap) {
-            if (!silent && typeof showToast === 'function') showToast('Нет сохраненных данных', 'error');
+            if (!silent && typeof showToast === 'function') showToast('Нет сохранённых данных', 'error');
             return false;
         }
         if (!applySnapshot(snap)) {

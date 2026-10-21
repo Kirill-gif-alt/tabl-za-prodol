@@ -110,7 +110,7 @@ window.TabOrder = (function () {
             nav.appendChild(btn);
             const label = names[id] || LABELS[id];
             if (label && btn.textContent !== label) btn.textContent = label;
-            btn.title = names[id] ? LABELS[id] : '';
+            btn.title = names[id] ? LABELS[id] : (id === 'pkz' ? 'ПКЗ — предельная коммерческая загрузка, кг' : '');
         });
     }
 
@@ -144,7 +144,7 @@ window.TabOrder = (function () {
 
         const render = () => {
             container.innerHTML = `
-                <p class="tab-order-hint">Порядок — стрелками. Название можно написать своё: оно видно только в вашем профиле. Пустое поле — стандартное название.</p>
+                <p class="tab-order-hint">Порядок — стрелками. Своё название пишется в поле, пустое поле — стандартное название.</p>
                 <ul class="tab-order-list">
                     ${order.map((id, i) => `
                         <li class="tab-order-item" data-tab-id="${id}">

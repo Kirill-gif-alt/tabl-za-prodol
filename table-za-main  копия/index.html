@@ -50,7 +50,7 @@
                 </label>
                 <p id="login-error" class="login-error" role="alert" aria-live="assertive"></p>
                 <button id="login-submit-btn" type="submit" class="login-submit">Войти</button>
-                <button type="button" id="login-link-folder" class="login-link-folder">Подключить папку приложения</button>
+                <button type="button" id="login-link-folder" class="login-link-folder">Подключить общую папку</button>
             </form>
 
         </div>
@@ -86,7 +86,7 @@
             </div>
             <div id="profile-admin-body" class="profile-admin-body"></div>
             <div class="profile-admin-footer">
-                <button type="button" id="profile-link-folder-btn" class="btn-secondary">Подключить папку приложения</button>
+                <button type="button" id="profile-link-folder-btn" class="btn-secondary">Подключить общую папку</button>
                 <button type="button" id="profile-history-btn" class="btn-secondary" title="Прошлые версии общих файлов и восстановление">Резервные копии</button>
                 <span id="profile-shared-status" class="profile-shared-status"></span>
                 <button type="button" id="profile-admin-save" class="btn-primary">Сохранить изменения</button>
@@ -129,10 +129,10 @@
                             <button type="button" id="profile-logout-btn" class="profile-logout-btn" title="Выйти">Выйти</button>
                         </div>
                         <div class="top-nav-load-group">
-                            <button id="restore-data-btn" type="button" onclick="restoreLastData()" class="btn-restore top-nav-load-btn" style="display:none">
+                            <button id="restore-data-btn" type="button" onclick="restoreLastData()" class="btn-restore top-nav-load-btn" style="display:none" title="Открыть последние сохранённые данные без выбора файлов">
                                 Последние
                             </button>
-                            <button id="load-data-btn" type="button" onclick="autoLoadLatestFiles()" class="btn-primary top-nav-load-btn">
+                            <button id="load-data-btn" type="button" onclick="autoLoadLatestFiles()" class="btn-primary top-nav-load-btn" title="Загрузить свежие файлы из папки">
                                 Загрузить
                             </button>
                         </div>
@@ -143,7 +143,7 @@
                     <button onclick="switchMainTab('home')" id="tab-home" class="tab-btn" style="display:none">Сеть</button>
                     <button onclick="switchMainTab('main')" id="tab-main" class="tab-btn tab-active">Графический план</button>
                     <button onclick="switchMainTab('table')" id="tab-table" class="tab-btn">Динамика продаж</button>
-                    <button onclick="switchMainTab('pkz')" id="tab-pkz" class="tab-btn">ПКЗ</button>
+                    <button onclick="switchMainTab('pkz')" id="tab-pkz" class="tab-btn" title="ПКЗ — предельная коммерческая загрузка, кг">ПКЗ</button>
                     <button onclick="switchMainTab('pair')" id="tab-pair" class="tab-btn">Экономическая таблица</button>
                     <button onclick="switchMainTab('costs')" id="tab-costs" class="tab-btn">Расчёт расходов</button>
                     <button onclick="switchMainTab('data')" id="tab-data" class="tab-btn">Загрузка рейсов</button>

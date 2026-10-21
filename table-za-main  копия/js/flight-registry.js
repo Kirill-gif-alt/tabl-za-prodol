@@ -130,12 +130,12 @@ window.FlightRegistry = (function () {
         if (!canEdit()) return { ok: false, error: 'Нет права менять справочник рейсов' };
         if (typeof SharedStorage === 'undefined') return { ok: false, error: 'Общая папка не подключена' };
         const r = await SharedStorage.readJsonFileStrict(FILE).catch(() => ({ ok: false }));
-        if (!r.ok) return { ok: false, error: 'Не удалось прочитать flights.json — изменения не сохранены' };
+        if (!r.ok) return { ok: false, error: 'Не удалось прочитать общий справочник рейсов — изменения не сохранены' };
         const merged = mergeInto({}, r.data && r.data.flights);
         const at = new Date().toISOString();
         changes.forEach(([id, entry]) => { merged[id] = { ...entry, at, by: profileName() }; });
         const okWrite = await SharedStorage.writeJsonFile(FILE, { version: 1, updatedAt: new Date().toISOString(), flights: merged });
-        if (!okWrite) return { ok: false, error: 'Не удалось записать flights.json' };
+        if (!okWrite) return { ok: false, error: 'Не удалось записать общий справочник рейсов' };
         entries = mergeInto({}, merged);
         applyAll();
         regroup();

@@ -262,10 +262,10 @@ window.TodayView = (function () {
 
     function leadText(p, errs, gaps) {
         const parts = [];
-        if (canTab('sales')) parts.push(!adviceReady() ? 'подсказки по вылетам считаются…' : p ? `${p} ${pluralRu(p, 'вылет ждёт', 'вылета ждут', 'вылетов ждут')} решения` : `все вылеты на ${aheadDays()} дн. в норме или уже отмечены`);
+        if (canTab('sales')) parts.push(!adviceReady() ? 'подсказки по вылетам считаются…' : p ? `${p} ${pluralRu(p, 'вылет ждёт', 'вылета ждут', 'вылетов ждут')} отметки` : `все вылеты на ${aheadDays()} дн. в норме или уже отмечены`);
         if (typeof FlightChecks !== 'undefined' && FlightChecks.enabled()) parts.push(errs ? `${errs} ${pluralRu(errs, 'рейс', 'рейса', 'рейсов')} с ошибкой тарифа` : 'ошибок тарифов нет');
         if (gaps) parts.push(`в справочнике ${gaps} ${pluralRu(gaps, 'пропуск', 'пропуска', 'пропусков')}`);
-        return parts.length ? parts.join(', ') + '.' : '';
+        return parts.length ? (t => t.charAt(0).toUpperCase() + t.slice(1))(parts.join(', ') + '.') : '';
     }
 
     // ---------- полоса дней ----------
@@ -289,7 +289,7 @@ window.TodayView = (function () {
             const calEv = typeof CalendarEvents !== 'undefined' ? CalendarEvents.on(date)[0] : null;
             const calName = calEv ? CalendarEvents.label(date) : '';
             cells.push(`
-                <button type="button" class="td-day${pickDay === date && tab === 'day' ? ' td-day-on' : ''}${wk ? ' td-day-wk' : ''}" data-td-day="${esc(date)}" title="${esc(date)}${calName ? ' · ' + esc(calName) : ''}: ${deps.length} ${pluralRu(deps.length, 'вылет', 'вылета', 'вылетов')}${lf != null ? `, загрузка ${lf}%` : ''}${dec ? `, ждут решения: ${dec}` : ''}">
+                <button type="button" class="td-day${pickDay === date && tab === 'day' ? ' td-day-on' : ''}${wk ? ' td-day-wk' : ''}" data-td-day="${esc(date)}" title="${esc(date)}${calName ? ' · ' + esc(calName) : ''}: ${deps.length} ${pluralRu(deps.length, 'вылет', 'вылета', 'вылетов')}${lf != null ? `, загрузка ${lf}%` : ''}${dec ? `, ждут отметки: ${dec}` : ''}">
                     <span class="td-dow">${calEv ? `<span class="cal-dot cal-dot-${esc(calEv.type)}"></span>` : ''}${esc(i === 0 ? 'сегодня' : i === 1 ? 'завтра' : dow)}</span>
                     <span class="td-date">${esc(date.slice(0, 5))}</span>
                     <span class="td-bar"><i class="${cls}" style="width:${lf || 0}%"></i></span>
@@ -406,7 +406,7 @@ window.TodayView = (function () {
         const dt = parseLocalDate(today());
         const longDate = dt ? dt.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : today();
         const tabs = [
-            canTab('sales') ? { id: 'advice', label: `Ждут решения · ${pend.length}` } : null,
+            canTab('sales') ? { id: 'advice', label: `Ждут отметки · ${pend.length}` } : null,
             typeof FlightChecks !== 'undefined' && FlightChecks.enabled() ? { id: 'errors', label: `Ошибки тарифов · ${errs.length}` } : null,
             { id: 'day', label: `Вылеты ${pickDay && pickDay !== today() ? pickDay.slice(0, 5) : 'сегодня'} · ${departuresOn(pickDay || today()).length}` }
         ].filter(Boolean);

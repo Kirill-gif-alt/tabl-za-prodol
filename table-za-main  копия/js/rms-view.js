@@ -60,7 +60,7 @@ function createRmsView(c) {
                         </div>
                         <div class="table-controls-spacer"></div>
                         <button type="button" onclick="exportRmsToExcel()" class="filter-btn rms-export-btn">
-                            📥 Экспорт
+                            📥 Выгрузить в Excel
                         </button>
                     </div>
                 </div>
@@ -86,7 +86,7 @@ function renderRmsProblemStrip(flights) {
     strip.innerHTML = `<span class="rms-problem-label">Сверху проблемные</span>`
         + problems.map(f => {
             const code = f.orig || f.base;
-            const delta = f.delta === null ? 'Δ —' : `Δ ${f.delta > 0 ? '+' : ''}${f.delta}`;
+            const delta = f.delta === null ? 'Δ —' : `Δ ${f.delta > 0 ? '+' : ''}${String(f.delta).replace('-', '−')}`;
             return `<button type="button" class="rms-problem-chip" data-rms-base="${escAttr(f.base)}" data-rms-date="${escAttr(f.date)}" data-rms-orig="${escAttr(code)}">
                 <strong>${escHtml(code)}</strong> ${escHtml(f.date)} · ${f.dtd}д · ${f.pct}% · ${escHtml(delta)}
             </button>`;
@@ -164,7 +164,7 @@ function renderRmsWatchlist() {
         const showRoute = f.route && shouldShowRmsRoute(f, rmsRouteCounts);
         const expectedCells = hasExpected ? `
             <td>${f.evR !== null ? f.evR : '—'}</td>
-            <td>${f.delta !== null ? `<span class="${f.deltaCls}">${f.delta > 0 ? '+' : ''}${f.delta}</span>` : '—'}</td>
+            <td>${f.delta !== null ? `<span class="${f.deltaCls}">${f.delta > 0 ? '+' : ''}${String(f.delta).replace('-', '−')}</span>` : '—'}</td>
         ` : '';
         const fd = parseLocalDate(f.date);
         const zebra = (getWeekNumber(fd) % 2 === 0) ? 'week-even' : 'week-odd';
@@ -214,13 +214,13 @@ function renderRmsWatchlist() {
                     <th class="rms-col-alert"></th>
                     <th class="rms-col-flight">Рейс</th>
                     <th class="rms-col-date col-date">Дата</th>
-                    <th class="rms-col-dtd" title="Дней до вылета">DTD</th>
-                    <th class="rms-col-load" title="Загрузка / (AU снимка − спец.брони)">ЗПК</th>
+                    <th class="rms-col-dtd" title="Дней до вылета">Дн.</th>
+                    <th class="rms-col-load" title="ЗПК — заполнение кресел в продаже, %: загрузка / (кресла в продаже)">ЗПК</th>
                     <th class="rms-col-remain" title="AU − загрузка − спец.брони">Остаток</th>
                     <th class="rms-col-fc" title="Прогноз загрузки к вылету — тот же, что в карточке рейса: модель прогноза (если она вам доступна), иначе сколько обычно добирают такие же вылеты в тот же день недели; в скобках — пределы, в которые попадают 8 вылетов из 10">Прогноз к вылету</th>
                     ${hasExpected ? '<th class="rms-col-forecast" title="Ожидаемая загрузка.xlsx">Ожидаемая</th><th class="rms-col-delta">Δ к ожидаемой</th>' : ''}
                     <th class="rms-col-pickup" title="Билеты сегодня+вчера из файла 14д">Продано за 1–2 дн.</th>
-                    <th class="rms-col-today" title="Билеты с DEALDATE=сегодня из файла 14д">Сегодня (файл 14д)</th>
+                    <th class="rms-col-today" title="Билеты, проданные сегодня, из файла 14д">Сегодня (файл 14д)</th>
                     <th class="rms-col-fare" title="Среднее по всем билетам вылета в файле продаж">Ср. тариф по всем билетам</th>
                     <th class="rms-col-money" title="Сколько денег под вылетом. Предупреждение: пустые места по прогнозу × средний тариф. «Почти полный» и активные продажи: места, ещё доступные в продаже × последний тариф. Без прогноза или тарифа — «—»">Деньги, ₽</th>
                     <th class="rms-col-reason">Причина</th>
