@@ -1027,7 +1027,8 @@ function dataHistUnpack(p) {
     return out;
 }
 
-async function dataHistLoad(key) {
+// info.sharedFailed = true — общий файл есть в схеме, но не прочитался (тогда берём историю этого браузера).
+async function dataHistLoad(key, info) {
     const shared = DATA_HIST_FILES[String(key).split(':').slice(1).join(':')];
     if (shared && typeof SharedStorage !== 'undefined' && SharedStorage.readJsonFileStrict) {
         const r = await SharedStorage.readJsonFileStrict(shared).catch(() => ({ ok: false }));
@@ -1037,6 +1038,7 @@ async function dataHistLoad(key) {
             Object.keys(raw).forEach(k => { out[k] = dataHistUnpack(raw[k]); });
             return out;
         }
+        if (info) info.sharedFailed = true;
     }
     try {
         const db = await dataHistDb();
@@ -1050,13 +1052,30 @@ async function dataHistLoad(key) {
     } catch (e) { return {}; }
 }
 
-async function dataHistSave(key, map) {
+// Запись истории. Общий файл перед записью перечитывается и сливается по вкладкам: вкладка своей даты (ownTab)
+// заменяется своей, вкладки других людей остаются. Возвращает итоговый набор вкладок для файла Excel.
+async function dataHistSave(key, map, ownTab, info) {
     const shared = DATA_HIST_FILES[String(key).split(':').slice(1).join(':')];
-    if (shared && typeof SharedStorage !== 'undefined' && SharedStorage.writeJsonFile) {
-        const packed = {};
-        Object.keys(map).forEach(k => { packed[k] = dataHistPack(map[k]); });
-        const ok = await SharedStorage.writeJsonFile(shared, { version: 1, updatedAt: new Date().toISOString(), sheets: packed }).catch(() => false);
-        if (ok) return;
+    if (shared && typeof SharedStorage !== 'undefined' && SharedStorage.updateJsonFile) {
+        const ownPacked = ownTab && map[ownTab] ? dataHistPack(map[ownTab]) : null;
+        const res = await SharedStorage.updateJsonFile(shared, (cur) => {
+            const packed = (cur && cur.sheets && typeof cur.sheets === 'object') ? { ...cur.sheets } : {};
+            if (ownPacked) packed[ownTab] = ownPacked;
+            else Object.keys(map).forEach(k => { packed[k] = dataHistPack(map[k]); });
+            const names = Object.keys(packed).sort((a, b) => dataHistOrder(a) - dataHistOrder(b));
+            while (names.length > DATA_HIST_MAX) delete packed[names.shift()];
+            return { version: 1, updatedAt: new Date().toISOString(), sheets: packed };
+        }).catch(() => ({ ok: false }));
+        if (res.ok) {
+            const out = {};
+            Object.keys(res.data.sheets).forEach(k => { out[k] = (ownPacked && k === ownTab) ? map[k] : dataHistUnpack(res.data.sheets[k]); });
+            return out;
+        }
+        if (!(info && info.sharedFailed) && typeof showToast === 'function') {
+            showToast(res.readFailed
+                ? 'Общая папка не прочиталась: в файл попадут только даты, выгруженные с этого компьютера'
+                : 'Не удалось записать в общую папку: вкладки сохранены только на этом компьютере', 'error');
+        }
     }
     try {
         const db = await dataHistDb();
@@ -1069,6 +1088,7 @@ async function dataHistSave(key, map) {
             });
         } finally { db.close(); }
     } catch (e) { /* без истории — просто файл за сегодня */ }
+    return map;
 }
 
 // «16.10.26» → число для сортировки (ГГММДД).
@@ -1098,16 +1118,21 @@ async function exportDataBoardWorkbook(pairs, todayStart, fileBase, history) {
         const d = new Date();
         const tab = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getFullYear()).slice(-2)}`;
         const key = (typeof excelProfileId === 'function' ? excelProfileId() : '') + ':' + fileBase;
-        const map = await dataHistLoad(key);
+        const info = {};
+        let map = await dataHistLoad(key, info);
+        if (info.sharedFailed && typeof showToast === 'function') showToast('Общая папка не прочиталась: в файл попадут только даты, выгруженные с этого компьютера', 'error');
         map[tab] = built.ws;
-        const names = Object.keys(map).sort((a, b) => dataHistOrder(a) - dataHistOrder(b));
+        let names = Object.keys(map).sort((a, b) => dataHistOrder(a) - dataHistOrder(b));
         while (names.length > DATA_HIST_MAX) delete map[names.shift()];
-        await dataHistSave(key, map);
+        // Общий файл перечитывается перед записью: вкладки, добавленные другим человеком за это время, остаются.
+        map = await dataHistSave(key, map, tab, info);
+        // Новые вкладки слева: от свежих дат к старым.
+        names = Object.keys(map).sort((a, b) => dataHistOrder(b) - dataHistOrder(a));
         names.forEach(n => lib.utils.book_append_sheet(wb, map[n], n));
         if (typeof excelSafeWorkbook === 'function') excelSafeWorkbook(wb);
-        // Последняя вкладка (сегодня) открывается первой.
+        // Первая вкладка (сегодня) открывается первой.
         wb.Workbook = wb.Workbook || {};
-        wb.Workbook.Views = [{ activeTab: names.length - 1 }];
+        wb.Workbook.Views = [{ activeTab: 0 }];
         const saved = await excelSaveWorkbook(lib, wb, excelSafeFilename(`${fileBase}.xlsx`), folder);
         excelAnnounceSaved(saved, `${fileBase}: вкладка ${tab} (всего вкладок: ${names.length})`);
         return;

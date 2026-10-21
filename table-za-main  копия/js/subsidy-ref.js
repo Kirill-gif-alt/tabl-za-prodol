@@ -188,24 +188,27 @@ window.SubsidyRef = (function () {
     }
 
     // Правка: перечитать общий файл, слить, применить, записать. Не прочитали — не пишем.
+    // Файл перечитывается перед записью и проверяется после: правки двух людей не затирают друг друга.
     async function apply(mutate) {
-        let remote = normStore(null);
-        if (typeof SharedStorage !== 'undefined' && SharedStorage.readJsonFileStrict) {
-            const r = await SharedStorage.readJsonFileStrict(FILE).catch(() => ({ ok: false }));
-            if (!r.ok) return { ok: false, error: 'Нет доступа к общей папке — изменения не сохранены. Подключите папку и повторите.' };
-            if (r.data) remote = normStore(r.data);
+        let next = null;
+        const build = (data) => {
+            next = mergeStores(data ? normStore(data) : normStore(null), cache);
+            mutate(next);
+            next.updatedAt = new Date().toISOString();
+            return next;
+        };
+        let shared = false;
+        if (typeof SharedStorage !== 'undefined' && SharedStorage.updateJsonFile) {
+            const res = await SharedStorage.updateJsonFile(FILE, build);
+            if (res.readFailed) return { ok: false, error: 'Нет доступа к общей папке — изменения не сохранены. Подключите папку и повторите.' };
+            shared = !!res.ok;
+        } else {
+            build(null);
         }
-        const next = mergeStores(remote, cache);
-        mutate(next);
-        next.updatedAt = new Date().toISOString();
         cache = next;
         rev++;
         saveLocal();
         push();
-        let shared = false;
-        if (typeof SharedStorage !== 'undefined' && SharedStorage.writeJsonFile) {
-            shared = await SharedStorage.writeJsonFile(FILE, cache);
-        }
         if (typeof FlightChecks !== 'undefined' && FlightChecks.refreshViews) FlightChecks.refreshViews();
         return shared ? { ok: true } : { ok: false, error: 'Не удалось записать общий файл справочника — изменение сохранено только на этом компьютере' };
     }

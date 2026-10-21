@@ -50,19 +50,23 @@ window.LowerRequest = (function () {
     }
 
     async function saveNow(mutate) {
-        // Свежая копия файла перед записью: правки другого администратора не теряются.
-        // Если за этой записью уже стоят другие правки, читать файл рано: свежую копию возьмёт последняя из них.
-        if (typeof SharedStorage !== 'undefined' && pending <= 1) {
-            const r = await SharedStorage.readJsonFileStrict(FILE).catch(() => ({ ok: false }));
-            if (r.ok && r.data && r.data.items) store = { version: 1, items: r.data.items };
-        }
-        mutate(store.items);
-        rowsMemo = null;
-        Object.keys(unsynced).forEach(k => { if (!(k in store.items)) store.items[k] = unsynced[k]; });
+        // Файл перечитывается перед записью и проверяется после: правки другого администратора не теряются.
         const by = (typeof ProfileAuth !== 'undefined' && (ProfileAuth.getCurrentProfile() || {}).name) || '';
-        const ok = typeof SharedStorage !== 'undefined' ? await SharedStorage.writeJsonFile(FILE, { version: 1, updatedAt: new Date().toISOString(), by, items: store.items }) : false;
-        Object.keys(unsynced).forEach(k => delete unsynced[k]);
-        if (!ok) {
+        let items = null;
+        const res = typeof SharedStorage !== 'undefined' && SharedStorage.updateJsonFile
+            ? await SharedStorage.updateJsonFile(FILE, (cur) => {
+                items = cur && cur.items && typeof cur.items === 'object' ? cur.items : {};
+                mutate(items);
+                Object.keys(unsynced).forEach(k => { if (!(k in items)) items[k] = unsynced[k]; });
+                return { version: 1, updatedAt: new Date().toISOString(), by, items };
+            })
+            : { ok: false };
+        if (items) store = { version: 1, items };
+        else mutate(store.items);   // файл не прочитался: правка остаётся только здесь
+        rowsMemo = null;
+        const ok = !!res.ok;
+        if (ok) Object.keys(unsynced).forEach(k => delete unsynced[k]);
+        else {
             Object.keys(store.items).forEach(k => { unsynced[k] = store.items[k]; });
             toast('Запрос сохранён только здесь: нет доступа к общей папке', 'error');
         }

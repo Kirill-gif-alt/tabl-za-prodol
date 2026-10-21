@@ -135,23 +135,31 @@ window.FareRefs = (function () {
     }
 
     // Изменение: перечитать общий файл, применить одно действие, записать. Так правки двух людей не затирают друг друга.
+    // Файл перечитывается перед записью и проверяется после (общий помощник SharedStorage.updateJsonFile).
     async function apply(mutate) {
-        const remote = await readRemote();
-        // Общий файл раньше читался, а сейчас нет — не записываем, иначе можно затереть чужие записи.
-        if (!remote && sawRemote) return { ok: false, error: 'Не удалось прочитать общий справочник — попробуйте ещё раз' };
-        if (remote && (remote.entries.length || Object.keys(remote.deleted).length)) sawRemote = true;
-        const base = mergeStores(mergeStores(remote || normalizeStore(null), store()), defaultsStore());
-        const entries = base.entries.map(e => ({ ...e, flights: e.flights.slice() }));
-        const deleted = { ...base.deleted };
-        mutate(entries, deleted);
-        cache = { version: 1, updatedAt: new Date().toISOString(), entries: entries.slice(0, MAX_ENTRIES), deleted };
+        let next = null;
+        const build = (data) => {
+            const remote = data ? normalizeStore(data) : null;
+            if (remote && (remote.entries.length || Object.keys(remote.deleted).length)) sawRemote = true;
+            const base = mergeStores(mergeStores(remote || normalizeStore(null), store()), defaultsStore());
+            const entries = base.entries.map(e => ({ ...e, flights: e.flights.slice() }));
+            const deleted = { ...base.deleted };
+            mutate(entries, deleted);
+            next = { version: 1, updatedAt: new Date().toISOString(), entries: entries.slice(0, MAX_ENTRIES), deleted };
+            return next;
+        };
+        let shared = false;
+        if (typeof SharedStorage !== 'undefined' && typeof SharedStorage.updateJsonFile === 'function') {
+            const res = await SharedStorage.updateJsonFile(FILE, build);
+            // Общий файл раньше читался, а сейчас нет — не записываем, иначе можно затереть чужие записи.
+            if (res.readFailed && sawRemote) return { ok: false, error: 'Не удалось прочитать общий справочник — попробуйте ещё раз' };
+            shared = !!res.ok;
+        }
+        if (!next) build(null);
+        cache = next;
         rev++;
         try { localStorage.setItem(LOCAL_KEY, JSON.stringify(cache)); } catch (e) { /* ignore */ }
-        let shared = false;
-        if (typeof SharedStorage !== 'undefined' && typeof SharedStorage.writeJsonFile === 'function') {
-            shared = await SharedStorage.writeJsonFile(FILE, cache);
-        }
-        return { ok: true, shared: !!shared };
+        return { ok: true, shared };
     }
 
     function canEdit() {
@@ -202,6 +210,7 @@ window.FareRefs = (function () {
         const ready = (list || []).map(e => normalizeEntry({ ...e, mode: 'limit', updatedAt: now, by: authorName() })).filter(Boolean);
         if (!ready.length) return { ok: true, count: 0 };
         const res = await apply((entries, deleted) => ready.forEach(n => putOne(entries, deleted, n)));
+        if (res.ok && !res.shared && typeof showToast === 'function') showToast('Не удалось сохранить в общий файл — записи только на этом компьютере', 'error');
         return res.ok ? { ok: true, shared: res.shared, count: ready.length } : res;
     }
 

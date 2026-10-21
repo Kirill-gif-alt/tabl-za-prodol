@@ -178,12 +178,15 @@ window.CalendarEvents = (function () {
     async function apply(id, entry) {
         if (!canEdit()) return { ok: false, error: 'Нет права менять календарь' };
         if (typeof SharedStorage === 'undefined') return { ok: false, error: 'Общая папка не подключена' };
-        const r = await SharedStorage.readJsonFileStrict(FILE).catch(() => ({ ok: false }));
-        if (!r.ok) return { ok: false, error: 'Не удалось прочитать calendar.json — изменения не сохранены' };
-        const merged = mergeInto({}, r.data && r.data.events);
-        merged[id] = { ...entry, at: new Date().toISOString(), by: profileName() };
-        const okWrite = await SharedStorage.writeJsonFile(FILE, { version: 1, updatedAt: new Date().toISOString(), events: merged });
-        if (!okWrite) return { ok: false, error: 'Не удалось записать calendar.json' };
+        // Файл перечитывается перед записью, меняется только эта запись: правки других не теряются.
+        const res = await SharedStorage.updateJsonFile(FILE, (cur) => {
+            const merged = mergeInto({}, cur && cur.events);
+            merged[id] = { ...entry, at: new Date().toISOString(), by: profileName() };
+            return { version: 1, updatedAt: new Date().toISOString(), events: merged };
+        });
+        if (res.readFailed) return { ok: false, error: 'Не удалось прочитать calendar.json — изменения не сохранены' };
+        if (!res.ok) return { ok: false, error: 'Не удалось записать calendar.json' };
+        const merged = res.data.events;
         custom = mergeInto({}, merged);
         rev++;
         if (typeof invalidateMetricsCache === 'function') invalidateMetricsCache();
