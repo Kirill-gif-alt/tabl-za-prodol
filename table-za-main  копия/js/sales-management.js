@@ -1929,7 +1929,7 @@ function createSalesManagementView(panel) {
                         <button type="button" id="sm-legend-btn" class="filter-btn" aria-expanded="true" title="Показать или скрыть цветные плашки">Обозначения</button>
                         <button type="button" id="sm-today" class="filter-btn filter-btn-active">Сегодня</button>
                         <button type="button" id="sm-reload" class="filter-btn">Обновить</button>
-                        <button type="button" id="sm-export" class="filter-btn">Выгрузить в Excel</button>
+                        <button type="button" id="sm-export" class="filter-btn">В Excel</button>
                     </div>
                     <div class="sm-legend" id="sm-legend" aria-hidden="true">
                         <span class="sm-legend-item sm-st-keep">Проверено без изменений</span>

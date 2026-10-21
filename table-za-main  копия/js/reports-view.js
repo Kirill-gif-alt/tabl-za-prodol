@@ -457,7 +457,7 @@ window.ReportsView = (function () {
             <section class="rp-card rp-checks" id="rp-checks">
                 <div class="rp-card-head">
                     <h3 class="rp-card-title"><span class="fc-flag fc-flag-big" aria-hidden="true"></span> Проверка рейсов</h3>
-                    <button type="button" class="btn-primary rp-btn" id="rp-checks-export"${all.length && hasPerm('export_excel') ? '' : ' disabled'}>Выгрузить в Excel</button>
+                    <button type="button" class="btn-primary rp-btn" id="rp-checks-export"${all.length && hasPerm('export_excel') ? '' : ' disabled'}>В Excel</button>
                 </div>
                 <p class="rp-card-text">Проверяем субсидированные рейсы: межрегиональные, у которых в «Экономической таблице» субсидия больше 0. Краевые не субсидируются. Ошибка — если продан детский билет со скидкой 50% (…/CN50) или билет дороже предельного тарифа из справочника. Рейс с ошибкой помечен «!» в «Загрузке рейсов», «Экономической таблице» и «Динамике продаж».</p>
                 <p class="rp-note">${summary}</p>

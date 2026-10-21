@@ -1436,7 +1436,7 @@ window.CreativeView = (function () {
                             <span class="table-controls-spacer"></span>
                             <button type="button" id="cr-panel-toggle" class="filter-btn">Столбцы</button>
                             <span id="cr-count" class="cr-count"></span>
-                            <button type="button" id="cr-export" class="filter-btn">Выгрузить в Excel</button>
+                            <button type="button" id="cr-export" class="filter-btn">В Excel</button>
                         </div>
                         <div id="cr-chips" class="cr-chips" hidden></div>
                     </div>

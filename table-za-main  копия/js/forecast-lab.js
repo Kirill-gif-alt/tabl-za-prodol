@@ -2595,7 +2595,7 @@ window.ForecastLab = (function () {
                 <label>Перегруз, если выше <input type="number" id="fl-w-over" min="50" max="100" value="${cfg.over}">%</label>
                 <label>На <input type="number" id="fl-w-days" min="3" max="30" value="${cfg.days}"> дн. вперёд</label>
                 <button type="button" class="btn-secondary rp-btn" id="fl-w-apply">Применить</button>
-                ${canExport() ? `<button type="button" class="btn-primary rp-btn" id="fl-w-xlsx"${list.length ? '' : ' disabled'}>Выгрузить в Excel</button>` : ''}
+                ${canExport() ? `<button type="button" class="btn-primary rp-btn" id="fl-w-xlsx"${list.length ? '' : ' disabled'}>В Excel</button>` : ''}
             </div>
             <div class="dr-kpis">
                 ${[['under', 'Риск недобора', counts.under, ''], ['over', 'Риск перегруза', counts.over, ''], ['pace', 'Необычный темп продаж', counts.fast + counts.slow, `выше: ${counts.fast} · ниже: ${counts.slow}`]].map(([k, label, n, sub]) => `<button type="button" class="dr-kpi fl-w-kpi${warnKind === k ? ' fl-w-kpi-on' : ''}" data-fl-wkind="${k}" title="${warnKind === k ? 'Показать все' : 'Показать только эти'}"><div class="dr-kpi-label">${label}</div><div class="dr-kpi-value">${n}</div><div class="dr-kpi-sub">${sub || (warnKind === k ? 'показаны только эти · нажмите ещё раз — все' : 'нажмите — показать только эти')}</div></button>`).join('')}
