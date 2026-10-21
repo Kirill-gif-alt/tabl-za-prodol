@@ -20,7 +20,7 @@ window.TabOrder = (function () {
         creative: 'Творческая',
         reports: 'Отчёты',
         lowreq: 'Запрос на понижение',
-        stats: 'Статистика'
+        stats: 'Журнал действий'
     };
 
     function profileId() {

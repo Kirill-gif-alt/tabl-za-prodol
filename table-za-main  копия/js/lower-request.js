@@ -5,7 +5,7 @@
 window.LowerRequest = (function () {
     const FILE = 'lower-requests.json';
     const WD = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
-    const COLS = [['n', '№'], ['date', 'Дата'], ['load', 'Загрузка'], ['dtd', 'Дней до вылета'], ['fare', 'Тариф сейчас'], ['avg', 'Средний тариф'], ['exp', 'Ожидаемая (откл.)'], ['sim', 'Аналогичные дни (откл.)'], ['ask', 'Просим согласовать']];
+    const COLS = [['n', '№'], ['date', 'Дата'], ['load', 'Загрузка'], ['dtd', 'Дней до вылета'], ['fare', 'Тариф сейчас'], ['avg', 'Средний тариф'], ['exp', 'Ожидаемая (откл.)'], ['sim', 'Аналогичные дни (откл.)'], ['fc', 'Прогноз к вылету'], ['ask', 'Просим согласовать']];
 
     let store = { version: 1, items: {} };
     let loaded = false;
@@ -145,6 +145,16 @@ window.LowerRequest = (function () {
         } catch (e) { avg = null; }
         const sold = n ? n.sold : null;
         const seats = n ? n.seats : null;
+        // Прогноз к вылету — им согласуют: высокий прогноз (от порога подсказок) помечается жёлтым.
+        let fcTxt = '—';
+        let fcHigh = false;
+        try {
+            const fc = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(code, date) : null;
+            if (fc && fc.source !== 'flown' && fc.final != null) {
+                fcTxt = FlightInsights.forecastShort(fc);
+                fcHigh = fc.lf >= PV.ADVICE_FC_HIGH;
+            }
+        } catch (e) { fcTxt = '—'; }
         return {
             date: ds,
             load: n && seats ? `${sold}/${seats} (${Math.round(sold / seats * 100)}%)` : '—',
@@ -154,6 +164,7 @@ window.LowerRequest = (function () {
             avg: avg != null ? fmtN(avg) : '—',
             exp: n && n.exp != null ? `${n.exp} (${sgn(sold - n.exp)})` : '—',
             sim: n && n.ref != null ? `${n.ref} (${sgn(sold - n.ref)})` : '—',
+            fc: fcTxt, fcHigh,
             ladder, dtdNum: n ? n.dtd : null
         };
     }
@@ -215,7 +226,7 @@ window.LowerRequest = (function () {
 
     function rowHtml(r) {
         const over = r.it.over || {};
-        const cell = (col) => `<td><input class="lr-in${over[col] != null ? ' lr-over' : ''}" data-lr-cell="${col}" data-lr-key="${esc(r.key)}" value="${esc(cellVal(r, col))}"></td>`;
+        const cell = (col) => `<td><input class="lr-in${over[col] != null ? ' lr-over' : ''}${col === 'fc' && r.auto.fcHigh ? ' lr-fc-high' : ''}"${col === 'fc' && r.auto.fcHigh ? ` title="Прогноз не ниже ${PV.ADVICE_FC_HIGH}%: рейс, скорее всего, наберёт загрузку сам"` : ''} data-lr-cell="${col}" data-lr-key="${esc(r.key)}" value="${esc(cellVal(r, col))}"></td>`;
         const clsOpts = (sel) => ['<option value="">—</option>'].concat(r.auto.ladder.map(l => `<option value="${esc(l.cls)}"${sel === l.cls ? ' selected' : ''}>${esc(l.cls)} (${fmtN(l.price)})</option>`)).join('');
         const asks = asksOf(r.it);
         const askRows = (asks.length ? asks : [{ places: null, cls: '' }]).map((a, i) => `<span class="lr-ask-ctl"><input type="number" min="0" step="1" class="lr-num" data-lr-places="${esc(r.key)}" data-i="${i}" value="${a.places != null ? esc(a.places) : ''}" placeholder="мест"> <select class="lr-sel" data-lr-cls="${esc(r.key)}" data-i="${i}" title="Тариф (подкласс), о котором просим">${clsOpts(a.cls)}</select>${i > 0 ? ` <button type="button" class="lr-del2" data-lr-askdel="${esc(r.key)}" data-i="${i}" title="Убрать этот подкласс">✕</button>` : ''}</span>`).join('');
@@ -223,7 +234,7 @@ window.LowerRequest = (function () {
             <td class="lr-n">${r.n}</td>
             <td class="lr-first"><button type="button" class="lr-del" data-lr-del="${esc(r.key)}" title="Убрать из запроса">✕</button>
                 <input class="lr-in${over.date != null ? ' lr-over' : ''}" data-lr-cell="date" data-lr-key="${esc(r.key)}" value="${esc(cellVal(r, 'date'))}"></td>
-            ${cell('load')}${cell('dtd')}${cell('fare')}${cell('avg')}${cell('exp')}${cell('sim')}
+            ${cell('load')}${cell('dtd')}${cell('fare')}${cell('avg')}${cell('exp')}${cell('sim')}${cell('fc')}
             <td class="lr-ask">${askRows}<button type="button" class="lr-add" data-lr-askadd="${esc(r.key)}" title="Просить места ещё по одному подклассу">＋ ещё подкласс</button>
                 <input class="lr-in${over.ask != null ? ' lr-over' : ''}" data-lr-cell="ask" data-lr-key="${esc(r.key)}" value="${esc(cellVal(r, 'ask'))}" placeholder="текст вручную"></td>
         </tr>`;
@@ -318,7 +329,7 @@ window.LowerRequest = (function () {
         const tdc = 'border:1px solid #d0d5dd;padding:6px 10px;vertical-align:top';
         const band = `${tdc};background:#1e3a5f;color:#ffffff;font-weight:bold;border-top:3px solid #0f172a`;
         const html = `<table style="${css}"><thead><tr>${COLS.map(c => `<th style="${tdc};background:#f2f4f7;text-align:left">${esc(c[1])}</th>`).join('')}</tr></thead>
-            <tbody>${groups.map(g => `<tr><td colspan="${COLS.length}" style="${band}">${esc(g.dir)}</td></tr>${g.rows.map(r => `<tr>${COLS.map(c => `<td style="${tdc}">${esc(cellVal(r, c[0]))}</td>`).join('')}</tr>`).join('')}`).join('')}</tbody></table>`;
+            <tbody>${groups.map(g => `<tr><td colspan="${COLS.length}" style="${band}">${esc(g.dir)}</td></tr>${g.rows.map(r => `<tr>${COLS.map(c => `<td style="${tdc}${c[0] === 'fc' && r.auto.fcHigh ? ';background:#fef9c3' : ''}">${esc(cellVal(r, c[0]))}</td>`).join('')}</tr>`).join('')}`).join('')}</tbody></table>`;
         return { text, html };
     }
 
@@ -345,7 +356,7 @@ window.LowerRequest = (function () {
             g.rows.forEach(r => aoa.push(COLS.map(c => cellVal(r, c[0]))));
         });
         const ws = XLSX.utils.aoa_to_sheet(aoa);
-        ws['!cols'] = [{ wch: 5 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 20 }, { wch: 24 }, { wch: 40 }];
+        ws['!cols'] = [{ wch: 5 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 20 }, { wch: 24 }, { wch: 22 }, { wch: 40 }];
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Запрос на понижение');
         const d = new Date();

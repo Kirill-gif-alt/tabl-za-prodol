@@ -50,13 +50,13 @@ window.SalesAdvice = (function () {
         if (behind === refs.length) status = 'down';
         else if (ahead === refs.length) status = 'up';
         else if (behind && ahead) status = 'attn';
-        // Прогноз к вылету (тот же, что в карточке и RMS): темп ниже обычного, но вылет доберёт до 90% — не «снизить»;
+        // Прогноз к вылету (тот же, что в карточке и RMS): темп ниже обычного, но вылет доберёт до порога (по умолчанию 80%) — не «снизить»;
         // темп выше, но прогноз ниже 60% — не «повысить». Тогда «внимание»: решать человеку.
         const fc = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(code, date) : null;
         const fcOk = fc && fc.source !== 'flown' && fc.final != null;
         let conflict = '';
-        if (fcOk && status === 'down' && fc.lf >= PV.ADVICE_FC_HIGH) { status = 'attn'; conflict = 'продаётся медленнее обычного, но прогноз к вылету высокий'; }
-        if (fcOk && status === 'up' && fc.lf < PV.ADVICE_FC_LOW) { status = 'attn'; conflict = 'продаётся быстрее обычного, но прогноз к вылету низкий'; }
+        if (fcOk && status === 'down' && fc.lf >= PV.ADVICE_FC_HIGH) { status = 'attn'; conflict = `темп ниже обычного, но прогноз ${fc.lf}%`; }
+        if (fcOk && status === 'up' && fc.lf < PV.ADVICE_FC_LOW) { status = 'attn'; conflict = `темп выше обычного, но прогноз ${fc.lf}%`; }
         // Продажи — на день среза данных: если файл не сегодняшний, «за N дн.» считаем от него и пишем дату данных.
         const dtdNow = daysUntil(date);
         const dtd = typeof observedFromDtd === 'function' && dtdNow != null ? Math.max(dtdNow, observedFromDtd(date)) : dtdNow;
@@ -65,7 +65,59 @@ window.SalesAdvice = (function () {
         const diff = (d) => (d > 0 ? `+${d}` : String(d));
         const text = `Продано ${sold} за ${dtd} дн. до вылета${lag}; ` + refs.map(r => `${r.label} ${r.value} (${diff(r.d)})`).join(', ')
             + (fcOk ? `; прогноз к вылету ${fc.final} из ${fc.seats} (${fc.lf}%)` : '') + (conflict ? ` — ${conflict}` : '');
-        return { code, date, base, status, sold, refs, threshold: T, dtd, text, seats };
+        return { code, date, base, status, sold, refs, threshold: T, dtd, text, seats, money: status ? money(code, date, status === 'up' ? 'up' : 'down', undefined, row, base) : null };
+    }
+
+    // Деньги под вылетом, ₽ (для сортировки и столбца «Деньги»):
+    //  down — пустые места по прогнозу × средний тариф вылета (сколько выручки не добираем);
+    //  up   — места, которые ещё в продаже, × последний тариф (с чего можно взять больше).
+    // Без прогноза или тарифа — null (на экране «—»). avgHint: средний тариф, если он уже известен.
+    let moneyMemo = new Map();
+    let moneySig = '';
+    function money(code, date, kind, avgHint, row0, base0) {
+        const s = sig() + '|' + (typeof Params !== 'undefined' ? Params.revision() : 0);
+        if (s !== moneySig) { moneyMemo = new Map(); moneySig = s; }
+        const key = kind + '|' + code + '|' + date;
+        if (moneyMemo.has(key)) return moneyMemo.get(key);
+        let res = null;
+        try { res = computeMoney(code, date, kind, avgHint, row0, base0); } catch (e) { console.warn('SalesAdvice.money', code, date, e); }
+        moneyMemo.set(key, res);
+        return res;
+    }
+
+    function computeMoney(code, date, kind, avgHint, row0, base0) {
+        const fc = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(code, date) : null;
+        if (!fc || fc.source === 'flown' || !(fc.seats > 0) || fc.final == null) return null;
+        if (kind === 'up') {
+            const cur = typeof PriceAdvisor !== 'undefined' && PriceAdvisor.currentPrice ? PriceAdvisor.currentPrice(code, date) : null;
+            const fare = cur ? Number(cur.price) : 0;
+            const left = Math.max(0, fc.seats - fc.load);
+            if (!(fare > 0)) return null;
+            return { kind, seats: left, fare: Math.round(fare), rub: Math.round(left * fare) };
+        }
+        let fare = Number(avgHint) || 0;
+        if (!(fare > 0)) {
+            const base = base0 || (typeof getBaseFlight === 'function' ? getBaseFlight(code) : code);
+            const row = row0 || (typeof getFlightRowForDate === 'function' ? getFlightRowForDate(base, date, code) : null);
+            const m = row && typeof getRowMetrics === 'function' ? getRowMetrics(row, base) : null;
+            if (m && m.avg && (typeof hasSalesFileLoaded !== 'function' || hasSalesFileLoaded())) fare = m.avg;
+        }
+        if (!(fare > 0)) {
+            const e = typeof FlightInsights !== 'undefined' ? FlightInsights.economics(code, date) : null;
+            if (e && e.fare > 0) fare = e.fare;
+        }
+        if (!(fare > 0)) return null;
+        const empty = Math.max(0, fc.seats - fc.final);
+        return { kind, seats: empty, fare: Math.round(fare), rub: Math.round(empty * fare) };
+    }
+
+    // Подпись к сумме: из чего она получена.
+    function moneyTitle(m) {
+        if (!m) return 'Нет прогноза или тарифа: сумму не посчитать';
+        const f = (n) => Math.round(n).toLocaleString('ru-RU');
+        return m.kind === 'up'
+            ? `Места, ещё доступные в продаже: ${m.seats} × последний тариф ${f(m.fare)} ₽`
+            : `Пустые места по прогнозу: ${m.seats} × средний тариф ${f(m.fare)} ₽`;
     }
 
     // Цифры вылета к нынешнему дню: продано, кресла, ожидаемая (файл) и «аналогичные дни» (норма по дню недели).
@@ -135,5 +187,5 @@ window.SalesAdvice = (function () {
         return out;
     }
 
-    return { norms, forDeparture, scanAll, inWindow, LABEL, get DAYS_AHEAD() { return PV.ADVICE_DAYS_AHEAD; } };
+    return { norms, money, moneyTitle, forDeparture, scanAll, inWindow, LABEL, get DAYS_AHEAD() { return PV.ADVICE_DAYS_AHEAD; } };
 })();
