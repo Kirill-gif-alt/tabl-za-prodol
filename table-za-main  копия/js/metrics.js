@@ -41,14 +41,16 @@ let metricsSigMemo = null;
 function getMetricsCacheSignature() {
     const weights = typeof baggageWeightsData !== 'undefined' ? baggageWeightsData : null;
     const today = getTodayDate();
+    // Сигналы учитывают прогноз к вылету: обучилась модель или сменились параметры — пересчитать.
+    const ar = typeof analyticsRevision === 'function' ? analyticsRevision() : '';
     const m = metricsSigMemo;
     if (m && m.epoch === dataEpoch && m.all === allData && m.allLen === (allData?.length || 0) && m.sales === salesMap
-        && m.weights === weights && m.closed === closedFlights && m.closedSize === closedFlights.size && m.today === today) {
+        && m.weights === weights && m.closed === closedFlights && m.closedSize === closedFlights.size && m.today === today && m.ar === ar) {
         return m.sig;
     }
     const weightsCount = weights ? Object.keys(weights).length : 0;
-    const sig = `${dataEpoch}|${allData?.length || 0}|${closedFlights.size}|${Object.keys(salesMap || {}).length}|${weightsCount}|${today}`;
-    metricsSigMemo = { epoch: dataEpoch, all: allData, allLen: allData?.length || 0, sales: salesMap, weights, closed: closedFlights, closedSize: closedFlights.size, today, sig };
+    const sig = `${dataEpoch}|${allData?.length || 0}|${closedFlights.size}|${Object.keys(salesMap || {}).length}|${weightsCount}|${today}|${ar}`;
+    metricsSigMemo = { epoch: dataEpoch, all: allData, allLen: allData?.length || 0, sales: salesMap, weights, closed: closedFlights, closedSize: closedFlights.size, today, ar, sig };
     return sig;
 }
 
@@ -57,6 +59,8 @@ function buildMetricsCache() {
     if (metricsCache && metricsCacheKey === key) return metricsCache;
 
     metricsCache = { byBase: {}, byKey: {}, upcoming: null };
+    globalKpiCache = null;
+    globalKpiCacheKey = '';
     Object.keys(groupedData).filter(isValidFlightBase).forEach(base => {
         let salesToday = 0;
         let alertCount = 0;
@@ -77,8 +81,15 @@ function buildMetricsCache() {
         metricsCache.byBase[base] = { salesToday, alertCount };
     });
     metricsCacheKey = key;
+    // Сигналы зависят от прогноза: если пересчёт вызвала новая модель или архив (данные те же), счётчик в шапке обновляем.
+    const ar = typeof analyticsRevision === 'function' ? analyticsRevision() : '';
+    if (metricsBuiltAr !== null && metricsBuiltAr !== ar && metricsBuiltEpoch === dataEpoch && typeof updateHeaderStatus === 'function') updateHeaderStatus();
+    metricsBuiltAr = ar;
+    metricsBuiltEpoch = dataEpoch;
     return metricsCache;
 }
+let metricsBuiltAr = null;
+let metricsBuiltEpoch = -1;
 
 function getRowMetrics(row, base) {
     const cache = buildMetricsCache();
@@ -123,10 +134,12 @@ function computeRowMetrics(row, base) {
     let alertLevel = 0;
     let alertReason = '';
     if (!closed && !flew && dtd !== null && dtd >= 0) {
+        // «Ниже прогноза» — не мельче порога подсказок: 3 пасс. или 5% кресел.
+        const belowMin = Math.max(PV.ADVICE_THRESHOLD_MIN, Math.round(seatsOnSale * 0.05));
         if (delta !== null && delta < -PV.RMS_CRIT_DELTA && dtd <= PV.RMS_CRIT_DAYS) {
             alertLevel = 3;
             alertReason = `Отставание ${delta} пасс., вылет через ${dtd} дн.`;
-        } else if (delta !== null && delta < 0 && dtd <= PV.RMS_WARN_DAYS) {
+        } else if (delta !== null && delta <= -belowMin && dtd <= PV.RMS_WARN_DAYS) {
             alertLevel = 2;
             alertReason = `Ниже прогноза на ${Math.abs(delta)} пасс.`;
         } else if (pct != null && pct < PV.RMS_LOW_PCT && dtd <= PV.RMS_LOW_DAYS) {
@@ -138,6 +151,21 @@ function computeRowMetrics(row, base) {
         } else if (s.today >= PV.RMS_ACTIVE_SALES) {
             alertLevel = 1;
             alertReason = `Активные продажи: +${s.today} сегодня`;
+        }
+        if (alertLevel >= 2) {
+            if (dtd === 0) {
+                // В день вылета цену менять поздно: только отметка, без предупреждения.
+                alertLevel = 1;
+                alertReason += '; вылет сегодня';
+            } else if (typeof FlightInsights !== 'undefined') {
+                // Прогноз к вылету высокий — отставание от темпа не так страшно: уровень ниже на единицу.
+                let fc = null;
+                try { fc = FlightInsights.forecast(orig, date); } catch { fc = null; }
+                if (fc && fc.source !== 'flown' && fc.final != null && fc.lf >= PV.ADVICE_FC_HIGH) {
+                    alertLevel--;
+                    alertReason += `; прогноз к вылету ${fc.lf}%`;
+                }
+            }
         }
     }
 
@@ -167,6 +195,13 @@ function getAllUpcomingFlights(daysAhead = 30) {
     });
     const sorted = results.sort((a, b) => {
         if (b.alertLevel !== a.alertLevel) return b.alertLevel - a.alertLevel;
+        // Проблемные — по деньгам (больше сверху), потом по близости вылета.
+        if (a.alertLevel >= 2) {
+            const ma = getRmsMoney(a);
+            const mb = getRmsMoney(b);
+            const d = (mb ? mb.rub : -1) - (ma ? ma.rub : -1);
+            if (d) return d;
+        }
         if (a.dtd !== b.dtd) return a.dtd - b.dtd;
         if (a.delta !== null && b.delta !== null) return a.delta - b.delta;
         return 0;
@@ -175,7 +210,35 @@ function getAllUpcomingFlights(daysAhead = 30) {
     return sorted;
 }
 
+// Деньги по строке RMS: для предупреждений — пустые места по прогнозу × средний тариф;
+// для «почти полный» и «активные продажи» — оставшиеся места × последний тариф. Иначе null (на экране «—»).
+function getRmsMoney(m) {
+    if (m.moneyMemo !== undefined) return m.moneyMemo;
+    let res = null;
+    if (typeof SalesAdvice !== 'undefined' && SalesAdvice.money) {
+        const reason = m.alertReason || '';
+        const up = m.alertLevel === 1 && (reason.startsWith('Почти полный') || reason.startsWith('Активные продажи'));
+        if (m.alertLevel >= 2 || up) res = SalesAdvice.money(m.orig || m.base, m.date, up ? 'up' : 'down', m.avg || undefined);
+    }
+    m.moneyMemo = res;
+    return res;
+}
+
+// Файл продаж старше 1 дня: «продано сегодня» по нему не видно, нули там ничего не значат.
+// Возвращает { days, label: 'ДД.ММ' } или null, если файл свежий (или даты файла нет).
+function getStaleSalesInfo() {
+    if (typeof lastSalesUpdate === 'undefined' || !lastSalesUpdate) return null;
+    if (typeof hasSalesFileLoaded === 'function' && !hasSalesFileLoaded()) return null;
+    const upd = new Date(lastSalesUpdate);
+    const t = parseLocalDate(getTodayDate());
+    if (!t || isNaN(upd.getTime())) return null;
+    const days = Math.round((t.getTime() - new Date(upd.getFullYear(), upd.getMonth(), upd.getDate()).getTime()) / 86400000);
+    if (days < 2) return null;
+    return { days, label: `${String(upd.getDate()).padStart(2, '0')}.${String(upd.getMonth() + 1).padStart(2, '0')}` };
+}
+
 function getGlobalKPIs() {
+    buildMetricsCache();   // ключ ниже берётся после возможного пересчёта (сигналы зависят от прогноза)
     const key = `${getTodayDate()}|${metricsCacheKey}`;
     if (globalKpiCache && globalKpiCacheKey === key) return globalKpiCache;
 

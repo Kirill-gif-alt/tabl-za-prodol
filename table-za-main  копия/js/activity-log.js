@@ -2,6 +2,7 @@
 window.ActivityLog = (function () {
     const LOCAL_KEY = 'krasavia_activity_v1';
     const MAX_EVENTS = 2000;   // как в общем файле (shared-storage.js)
+    const MAX_TAB_EVENTS = 300;   // смены вкладок хранятся только здесь и не вытесняют остальные записи
 
     const ACTION_LABELS = {
         login: 'Вход',
@@ -38,7 +39,7 @@ window.ActivityLog = (function () {
         creative: 'Творческая',
         reports: 'Отчёты',
         lowreq: 'Запрос на понижение',
-        stats: 'Статистика'
+        stats: 'Журнал действий'
     };
 
     let cache = null;
@@ -68,16 +69,27 @@ window.ActivityLog = (function () {
         }
     }
 
+    // Список от новых к старым: не больше MAX_EVENTS записей, из них смен вкладок не больше MAX_TAB_EVENTS.
+    function trimEvents(list) {
+        let tabs = 0;
+        const out = [];
+        for (const e of list) {
+            if (e.action === 'tab' && ++tabs > MAX_TAB_EVENTS) continue;
+            out.push(e);
+            if (out.length >= MAX_EVENTS) break;
+        }
+        return out;
+    }
+
     function mergeEvents(a, b) {
         const map = new Map();
         [...(a || []), ...(b || [])].forEach(e => {
             if (e?.id) map.set(e.id, e);
         });
-        return [...map.values()]
+        return trimEvents([...map.values()]
             .map(e => ({ e, t: new Date(e.ts).getTime() }))
             .sort((x, y) => y.t - x.t)
-            .slice(0, MAX_EVENTS)
-            .map(x => x.e);
+            .map(x => x.e));
     }
 
     // Несколько вызовов подряд при старте ждут одну загрузку, а не качают файл каждый раз.
@@ -150,11 +162,11 @@ window.ActivityLog = (function () {
         let ok = false;
         await SharedStorage.restoreRootHandle();
         if (SharedStorage.isLinked()) {
-            ok = await SharedStorage.saveActivity(cache) || ok;
+            ok = await SharedStorage.saveActivity(cache.filter(e => e.action !== 'tab')) || ok;
         }
         if (typeof SalesSync !== 'undefined' && SharedStorage.saveActivityToDataRoot) {
             const dataDir = SalesSync.getDataRootHandle?.() || await SalesSync.restoreDataFolderHandle?.();
-            if (dataDir) ok = await SharedStorage.saveActivityToDataRoot(dataDir, cache) || ok;
+            if (dataDir) ok = await SharedStorage.saveActivityToDataRoot(dataDir, cache.filter(e => e.action !== 'tab')) || ok;
         }
         if (ok) lastPushedHeadId = headId;
         return ok;
@@ -239,7 +251,7 @@ window.ActivityLog = (function () {
         const apply = () => {
             if (!cache) cache = [];
             cache.unshift(entry);
-            if (cache.length > MAX_EVENTS) cache = cache.slice(0, MAX_EVENTS);
+            if (cache.length > MAX_EVENTS) cache = trimEvents(cache);
             if (action === 'tab' || action === 'flight') {
                 if (persistTimer) clearTimeout(persistTimer);
                 persistTimer = setTimeout(() => queuePersist(false), 1500);
@@ -278,12 +290,13 @@ window.ActivityLog = (function () {
     function filterEvents(events, filters) {
         const { profileId, action, days, query } = filters;
         const now = Date.now();
-        const dayMs = days > 0 ? days * 86400000 : 0;
+        // «Сегодня» (1 день) — с полуночи, а не последние 24 часа.
+        const from = days === 1 ? new Date().setHours(0, 0, 0, 0) : (days > 0 ? now - days * 86400000 : 0);
 
         return events.filter(e => {
             if (profileId && e.profileId !== profileId) return false;
-            if (action && e.action !== action) return false;
-            if (dayMs && (now - new Date(e.ts).getTime()) > dayMs) return false;
+            if (action === '!tab' ? e.action === 'tab' : (action && e.action !== action)) return false;
+            if (from && new Date(e.ts).getTime() < from) return false;
             if (query) {
                 const hay = [
                     e.profileName, e.profileId, e.detail,
@@ -319,13 +332,14 @@ window.ActivityLog = (function () {
         const liveQuery = qEl ? qEl.value : null;
         const filters = state || {
             profileId: '',
-            action: '',
+            action: '!tab',   // по умолчанию смены вкладок скрыты
             days: 7,
             query: ''
         };
 
         const filtered = filterEvents(events, filters);
-        const allSummary = buildStatsSummary(events);
+        // Числа у имён — за выбранный период, действие и поиск (без выбора человека, чтобы остальные не обнулялись).
+        const allSummary = buildStatsSummary(filterEvents(events, Object.assign({}, filters, { profileId: '' })));
         const profiles = getUniqueProfiles(events);
 
         const userCards = profiles.map(([id, name]) => {
@@ -355,10 +369,10 @@ window.ActivityLog = (function () {
             <div class="stats-page table-page">
                 <div class="table-page-hero stats-hero">
                     <div class="table-page-hero-main">
-                        <h2 class="stats-hero-title">Статистика активности</h2>
+                        <h2 class="stats-hero-title">Журнал действий</h2>
                     </div>
                     <div class="stats-hero-meta">
-                        <span class="stats-total-badge">${filtered.length} из ${events.length} записей</span>
+                        <span class="stats-total-badge">${filtered.length} из ${events.length} ${pluralRu(events.length, 'записи', 'записей', 'записей')}</span>
                         <button type="button" class="filter-btn stats-refresh-btn" id="stats-refresh-btn">Обновить</button>
                     </div>
                 </div>
@@ -378,6 +392,7 @@ window.ActivityLog = (function () {
                                 <span>Действие</span>
                                 <select id="stats-filter-action" class="stats-select">
                                     <option value="">Все</option>
+                                    <option value="!tab"${filters.action === '!tab' ? ' selected' : ''}>Все, кроме «Вкладка»</option>
                                     ${actionOptions}
                                 </select>
                             </label>

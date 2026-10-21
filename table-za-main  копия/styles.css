@@ -5082,6 +5082,10 @@ html[data-theme="dark"] textarea {
     padding: 0 2px 2px;
 }
 
+.sm-legend[hidden] {
+    display: none;
+}
+
 .sm-legend-item {
     font-size: 0.72rem;
     font-weight: 600;
@@ -7288,8 +7292,22 @@ html[data-theme="dark"] .cr-pop { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
     text-align: center;
 }
 
+.td-stats-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+/* «Сегодня»: решения по старым данным */
+.td-stale {
+    margin: -8px 0 14px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+    color: #92400e;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
 @media (max-width: 1000px) {
-    .td-stats { grid-template-columns: 1fr; }
+    .td-stats, .td-stats-4 { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 560px) {
@@ -8183,6 +8201,7 @@ html[data-theme="dark"] .cr-table tbody tr:hover td { background: #1f2a37; }
 .lr-in { width: 100%; min-width: 90px; border: 1px solid transparent; background: transparent; padding: 4px 6px; border-radius: 6px; font: inherit; color: inherit; }
 .lr-in:hover, .lr-in:focus { border-color: #94a3b8; background: #fff; }
 .lr-in.lr-over { background: #fffbeb; border-color: #fcd34d; font-weight: 600; }
+.lr-in.lr-fc-high { background: #fef9c3; border-color: #facc15; }
 .lr-first { position: relative; min-width: 130px; }
 .lr-table tbody tr.lr-grp-head td { background: #1e3a5f !important; color: #fff !important; font-weight: 700; font-size: 14px; padding: 7px 12px; border-top: 4px solid #0f172a; }
 .lr-table tbody tr.lr-grp-head:first-child td { border-top: 0; }

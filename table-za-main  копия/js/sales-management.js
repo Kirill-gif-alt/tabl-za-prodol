@@ -1614,13 +1614,40 @@ function renderSalesFlightList() {
             if (dep.code && dep.code !== flight.code && extras.indexOf(dep.code) === -1) extras.push(dep.code);
         });
         const extraText = extras.length ? ` · доп ${extras.join(', ')}` : '';
+        const future = (flight.departures || []).filter(dep => !dep.flown).length;
         return `
         <button type="button" class="sm-flight ${flight.code === salesFlightPick ? 'sm-flight-on' : ''}" data-code="${salesAttr(flight.code)}">
             <strong>${salesEsc(flight.code)}</strong>
             <span>${salesEsc(flight.route)}</span>
-            <small>${flight.departures.length} дат${salesEsc(extraText)}</small>
+            <small>будущих дат: ${future}<span class="sm-wait" data-wait="${salesAttr(flight.code)}"></span>${salesEsc(extraText)}</small>
         </button>`;
     }).join('');
+    fillSalesWaiting(host, flights);
+}
+
+// «Ждут: N» у маршрута — вылеты с подсказкой решения и без отметки за сегодня. Считается порциями (общий расчёт с «Сегодня»).
+let salesWaitSeq = 0;
+function fillSalesWaiting(host, flights) {
+    if (typeof SalesAdvice === 'undefined' || typeof PV === 'undefined') return;
+    const place = PV.HINT_TODAY === 1 ? 'today' : (PV.HINT_SALES === 1 ? 'sales' : '');
+    if (!place) return;
+    const seq = ++salesWaitSeq;
+    const today = typeof getTodayDate === 'function' ? getTodayDate() : '';
+    const owner = new Map();
+    flights.forEach(flight => (flight.departures || []).forEach(dep => { if (!dep.flown) owner.set(dep.code + '|' + dep.date, flight.code); }));
+    SalesAdvice.scanAll(new Set(owner.keys()), undefined, place).then(list => {
+        if (seq !== salesWaitSeq || !host.isConnected) return;
+        const count = new Map();
+        list.forEach(a => {
+            if (SalesManagement.getMarks(a.code, a.date, today).length) return;
+            const code = owner.get(a.code + '|' + a.date);
+            if (code) count.set(code, (count.get(code) || 0) + 1);
+        });
+        host.querySelectorAll('.sm-wait').forEach(el => {
+            const n = count.get(el.dataset.wait) || 0;
+            el.textContent = n ? ` · ждут: ${n}` : '';
+        });
+    }).catch(e => console.warn('SalesManagement.waiting', e));
 }
 
 function renderSalesGrid() {
@@ -1763,6 +1790,10 @@ function scrollSalesGridToDate(host) {
     const frozen = salesFrozenWidth(host);
     const delta = (picked.head.getBoundingClientRect().left - host.getBoundingClientRect().left - frozen) / zoom;
     host.scrollLeft = Math.max(0, host.scrollLeft + delta);
+    // Вниз — к первой строке, которая ещё не вылетела: улетевшие остаются выше.
+    const tr = host.querySelector('tbody tr:not(.sm-row-flew)');
+    const thead = host.querySelector('thead');
+    if (tr && thead) host.scrollTop = Math.max(0, tr.offsetTop - thead.offsetHeight - 30);
     return { exact: picked.exact };
 }
 
@@ -1872,6 +1903,12 @@ document.addEventListener('krasavia:mark', () => {
         return;
     }
     if (document.getElementById('sm-grid')) renderSalesGrid();
+    const list = document.getElementById('sm-flight-list');
+    if (list && list.querySelector('.sm-wait')) {
+        // Счётчик «ждут» у маршрутов обновляется после отметки.
+        const all = SalesManagement.listFlights();
+        fillSalesWaiting(list, all.filter(flight => salesFlightMatches(flight, salesSearchQuery.trim())));
+    }
 });
 
 function createSalesManagementView(panel) {
@@ -1889,11 +1926,12 @@ function createSalesManagementView(panel) {
                         <span id="sm-mode" class="sm-mode"></span>
                         <span id="sm-save-status" class="sm-save-status"></span>
                         <span class="table-controls-spacer"></span>
+                        <button type="button" id="sm-legend-btn" class="filter-btn" aria-expanded="true" title="Показать или скрыть цветные плашки">Обозначения</button>
                         <button type="button" id="sm-today" class="filter-btn filter-btn-active">Сегодня</button>
                         <button type="button" id="sm-reload" class="filter-btn">Обновить</button>
                         <button type="button" id="sm-export" class="filter-btn">В Excel</button>
                     </div>
-                    <div class="sm-legend" aria-hidden="true">
+                    <div class="sm-legend" id="sm-legend" aria-hidden="true">
                         <span class="sm-legend-item sm-st-keep">Проверено без изменений</span>
                         <span class="sm-legend-item sm-st-attn">! Обратить внимание</span>
                         <span class="sm-legend-item sm-st-down">Снижение</span>
@@ -1962,6 +2000,20 @@ function createSalesManagementView(panel) {
             showToast('Сегодняшней даты в столбцах нет — показана ближайшая');
         }
     });
+    // Плашки обозначений сворачиваются; выбор запоминается на этом компьютере.
+    const legendBtn = document.getElementById('sm-legend-btn');
+    const legendBox = document.getElementById('sm-legend');
+    const setLegend = (open, save) => {
+        if (!legendBtn || !legendBox) return;
+        legendBox.hidden = !open;
+        legendBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        legendBtn.classList.toggle('filter-btn-active', open);
+        if (save) { try { localStorage.setItem('krasavia_sm_legend', open ? '1' : '0'); } catch (e) { /* ignore */ } }
+    };
+    let legendOpen = true;
+    try { legendOpen = localStorage.getItem('krasavia_sm_legend') !== '0'; } catch (e) { /* ignore */ }
+    setLegend(legendOpen, false);
+    legendBtn?.addEventListener('click', () => setLegend(legendBox.hidden, true));
     document.getElementById('sm-reload')?.addEventListener('click', () => refreshSalesManagement(true));
     document.getElementById('sm-export')?.addEventListener('click', () => exportSalesManagementExcel());
     if (typeof applyViewZoom === 'function') applyViewZoom('sales');
@@ -2329,9 +2381,9 @@ async function exportSalesManagementExcel() {
             : (lib.writeFile(wb, filename), { where: 'download' });
         if (typeof ActivityLog !== 'undefined') ActivityLog.log('export', 'Управление продажами');
         if (typeof excelAnnounceSaved === 'function') {
-            excelAnnounceSaved(saved, `Файл готов: ${flights.length} рейсов, дата выгрузки ${stamp}`);
+            excelAnnounceSaved(saved, `Файл готов: ${flights.length} ${pluralRu(flights.length, 'рейс', 'рейса', 'рейсов')}, дата выгрузки ${stamp}`);
         } else if (typeof showToast === 'function') {
-            showToast(`Файл готов: ${flights.length} рейсов, дата выгрузки ${stamp}`);
+            showToast(`Файл готов: ${flights.length} ${pluralRu(flights.length, 'рейс', 'рейса', 'рейсов')}, дата выгрузки ${stamp}`);
         }
     } catch (e) {
         console.error(e);

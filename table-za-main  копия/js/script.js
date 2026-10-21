@@ -223,6 +223,7 @@ function renderHeaderKpi() {
             const al = document.createElement('span');
             al.className = 'header-kpi-alert';
             al.textContent = '⚠ ' + alerts;
+            al.title = `Сигналы RMS: ${alerts}.${canRms ? ' Нажмите, чтобы открыть.' : ''}`;
             if (canRms) al.addEventListener('click', () => switchMainTab('rms'));
             return al;
         });
@@ -239,7 +240,7 @@ function renderHeaderKpi() {
         if (days < 2) return null;
         const chip = document.createElement('span');
         chip.className = 'header-kpi-stale';
-        chip.textContent = `данные от ${String(upd.getDate()).padStart(2, '0')}.${String(upd.getMonth() + 1).padStart(2, '0')}`;
+        chip.textContent = `нет свежих данных (от ${String(upd.getDate()).padStart(2, '0')}.${String(upd.getMonth() + 1).padStart(2, '0')})`;
         chip.title = `Файл продаж не обновлялся ${days} дн. «Продаж за сегодня» по нему не видно — загрузите свежие данные.`;
         return chip;
     });

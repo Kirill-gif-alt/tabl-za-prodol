@@ -127,7 +127,10 @@ function renderRmsWatchlist() {
     const flights = getRmsFilteredFlights();
     const kpi = getGlobalKPIs();
     const alertCnt = flights.filter(f => f.alertLevel >= 2).length;
-    const avgLoad = flights.length ? Math.round(flights.reduce((a, f) => a + f.pct, 0) / flights.length) : 0;
+    // Средняя загрузка — по местам: сумма проданных / сумма кресел в продаже.
+    const seatSum = flights.reduce((a, f) => a + (f.total || 0), 0);
+    const avgLoad = seatSum ? Math.round(flights.reduce((a, f) => a + (f.total ? f.free : 0), 0) / seatSum * 100) : 0;
+    const stale = typeof getStaleSalesInfo === 'function' ? getStaleSalesInfo() : null;
     const salesReady = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(dataLoadStatus && dataLoadStatus.sales);
     const expectedReady = typeof hasExpectedFileLoaded === 'function' ? hasExpectedFileLoaded() : Object.keys(expectedLoadData || {}).length > 0;
 
@@ -138,7 +141,7 @@ function renderRmsWatchlist() {
             <span class="rms-hero-badge">Открытых: <strong>${flights.length}</strong></span>
             ${markOn ? `<span class="rms-hero-badge" title="Рейсов в списке с отметкой «Управления продажами» за сегодня">Проверено сегодня: <strong>${checkedToday}/${flights.length}</strong></span>` : ''}
             <span class="rms-hero-badge rms-hero-badge-warn">Предупр.: <strong>${alertCnt}</strong></span>
-            <span class="rms-hero-badge">Продажи 14д: <strong>${salesReady ? kpi.todaySales : '—'}</strong></span>
+            <span class="rms-hero-badge">Продано сегодня: <strong>${!salesReady ? '—' : (stale ? `нет свежих данных (от ${stale.label})` : kpi.todaySales)}</strong></span>
             <span class="rms-hero-badge">Ср. ЗПК: <strong>${avgLoad}%</strong></span>
         `;
     }
@@ -171,8 +174,10 @@ function renderRmsWatchlist() {
         const routeType = typeof getFlightRouteType === 'function' ? getFlightRouteType(flightCode) : 'unknown';
         const routeTypeLabel = typeof getFlightRouteTypeLabel === 'function' ? getFlightRouteTypeLabel(flightCode) : '';
         const routeTypeCls = routeType === 'krai' ? 'rms-route-krai' : (routeType === 'interregional' ? 'rms-route-inter' : 'rms-route-unknown');
-        const pickupTxt = (f.pickup === null || f.pickup === undefined || !salesReady) ? '—' : f.pickup;
-        const todayTxt = salesReady ? (f.s.today || 0) : '—';
+        const pickupTxt = (f.pickup === null || f.pickup === undefined || !salesReady || stale) ? '—' : f.pickup;
+        const todayTxt = salesReady && !stale ? (f.s.today || 0) : '—';
+        const staleTitle = stale ? ` title="Нет свежих данных (файл продаж от ${stale.label})"` : '';
+        const mny = typeof getRmsMoney === 'function' ? getRmsMoney(f) : null;
         const remainTxt = f.remainder != null ? f.remainder : '—';
         const fc = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(flightCode, f.date) : null;
         const fcCls = fc && fc.source !== 'flown' ? (fc.soldOutDtd != null && fc.load < fc.seats ? 'rms-fc-up' : (fc.lf < 60 ? 'rms-fc-down' : '')) : '';
@@ -192,9 +197,10 @@ function renderRmsWatchlist() {
                 <td class="rms-col-remain font-semibold">${remainTxt}</td>
                 <td class="rms-col-fc font-semibold ${fcCls}" title="${escAttr(fcTitle)}">${fc && fc.source !== 'flown' ? escHtml(FlightInsights.forecastShort(fc)) : '—'}</td>
                 ${expectedCells}
-                <td class="rms-col-pickup font-semibold">${pickupTxt}</td>
-                <td class="rms-col-today font-bold ${salesReady && f.s.today ? 'rms-today-hot' : ''}">${todayTxt}</td>
+                <td class="rms-col-pickup font-semibold"${staleTitle}>${pickupTxt}</td>
+                <td class="rms-col-today font-bold ${salesReady && !stale && f.s.today ? 'rms-today-hot' : ''}"${staleTitle}>${todayTxt}</td>
                 <td class="rms-col-fare font-semibold">${salesReady && f.avg ? formatRub(f.avg) : '—'}</td>
+                <td class="rms-col-money font-semibold" title="${escAttr(typeof SalesAdvice !== 'undefined' ? SalesAdvice.moneyTitle(mny) : '')}">${mny ? Math.round(mny.rub).toLocaleString('ru-RU') : '—'}</td>
                 <td class="rms-col-reason">${escHtml(f.alertReason) || '—'}</td>
                 ${markOn ? `<td class="rms-col-mark">${PriceMarks.chipHtml(flightCode, f.date)}</td>` : ''}
             </tr>
@@ -216,6 +222,7 @@ function renderRmsWatchlist() {
                     <th class="rms-col-pickup" title="Билеты сегодня+вчера из файла 14д">Продано за 1–2 дн.</th>
                     <th class="rms-col-today" title="Билеты с DEALDATE=сегодня из файла 14д">Сегодня (файл 14д)</th>
                     <th class="rms-col-fare" title="Среднее по всем билетам вылета в файле продаж">Ср. тариф по всем билетам</th>
+                    <th class="rms-col-money" title="Сколько денег под вылетом. Предупреждение: пустые места по прогнозу × средний тариф. «Почти полный» и активные продажи: места, ещё доступные в продаже × последний тариф. Без прогноза или тарифа — «—»">Деньги, ₽</th>
                     <th class="rms-col-reason">Причина</th>
                     ${markOn ? '<th class="rms-col-mark" title="Отметка «Управления продажами» за сегодня: клик по чипу или клавиши 1–4 на строке (1 без изменений, 2 внимание, 3 снижение, 4 повышение)">Сегодня</th>' : ''}
                 </tr>

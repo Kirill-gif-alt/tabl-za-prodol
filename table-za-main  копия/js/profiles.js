@@ -20,7 +20,7 @@ window.ProfileAuth = (function () {
         tab_sales: { label: 'Управление продажами', group: 'Вкладки' },
         tab_creative: { label: 'Творческая', group: 'Вкладки' },
         tab_reports: { label: 'Отчёты', group: 'Вкладки' },
-        tab_stats: { label: 'Статистика', group: 'Вкладки', hint: 'журнал действий сотрудников' },
+        tab_stats: { label: 'Журнал действий', group: 'Вкладки', hint: 'кто и что делал на сайте' },
         load_data: { label: 'Загрузка данных', group: 'Данные', hint: 'кнопка «Загрузить»: файлы загрузки рейсов и продаж' },
         share_data: { label: 'Публикация данных для всех', group: 'Данные', hint: 'загруженные данные видят все; архив продаж, журнал прогноза, история продаж' },
         export_excel: { label: 'Выгрузки в Excel', group: 'Данные' },
