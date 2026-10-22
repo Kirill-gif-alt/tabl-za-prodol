@@ -614,9 +614,14 @@ window.DecisionMoney = (function () {
         // Отклонения на вылетах без решений несимметричны: вверх хвост длиннее. Вниз от оценки диапазон шире (строже «помогло»),
         // вверх уже («навредило» подтверждается мягче).
         let lo = dcorr - half * num('MONEY_RANGE_LOW', 1.2); let hi = dcorr + half * num('MONEY_RANGE_HIGH', 0.65);
+        // Билеты «без решения»: повышение — не меньше факта, снижение — не больше факта; у заполненного рейса — по факту.
+        let nCf = base.kind === 'up' ? est.nExpPaid + cfAdj : (base.kind === 'down' ? est.nExpPaid - cfAdj : est.nExpPaid);
+        if (filledNow && est.nFactPaid != null) nCf = est.nFactPaid;
+        // Порог значимости — от выручки «без решения».
+        const thr = Math.max(num('MONEY_MIN_PCT', 15) / 100 * nCf * (base.priceBefore || 0), num('MONEY_MIN_RUB', 20000));
         let verdict = 'unclear';
-        if (lo > 0 && dcorr >= est.thr) verdict = 'worked';
-        else if (hi < 0 && dcorr <= -est.thr) verdict = 'failed';
+        if (lo > 0 && dcorr >= thr) verdict = 'worked';
+        else if (hi < 0 && dcorr <= -thr) verdict = 'failed';
         // «Скорее»: диапазон включает ноль, но вероятность плюса (или минуса) по нормальной оценке не ниже 75%.
         const zc = num('MONEY_NOISE_Z', 1.9);
         const sd = half > 0 ? half / zc : 0;
@@ -634,7 +639,6 @@ window.DecisionMoney = (function () {
         // Эффект по продажам — простая разница: выручка по факту минус билеты «без решения» × прежняя цена.
         // «Без решения»: для повышения не меньше факта, для снижения не больше факта (см. выше).
         // Поправка на шум и сдвиг (corr) в эффект не входит: она нужна только для метки и вероятности и показывается отдельно.
-        const nCf = base.kind === 'up' ? est.nExpPaid + cfAdj : (base.kind === 'down' ? est.nExpPaid - cfAdj : est.nExpPaid);
         const nFp = est.nFactPaid != null ? est.nFactPaid : nCf;
         const pure = est.revFact - nCf * pb0;
         const shift = dcorr - pure;
@@ -646,15 +650,15 @@ window.DecisionMoney = (function () {
         lo -= shift; hi -= shift;   // диапазон показывается вокруг эффекта по продажам
         const res = Object.assign(base, extra, {
             priceAfter: Math.round(est.priceAfter), delta, lo: round1k(lo), hi: round1k(hi), sd: round1k(sd),
-            volume, volPure, corr, priceEffect, nCf: round1(nCf), payback: est.payback == null ? null : round1(est.payback),
-            thr: round1k(est.thr), nExpPaid: round1(est.nExpPaid), expRev: round1k(nCf * pb0), revFact: round1k(est.revFact), strengthK: Math.round(est.strengthK * 100) / 100,
+            volume, volPure, corr, priceEffect, nCf: round1(nCf), payback: est.priceAfter > 0 ? round1(nCf * pb0 / est.priceAfter) : null,
+            thr: round1k(thr), nExpPaid: round1(est.nExpPaid), expRev: round1k(nCf * pb0), revFact: round1k(est.revFact), strengthK: Math.round(est.strengthK * 100) / 100,
             dTickets: round1(est.dTickets), grade, cfAdj: round1(cfAdj)
         });
         // Остаток: эффект ниже порога значимости — «без заметного эффекта», иначе — направление по знаку («чуть лучше / хуже»).
         // Вероятность плюса (pPos) показывается рядом, поэтому слабый сигнал не выдаётся за твёрдый.
         if (!sampleOk) verdict = verdict === 'worked' ? 'lean_pos' : (verdict === 'failed' ? 'lean_neg' : verdict);
         if (verdict === 'unclear') {
-            if (Math.abs(dcorr) < est.thr) verdict = 'flat';
+            if (Math.abs(dcorr) < thr) verdict = 'flat';
             else verdict = dcorr > 0 ? 'weak_pos' : 'weak_neg';
         }
         res.verdict = verdict;
