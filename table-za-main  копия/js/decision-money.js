@@ -586,17 +586,27 @@ window.DecisionMoney = (function () {
         // Поправка на сдвиг (см. biasShift).
         const filledNow = !!(est.filled || extra.filled);
         const bias = biasShift(base, est, extra, filledNow);
-        // Повышение цены не приводит новых покупателей: билеты сверх обычного купили бы и по старой цене, поэтому «без решения» —
-        // не меньше факта (берём большее из ожидания и факта). Если продали меньше обычного, нехватка идёт решению в минус.
-        // Снижение считается как раньше. Отбрасывание шума только в одну сторону смещает сумму, поэтому добавляется его среднее
-        // (для половины нормального разброса это до 0,4 σ; подобрано по вылетам без решений: 0,3), и на вылетах без решений итог остаётся около нуля.
+        // Спрос не растёт от повышения цены и не падает от снижения.
+        // Повышение: билеты сверх обычного купили бы и по старой цене, поэтому «без решения» — не меньше факта; нехватка идёт решению в минус.
+        // Снижение: нехватку билетов снижение вызвать не могло, поэтому «без решения» — не больше факта; прибавка билетов идёт в плюс.
+        // Отбрасывание шума только в одну сторону смещает сумму, поэтому добавляется его среднее (до 0,4 σ; подобрано по вылетам без решений),
+        // и на вылетах без решений итог остаётся около нуля.
         let cfAdj = 0;
         let cfNoise = 0;
-        if (base.kind === 'up' && !filledNow && est.nFactPaid != null) {
-            cfAdj = Math.max(0, est.nFactPaid - est.nExpPaid);
-            cfNoise = num('MONEY_UP_NOISE', 0.3) * (est.sigma || 0) * (base.share != null ? base.share : 1);
+        const pb0 = base.priceBefore || 0;
+        let dcorr = est.delta - bias;
+        if (!filledNow && est.nFactPaid != null) {
+            const sh = base.share != null ? base.share : 1;
+            if (base.kind === 'up') {
+                cfAdj = Math.max(0, est.nFactPaid - est.nExpPaid);
+                cfNoise = num('MONEY_UP_NOISE', 0.3) * (est.sigma || 0) * sh;
+                dcorr -= (cfAdj - cfNoise) * pb0;
+            } else if (base.kind === 'down') {
+                cfAdj = Math.max(0, est.nExpPaid - est.nFactPaid);
+                cfNoise = num('MONEY_DOWN_NOISE', 0.45) * (est.sigma || 0) * sh;
+                dcorr += (cfAdj - cfNoise) * pb0;
+            }
         }
-        const dcorr = est.delta - bias - (cfAdj - cfNoise) * (base.priceBefore || 0);
         let half = (est.hi - est.lo) / 2 * widen;
         // Рейс заполнен: билетов уже не прибавить, но цена билета всё равно шумит.
         if (filledNow) half = num('MONEY_NOISE_Z', 1.9) * num('MONEY_PRICE_NOISE', 0.32) * est.nExpPaid * (base.priceBefore || 0) * widen;
