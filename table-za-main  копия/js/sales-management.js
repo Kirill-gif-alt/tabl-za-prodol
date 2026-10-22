@@ -1403,7 +1403,9 @@ function fillSalesPopoverClasses(flight, dep, mark) {
     if (!box) return;
     let ladder = [];
     try { ladder = typeof FareGrid !== 'undefined' ? FareGrid.ladderFor(flight, dep) || [] : []; } catch { ladder = []; }
-    box.dataset.has = ladder.length ? '1' : '';
+    // Выбор подкласса вручную — по праву профиля; без него класс определяется по продажам сам.
+    const canPick = typeof ProfileAuth === 'undefined' || ProfileAuth.hasPermission('pick_class');
+    box.dataset.has = ladder.length && canPick ? '1' : '';
     const fill = (id, value) => {
         const sel = document.getElementById(id);
         if (!sel) return;
@@ -1449,7 +1451,8 @@ function applySalesPopover(closeAfter) {
         if (closeAfter && typeof showToast === 'function') showToast('Выберите, что сделано', 'error');
         return;
     }
-    const extra = status === 'up' || status === 'down' ? {
+    const canPickCls = typeof ProfileAuth === 'undefined' || ProfileAuth.hasPermission('pick_class');
+    const extra = (status === 'up' || status === 'down') && canPickCls ? {
         clsFrom: (document.getElementById('sm-pop-cls-from') || {}).value || '',
         clsTo: (document.getElementById('sm-pop-cls-to') || {}).value || ''
     } : {};

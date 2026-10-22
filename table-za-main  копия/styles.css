@@ -8252,7 +8252,6 @@ html[data-theme="dark"] .rc-more { color: #fbbf24; }
 .lr-in { width: 100%; min-width: 90px; border: 1px solid transparent; background: transparent; padding: 4px 6px; border-radius: 6px; font: inherit; color: inherit; }
 .lr-in:hover, .lr-in:focus { border-color: #94a3b8; background: #fff; }
 .lr-in.lr-over { background: #fffbeb; border-color: #fcd34d; font-weight: 600; }
-.lr-in.lr-fc-high { background: #fef9c3; border-color: #facc15; }
 .lr-first { position: relative; min-width: 130px; }
 .lr-table tbody tr.lr-grp-head td { background: #1e3a5f !important; color: #fff !important; font-weight: 700; font-size: 14px; padding: 7px 12px; border-top: 4px solid #0f172a; }
 .lr-table tbody tr.lr-grp-head:first-child td { border-top: 0; }
