@@ -21,7 +21,7 @@
 // результат фиксируется через день после окна. Повышение: через окно — только ранний сигнал, итог после вылета по остатку продаж.
 // Зафиксированный итог лежит в shared/decision-money/ГГГГ-ММ.json и дальше не меняется (при смене данных и параметров тоже).
 window.DecisionMoney = (function () {
-    const METHOD_VERSION = 8;
+    const METHOD_VERSION = 9;
     const DAY = 86400000;
     const REGULAR = /^KV-\d{3}$/;      // допы и чартеры (KV-9xxx и т. п.) не оцениваем: покупки блоками, нормы нет
     const GAPS = [56, 84, 182, 100000]; // расширение окна поиска аналогов, дней
@@ -613,7 +613,7 @@ window.DecisionMoney = (function () {
         else if (est.halfMax != null) half = Math.min(half, est.halfMax);
         // Отклонения на вылетах без решений несимметричны: вверх хвост длиннее. Вниз от оценки диапазон шире (строже «помогло»),
         // вверх уже («навредило» подтверждается мягче).
-        const lo = dcorr - half * num('MONEY_RANGE_LOW', 1.2); const hi = dcorr + half * num('MONEY_RANGE_HIGH', 0.65);
+        let lo = dcorr - half * num('MONEY_RANGE_LOW', 1.2); let hi = dcorr + half * num('MONEY_RANGE_HIGH', 0.65);
         let verdict = 'unclear';
         if (lo > 0 && dcorr >= est.thr) verdict = 'worked';
         else if (hi < 0 && dcorr <= -est.thr) verdict = 'failed';
@@ -631,18 +631,19 @@ window.DecisionMoney = (function () {
                 else if (pPos <= 1 - num('MONEY_LEAN_P', 0.75)) verdict = 'lean_neg';
             }
         }
-        const delta = round1k(dcorr);
-        // «цена» — только видимая смена тарифа (ожидаемые билеты × разница цен); поправка на сдвиг и добавка относятся к «объёму».
-        // Сумма двух частей точно равна эффекту.
-        // Разбор по билетам «без решения»: для повышения — не меньше факта, для снижения — не больше факта (см. выше).
-        // цена = билетов без решения × разница цен; количество = нехватка (повышение) или прибавка (снижение) против этого числа;
-        // поправка = компенсация шума и сдвиг. Сумма трёх частей равна эффекту.
+        // Эффект по продажам — простая разница: выручка по факту минус билеты «без решения» × прежняя цена.
+        // «Без решения»: для повышения не меньше факта, для снижения не больше факта (см. выше).
+        // Поправка на шум и сдвиг (corr) в эффект не входит: она нужна только для метки и вероятности и показывается отдельно.
         const nCf = base.kind === 'up' ? est.nExpPaid + cfAdj : (base.kind === 'down' ? est.nExpPaid - cfAdj : est.nExpPaid);
         const nFp = est.nFactPaid != null ? est.nFactPaid : nCf;
+        const pure = est.revFact - nCf * pb0;
+        const shift = dcorr - pure;
+        const delta = round1k(pure);
         const priceEffect = round1k(nCf * (est.priceAfter - pb0));
-        const volPure = round1k((nFp - nCf) * est.priceAfter);
-        const corr = delta - priceEffect - volPure;
-        const volume = delta - priceEffect;   // «количество» для выгрузки: вместе с поправкой, чтобы цена и количество давали эффект
+        const volPure = delta - priceEffect;
+        const corr = round1k(shift);
+        const volume = volPure;
+        lo -= shift; hi -= shift;   // диапазон показывается вокруг эффекта по продажам
         const res = Object.assign(base, extra, {
             priceAfter: Math.round(est.priceAfter), delta, lo: round1k(lo), hi: round1k(hi), sd: round1k(sd),
             volume, volPure, corr, priceEffect, nCf: round1(nCf), payback: est.payback == null ? null : round1(est.payback),

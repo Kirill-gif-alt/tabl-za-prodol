@@ -106,7 +106,7 @@ window.DecisionsReport = (function () {
 
     // Итоги пулом: «по определённым» — только твёрдые «помогло / навредило»; «по всем оценённым» (sumAll) — все решения с оценкой.
     function moneyTotals(list) {
-        const t = { n: list.length, finalN: 0, worked: 0, failed: 0, unclear: 0, na: 0, wait: 0, sum: 0, lo: 0, hi: 0, definite: 0, sumAll: 0, approx: 0, approxSum: 0, weakPos: 0, weakNeg: 0, flat: 0, varSum: 0, lean: 0, leanSum: 0, leanPos: 0, leanNeg: 0, series: 0, reasons: {} };
+        const t = { n: list.length, finalN: 0, worked: 0, failed: 0, unclear: 0, na: 0, wait: 0, sum: 0, lo: 0, hi: 0, definite: 0, sumAll: 0, corrSum: 0, approx: 0, approxSum: 0, weakPos: 0, weakNeg: 0, flat: 0, varSum: 0, lean: 0, leanSum: 0, leanPos: 0, leanNeg: 0, series: 0, reasons: {} };
         list.forEach(r => {
             const st = moneyState(r);
             const m = st.m;
@@ -114,6 +114,7 @@ window.DecisionsReport = (function () {
             if (m.stage === 'na') { t.na++; const k = String(m.reason || 'без причины').split(':')[0]; t.reasons[k] = (t.reasons[k] || 0) + 1; return; }
             t.finalN++;
             t.sumAll += m.delta || 0;
+            t.corrSum += m.corr || 0;
             t.varSum += Math.pow(m.sd != null ? m.sd : ((m.hi || 0) - (m.lo || 0)) / 2 / 1.9, 2);
             if ((m.verdict === 'worked' || m.verdict === 'failed') && m.grade === 'C') { t.approx++; t.approxSum += m.delta; if (m.delta > 0) t.leanPos++; else t.leanNeg++; }
             else if (m.verdict === 'weak_pos') t.weakPos++;
@@ -323,7 +324,7 @@ window.DecisionsReport = (function () {
                     ? `Если бы тариф не трогали (был ${rubPlain(m.priceBefore)}), продали бы ${up ? 'не меньше' : 'не больше'} <b>${numRu(m.nCf)}</b> билетов — около <b>${rubPlain(exp)}</b>. По факту — около <b>${rubPlain(fact)}</b>.`
                     : `Если бы тариф не трогали (был ${rubPlain(m.priceBefore)}), выручка была бы около <b>${rubPlain(exp)}</b>. По факту — около <b>${rubPlain(fact)}</b>.`);
                 lines.push(m.volPure != null
-                    ? `Разница <b>${rub(m.delta)}</b>: из-за цены ${rub(m.priceEffect)}, из-за количества билетов ${rub(m.volPure)}${Math.abs(m.corr || 0) >= 500 ? `, поправка на шум и сдвиг ${rub(m.corr)}` : ''}.`
+                    ? `Разница <b>${rub(m.delta)}</b>: из-за цены ${rub(m.priceEffect)}, из-за количества билетов ${rub(m.volPure)}.`
                     : `Разница <b>${rub(m.delta)}</b>: из-за количества билетов ${rub(m.volume)}, из-за цены ${rub(m.priceEffect)}.`);
                 range = DecisionsViz.rangeBar(m.lo, m.delta, m.hi, rub) + `<div class="dp-exp">Диапазон — где настоящий результат с вероятностью около ${confPct(pv('MONEY_NOISE_Z', 1.9))}%.</div>`;
                 if (tone === 'pos') say = approx ? 'Ориентировочно помогло: даже в худшем случае плюс, но данных мало (доверие низкое).' : 'Помогло: даже в худшем случае заработали больше, чем без решения.';
@@ -341,6 +342,7 @@ window.DecisionsReport = (function () {
             if (m && m.flags && m.flags.length) lines.push('<span class="dp-flags">Почему доверие низкое: ' + m.flags.map(esc).join('; ') + '.</span>');
             if (tone === 'wait' && st.reason && hasNum) lines.push(esc(st.reason) + '.');
             if (tone === 'na' && st.reason) say = 'Не считаем: ' + esc(st.reason) + '.';
+            if (m && Math.abs(m.corr || 0) >= 500) lines.push(`Для метки учтена поправка на шум и сдвиг метода: ${rub(m.corr)} (в разницу выше она не входит).`);
             if (m && m.cfAdj > 0) lines.push(up
                 ? `Билеты сверх обычного (${numRu(m.cfAdj)}) повышению не засчитаны: повышение цены не приводит новых покупателей, они купили бы и по старой цене.`
                 : `Нехватку билетов (${numRu(m.cfAdj)}) снижению в вину не ставим: снижение цены не могло уменьшить число покупателей.`);
@@ -357,11 +359,12 @@ window.DecisionsReport = (function () {
             });
         });
         const good = mt.worked + mt.leanPos + mt.weakPos; const bad = mt.failed + mt.leanNeg + mt.weakNeg;
-        const tot = mt.sumAll; const tsd = Math.sqrt(mt.varSum) * pv('MONEY_NOISE_Z', 1.9);   // ошибки разных решений почти не связаны (проверено на вылетах без решений): складываем как независимые
+        // итог с поправкой: на вылетах без решений он около нуля
+        const totSales = mt.sumAll; const tot = totSales + mt.corrSum; const tsd = Math.sqrt(mt.varSum) * pv('MONEY_NOISE_Z', 1.9);   // ошибки разных решений почти не связаны (проверено на вылетах без решений): складываем как независимые
         const nOc = mt.finalN;
         const summary = list.length ? DecisionsViz.strip([{ label: 'Решений', value: total.n }, { label: 'Помогло', value: good, cls: 'dr-pos' }, { label: 'Навредило', value: bad, cls: 'dr-neg' }, { label: 'Без заметного эффекта', value: mt.flat }, { label: 'Мало данных', value: mt.unclear + mt.na }, { label: 'Ждём итога', value: mt.wait }]
             .concat(!kindFilter ? [{ label: 'Снижения', value: down.money.finalN ? rub(down.money.sumAll) : '—', cls: down.money.sumAll > 0 ? 'dr-pos' : (down.money.sumAll < 0 ? 'dr-neg' : '') }, { label: 'Повышения', value: up.money.finalN ? rub(up.money.sumAll) : '—', cls: up.money.sumAll > 0 ? 'dr-pos' : (up.money.sumAll < 0 ? 'dr-neg' : '') }] : [])
-            .concat([{ label: 'Общий итог по оценённым', value: mt.finalN ? rub(tot) : '—', cls: tot > 0 ? 'dr-pos' : (tot < 0 ? 'dr-neg' : '') }])) + (mt.finalN ? `<div class="dp-reasons">Общий итог по ${nOc} ${pluralRu(nOc, 'оценённому решению', 'оценённым решениям', 'оценённым решениям')}: ${rub(tot)}, диапазон ${rub(tot - tsd)} … ${rub(tot + tsd)} (около ${confPct(pv('MONEY_NOISE_Z', 1.9))}%). Диапазон суммы уже, чем у отдельных решений: ошибки разных решений почти не связаны и частично гасят друг друга. Твёрдых «помогло / навредило» ${mt.definite}, их сумма ${mt.definite ? rub(mt.sum) : '—'} (остальные в неё не входят). Ещё ${mt.leanPos + mt.leanNeg} «скорее», ${mt.weakPos + mt.weakNeg} «чуть», ${mt.unclear} без вывода (мало данных). Снижения и повышения считаются по всем оценённым решениям.</div>` : '') : '';
+            .concat([{ label: 'Общий итог по оценённым', value: mt.finalN ? rub(tot) : '—', cls: tot > 0 ? 'dr-pos' : (tot < 0 ? 'dr-neg' : '') }])) + (mt.finalN ? `<div class="dp-reasons">Общий итог по ${nOc} ${pluralRu(nOc, 'оценённому решению', 'оценённым решениям', 'оценённым решениям')}: ${rub(tot)}, диапазон ${rub(tot - tsd)} … ${rub(tot + tsd)} (около ${confPct(pv('MONEY_NOISE_Z', 1.9))}%). Диапазон суммы уже, чем у отдельных решений: ошибки разных решений почти не связаны и частично гасят друг друга. ${Math.abs(mt.corrSum) >= 1000 ? `Это с поправкой на шум и сдвиг метода: по продажам ${rub(totSales)}, поправка ${rub(mt.corrSum)}. ` : ''}Твёрдых «помогло / навредило» ${mt.definite}, их сумма ${mt.definite ? rub(mt.sum) : '—'} (остальные в неё не входят). Ещё ${mt.leanPos + mt.leanNeg} «скорее», ${mt.weakPos + mt.weakNeg} «чуть», ${mt.unclear} без вывода (мало данных). Снижения и повышения считаются по всем оценённым решениям.</div>` : '') : '';
         const reasonNote = mt.na ? `<div class="dp-reasons">Не считаем (${mt.na}): ${Object.entries(mt.reasons).sort((a, b) => b[1] - a[1]).map(([k, v]) => esc(k) + ' — ' + v).join('; ')}.</div>` : '';
         const sts = list.map(moneyState);
         // График по направлениям: 8 лучших и 3 худших по сумме, в порядке убывания модуля эффекта.
