@@ -21,7 +21,7 @@
 // результат фиксируется через день после окна. Повышение: через окно — только ранний сигнал, итог после вылета по остатку продаж.
 // Зафиксированный итог лежит в shared/decision-money/ГГГГ-ММ.json и дальше не меняется (при смене данных и параметров тоже).
 window.DecisionMoney = (function () {
-    const METHOD_VERSION = 9;
+    const METHOD_VERSION = 10;
     const DAY = 86400000;
     const REGULAR = /^KV-\d{3}$/;      // допы и чартеры (KV-9xxx и т. п.) не оцениваем: покупки блоками, нормы нет
     const GAPS = [56, 84, 182, 100000]; // расширение окна поиска аналогов, дней
@@ -368,6 +368,55 @@ window.DecisionMoney = (function () {
         return sw > 0 ? s / sw : null;
     }
 
+    // Естественный рост тарифа: у похожих вылетов средняя цена билетов, проданных в тех же днях до вылета, против цены за 1–3 дня до них.
+    // Тариф сам растёт к вылету (дешёвые классы выкупаются), и без решения цена «после» тоже была бы выше прежней.
+    // Возвращает { drift, n }: drift — медианное отношение цен со сжатием к 1 (мало вылетов — почти без поправки), n — число вылетов.
+    // Пул — похожие вылеты и ближайшие по дате вылеты этого же рейса (любой день недели): билетов у вылетов в файлах немного.
+    function driftPool(an, base, dep, code) {
+        const seen = new Set();
+        const pool = [];
+        const add = (date, c) => { const k = date + '|' + c; if (!seen.has(k)) { seen.add(k); pool.push({ c: { date, code: c } }); } };
+        (an && an.list || []).forEach(a0 => add(a0.c.date, a0.c.code));
+        try {
+            const depDt = parseLocalDate(dep);
+            const rows = (typeof groupedData !== 'undefined' && groupedData[base]) || [];
+            const cand = [];
+            rows.forEach(r => {
+                const dt = parseLocalDate(r[1]);
+                if (!dt || !depDt || r[1] === dep || dt.getTime() >= depDt.getTime()) return;
+                cand.push({ date: r[1], code: r[0], gap: depDt.getTime() - dt.getTime() });
+            });
+            cand.sort((x, y) => x.gap - y.gap);
+            cand.slice(0, num('MONEY_DRIFT_POOL', 24)).forEach(x => add(x.date, x.code));
+        } catch (e) { /* без расширения пула */ }
+        return pool;
+    }
+
+    function priceDriftOf(an, dtdD, aLo, aHi, base, dep, code) {
+        const minT = num('MONEY_DRIFT_MIN_TICKETS', 3);
+        const rs = [];
+        driftPool(an, base, dep, code).forEach(a0 => {
+            let list = [];
+            try { list = typeof getFlightSalesList === 'function' ? getFlightSalesList(a0.c.date, a0.c.code) : []; } catch (e) { list = []; }
+            if (!list || list.length < 2 * minT) return;
+            const bef = []; const aft = [];
+            list.forEach(t => {
+                const d = dayDiff(a0.c.date, t.dealDate);
+                if (d == null || !isPaid(t)) return;
+                if (d >= dtdD + 1 && d <= dtdD + 3) bef.push(price(t));
+                else if (d >= aLo && d <= aHi) aft.push(price(t));
+            });
+            if (bef.length < minT || aft.length < minT) return;
+            const r = mean(aft) / mean(bef);
+            if (r > 0 && isFinite(r)) rs.push(r);
+        });
+        if (rs.length < num('MONEY_DRIFT_MIN_FLIGHTS', 3)) return { drift: 1, n: rs.length };
+        rs.sort((x, y) => x - y);
+        const med = rs.length % 2 ? rs[(rs.length - 1) / 2] : (rs[rs.length / 2 - 1] + rs[rs.length / 2]) / 2;
+        const shrunk = 1 + (med - 1) * rs.length / (rs.length + 2);
+        return { drift: Math.min(1.6, Math.max(0.7, shrunk)), n: rs.length };
+    }
+
     function ladderIndex(code, dep) {
         const m = new Map();
         try { (FareGrid.ladderFor(code, dep) || []).forEach((l, i) => m.set(l.cls, { i, price: l.price })); } catch (e) { /* без лестницы */ }
@@ -525,11 +574,17 @@ window.DecisionMoney = (function () {
             const free = seats > 0 ? Math.max(0, seats - soldAtD) : null;
             const totalNow = list.length;
             const filled = seats > 0 && totalNow / seats >= num('RMS_FULL_PCT', 95) / 100;
-            const est = estimateRemainder({ E: Erem, k: an0.keff, free, filled, nFactAll: rem.all, nFactPaid: rem.paid, rFact: rem.rev, priceBefore, share });
+            const dr = priceDriftOf(an0, dtdD, 0, dtdD - 1, base, dep, code);
+            const pCf = priceBefore * dr.drift;   // цена «без решения»: прежняя с естественным ростом тарифа
+            Object.assign(out, { priceCf: Math.round(pCf), drift: Math.round(dr.drift * 1000) / 1000, driftN: dr.n });
+            const est = estimateRemainder({ E: Erem, k: an0.keff, free, filled, nFactAll: rem.all, nFactPaid: rem.paid, rFact: rem.rev, priceBefore: pCf, share });
             return finish(out, est, { stage: 'final', k: an0.list.length, ke: round1(an0.keff), kNb: an0.nNb || 0, tierDays: an0.tier, remainder: true, filled, expAll: round1(est.nExpAll), factAll: rem.all });
         }
 
-        const est = estimateWindow({ E, k: an.keff, nFactAll: own.all, nFactPaid: own.paid, rFact: own.rev, priceBefore, share, strength: normOwn == null ? null : { own: nOwn3, norm: normOwn } });
+        const dr = priceDriftOf(an, dtdD, dtdD - w, dtdD - 1, base, dep, code);
+        const pCf = priceBefore * dr.drift;   // цена «без решения»: прежняя с естественным ростом тарифа
+        Object.assign(out, { priceCf: Math.round(pCf), drift: Math.round(dr.drift * 1000) / 1000, driftN: dr.n });
+        const est = estimateWindow({ E, k: an.keff, nFactAll: own.all, nFactPaid: own.paid, rFact: own.rev, priceBefore: pCf, share, strength: normOwn == null ? null : { own: nOwn3, norm: normOwn } });
         if (kind === 'up' && nextGap == null) {
             // Через окно — только ранний сигнал: рост цены сдвигает покупки на позже, вердикт по итогу вылета.
             const res = finish(out, est, { stage: 'prelim', expAll: round1(est.nExpAll), factAll: own.all });
@@ -565,7 +620,7 @@ window.DecisionMoney = (function () {
     //     день окна (у остатка — за каждый день до вылета, не больше 12).
     // У заполненного рейса билеты не оцениваются — поправка 0.
     function biasShift(base, est, extra, filled) {
-        const pb = base.priceBefore || 0;
+        const pb = base.priceCf || base.priceBefore || 0;
         const ticketRub = (base.share != null ? base.share : 1) * pb;   // рублей на «один ожидаемый билет»
         if (extra.remainder) {
             if (filled) return 0;
@@ -577,6 +632,7 @@ window.DecisionMoney = (function () {
     }
 
     function finish(base, est, extra) {
+        const pbCf = base.priceCf || base.priceBefore || 0;   // цена «без решения»
         const sampleOk = est.nExpAll + (extra.factAll || 0) >= num('MONEY_MIN_TICKETS', 4);
         const flags = base.flags || [];
         const kUsed = extra.ke != null ? extra.ke : (base.ke != null ? base.ke : base.k);   // у итога повышения — число аналогов именно для него
@@ -593,7 +649,7 @@ window.DecisionMoney = (function () {
         // и на вылетах без решений итог остаётся около нуля.
         let cfAdj = 0;
         let cfNoise = 0;
-        const pb0 = base.priceBefore || 0;
+        const pb0 = pbCf;
         let dcorr = est.delta - bias;
         if (!filledNow && est.nFactPaid != null) {
             const sh = base.share != null ? base.share : 1;
@@ -603,13 +659,13 @@ window.DecisionMoney = (function () {
                 dcorr -= (cfAdj - cfNoise) * pb0;
             } else if (base.kind === 'down') {
                 cfAdj = Math.max(0, est.nExpPaid - est.nFactPaid);
-                cfNoise = num('MONEY_DOWN_NOISE', 0.45) * (est.sigma || 0) * sh;
+                cfNoise = num('MONEY_DOWN_NOISE', 0.35) * (est.sigma || 0) * sh;
                 dcorr += (cfAdj - cfNoise) * pb0;
             }
         }
         let half = (est.hi - est.lo) / 2 * widen;
         // Рейс заполнен: билетов уже не прибавить, но цена билета всё равно шумит.
-        if (filledNow) half = num('MONEY_NOISE_Z', 1.9) * num('MONEY_PRICE_NOISE', 0.32) * est.nExpPaid * (base.priceBefore || 0) * widen;
+        if (filledNow) half = num('MONEY_NOISE_Z', 1.9) * num('MONEY_PRICE_NOISE', 0.32) * est.nExpPaid * pbCf * widen;
         else if (est.halfMax != null) half = Math.min(half, est.halfMax);
         // Отклонения на вылетах без решений несимметричны: вверх хвост длиннее. Вниз от оценки диапазон шире (строже «помогло»),
         // вверх уже («навредило» подтверждается мягче).
@@ -618,7 +674,7 @@ window.DecisionMoney = (function () {
         let nCf = base.kind === 'up' ? est.nExpPaid + cfAdj : (base.kind === 'down' ? est.nExpPaid - cfAdj : est.nExpPaid);
         if (filledNow && est.nFactPaid != null) nCf = est.nFactPaid;
         // Порог значимости — от выручки «без решения».
-        const thr = Math.max(num('MONEY_MIN_PCT', 15) / 100 * nCf * (base.priceBefore || 0), num('MONEY_MIN_RUB', 20000));
+        const thr = Math.max(num('MONEY_MIN_PCT', 15) / 100 * nCf * pbCf, num('MONEY_MIN_RUB', 20000));
         let verdict = 'unclear';
         if (lo > 0 && dcorr >= thr) verdict = 'worked';
         else if (hi < 0 && dcorr <= -thr) verdict = 'failed';
@@ -646,11 +702,13 @@ window.DecisionMoney = (function () {
         const priceEffect = round1k(nCf * (est.priceAfter - pb0));
         const volPure = delta - priceEffect;
         const corr = round1k(shift);
+        // Только цена: количество билетов не трогаем (факт), меняется лишь цена против цены «без решения». Это вторая граница результата.
+        const priceOnly = round1k((nFp) * (est.priceAfter - pb0));
         const volume = volPure;
         lo -= shift; hi -= shift;   // диапазон показывается вокруг эффекта по продажам
         const res = Object.assign(base, extra, {
             priceAfter: Math.round(est.priceAfter), delta, lo: round1k(lo), hi: round1k(hi), sd: round1k(sd),
-            volume, volPure, corr, priceEffect, nCf: round1(nCf), payback: est.priceAfter > 0 ? round1(nCf * pb0 / est.priceAfter) : null,
+            volume, volPure, corr, priceEffect, nCf: round1(nCf), priceOnly, rangeLow: Math.min(delta, priceOnly), rangeHigh: Math.max(delta, priceOnly), payback: est.priceAfter > 0 ? round1(nCf * pb0 / est.priceAfter) : null,
             thr: round1k(thr), nExpPaid: round1(est.nExpPaid), expRev: round1k(nCf * pb0), revFact: round1k(est.revFact), strengthK: Math.round(est.strengthK * 100) / 100,
             dTickets: round1(est.dTickets), grade, cfAdj: round1(cfAdj)
         });

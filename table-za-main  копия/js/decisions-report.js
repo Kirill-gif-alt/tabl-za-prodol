@@ -321,11 +321,15 @@ window.DecisionsReport = (function () {
                     ? `От дня после решения до вылета продали <b>${m.factAll}</b> билетов, обычно за это время — около <b>${numRu(m.expAll)}</b>.`
                     : `За ${m.w} дн. после решения продали <b>${m.factAll}</b> билетов, обычно в такие дни — около <b>${numRu(m.expAll)}</b>.`);
                 lines.push(m.nCf != null
-                    ? `Если бы тариф не трогали (был ${rubPlain(m.priceBefore)}), продали бы ${up ? 'не меньше' : 'не больше'} <b>${numRu(m.nCf)}</b> билетов — около <b>${rubPlain(exp)}</b>. По факту — около <b>${rubPlain(fact)}</b>.`
+                    ? `Если бы тариф не трогали (${m.priceCf && Math.abs(m.priceCf - m.priceBefore) >= 50 ? `был ${rubPlain(m.priceBefore)}, с естественным ростом ${rubPlain(m.priceCf)}` : `был ${rubPlain(m.priceBefore)}`}), продали бы ${up ? 'не меньше' : 'не больше'} <b>${numRu(m.nCf)}</b> билетов — около <b>${rubPlain(exp)}</b>. По факту — около <b>${rubPlain(fact)}</b>.`
                     : `Если бы тариф не трогали (был ${rubPlain(m.priceBefore)}), выручка была бы около <b>${rubPlain(exp)}</b>. По факту — около <b>${rubPlain(fact)}</b>.`);
                 lines.push(m.volPure != null
                     ? `Разница <b>${rub(m.delta)}</b>: из-за цены ${rub(m.priceEffect)}, из-за количества билетов ${rub(m.volPure)}.`
                     : `Разница <b>${rub(m.delta)}</b>: из-за количества билетов ${rub(m.volume)}, из-за цены ${rub(m.priceEffect)}.`);
+                if (m.driftN >= 3 && Math.abs((m.drift || 1) - 1) >= 0.01) lines.push(`Тариф и без решения вырос бы: у похожих вылетов за это время в среднем на ${numRu(Math.round((m.drift - 1) * 1000) / 10)}% (по ${m.driftN} вылетам). Поэтому цена «без решения» взята выше прежней.`);
+                if (m.priceOnly != null && Math.abs(m.delta - m.priceOnly) >= 1000) lines.push(up
+                    ? `Результат от <b>${rub(m.rangeLow)}</b> (вся нехватка билетов из-за повышения) до <b>${rub(m.rangeHigh)}</b> (нехватка из-за слабого спроса, покупатели не ушли; считаем только цену).`
+                    : `Результат от <b>${rub(m.rangeLow)}</b> (прибавка билетов — просто спрос выше обычного; считаем только цену) до <b>${rub(m.rangeHigh)}</b> (вся прибавка из-за снижения).`);
                 range = DecisionsViz.rangeBar(m.lo, m.delta, m.hi, rub) + `<div class="dp-exp">Диапазон — где настоящий результат с вероятностью около ${confPct(pv('MONEY_NOISE_Z', 1.9))}%.</div>`;
                 if (tone === 'pos') say = approx ? 'Ориентировочно помогло: даже в худшем случае плюс, но данных мало (доверие низкое).' : 'Помогло: даже в худшем случае заработали больше, чем без решения.';
                 else if (tone === 'neg') say = approx ? 'Ориентировочно навредило: даже в лучшем случае минус, но данных мало (доверие низкое).' : 'Навредило: даже в лучшем случае заработали меньше, чем без решения.';
