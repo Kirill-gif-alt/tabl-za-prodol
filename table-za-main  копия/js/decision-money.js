@@ -634,12 +634,19 @@ window.DecisionMoney = (function () {
         const delta = round1k(dcorr);
         // «цена» — только видимая смена тарифа (ожидаемые билеты × разница цен); поправка на сдвиг и добавка относятся к «объёму».
         // Сумма двух частей точно равна эффекту.
-        const priceEffect = round1k(est.price);
-        const volume = delta - priceEffect;
+        // Разбор по билетам «без решения»: для повышения — не меньше факта, для снижения — не больше факта (см. выше).
+        // цена = билетов без решения × разница цен; количество = нехватка (повышение) или прибавка (снижение) против этого числа;
+        // поправка = компенсация шума и сдвиг. Сумма трёх частей равна эффекту.
+        const nCf = base.kind === 'up' ? est.nExpPaid + cfAdj : (base.kind === 'down' ? est.nExpPaid - cfAdj : est.nExpPaid);
+        const nFp = est.nFactPaid != null ? est.nFactPaid : nCf;
+        const priceEffect = round1k(nCf * (est.priceAfter - pb0));
+        const volPure = round1k((nFp - nCf) * est.priceAfter);
+        const corr = delta - priceEffect - volPure;
+        const volume = delta - priceEffect;   // «количество» для выгрузки: вместе с поправкой, чтобы цена и количество давали эффект
         const res = Object.assign(base, extra, {
             priceAfter: Math.round(est.priceAfter), delta, lo: round1k(lo), hi: round1k(hi), sd: round1k(sd),
-            volume, priceEffect, payback: est.payback == null ? null : round1(est.payback),
-            thr: round1k(est.thr), nExpPaid: round1(est.nExpPaid), expRev: round1k(est.revFact - dcorr), revFact: round1k(est.revFact), strengthK: Math.round(est.strengthK * 100) / 100,
+            volume, volPure, corr, priceEffect, nCf: round1(nCf), payback: est.payback == null ? null : round1(est.payback),
+            thr: round1k(est.thr), nExpPaid: round1(est.nExpPaid), expRev: round1k(nCf * pb0), revFact: round1k(est.revFact), strengthK: Math.round(est.strengthK * 100) / 100,
             dTickets: round1(est.dTickets), grade, cfAdj: round1(cfAdj)
         });
         // Остаток: эффект ниже порога значимости — «без заметного эффекта», иначе — направление по знаку («чуть лучше / хуже»).

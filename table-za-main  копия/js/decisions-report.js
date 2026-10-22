@@ -319,8 +319,12 @@ window.DecisionsReport = (function () {
                 lines.push(m.remainder
                     ? `От дня после решения до вылета продали <b>${m.factAll}</b> билетов, обычно за это время — около <b>${numRu(m.expAll)}</b>.`
                     : `За ${m.w} дн. после решения продали <b>${m.factAll}</b> билетов, обычно в такие дни — около <b>${numRu(m.expAll)}</b>.`);
-                lines.push(`Если бы тариф не трогали (был ${rubPlain(m.priceBefore)}), выручка была бы около <b>${rubPlain(exp)}</b>. По факту — около <b>${rubPlain(fact)}</b>.`);
-                lines.push(`Разница <b>${rub(m.delta)}</b>: из-за количества билетов ${rub(m.volume)}, из-за цены ${rub(m.priceEffect)}.`);
+                lines.push(m.nCf != null
+                    ? `Если бы тариф не трогали (был ${rubPlain(m.priceBefore)}), продали бы ${up ? 'не меньше' : 'не больше'} <b>${numRu(m.nCf)}</b> билетов — около <b>${rubPlain(exp)}</b>. По факту — около <b>${rubPlain(fact)}</b>.`
+                    : `Если бы тариф не трогали (был ${rubPlain(m.priceBefore)}), выручка была бы около <b>${rubPlain(exp)}</b>. По факту — около <b>${rubPlain(fact)}</b>.`);
+                lines.push(m.volPure != null
+                    ? `Разница <b>${rub(m.delta)}</b>: из-за цены ${rub(m.priceEffect)}, из-за количества билетов ${rub(m.volPure)}${Math.abs(m.corr || 0) >= 500 ? `, поправка на шум и сдвиг ${rub(m.corr)}` : ''}.`
+                    : `Разница <b>${rub(m.delta)}</b>: из-за количества билетов ${rub(m.volume)}, из-за цены ${rub(m.priceEffect)}.`);
                 range = DecisionsViz.rangeBar(m.lo, m.delta, m.hi, rub) + `<div class="dp-exp">Диапазон — где настоящий результат с вероятностью около ${confPct(pv('MONEY_NOISE_Z', 1.9))}%.</div>`;
                 if (tone === 'pos') say = approx ? 'Ориентировочно помогло: даже в худшем случае плюс, но данных мало (доверие низкое).' : 'Помогло: даже в худшем случае заработали больше, чем без решения.';
                 else if (tone === 'neg') say = approx ? 'Ориентировочно навредило: даже в лучшем случае минус, но данных мало (доверие низкое).' : 'Навредило: даже в лучшем случае заработали меньше, чем без решения.';
