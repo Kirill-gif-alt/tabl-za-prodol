@@ -325,8 +325,9 @@ schtasks /Create /SC HOURLY /TN "Forecast incremental" /TR "cmd /c cd /d C:\flig
 
 Папка лежит внутри папки сайта и работает как «Модель 2» рядом с прежней моделью сайта.
 
-1. Один раз: `Install-Forecast.cmd` (ставит библиотеки).
-2. Обучение: перетащите `SalesHistory.csv` на `Train-Forecast.cmd` (без своих данных — `Train-Forecast.cmd demo`).
+0. Нужен Python 3.10 или новее (python.org, при установке отметьте «Add python.exe to PATH»). Скрипты сами ищут его и подскажут, если не найдут.
+1. Один раз: `Install-Forecast.cmd` (ставит библиотеки, нужен интернет).
+2. Обучение: перетащите `SalesHistory.csv` (или папку, где он лежит) на `Train-Forecast.cmd` (без своих данных — `Train-Forecast.cmd demo`).
 3. Запуск: `Start-Forecast.cmd`. Если модель уже обучена, `Start-Krasavia.cmd` поднимает её сам, свёрнутым окном.
 4. Ежедневно: `Update-Forecast.cmd "Tickets_SALE_Last14Days.csv" ["файл доступности.csv"]` — дообучение на свежих файлах.
 5. В сайте: «Управление профилями» → «Функции» → «Вторая модель прогноза» — включить нужным профилям.

@@ -18,6 +18,7 @@ import logging
 import sys
 import time
 from datetime import datetime, timezone
+from fnmatch import fnmatch
 from pathlib import Path
 
 import pandas as pd
@@ -34,6 +35,27 @@ SYNTH_START, SYNTH_END = "2024-01-01", "2025-06-30"
 
 
 # ---------------------------------------------------------------- чтение входов
+
+def _resolve_path(path, patterns, what):
+    """Если указана папка, находит в ней нужный файл по маске (SalesHistory*.csv и т.п.).
+
+    Несколько подходящих — берём точное имя, иначе самый свежий по дате изменения. Нет ни одного — понятная ошибка
+    со списком CSV, которые в папке есть (только имена файлов).
+    """
+    p = Path(str(path).strip().strip('"'))
+    if not p.is_dir():
+        return str(p)
+    csvs = sorted(f for f in p.iterdir() if f.is_file() and f.suffix.lower() == ".csv")
+    hits = [f for f in csvs if any(fnmatch(f.name.lower(), pat) for pat in patterns)]
+    if not hits:
+        seen = ", ".join(f.name for f in csvs[:8]) or "CSV-файлов нет"
+        raise InputError(f"В папке «{p}» нет файла {what}. Ищу по маске {', '.join(patterns)}. В папке: {seen}")
+    exact = [f for f in hits if f.name.lower() == patterns[0].replace("*", "")]
+    pick = exact[0] if exact else max(hits, key=lambda f: f.stat().st_mtime)
+    if len(hits) > 1:
+        log.warning("В папке «%s» несколько подходящих файлов %s, беру «%s»", p, what, pick.name)
+    return str(pick)
+
 
 def _read_history(path) -> pd.DataFrame:
     p = Path(path)
@@ -95,6 +117,9 @@ def run(history=None, availability=None, tickets=(), synthetic: bool = False, ou
     if not history and not tickets and not synthetic:
         raise InputError("Нет входных данных: укажите --history (и при желании --availability, --tickets) "
                          "или --synthetic для демо на выдуманных данных")
+    if history:
+        history = _resolve_path(history, ("saleshistory.csv", "saleshistory*.csv", "*history*.csv"), "истории продаж")
+    tickets = [_resolve_path(t, ("tickets_sale_last14days*.csv", "*tickets*.csv"), "с билетами") for t in (tickets or ())]
     if history and synthetic:
         log.warning("Указаны и --history, и --synthetic: синтетика игнорируется")
         synthetic = False
