@@ -18,6 +18,17 @@ from models.sequence import SequenceModel
 MODELS = [HierarchicalMeanModel, LGBMModel, SequenceModel]
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _fast_seq():
+    """Для скорости тестов: одна сеть и мало эпох у запасной ветки seq."""
+    import models.sequence as seqmod
+    mp = pytest.MonkeyPatch()
+    mp.setattr(seqmod, "N_SKLEARN_NETS", 1)
+    mp.setattr(seqmod, "MAX_EPOCHS", 10)
+    yield
+    mp.undo()
+
+
 @pytest.fixture(scope="module")
 def table():
     from data.synthetic import make_history

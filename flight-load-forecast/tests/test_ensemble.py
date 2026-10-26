@@ -337,10 +337,15 @@ def test_info(fitted):
 
 # ---------------------------------------------------------------- настоящие модели (если уже написаны)
 
-def test_real_models_if_available():
+def test_real_models_if_available(monkeypatch):
     from models.registry import default_models
     if not default_models(0):
         pytest.skip("настоящие базовые модели ещё не написаны")
+    try:                                   # один поток: на загруженной машине LightGBM с n_jobs=4 страшно тормозит
+        import models.lgbm as _lg
+        monkeypatch.setitem(_lg.PARAMS, "n_jobs", 1)
+    except Exception:
+        pass
     table = build_flight_table(make_history(start="2024-01-01", end="2024-04-30", routes=ROUTES[1:2], seed=3))
     ens = EnsembleForecaster(seed=0)
     metrics = ens.fit(table)

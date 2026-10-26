@@ -1,5 +1,5 @@
 """Модель по последовательностям: горизонтальная кривая H (28 дней продаж), вертикальная V (8 прошлых вылетов
-того же рейса на тот же DTD) и статические признаки FEATURE_COLS. Цель — остаток (y - booked) / масштаб.
+того же рейса на тот же DTD) и статические признаки FEATURE_COLS (без h_n_reis). Цель — остаток (y - booked) / масштаб.
 
 Выбор ветки автоматический (backend="auto"), интерфейс один, имя "seq":
   * torch есть  -> GRU по H и по V, их финальные состояния + MLP по статике (ветка `_fit_torch`);
@@ -25,8 +25,12 @@ from .fallback import finish, n_rows, num, time_split
 log = logging.getLogger(__name__)
 
 N_SKLEARN_NETS = 3     # сколько инициализаций MLP усредняем
-MAX_EPOCHS = 80
-PATIENCE = 8
+MAX_EPOCHS = 60
+PATIENCE = 6
+# h_n_reis растёт со временем (число прошлых вылетов рейса): нейросеть экстраполирует его и ошибается
+# на более поздних датах (на синтетике MAE 30d: 18.2 -> 8.9 без него), поэтому в статику не берём.
+DROP_STATIC = ("h_n_reis",)
+STATIC_COLS = [c for c in FEATURE_COLS if c not in DROP_STATIC]
 
 
 def torch_available() -> bool:
@@ -38,13 +42,27 @@ def torch_available() -> bool:
         return False
 
 
+def _one_thread():
+    """Один поток BLAS на время обучения маленького MLP (быстрее и не душит общую машину)."""
+    try:
+        from threadpoolctl import threadpool_limits
+        return threadpool_limits(limits=1)
+    except Exception:
+        import contextlib
+        return contextlib.nullcontext()
+
+
 class SequenceModel:
     """seq: нейросеть по H, V и статике (torch GRU либо sklearn MLP)."""
     name = "seq"
 
-    def __init__(self, seed: int = 0, backend: str = "auto"):
+    def __init__(self, seed: int = 0, backend: str = "auto", n_nets: int | None = None,
+                 max_epochs: int | None = None):
         self.seed = seed
         self.backend = backend            # "auto" | "torch" | "sklearn"
+        # None -> значения модуля на момент обучения (их подменяют в быстрых тестах)
+        self.n_nets = n_nets              # sklearn: сколько MLP усредняем
+        self.max_epochs = max_epochs
         self.backend_used_ = None
         self.horizon = None
         self.scale_ = 1.0
@@ -74,10 +92,10 @@ class SequenceModel:
 
     @staticmethod
     def _static(frame: dict) -> np.ndarray:
-        """Статика: FEATURE_COLS (NaN остаются — их заполнит imputer) + признаки в долях вместимости."""
+        """Статика: FEATURE_COLS без DROP_STATIC (NaN остаются — их заполнит imputer)."""
         X = frame["X"]
         cols = [np.asarray(X[c].values, dtype=float) if c in X.columns else np.full(len(X), np.nan)
-                for c in FEATURE_COLS]
+                for c in STATIC_COLS]
         S = np.column_stack(cols)
         S[~np.isfinite(S)] = np.nan
         return S
@@ -134,17 +152,19 @@ class SequenceModel:
             self.scaler_ = StandardScaler().fit(Z[tr])
             Z = np.clip(self.scaler_.transform(Z), -8, 8)
             t = r / self.scale_
-            for k in range(N_SKLEARN_NETS):
-                self.nets_.append(self._train_mlp(Z, t, tr, va, self.seed * 1000 + k, MLPRegressor))
+            with _one_thread():
+                for k in range(self.n_nets or N_SKLEARN_NETS):
+                    self.nets_.append(self._train_mlp(Z, t, tr, va, self.seed * 1000 + k, MLPRegressor,
+                                                      self.max_epochs or MAX_EPOCHS))
 
     @staticmethod
-    def _train_mlp(Z, t, tr, va, seed, MLPRegressor):
+    def _train_mlp(Z, t, tr, va, seed, MLPRegressor, max_epochs=MAX_EPOCHS):
         """MLP с ручной ранней остановкой по хвосту во времени (partial_fit по эпохам)."""
         rng = np.random.default_rng(seed)
         net = MLPRegressor(hidden_layer_sizes=(128, 64), activation="relu", alpha=1e-3, batch_size=256,
                            learning_rate_init=2e-3, random_state=seed)
         best, best_net, bad = np.inf, None, 0
-        for ep in range(MAX_EPOCHS):
+        for ep in range(max_epochs):
             perm = rng.permutation(tr)
             for i in range(0, len(perm), 2048):          # крупные куски; внутри partial_fit — один шаг на кусок
                 b = perm[i:i + 2048]
