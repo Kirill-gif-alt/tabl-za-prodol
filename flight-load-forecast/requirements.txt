@@ -1,0 +1,15 @@
+# Нижние границы версий (проверено на Python 3.13).
+numpy>=1.26
+pandas>=2.2
+scikit-learn>=1.4
+lightgbm>=4.3
+scipy>=1.11
+joblib>=1.3
+fastapi>=0.110
+uvicorn>=0.29
+pydantic>=2.6
+# Для разработки и тестов
+httpx>=0.27
+pytest>=8.0
+# Необязательно: GRU/LSTM для sequence-модели. Без torch работает запасная ветка на sklearn.
+# torch>=2.2

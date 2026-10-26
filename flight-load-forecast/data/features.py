@@ -145,9 +145,9 @@ def hist_stats(table: FlightTable, rows: pd.DataFrame, h0: int) -> pd.DataFrame:
     gpos = np.searchsorted(np.sort(fd), asof, side="left")
     gN = gpos.astype(float)
     est = np.where(gN[:, None] > 0, gs[gpos] / np.maximum(gN, 1)[:, None], np.nan)
-    if np.isnan(est).all():
-        est = np.broadcast_to(vals.mean(axis=0), est.shape).copy() if len(vals) else est
-    est = np.where(np.isnan(est), vals.mean(axis=0) if len(vals) else 0.0, est)
+    # Если до as_of не было ни одного вылета, оценки нет вовсе: ставим 0 (с h_n_reis = h_level = 0).
+    # Раньше здесь подставлялось среднее по ВСЕЙ таблице, то есть по вылетам после as_of — утечка будущего.
+    est = np.where(np.isnan(est), 0.0, est)
     n_reis = np.zeros(len(rows))
     level = np.zeros(len(rows))
     for li, lvl in enumerate(("od", "oddow", "reis", "reisdow"), start=1):

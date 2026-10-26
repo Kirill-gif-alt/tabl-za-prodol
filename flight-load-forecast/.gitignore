@@ -1,3 +1,17 @@
+# Python
 __pycache__/
-.pytest_cache/
 *.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# Артефакты обучения: всё, кроме .gitkeep
+artifacts/*
+!artifacts/.gitkeep
+
+# Файлы с данными (могут содержать коммерческую информацию)
+*.csv
+input/
+
+# Секреты и локальные настройки
+.env
