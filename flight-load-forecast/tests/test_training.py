@@ -18,7 +18,7 @@ import pytest
 
 from app.service import ForecastService, ModelNotReadyError
 from data.features import HORIZONS, build_flight_table
-from data.parsers import MAX_DTD, curve_to_cumulative
+from data.parsers import MAX_DTD
 from data.synthetic import history_to_csv, make_availability, make_history, make_recent_tickets
 from training import full_train, incremental, store as store_mod
 from training.store import ArtifactStore, InputError
