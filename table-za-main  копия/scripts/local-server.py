@@ -9,6 +9,8 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
+import urllib.request
 from urllib.parse import unquote, urlparse
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
@@ -58,6 +60,15 @@ MAX_BODY = 64 * 1024 * 1024
 SOCKET_TIMEOUT = 30   # зависший клиент не держит поток и память бесконечно
 WRITE_LOCK = threading.Lock()
 ALLOWED_HOSTS = {"127.0.0.1:%d" % PORT, "localhost:%d" % PORT}
+
+# Вторая модель прогноза (папка ml-forecast): отдельная служба на своём порту. Сайт ходит к ней через этот сервер,
+# чтобы браузеру не нужен был другой адрес. Адрес меняется переменной KRASAVIA_ML_URL (по умолчанию тот же ПК).
+ML_URL = os.environ.get("KRASAVIA_ML_URL", "http://127.0.0.1:8077").rstrip("/")
+ML_ROUTES = {"/__krasavia/ml/health": ("GET", "/health"),
+             "/__krasavia/ml/predict": ("POST", "/predict"),
+             "/__krasavia/ml/predict_batch": ("POST", "/predict_batch")}
+ML_MAX_BODY = 2 * 1024 * 1024
+ML_TIMEOUT = 8
 
 
 def _history_base(name):
@@ -168,7 +179,7 @@ class Handler(SimpleHTTPRequestHandler):
         parts = [p for p in unquote(urlparse(self.path).path).replace("\\", "/").split("/") if p]
         if any(p.startswith(".") for p in parts):
             return True
-        if parts and parts[0] in ("scripts", "tools"):
+        if parts and parts[0] in ("scripts", "tools", "ml-forecast"):
             return True
         return len(parts) == 1 and parts[0].lower().endswith((".cmd", ".py", ".bat", ".md"))
 
@@ -183,6 +194,8 @@ class Handler(SimpleHTTPRequestHandler):
         # Чужой сайт, подменивший свой адрес на 127.0.0.1 (DNS rebinding), не прочитает файлы.
         if self.headers.get("Host", "") not in ALLOWED_HOSTS:
             return self._send_json(403, {"error": "forbidden"})
+        if self.path.split("?")[0] == "/__krasavia/ml/health":
+            return self._ml_proxy("GET", "/health", None)
         if self.path.split("?")[0] == "/__krasavia/caps":
             if not self._same_origin():
                 return self._send_json(403, {"error": "forbidden"})
@@ -210,6 +223,44 @@ class Handler(SimpleHTTPRequestHandler):
         if self._static_blocked():
             return self._send_json(404, {"error": "not found"})
         return super().do_GET()
+
+    def _ml_proxy(self, method, path, body):
+        """Передаёт запрос службе второй модели. Если она не запущена — спокойный ответ ok=false, а не ошибка."""
+        if not self._same_origin():
+            return self._send_json(403, {"error": "forbidden"})
+        req = urllib.request.Request(ML_URL + path, data=body, method=method,
+                                     headers={"Content-Type": "application/json"} if body is not None else {})
+        try:
+            with urllib.request.urlopen(req, timeout=ML_TIMEOUT) as resp:
+                data = resp.read(8 * 1024 * 1024)
+                code = resp.status
+        except urllib.error.HTTPError as e:      # служба ответила ошибкой (плохой ввод, нет модели) — отдаём как есть
+            data, code = e.read(1024 * 1024), e.code
+        except (urllib.error.URLError, OSError, ValueError):
+            return self._send_json(200, {"ok": False, "offline": True})
+        try:
+            parsed = json.loads(data.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            return self._send_json(200, {"ok": False, "offline": True})
+        return self._send_json(200, {"ok": 200 <= code < 300, "status": code, "data": parsed})
+
+    def do_POST(self):
+        path = self.path.split("?")[0]
+        self.close_connection = True
+        route = ML_ROUTES.get(path)
+        if route is None or route[0] != "POST":
+            return self._send_json(404, {"error": "not allowed"})
+        if self.headers.get("Host", "") not in ALLOWED_HOSTS or not self._same_origin():
+            return self._send_json(403, {"error": "forbidden"})
+        if not self.headers.get("Content-Type", "").startswith("application/json"):
+            return self._send_json(415, {"error": "json only"})
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = -1
+        if length <= 0 or length > ML_MAX_BODY:
+            return self._send_json(413, {"error": "bad size"})
+        return self._ml_proxy("POST", route[1], self.rfile.read(length))
 
     def do_PUT(self):
         path = self.path.split("?")[0]

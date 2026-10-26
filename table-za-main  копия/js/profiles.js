@@ -65,6 +65,7 @@ window.ProfileAuth = (function () {
         flight_checks: { label: 'Проверка рейсов', hint: 'детский −50% и тариф выше субсидированного: «!», счётчик в шапке, раздел в «Отчётах»', def: true },
         subsidy_mode: { label: 'Метки «С» / «К» у дат вылета', hint: 'субсидия или коммерция — в «Графическом плане», в «Динамике продаж» и RMS', def: true },
         flight_card: { label: 'Карточка рейса', hint: 'клик по рейсу открывает панель с графиком, прогнозом и отметкой решения', def: 'admin' },
+        ml_forecast: { label: 'Вторая модель прогноза', hint: 'прогноз второй модели (машинное обучение) в карточке рейса и окно «Сравнение моделей»', def: 'admin' },
         header_kpi: { label: 'Продажи за сегодня в шапке', hint: 'билеты и выручка', def: true },
         morning_summary: { label: 'Утренняя сводка', hint: 'при входе и значок «☀ N»: вылеты на 20 дней, решения, ошибки тарифов, пропуски справочника', def: 'admin' },
         rms_header_alerts: { label: 'Счётчик сигналов RMS «⚠» в шапке', def: true },
@@ -738,6 +739,8 @@ window.ProfileAuth = (function () {
         }
 
         if (typeof FlightCard !== 'undefined') FlightCard.syncToggle();
+        const mlBtn = document.getElementById('ml-window-btn');
+        if (mlBtn) mlBtn.style.display = currentProfile && featureOn('ml_forecast') ? '' : 'none';
         const settingsBtn = document.getElementById('profile-settings-btn');
         if (settingsBtn) {
             settingsBtn.style.display = currentProfile ? '' : 'none';

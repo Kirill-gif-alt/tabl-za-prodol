@@ -286,6 +286,24 @@ window.FlightCard = (function () {
         return insightsState;
     }
 
+    // Ответ второй модели пришёл: обновляем только блок прогноза, график и остальное не перерисовываем.
+    let mlHooked = false;
+    function hookMl() {
+        if (mlHooked || typeof MlForecast === 'undefined') return;
+        mlHooked = true;
+        MlForecast.onChange(refreshInsights);
+    }
+    function refreshInsights() {
+        if (!state || !isShown()) return;
+        const panel = panelIn(hostDoc(), false);
+        const el = panel && panel.querySelector('.fc-insights');
+        if (!el) return;
+        const html = insightsHtml(state.code, state.date);
+        const box = panel.ownerDocument.createElement('div');
+        box.innerHTML = html.trim();
+        if (box.firstElementChild) el.replaceWith(box.firstElementChild);
+    }
+
     // Прогноз к вылету и группы — плиткой; блок сворачивается (по умолчанию свёрнут, видна одна строка-итог).
     function insightsHtml(code, date) {
         if (typeof FlightInsights === 'undefined') return '';
@@ -293,6 +311,9 @@ window.FlightCard = (function () {
         const tiles = [];
         const summary = [];
         let advice = '';
+        // Вторая модель (машинное обучение): считается в фоне, плитка дорисуется, когда придёт ответ.
+        hookMl();
+        const ml = typeof MlForecast !== 'undefined' ? MlForecast.cardParts(code, date) : { tile: '', chip: '' };
         const f = FI.forecast(code, date);
         if (f && f.source !== 'flown') {
             const isModel = f.source === 'model';
@@ -312,14 +333,17 @@ window.FlightCard = (function () {
             ].filter(Boolean).join('\n') : '';
             const tone = f.lf >= 90 ? 'up' : (f.lf < 60 ? 'down' : '');
             tiles.push(`<div class="fc-it fc-it-${tone || 'plain'}"${tip ? ` title="${attr(tip)}"` : ''}>
+                ${ml.tile ? '<div class="fc-it-label">Модель 1</div>' : ''}
                 <div class="fc-it-value">${f.final} <span class="fc-it-of">из ${f.seats}</span></div>
                 <div class="fc-it-sub"><strong>${f.lf}%</strong>${range ? ' · ' + esc(range) : ''}</div>
                 <div class="fc-it-note">${esc(src)}</div>
             </div>`);
-            summary.push(`<span class="fc-ins-chip fc-ins-${tone || 'plain'}">прогноз ${f.final}/${f.seats} · ${f.lf}%</span>`);
+            summary.push(`<span class="fc-ins-chip fc-ins-${tone || 'plain'}">${ml.tile ? 'модель 1' : 'прогноз'} ${f.final}/${f.seats} · ${f.lf}%</span>`);
             if (f.load >= f.seats) advice = '<div class="fc-advice fc-advice-up">✓ Уже распродан</div>';
             // Подсказки по тарифу отключены (решение владельца) — остаётся только факт распродажи.
         }
+        if (ml.tile) tiles.push(ml.tile);
+        if (ml.chip) summary.push(ml.chip);
         // Ценовой советник (межрегиональные + Богучаны, Мотыгино, Кодинск; потолок субсидии).
         if (typeof PriceAdvisor !== 'undefined' && PriceAdvisor.canView()) {
             let pa = null;
@@ -520,6 +544,7 @@ window.FlightCard = (function () {
         else if (a === 'pair') swapPair();
         else if (a === 'window') setMode('window');
         else if (a === 'dock') setMode('page');
+        else if (a === 'ml-window') { if (typeof MlForecast !== 'undefined') MlForecast.openWindow('compare'); }
         else if (a === 'insights') {
             insightsState = !insightsOpen();
             try { localStorage.setItem(INSIGHTS_KEY, insightsState ? '1' : '0'); } catch (err) { /* ignore */ }

@@ -18,7 +18,7 @@ from datetime import date, datetime
 import numpy as np
 import pandas as pd
 
-from data.features import HORIZONS, horizon_of_dtd, inference_frames
+from data.features import HORIZONS, horizon_of_dtd, inference_frames, inference_frames_batch
 from data.parsers import parse_dates
 from models.base import as_frame
 from training.store import ArtifactStore, ModelNotFoundError
@@ -194,6 +194,72 @@ class ForecastService:
             "horizons": horizons,
             "critic": {"ok": bool(all_ok), "chosen_model": per_h[nearest][0], "flags": all_flags},
         }
+
+    def predict_many(self, items: list[dict]) -> list[dict]:
+        """Много рейсов за один проход (окно сравнения моделей). Каждый элемент — как аргументы predict().
+
+        Возвращает список той же длины: {"ok": True, "result": <ответ predict>} или {"ok": False, "error": текст}.
+        Признаки и модели считаются пачкой по горизонтам; рейс с некорректными числами уходит в обычный predict().
+        """
+        st = self._snapshot()
+        ensemble, table, critic = st["ensemble"], st["table"], st["critic"]
+        out: list[dict | None] = [None] * len(items)
+        good: list[tuple[int, dict]] = []
+        for i, it in enumerate(items):
+            try:
+                ts = _parse_flydate(it["flydate"])
+                booked, au = float(it["current_booked"]), float(it["total_au"])
+                dtd_i = int(it["dtd"])
+                if not (np.isfinite(booked) and np.isfinite(au)) or booked < 0 or au <= 0 or not 0 <= dtd_i <= 180:
+                    raise ValueError("число вне допустимых границ")
+                good.append((i, {"reis": str(it["reis"]).strip().upper(), "flydate": ts, "current_booked": booked,
+                                 "total_au": au, "dtd": dtd_i, "raw": it}))
+            except Exception:   # странный ввод: пусть решает обычный predict (там критик и флаги)
+                try:
+                    out[i] = {"ok": True, "result": self.predict(**{k: it.get(k) for k in
+                                                                    ("reis", "flydate", "current_booked", "total_au", "dtd")})}
+                except Exception as e:      # noqa: BLE001
+                    out[i] = {"ok": False, "error": str(e)[:200] or type(e).__name__}
+        if good:
+            try:
+                frames = inference_frames_batch(table, [g[1] for g in good])
+                od_of = table.df.groupby("reis")["od"].last().to_dict()
+                preds_h = {}
+                for h in HORIZON_ORDER:
+                    fr = frames[h]
+                    raw = ensemble.predict(h, {"X": fr["X"], "H": fr["H"], "V": fr["V"],
+                                               "booked": fr["X"]["booked"].values, "cap": fr["X"]["cap"].values})
+                    preds_h[h] = {k: np.asarray(v, dtype=float).ravel() for k, v in raw.items()}
+                for j, (i, sp) in enumerate(good):
+                    horizons, flags_all, ok_all, per_h = {}, [], True, {}
+                    for h in HORIZON_ORDER:
+                        try:
+                            preds = {k: float(v[j]) for k, v in preds_h[h].items()}
+                            v = critic.review(h, preds, sp["current_booked"], sp["total_au"], dtd=sp["dtd"],
+                                              reis=sp["reis"], od=od_of.get(sp["reis"], ""),
+                                              distance=int(frames[h]["distance"][j]))
+                            pred, conf, flags, ok, chosen = int(v.pred), float(v.confidence), list(v.flags), bool(v.ok), str(v.chosen_model)
+                        except Exception:
+                            log.exception("Сбой прогноза на горизонте %s", h)
+                            pred, conf, flags, ok, chosen = int(round(sp["current_booked"])), 0.05, ["service_error"], False, f"booked_{h}"
+                        horizons[h] = {"pred": pred, "confidence": round(conf, 4)}
+                        per_h[h] = chosen
+                        ok_all &= ok
+                        flags_all += [f"{h}:{f}" for f in flags]
+                    out[i] = {"ok": True, "result": {
+                        "reis": sp["reis"], "flydate": _flydate_str(sp["raw"]["flydate"], sp["flydate"]),
+                        "horizons": horizons,
+                        "critic": {"ok": bool(ok_all), "chosen_model": per_h[horizon_of_dtd(sp["dtd"])], "flags": flags_all}}}
+            except Exception:
+                log.exception("Пакетный прогноз не удался — считаю по одному")
+                for i, sp in good:
+                    if out[i] is None:
+                        try:
+                            out[i] = {"ok": True, "result": self.predict(sp["reis"], sp["flydate"], sp["current_booked"],
+                                                                         sp["total_au"], sp["dtd"])}
+                        except Exception as e:      # noqa: BLE001
+                            out[i] = {"ok": False, "error": str(e)[:200] or type(e).__name__}
+        return [o if o is not None else {"ok": False, "error": "нет результата"} for o in out]
 
     # ---------------------------------------------------------------- состояние сервиса
 

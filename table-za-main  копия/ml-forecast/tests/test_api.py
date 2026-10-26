@@ -417,4 +417,15 @@ def test_real_service_end_to_end(tmp_path, monkeypatch, full_models):
         r = c.post("/predict", json={"reis": "ZZ-9", "flydate": "10.03.2025", "current_booked": 3,
                                      "total_au": 50, "dtd": 2})
         assert r.status_code == 200
+        # пачка: те же числа, что по одному; плохой элемент не ломает остальные
+        items = [{"reis": "KV-110", "flydate": "10.03.2025", "current_booked": 20 + i, "total_au": 100, "dtd": 14}
+                 for i in range(5)] + [{"reis": "KV-110", "flydate": "нет", "current_booked": 1, "total_au": 9, "dtd": 1},
+                                       {"reis": "ZZ-9", "flydate": "10.03.2025", "current_booked": 3, "total_au": 50, "dtd": 2}]
+        r = c.post("/predict_batch", json={"items": items})
+        assert r.status_code == 200, r.text
+        res = r.json()["results"]
+        assert len(res) == 7 and [x["ok"] for x in res] == [True] * 5 + [False, True]
+        for it, x in zip(items[:5], res[:5]):
+            one = c.post("/predict", json=it).json()
+            assert one["horizons"] == x["result"]["horizons"] and one["critic"] == x["result"]["critic"]
     app.state.service = None

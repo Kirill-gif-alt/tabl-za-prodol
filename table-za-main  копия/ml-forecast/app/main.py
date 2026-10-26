@@ -27,7 +27,9 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from .schemas import PredictRequest, PredictResponse, RetrainRequest
+from pydantic import ValidationError
+
+from .schemas import BatchRequest, PredictRequest, PredictResponse, RetrainRequest
 
 log = logging.getLogger("forecast.api")
 
@@ -350,6 +352,41 @@ def predict(req: PredictRequest, request: Request, service=Depends(get_service))
             raise HTTPException(status_code=503, detail=MSG_NO_MODEL) from None
         log.exception("predict: внутренняя ошибка (reis=%s dtd=%s)", req.reis, req.dtd)
         raise HTTPException(status_code=500, detail=MSG_INTERNAL) from None
+
+
+@app.post("/predict_batch", summary="Прогноз сразу по многим рейсам")
+def predict_batch(body: BatchRequest, request: Request, service=Depends(get_service)):
+    """Для окна сравнения моделей. Ошибка в одном рейсе не ломает остальные: у него `ok=false` и текст."""
+    request.state.log_extra = f"batch={len(body.items)}"
+    if service is None:
+        raise HTTPException(status_code=503, detail=MSG_NO_MODEL)
+    # каждый элемент проверяется отдельно: плохой не ломает остальные
+    valid, results = [], [None] * len(body.items)
+    for i, raw in enumerate(body.items):
+        try:
+            req = PredictRequest.model_validate(raw)
+            valid.append((i, {"reis": req.reis.upper(), "flydate": req.flydate_date, "current_booked": req.current_booked,
+                              "total_au": req.total_au, "dtd": req.dtd}))
+        except ValidationError as e:
+            results[i] = {"ok": False, "error": _ru_message(e.errors()[0]) if e.errors() else "плохой запрос"}
+    try:
+        if valid:
+            done = service.predict_many([v[1] for v in valid])
+            for (i, _), r in zip(valid, done):
+                if r.get("ok"):
+                    out = dict(r["result"])
+                    out["flydate"] = body.items[i].get("flydate", out.get("flydate"))
+                    results[i] = {"ok": True, "result": PredictResponse.model_validate(out).model_dump()}
+                else:
+                    results[i] = {"ok": False, "error": r.get("error") or MSG_INTERNAL}
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        if _is_no_model_error(e):
+            raise HTTPException(status_code=503, detail=MSG_NO_MODEL) from None
+        log.exception("predict_batch: внутренняя ошибка")
+        raise HTTPException(status_code=500, detail=MSG_INTERNAL) from None
+    return {"results": results}
 
 
 @app.get("/health", summary="Состояние сервиса")

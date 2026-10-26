@@ -118,15 +118,21 @@ def _lagged_means(keys: list[np.ndarray], flights_keys: list[np.ndarray], flydat
     return S, C
 
 
-def hist_stats(table: FlightTable, rows: pd.DataFrame, h0: int) -> pd.DataFrame:
-    """Исторические агрегаты для строк rows(reis, od, dow, as_of) с иерархическим сглаживанием.
+_HS_CACHE: dict = {}      # индекс агрегатов по таблице: при прогнозе по запросу не пересобираем его каждый раз
+_HS_CACHE_MAX = 6
 
-    Цепочка: общий -> направление (OD) -> OD×день недели -> рейс -> рейс×день недели.
-    Если у уровня мало вылетов, оценка подтягивается к родителю (как байесовское сжатие, k=5), поэтому
-    у редких и новых рейсов автоматически работает запасной уровень выше.
-    Значения: итог, продано к h0 дням, доля групп, доля корпоратов, выручка на билет.
+
+def _hs_index(table: FlightTable, h0: int) -> dict:
+    """Для каждого уровня иерархии: ключ -> (даты вылетов по возрастанию, накопленные суммы значений).
+
+    Строится один раз на таблицу и h0. Кэш сбрасывается, если в таблице появились новые вылеты
+    (меняется число строк или последняя дата) или таблицу заменили.
     """
     f = table.df
+    sig = (id(table), id(f), len(f), int(f["flydate"].max().value) if len(f) else 0, h0)
+    hit = _HS_CACHE.get(sig)
+    if hit is not None:
+        return hit[1]
     vals = np.column_stack([
         f["tickets"].values.astype(float),
         table.cum[:, h0],
@@ -135,23 +141,56 @@ def hist_stats(table: FlightTable, rows: pd.DataFrame, h0: int) -> pd.DataFrame:
         (f["revenue"].values / np.maximum(f["tickets"].values, 1)).astype(float),
     ])
     fd = f["flydate"].values.astype("datetime64[ns]").astype(np.int64)
-    asof = rows["as_of"].values.astype("datetime64[ns]").astype(np.int64)
+    order = np.argsort(fd, kind="stable")
+    levels = {"global": {"": (fd[order], np.vstack([np.zeros(vals.shape[1]), np.cumsum(vals[order], axis=0)]))}}
     fkeys = {"od": [f["od"].values], "oddow": [f["od"].values, f["dow"].values],
              "reis": [f["reis"].values], "reisdow": [f["reis"].values, f["dow"].values]}
+    for lvl, keys in fkeys.items():
+        groups = {}
+        for key, idx in pd.Series(range(len(f))).groupby(_join(keys)).indices.items():
+            idx = idx[np.argsort(fd[idx], kind="stable")]
+            groups[key] = (fd[idx], np.vstack([np.zeros(vals.shape[1]), np.cumsum(vals[idx], axis=0)]))
+        levels[lvl] = groups
+    if len(_HS_CACHE) >= _HS_CACHE_MAX:
+        _HS_CACHE.pop(next(iter(_HS_CACHE)))
+    _HS_CACHE[sig] = (table, levels)     # держим ссылку на таблицу, чтобы id не переиспользовался
+    return levels
+
+
+def hist_stats(table: FlightTable, rows: pd.DataFrame, h0: int) -> pd.DataFrame:
+    """Исторические агрегаты для строк rows(reis, od, dow, as_of) с иерархическим сглаживанием.
+
+    Цепочка: общий -> направление (OD) -> OD×день недели -> рейс -> рейс×день недели.
+    Если у уровня мало вылетов, оценка подтягивается к родителю (как байесовское сжатие, k=5), поэтому
+    у редких и новых рейсов автоматически работает запасной уровень выше.
+    Значения: итог, продано к h0 дням, доля групп, доля корпоратов, выручка на билет.
+    Берутся только вылеты строго раньше as_of (будущее не используется).
+    """
+    levels = _hs_index(table, h0)
+    asof = rows["as_of"].values.astype("datetime64[ns]").astype(np.int64)
+    n = len(rows)
+    V = levels["global"][""][1].shape[1]
+    dates, cs = levels["global"][""]
+    gpos = np.searchsorted(dates, asof, side="left")
+    # Если до as_of не было ни одного вылета, оценки нет вовсе: ставим 0 (с h_n_reis = h_level = 0).
+    # Подстановка среднего по ВСЕЙ таблице была бы утечкой будущего.
+    est = np.where(gpos[:, None] > 0, cs[gpos] / np.maximum(gpos, 1)[:, None], 0.0)
     rkeys = {"od": [rows["od"].values], "oddow": [rows["od"].values, rows["dow"].values],
              "reis": [rows["reis"].values], "reisdow": [rows["reis"].values, rows["dow"].values]}
-    # глобальный уровень
-    gs = np.vstack([np.zeros(vals.shape[1]), np.cumsum(vals[np.argsort(fd, kind="stable")], axis=0)])
-    gpos = np.searchsorted(np.sort(fd), asof, side="left")
-    gN = gpos.astype(float)
-    est = np.where(gN[:, None] > 0, gs[gpos] / np.maximum(gN, 1)[:, None], np.nan)
-    # Если до as_of не было ни одного вылета, оценки нет вовсе: ставим 0 (с h_n_reis = h_level = 0).
-    # Раньше здесь подставлялось среднее по ВСЕЙ таблице, то есть по вылетам после as_of — утечка будущего.
-    est = np.where(np.isnan(est), 0.0, est)
-    n_reis = np.zeros(len(rows))
-    level = np.zeros(len(rows))
+    n_reis = np.zeros(n)
+    level = np.zeros(n)
     for li, lvl in enumerate(("od", "oddow", "reis", "reisdow"), start=1):
-        S, C = _lagged_means(rkeys[lvl], fkeys[lvl], fd, vals, asof)
+        keys = _join(rkeys[lvl])
+        S = np.zeros((n, V))
+        C = np.zeros(n)
+        groups = levels[lvl]
+        for i, key in enumerate(keys):
+            g = groups.get(key)
+            if g is None:
+                continue
+            pos = int(np.searchsorted(g[0], asof[i], side="left"))
+            S[i] = g[1][pos]
+            C[i] = pos
         est = (S + SHRINK_K * est) / (C[:, None] + SHRINK_K)
         level = np.where(C >= 3, li, level)
         if lvl == "reis":
@@ -322,4 +361,34 @@ def inference_frames(table: FlightTable, reis: str, flydate: pd.Timestamp, curre
         H, V = build_sequences(table, rows, curve[None, :])
         out[key] = {"X": X, "H": H, "V": V, "h_dtd": d, "distance": abs(d - dtd),
                     "booked_at_h": float(X["booked"].iloc[0])}
+    return out
+
+
+def inference_frames_batch(table: FlightTable, specs: list[dict]) -> dict:
+    """То же, что inference_frames, но сразу для многих рейсов: признаки и последовательности считаются один раз на горизонт.
+
+    specs — список словарей {reis, flydate (Timestamp), current_booked, total_au, dtd, od (необязательно)}.
+    Возвращает {ключ_горизонта: {"X","H","V","h_dtd" (массив),"distance" (массив)}}; строки идут в порядке specs.
+    """
+    f = table.df
+    od_of = f.groupby("reis")["od"].last().to_dict()
+    curves, ods = [], []
+    for sp in specs:
+        od = sp.get("od") or od_of.get(sp["reis"], "")
+        ods.append(od)
+        curves.append(request_curve(table, sp["reis"], od, pd.Timestamp(sp["flydate"]).normalize(),
+                                    sp["current_booked"], int(sp["dtd"])))
+    cum = np.vstack(curves)
+    dtd = np.array([int(sp["dtd"]) for sp in specs])
+    out = {}
+    for key, (h0, lo, hi) in HORIZONS.items():
+        d = np.where((dtd >= lo) & (dtd <= hi), dtd, h0)
+        fly = pd.to_datetime([pd.Timestamp(sp["flydate"]).normalize() for sp in specs])
+        rows = pd.DataFrame({"reis": [sp["reis"] for sp in specs], "flydate": fly, "od": ods,
+                             "dow": fly.dayofweek.values, "cap": [float(sp["total_au"]) for sp in specs],
+                             "dtd": d})
+        rows["as_of"] = rows["flydate"] - pd.to_timedelta(rows["dtd"], unit="D")
+        X = make_features(table, rows, cum, h0)
+        H, V = build_sequences(table, rows, cum)
+        out[key] = {"X": X, "H": H, "V": V, "h_dtd": d, "distance": np.abs(d - dtd)}
     return out

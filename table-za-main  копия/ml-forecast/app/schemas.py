@@ -81,3 +81,10 @@ class RetrainRequest(BaseModel):
     force: bool = Field(False, description="Обучить заново, даже если входные файлы не менялись")
     synthetic: bool = Field(False, description="Учить на синтетике (демо), если боевых файлов нет")
 
+
+
+class BatchRequest(BaseModel):
+    """Пачка запросов (окно сравнения моделей в сайте). Каждый элемент проверяется отдельно."""
+    model_config = ConfigDict(extra="ignore")
+
+    items: list[dict] = Field(..., min_length=1, max_length=500, description="Список запросов как в /predict")
