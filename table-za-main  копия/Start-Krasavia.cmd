@@ -16,9 +16,6 @@ echo  Адрес: http://127.0.0.1:%KRASAVIA_PORT%
 echo  Закройте окно, чтобы остановить сервер.
 echo.
 
-rem Вторая модель прогноза: если она обучена, запускаем её службу рядом (свернутым окном).
-if exist "%~dp0ml-forecast\artifacts\current.json" start "Модель 2" /min cmd /c ""%~dp0ml-forecast\Start-Forecast.cmd""
-
 where py >nul 2>&1
 if %ERRORLEVEL%==0 (
   start "" cmd /c "timeout /t 1 /nobreak >nul & start http://127.0.0.1:%KRASAVIA_PORT%/index.html"

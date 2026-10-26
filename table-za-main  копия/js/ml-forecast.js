@@ -1,7 +1,6 @@
-// Вторая модель прогноза загрузки (машинное обучение). Работает отдельной службой из папки ml-forecast;
-// сайт обращается к ней через свой локальный сервер (/__krasavia/ml/...), поэтому лишних адресов не нужно.
-//  • прогноз для карточки рейса считается по запросу и кэшируется; пока ответа нет, карточка рисуется как обычно;
-//  • если служба не запущена, сайт не ждёт её: проверка раз в минуту, остальное время — тишина;
+// Вторая модель прогноза загрузки (машинное обучение) — показ в сайте. Сама модель — ml-model.js: она работает
+// прямо в браузере, учится на истории сайта и ничего не требует устанавливать.
+//  • прогноз для карточки рейса считается по запросу и кэшируется;
 //  • окно «Сравнение моделей»: ближайшие рейсы, модель 1 рядом с моделью 2, качество модели 2, проверка своего рейса.
 // Включает админ в «Управлении профилями» → «Функции» («Вторая модель прогноза»).
 window.MlForecast = (function () {
@@ -12,7 +11,7 @@ window.MlForecast = (function () {
         { key: '7d', center: 7, label: 'за 7 дн.' },
         { key: '1_3d', center: 2, label: 'за 1–3 дня' }
     ];
-    const TTL = { ready: 30000, offline: 45000, nomodel: 20000, unknown: 0 };
+    const TTL = { ready: 30000, offline: 45000, nomodel: 20000, training: 1500, unknown: 0 };
     const RESULT_TTL = 15 * 60 * 1000;
     const BATCH = 150;
 
@@ -33,37 +32,35 @@ window.MlForecast = (function () {
     function onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }
     function notify() { listeners.forEach(fn => { try { fn(); } catch (e) { console.warn('MlForecast listener', e); } }); }
 
-    // ---------- связь со службой ----------
+    // ---------- связь с моделью ----------
+    // Ответы — того же вида, что у прежней службы: { ok, data } / { ok: false, offline }.
     async function call(path, body) {
-        const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        const timer = ctl ? setTimeout(() => ctl.abort(), 20000) : null;
-        try {
-            const r = await fetch(BASE + path, body == null ? { cache: 'no-store', signal: ctl && ctl.signal } : {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ctl && ctl.signal
-            });
-            if (!r.ok) return { ok: false, offline: true };
-            return await r.json();
-        } catch (e) {
-            return { ok: false, offline: true };
-        } finally {
-            if (timer) clearTimeout(timer);
+        if (typeof MlModel === 'undefined') return { ok: false, offline: true };
+        if (path === 'health') { await Promise.resolve(); return { ok: true, data: MlModel.health() }; }
+        if (path === 'predict_batch') return { ok: true, data: { results: MlModel.predictMany(body.items) } };
+        if (path === 'predict') {
+            const r = MlModel.predictMany([body])[0];
+            return r.ok ? { ok: true, data: r.result } : { ok: false, data: { detail: r.error } };
         }
+        return { ok: false, offline: true };
     }
 
     // Проверка службы: не чаще раза в 30–45 секунд; параллельные вызовы ждут один ответ.
     function refreshHealth(force) {
         if (st.pending) return st.pending;
         if (!force && st.state !== 'unknown' && Date.now() - st.at < TTL[st.state]) return Promise.resolve(st.state);
+        if (typeof MlModel !== 'undefined' && canView()) MlModel.ensure();
         st.pending = call('health').then(r => {
             const prev = st.state;
             if (!r || r.offline || !r.data) st = { state: 'offline', health: null, at: Date.now(), pending: null };
             else {
                 const h = r.data;
                 const ready = h.model_loaded === true || h.status === 'ok';
-                st = { state: ready ? 'ready' : 'nomodel', health: h, at: Date.now(), pending: null };
+                st = { state: ready ? 'ready' : (h.status === 'training' ? 'training' : 'nomodel'), health: h, at: Date.now(), pending: null };
             }
             if (st.state !== prev) {
                 if (st.state !== 'ready') cache.forEach((v, k) => { if (v.s === 'loading') cache.delete(k); });
+                else cache.clear();       // модель переучилась — прежние ответы устарели
                 notify();
             }
             return st.state;
@@ -101,7 +98,8 @@ window.MlForecast = (function () {
         if (!canView()) return { s: 'hidden' };
         const state = status();
         if (state === 'offline') return { s: 'off' };
-        if (state === 'nomodel') return { s: 'nomodel' };
+        if (state === 'training') return { s: 'training', progress: st.health && st.health.progress || 0 };
+        if (state === 'nomodel') return { s: 'nomodel', detail: st.health && st.health.detail || '' };
         const inp = inputOf(code, date);
         if (!inp) return { s: 'none' };
         if (state === 'unknown') return { s: 'loading', inp };
@@ -198,7 +196,7 @@ window.MlForecast = (function () {
         return out;
     }
 
-    const MODEL_NAME = { hmean: 'по средним значениям', lgbm: 'градиентный бустинг', seq: 'нейросеть по кривой', ensemble: 'ансамбль (итог)', _baseline_booked: 'просто текущие продажи' };
+    const MODEL_NAME = { hmean: 'по средним (добавка к проданному)', ratio: 'по доле продаж', gbm: 'градиентный бустинг (деревья)', ensemble: 'итог (сочетание трёх)', _baseline_booked: 'просто текущие продажи' };
     function modelName(k) { return MODEL_NAME[k] || k; }
 
     function pluralRu(n, a, b, c) {
@@ -216,10 +214,13 @@ window.MlForecast = (function () {
         const tag = '<div class="fc-it-label">Модель 2</div>';
         const open = '<button type="button" class="fc-ml-link" data-fc="ml-window">Сравнение моделей</button>';
         if (f.s === 'off') {
-            return { tile: `<div class="fc-it fc-it-muted">${tag}<div class="fc-it-note">Не запущена. ${open}</div></div>`, chip: '' };
+            return { tile: `<div class="fc-it fc-it-muted">${tag}<div class="fc-it-note">Недоступна. ${open}</div></div>`, chip: '' };
+        }
+        if (f.s === 'training') {
+            return { tile: `<div class="fc-it fc-it-muted">${tag}<div class="fc-it-note">Учится на истории продаж: ${Math.round((f.progress || 0) * 100)}%. Это бывает раз в день, пару минут.</div></div>`, chip: '<span class="fc-ins-chip fc-ins-muted">модель 2: учится…</span>' };
         }
         if (f.s === 'nomodel') {
-            return { tile: `<div class="fc-it fc-it-muted">${tag}<div class="fc-it-note">Служба запущена, но модель ещё не обучена. ${open}</div></div>`, chip: '' };
+            return { tile: `<div class="fc-it fc-it-muted">${tag}<div class="fc-it-note">Пока нечему учиться${f.detail ? ' (' + esc(f.detail) + ')' : ''}. ${open}</div></div>`, chip: '' };
         }
         if (f.s === 'loading') {
             return { tile: `<div class="fc-it fc-it-muted">${tag}<div class="fc-it-note">считаю…</div></div>`, chip: '<span class="fc-ins-chip fc-ins-muted">модель 2: считаю…</span>' };
@@ -328,11 +329,13 @@ window.MlForecast = (function () {
         const map = {
             ready: ['ml-ok', 'Работает'],
             offline: ['ml-bad', 'Не запущена'],
-            nomodel: ['ml-warn', 'Не обучена'],
+            nomodel: ['ml-warn', 'Мало данных'],
+            training: ['ml-warn', 'Учится…'],
             unknown: ['ml-warn', 'Проверяю…']
         };
         const [cls, txt] = map[st.state] || map.unknown;
         const bits = [];
+        if (st.state === 'training') bits.push(`обучение: ${Math.round((h.progress || 0) * 100)}%`);
         if (st.state === 'ready') {
             if (h.trained_at) bits.push('обучена ' + String(h.trained_at).slice(0, 10).split('-').reverse().join('.'));
             if (h.n_flights) bits.push(`${Number(h.n_flights).toLocaleString('ru-RU')} ${pluralRu(h.n_flights, 'вылет', 'вылета', 'вылетов')} в истории`);
@@ -344,16 +347,13 @@ window.MlForecast = (function () {
 
     function helpHtml() {
         if (st.state === 'ready') return '';
-        const noModel = st.state === 'nomodel';
-        return `<div class="mlw-help">
-            <strong>${noModel ? 'Служба работает, но модель не обучена.' : 'Вторая модель не запущена.'}</strong>
-            <ol>
-                ${noModel ? '' : '<li>Один раз: в папке <b>ml-forecast</b> запустите <b>Install-Forecast.cmd</b> — он поставит нужные библиотеки.</li>'}
-                <li>Обучение: перетащите файл <b>SalesHistory.csv</b> на <b>Train-Forecast.cmd</b>. Занимает несколько минут. Посмотреть без своих данных можно так: <b>Train-Forecast.cmd demo</b>.</li>
-                <li>Запуск: <b>Start-Forecast.cmd</b>. Если модель уже обучена, при следующем запуске сайта (Start-Krasavia.cmd) она поднимется сама.</li>
-            </ol>
-            <p>Потом нажмите «Проверить ещё раз».</p>
-        </div>`;
+        if (st.state === 'training') {
+            return `<div class="mlw-help"><strong>Модель учится на истории продаж.</strong>
+                <p>Ничего устанавливать не нужно. Это бывает раз в день и занимает пару минут; работать на сайте можно как обычно.</p></div>`;
+        }
+        return `<div class="mlw-help"><strong>Модели пока нечему учиться.</strong>
+            <p>${esc((st.health && st.health.detail) || '')}</p>
+            <p>Ей нужна история улетевших вылетов с продажами по дням (архив продаж). Загрузите данные кнопкой «Загрузить» и откройте окно снова.</p></div>`;
     }
 
     function compareHtml() {
@@ -398,7 +398,7 @@ window.MlForecast = (function () {
     function qualityHtml() {
         if (st.state !== 'ready') return helpHtml();
         const m = (st.health && st.health.metrics) || {};
-        const cols = ['_baseline_booked', 'hmean', 'lgbm', 'seq', 'ensemble'];
+        const cols = ['_baseline_booked', 'hmean', 'ratio', 'gbm', 'ensemble'];
         const fmt = (v) => v == null ? '—' : String(Math.round(v * 10) / 10).replace('.', ',');
         const rows = HZ.map(h => {
             const r = m[h.key] || {};
@@ -414,7 +414,7 @@ window.MlForecast = (function () {
         }).join('');
         return `<p class="mlw-lead">Ошибка в пассажирах: насколько в среднем прогноз отличался от настоящего итога. Меньше — лучше. Проверка шла на вылетах, которых модель при обучении не видела.</p>
             <div class="mlw-table-wrap"><table class="mlw-table"><thead><tr><th>Срок</th>${cols.map(c => `<th class="mlw-num">${esc(modelName(c))}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>
-            <p class="mlw-note">«Итог» берёт сочетание трёх способов с весами, подобранными на проверке. Ошибка модели 1 видна в карточке рейса («обычно ошибается на ±…») — считается по её собственной проверке, поэтому прямое сравнение чисел здесь не делаем.</p>`;
+            <p class="mlw-note">«Итог» — сочетание трёх способов с весами, подобранными на проверке. Модель учится сама на истории продаж сайта и переучивается раз в день. Ошибка модели 1 видна в карточке рейса («обычно ошибается на ±…») — считается по её собственной проверке, поэтому прямое сравнение чисел здесь не делаем.</p>`;
     }
 
     function ownHtml() {
@@ -538,6 +538,15 @@ window.MlForecast = (function () {
 
     // Новая загрузка данных: расчёты устарели.
     function reset() { cache.clear(); wstate.rows = []; }
+
+    // Ход обучения: обновляем состояние не чаще раза в 400 мс.
+    let modelTimer = 0;
+    if (typeof MlModel !== 'undefined') {
+        MlModel.onChange(() => {
+            if (modelTimer) return;
+            modelTimer = setTimeout(() => { modelTimer = 0; st.at = 0; st.pending = null; refreshHealth(true).then(() => { if (win && win.classList.contains('open')) renderWin(); notify(); }); }, 400);
+        });
+    }
 
     document.addEventListener('click', e => {
         const b = e.target.closest && e.target.closest('#ml-window-btn');

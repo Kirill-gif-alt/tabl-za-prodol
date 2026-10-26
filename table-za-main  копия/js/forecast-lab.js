@@ -2302,6 +2302,36 @@ window.ForecastLab = (function () {
         return publishedFor(code, date);
     }
 
+    // Данные для второй модели (ml-model.js): та же история, что у этой, но без её расчётов.
+    // cum[h] — сколько продано к моменту «h дней до вылета» (h = 0..H); у улетевших cum[0] — итог.
+    function mlCum(dep, H) {
+        const cur = anchOf(dep);
+        const cum = new Array(H + 1);
+        for (let h = 0; h <= H; h++) cum[h] = at(cur, h);
+        cum[0] = dep.sold;
+        for (let h = H - 1; h >= 0; h--) if (cum[h] < cum[h + 1]) cum[h] = cum[h + 1];     // не убывает к вылету
+        return cum;
+    }
+    function mlDep(dep, H) {
+        return { code: dep.code, base: dep.base, date: dep.date, ts: dep.ts, s: dep.sF || dep.s, sold: dep.sold, cum: mlCum(dep, H) };
+    }
+    // Улетевшие вылеты с кривой продаж (без «обрезанных слева»: у них ранние покупки не попали в историю).
+    function mlHistory(H) {
+        const C = context();
+        const out = [];
+        Object.keys(C.byBase).forEach(base => C.byBase[base].forEach(dep => {
+            if (!dep.flown || dep.trunc || !(dep.s > 0) || !(dep.sold > 0) || dep.sold > (dep.sF || dep.s) * 1.001) return;
+            try { out.push(mlDep(dep, H)); } catch (e) { /* вылет без кривой — пропускаем */ }
+        }));
+        return out;
+    }
+    function mlLive(code, date, H) {
+        const C = context();
+        const dep = C.byKey[date + '|' + code] || C.byKey[date + '|' + (typeof getBaseFlight === 'function' ? getBaseFlight(code) : code)];
+        if (!dep || dep.flown) return null;
+        try { return mlDep(dep, H); } catch (e) { return null; }
+    }
+
     // Модель обучилась или пришёл общий прогноз — перерисовать открытые карточку, RMS и «Сегодня».
     let refreshTimer = 0;
     function refreshViews() {
@@ -2987,5 +3017,5 @@ window.ForecastLab = (function () {
         return true;
     }
 
-    return { canView, html, handleClick, afterStart, afterDataLoad, afterHistoryImport, modelRevision: () => modelRev, forecastFor, ensureLoaded, capture, startEvaluation, evaluation: () => evalState.ev, predict, HORIZONS };
+    return { canView, html, handleClick, afterStart, afterDataLoad, afterHistoryImport, modelRevision: () => modelRev, forecastFor, ensureLoaded, capture, startEvaluation, evaluation: () => evalState.ev, predict, HORIZONS, mlHistory, mlLive };
 })();
