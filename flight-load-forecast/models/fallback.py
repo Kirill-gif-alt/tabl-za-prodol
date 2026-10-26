@@ -3,9 +3,10 @@
 Иерархия уже заложена в признаках `h_final` / `h_book` / `h_rem` / `h_level` (см. data.features.hist_stats:
 сжатие к родительскому уровню, k=5). Здесь поверх неё стоит собственная простая оценка:
 
-    pred = booked + k1[level] * h_rem + k2[level] * booked * (h_final / h_book - 1)+
+    pred = booked + k1[level] * h_rem + k2[level] * booked * (h_final / h_book - 1)+ + k3[level] * booked
 
-k1, k2 >= 0 подбираются неотрицательным МНК отдельно по каждому уровню `h_level` (0 — общий, 4 — рейс×день
+k1, k2, k3 >= 0 (k3 — типичный множитель роста: работает, когда истории рейса ещё нет и h_rem = 0)
+подбираются неотрицательным МНК отдельно по каждому уровню `h_level` (0 — общий, 4 — рейс×день
 недели) со сжатием к глобальным коэффициентам. Если на хвосте выборки (по времени) уровень не лучше
 простого «booked», его коэффициенты обнуляются, и на редких маршрутах модель не хуже «booked».
 """
@@ -19,6 +20,7 @@ from scipy.optimize import nnls
 log = logging.getLogger(__name__)
 
 N_LEVELS = 5          # h_level принимает значения 0..4
+N_COMP = 3            # компоненты оценки: h_rem, ratio_rem, booked
 SHRINK_N = 200.0      # сжатие коэффициента уровня к глобальному: w = n / (n + SHRINK_N)
 
 
@@ -78,7 +80,7 @@ class HierarchicalMeanModel:
     def __init__(self, seed: int = 0):
         self.seed = seed
         self.horizon = None
-        self.coef_ = np.zeros((N_LEVELS, 2))   # k1, k2 по уровням
+        self.coef_ = np.zeros((N_LEVELS, N_COMP))   # k1, k2 по уровням
         self.fitted_ = False
 
     # ---- компоненты оценки
@@ -89,7 +91,7 @@ class HierarchicalMeanModel:
         h_final = np.maximum(num(frame, "h_final"), 0.0)
         h_book = np.maximum(num(frame, "h_book"), 0.0)
         ratio_rem = np.maximum(booked * h_final / np.maximum(h_book, 1.0) - booked, 0.0)
-        return np.column_stack([h_rem, np.minimum(ratio_rem, 3.0 * np.maximum(h_rem, 1.0) + 5.0)])
+        return np.column_stack([h_rem, np.minimum(ratio_rem, 3.0 * np.maximum(h_rem, 1.0) + 5.0), booked])
 
     @staticmethod
     def _levels(frame: dict) -> np.ndarray:
@@ -98,11 +100,11 @@ class HierarchicalMeanModel:
     @staticmethod
     def _nnls(C: np.ndarray, r: np.ndarray) -> np.ndarray:
         if len(r) == 0 or not C.any():
-            return np.zeros(2)
+            return np.zeros(N_COMP)
         try:
             return nnls(C, r)[0]
         except Exception:
-            return np.zeros(2)
+            return np.zeros(N_COMP)
 
     def _fit_coef(self, C, r, lv, rows) -> np.ndarray:
         g = self._nnls(C[rows], r[rows])

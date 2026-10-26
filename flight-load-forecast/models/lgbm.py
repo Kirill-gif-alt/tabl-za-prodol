@@ -4,11 +4,12 @@
   попадает за порог, отсекаются, чтобы не подглядывать в проверку. После подбора числа деревьев модель
   дообучается на всей выборке (число деревьев x1.1).
 - Интервал: два квантильных LightGBM (alpha = q[0], q[1]) по остатку; границы сортируются и не ниже booked.
-- Детерминированность: seed, deterministic=True, force_row_wise=True, n_jobs=4. Вывод lightgbm подавлен (verbose=-1).
+- Детерминированность: seed, deterministic=True, force_row_wise=True, n_jobs=FORECAST_N_JOBS (по умолчанию до 4). Вывод lightgbm подавлен (verbose=-1).
 """
 from __future__ import annotations
 
 import logging
+import os
 import warnings
 
 import numpy as np
@@ -18,9 +19,12 @@ from .fallback import finish, n_rows, num, time_split
 
 log = logging.getLogger(__name__)
 
+# число потоков: переменная FORECAST_N_JOBS (на перегруженной машине ставьте 1)
+N_JOBS = max(1, int(os.environ.get("FORECAST_N_JOBS", min(4, os.cpu_count() or 1))))
+
 PARAMS = dict(
     learning_rate=0.04, num_leaves=31, min_child_samples=30, subsample=0.8, subsample_freq=1,
-    colsample_bytree=0.8, reg_lambda=2.0, n_jobs=4, verbose=-1, deterministic=True, force_row_wise=True,
+    colsample_bytree=0.8, reg_lambda=2.0, n_jobs=N_JOBS, verbose=-1, deterministic=True, force_row_wise=True,
 )
 MAX_TREES = 1500
 EARLY_ROUNDS = 80

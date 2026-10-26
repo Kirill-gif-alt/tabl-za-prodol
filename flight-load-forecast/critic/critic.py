@@ -291,7 +291,7 @@ class Critic:
         # ---- уверенность: падает с distance и с относительным недавним MAE
         scale = max(pred - booked, 0.1 * (cap if cap is not None else pred), 1.0)
         err_factor = 1.0 / (1.0 + 2.0 * mae / scale) if mae is not None else 0.7
-        conf = 0.97 * math.exp(-0.10 * dist) * err_factor
+        conf = 0.97 * math.exp(-0.05 * dist) * err_factor
         for f in flags:
             conf *= _FLAG_PENALTY.get(f, 0.9 if f.startswith(("non_finite_model", "negative_model")) else 1.0)
         if fell_to_booked:
