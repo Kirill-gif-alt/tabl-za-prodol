@@ -1628,6 +1628,19 @@ function renderSalesFlightList() {
     fillSalesWaiting(host, flights);
 }
 
+// Сколько дней вперёд считать «ждут»: тот же выбор «Вперёд на», что на странице «Сегодня» (запоминается на профиль).
+// Иначе у человека с выбором 7 дней на «Сегодня» было бы «26 вылетов ждут», а в сумме по маршрутам — 45.
+const SALES_AHEAD_OPTIONS = [3, 5, 7, 10, 15, 20, 30];
+function salesAheadDays() {
+    if (typeof TodayView !== 'undefined' && typeof TodayView.aheadDays === 'function') return TodayView.aheadDays();
+    try {
+        const prof = typeof ProfileAuth !== 'undefined' && ProfileAuth.getCurrentProfile ? ProfileAuth.getCurrentProfile() : null;
+        const v = parseInt(localStorage.getItem('krasavia_today_ahead_' + (prof ? prof.id : 'guest')), 10);
+        if (SALES_AHEAD_OPTIONS.includes(v)) return v;
+    } catch (e) { /* ignore */ }
+    return undefined;
+}
+
 // «Ждут: N» у маршрута — вылеты с подсказкой решения и без отметки за сегодня. Считается порциями (общий расчёт с «Сегодня»).
 let salesWaitSeq = 0;
 function fillSalesWaiting(host, flights) {
@@ -1638,7 +1651,7 @@ function fillSalesWaiting(host, flights) {
     const today = typeof getTodayDate === 'function' ? getTodayDate() : '';
     const owner = new Map();
     flights.forEach(flight => (flight.departures || []).forEach(dep => { if (!dep.flown) owner.set(dep.code + '|' + dep.date, flight.code); }));
-    SalesAdvice.scanAll(new Set(owner.keys()), undefined, place).then(list => {
+    SalesAdvice.scanAll(new Set(owner.keys()), place === 'today' ? salesAheadDays() : undefined, place).then(list => {
         if (seq !== salesWaitSeq || !host.isConnected) return;
         const count = new Map();
         list.forEach(a => {
@@ -1819,7 +1832,8 @@ function currentSalesViewStamp() {
         salesSearchQuery,
         SalesManagement.revision(),
         flights,
-        SalesManagement.canEdit && SalesManagement.canEdit() ? '1' : '0'
+        SalesManagement.canEdit && SalesManagement.canEdit() ? '1' : '0',
+        typeof salesAheadDays === 'function' ? salesAheadDays() : ''   // «Вперёд на» с «Сегодня» меняет счётчики «ждут»
     ].join('|');
 }
 
