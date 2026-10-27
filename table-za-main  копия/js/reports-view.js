@@ -36,6 +36,26 @@ window.ReportsView = (function () {
         return n == null || isNaN(n) ? '—' : Number(n).toLocaleString('ru-RU', { maximumFractionDigits: 0 });
     }
 
+    // ---------- общие куски оформления (их берут и другие отчёты) ----------
+
+    // Значок «?»: полный текст по нажатию. Короткая фраза остаётся под заголовком.
+    function helpHtml(full) {
+        return `<details class="rp-help"><summary class="rp-help-btn" title="Пояснение" aria-label="Пояснение">?</summary><div class="rp-help-pop" role="note">${full}</div></details>`;
+    }
+
+    // Строка заголовка отчёта: название, значок «?», справа — кнопка (например, «В Excel»).
+    // Название и текст подсказки — готовый HTML (экранировать должен вызывающий).
+    function headHtml(title, help, right) {
+        return `<div class="rp-card-head"><h3 class="rp-card-title">${title}</h3>${help ? helpHtml(help) : ''}${right || ''}</div>`;
+    }
+
+    // Ряд сводных плиток: { label, value, sub, tone } — tone: bad (красный), warn (жёлтый) или пусто (серый).
+    function tilesHtml(list) {
+        const items = (list || []).filter(Boolean);
+        if (!items.length) return '';
+        return `<div class="rp-tiles">${items.map(t => `<div class="rp-tile${t.tone ? ' rp-tile-' + t.tone : ''}"><div class="rp-tile-label">${esc(t.label)}</div><div class="rp-tile-value">${esc(t.value)}</div>${t.sub ? `<div class="rp-tile-sub">${esc(t.sub)}</div>` : ''}</div>`).join('')}</div>`;
+    }
+
     // ---------- недели ----------
 
     function startOfDay(d) {
@@ -426,10 +446,12 @@ window.ReportsView = (function () {
         return FlightChecks.list();
     }
 
+    const CHECKS_HELP = 'Проверяем субсидированные рейсы: межрегиональные, у которых в «Экономической таблице» субсидия больше 0. Краевые не субсидируются. Ошибка — если продан детский билет со скидкой 50% (…/CN50) или билет дороже предельного тарифа из справочника. Рейс с ошибкой помечен «!» в «Загрузке рейсов», «Экономической таблице» и «Динамике продаж».';
+
     function checksHtml() {
         if (typeof FlightChecks === 'undefined' || !FlightChecks.enabled()) return '';
         if (!hasData()) {
-            return `<section class="rp-card rp-checks" id="rp-checks"><div class="rp-card-head"><h3 class="rp-card-title">Проверка рейсов</h3></div><p class="rp-note">Данных нет — нажмите «Загрузить» или «Последние».</p></section>`;
+            return `<section class="rp-card rp-checks" id="rp-checks">${headHtml('Проверка рейсов', CHECKS_HELP)}<p class="rp-note">Данных нет — нажмите «Загрузить» или «Последние».</p></section>`;
         }
         const all = checksList();
         const flightKey = (i) => i.code + '|' + i.date;
@@ -450,25 +472,27 @@ window.ReportsView = (function () {
                 <td>${esc(i.subsidySource)}</td>
                 <td>${canOpen ? `<button type="button" class="filter-btn rp-open" data-open-base="${esc(i.base)}" data-open-code="${esc(i.code)}" data-open-date="${esc(i.date)}">Открыть</button>` : ''}</td>
             </tr>`).join('');
-        const summary = all.length
-            ? `Рейсов с ошибкой: <strong>${fmt(flightsAll.size)}</strong>, из них до вылета: <strong>${fmt(flightsFuture.size)}</strong>. Ошибок всего: ${fmt(all.length)}.`
-            : 'Ошибок не найдено.';
-        return `
-            <section class="rp-card rp-checks" id="rp-checks">
-                <div class="rp-card-head">
-                    <h3 class="rp-card-title"><span class="fc-flag fc-flag-big" aria-hidden="true"></span> Проверка рейсов</h3>
-                    <button type="button" class="btn-primary rp-btn" id="rp-checks-export"${all.length && hasPerm('export_excel') ? '' : ' disabled'}>В Excel</button>
-                </div>
-                <p class="rp-card-text">Проверяем субсидированные рейсы: межрегиональные, у которых в «Экономической таблице» субсидия больше 0. Краевые не субсидируются. Ошибка — если продан детский билет со скидкой 50% (…/CN50) или билет дороже предельного тарифа из справочника. Рейс с ошибкой помечен «!» в «Загрузке рейсов», «Экономической таблице» и «Динамике продаж».</p>
-                <p class="rp-note">${summary}</p>
-                ${all.length ? `
-                <label class="rp-check"><input type="checkbox" id="rp-checks-future"${checksFutureOnly ? ' checked' : ''}> только рейсы до вылета</label>
-                <div class="rp-scroll">
+        const tiles = tilesHtml([
+            { label: 'Рейсов с ошибкой', value: fmt(flightsAll.size), tone: flightsAll.size ? 'bad' : '' },
+            { label: 'Из них до вылета', value: fmt(flightsFuture.size), tone: flightsFuture.size ? 'bad' : '' },
+            { label: 'Ошибок всего', value: fmt(all.length) }
+        ]);
+        const exportBtn = `<button type="button" class="btn-primary rp-btn" id="rp-checks-export"${all.length && hasPerm('export_excel') ? '' : ' disabled'}>В Excel</button>`;
+        const body = !all.length
+            ? '<p class="rp-ok">Ошибок нет: все проверенные рейсы в порядке.</p>'
+            : `<label class="rp-filter"><input type="checkbox" id="rp-checks-future"${checksFutureOnly ? ' checked' : ''}> только рейсы до вылета</label>
+                ${shown.length ? `<div class="rp-scroll">
                     <table class="rp-table rp-checks-table">
                         <thead><tr><th>Дата</th><th>Рейс</th><th>Направление</th><th>Статус</th><th>Ошибка</th><th>Билетов</th><th>Подробно</th><th>Субсидия по</th><th></th></tr></thead>
-                        <tbody>${rows || '<tr><td colspan="9" class="rp-left">До вылета ошибок нет — снимите галочку, чтобы увидеть улетевшие.</td></tr>'}</tbody>
+                        <tbody>${rows}</tbody>
                     </table>
-                </div>` : ''}
+                </div>` : '<p class="rp-ok">До вылета ошибок нет. Снимите галочку, чтобы увидеть улетевшие.</p>'}`;
+        return `
+            ${tiles}
+            <section class="rp-card rp-checks${all.length ? '' : ' rp-checks-clean'}" id="rp-checks">
+                ${headHtml(`${all.length ? '<span class="fc-flag fc-flag-big" aria-hidden="true"></span> ' : ''}Проверка рейсов`, CHECKS_HELP, exportBtn)}
+                <p class="rp-card-text">Проверяем билеты на рейсах с субсидией. Ошибка — детский билет со скидкой 50% или цена выше предела.</p>
+                ${body}
             </section>`;
     }
 
@@ -505,13 +529,34 @@ window.ReportsView = (function () {
         return typeof FlightChecks !== 'undefined' && FlightChecks.isNeverSubsidized && FlightChecks.isNeverSubsidized(code);
     }
 
+    // Рейсы без субсидии (KV-247/248) в справочнике не показываются, даже если записи с ними есть в файле.
+    function refEntries() {
+        return FareRefs.list()
+            .map(e => ({ ...e, flights: e.flights.filter(f => !neverSubsidized(f)) }))
+            .filter(e => e.flights.length);
+    }
+
+    // Плитки над справочником: то же, что считают значок вкладки и «Проверка полноты».
+    function refsTiles() {
+        const list = [];
+        if (typeof FareRefs !== 'undefined' && FareRefs.canView()) {
+            if (hasData() && typeof FlightChecks !== 'undefined' && FlightChecks.enabled()) {
+                const n = FlightChecks.missingRefs().length;
+                list.push({ label: 'Рейсов без предела', value: fmt(n), sub: 'субсидированные, до вылета', tone: n ? 'warn' : '' });
+            }
+            list.push({ label: 'Записей в тарифах', value: fmt(refEntries().length) });
+        }
+        if (hasData() && typeof ReferenceView !== 'undefined' && ReferenceView.completenessCount && typeof SubsidyRef !== 'undefined' && SubsidyRef.canView()) {
+            const n = ReferenceView.completenessCount();
+            list.push({ label: 'Пропусков в справочнике', value: fmt(n), sub: 'на 60 дней вперёд', tone: n ? 'warn' : '' });
+        }
+        return tilesHtml(list);
+    }
+
     function refsHtml() {
         if (typeof FareRefs === 'undefined') return '';
         const can = FareRefs.canEdit();
-        // Рейсы без субсидии (KV-247/248) в справочнике не показываются, даже если записи с ними есть в файле.
-        const entries = FareRefs.list()
-            .map(e => ({ ...e, flights: e.flights.filter(f => !neverSubsidized(f)) }))
-            .filter(e => e.flights.length);
+        const entries = refEntries();
         const missing = hasData() && typeof FlightChecks !== 'undefined' ? FlightChecks.missingRefs() : [];
         const rows = entries.map(e => {
             const excl = e.mode === 'exclude';
@@ -591,9 +636,8 @@ window.ReportsView = (function () {
             : '';
         return `
             <section class="rp-card rp-refs" id="rp-refs">
-                <div class="rp-card-head"><h3 class="rp-card-title">Тарифы субсидии</h3></div>
-                <p class="rp-card-text">Предельный тариф на субсидированном рейсе: билет дороже предела — ошибка, дешевле — можно, в том числе детские. Детский предел необязателен: если он не задан, детский билет сравнивается со взрослым пределом. Сравнивается оплаченная сумма билета.</p>
-                <p class="rp-card-text">Периода у тарифа нет: проверка идёт только в субсидированные даты из раздела «Периоды субсидии». Рейсы — только базовые номера: доп. рейсы (KV-301, KV-355…) проверяются по тарифу своего базового рейса.</p>
+                ${headHtml('Тарифы субсидии', 'Предельный тариф на субсидированном рейсе: билет дороже предела — ошибка, дешевле — можно, в том числе детские. Детский предел необязателен: если он не задан, детский билет сравнивается со взрослым пределом. Сравнивается оплаченная сумма билета.<br><br>Периода у тарифа нет: проверка идёт только в субсидированные даты из раздела «Периоды субсидии». Рейсы — только базовые номера: доп. рейсы (KV-301, KV-355…) проверяются по тарифу своего базового рейса.')}
+                <p class="rp-card-text">Предельная цена билета на рейсах с субсидией. Дороже предела — ошибка, дешевле — можно.</p>
                 ${missingHtml}
                 ${suggestHtml}
                 ${entries.length ? `
@@ -895,13 +939,11 @@ window.ReportsView = (function () {
             </div>`;
     }
 
-    function card(id, title, text, allowed, denyText, extra) {
+    // help — полный текст для значка «?» (если у карточки он длинный); text — короткая фраза.
+    function card(id, title, text, allowed, denyText, extra, help) {
         return `
             <section class="rp-card">
-                <div class="rp-card-head">
-                    <h3 class="rp-card-title">${esc(title)}</h3>
-                    <button type="button" class="btn-primary rp-btn" id="${id}"${allowed ? '' : ' disabled'}>${id === 'rp-costs-upload' ? 'Загрузить файл расходов' : 'Выгрузить'}</button>
-                </div>
+                ${headHtml(esc(title), help ? esc(help) : '', `<button type="button" class="btn-primary rp-btn" id="${id}"${allowed ? '' : ' disabled'}>${id === 'rp-costs-upload' ? 'Загрузить файл' : 'Выгрузить'}</button>`)}
                 <p class="rp-card-text">${esc(text)}</p>
                 ${allowed ? '' : `<p class="rp-note rp-warn">${esc(denyText)}</p>`}
                 ${extra || ''}
@@ -917,20 +959,25 @@ window.ReportsView = (function () {
         return typeof FareRefs !== 'undefined' && FareRefs.canEdit();
     }
 
+    // Значок-счётчик: красный или жёлтый, если есть что смотреть; серый «0», если всё в порядке.
+    // Пока данных нет, значка нет — «0» там означал бы «ошибок нет», а мы этого не знаем.
     function subtabs() {
         const list = [];
         const checksOn = typeof FlightChecks !== 'undefined' && FlightChecks.enabled();
         if (checksOn) {
-            const n = hasData() ? new Set(checksList().filter(i => i.state !== 'Улетел').map(i => i.code + '|' + i.date)).size : 0;
-            list.push({ id: 'checks', label: 'Проверка рейсов', badge: n ? String(n) : '' });
+            const has = hasData();
+            const n = has ? new Set(checksList().filter(i => i.state !== 'Улетел').map(i => i.code + '|' + i.date)).size : 0;
+            list.push({ id: 'checks', label: 'Проверка рейсов', badge: has ? String(n) : '', zero: has && !n, tip: 'Рейсов с ошибкой до вылета' });
         }
         if (typeof ReferenceView !== 'undefined' ? ReferenceView.canAny() : canRefs()) {
-            const miss = canRefs() && hasData() && checksOn && typeof FlightChecks !== 'undefined' ? FlightChecks.missingRefs().length : 0;
-            list.push({ id: 'refs', label: 'Справочник', badge: miss ? miss + ' без предела' : '', warn: !!miss });
+            const has = canRefs() && hasData() && checksOn && typeof FlightChecks !== 'undefined';
+            const miss = has ? FlightChecks.missingRefs().length : 0;
+            list.push({ id: 'refs', label: 'Справочник', badge: has ? miss + ' без предела' : '', warn: !!miss, zero: has && !miss, tip: 'Рейсов без предельного тарифа' });
         }
         if (typeof SalesReconcile !== 'undefined' && SalesReconcile.canView()) {
-            const n = hasData() ? SalesReconcile.badge() : 0;
-            list.push({ id: 'reconcile', label: 'Сверка', badge: n ? String(n) : '' });
+            const has = hasData() && (!SalesReconcile.hasSales || SalesReconcile.hasSales());
+            const n = has ? SalesReconcile.badge() : 0;
+            list.push({ id: 'reconcile', label: 'Сверка', badge: has ? String(n) : '', zero: has && !n, tip: 'Вылетов с расхождением' });
         }
         if (typeof DecisionsReport !== 'undefined' && DecisionsReport.canView()) list.push({ id: 'decisions', label: 'Решения', badge: '' });
         if (typeof ForecastLab !== 'undefined' && ForecastLab.canView()) list.push({ id: 'forecast', label: 'Прогноз и предупреждения', badge: '' });
@@ -958,7 +1005,7 @@ window.ReportsView = (function () {
         const weeks = weekBounds();
         let content = '';
         if (subtab === 'checks') content = checksHtml();
-        else if (subtab === 'refs') content = typeof ReferenceView !== 'undefined' ? ReferenceView.html(refsHtml) : refsHtml();
+        else if (subtab === 'refs') content = refsTiles() + (typeof ReferenceView !== 'undefined' ? ReferenceView.html(refsHtml) : refsHtml());
         else if (subtab === 'decisions') content = DecisionsReport.html(renderBody);
         else if (subtab === 'forecast' && typeof ForecastLab !== 'undefined') content = ForecastLab.html(renderBody);
         else if (subtab === 'reconcile') content = SalesReconcile.html();
@@ -968,27 +1015,30 @@ window.ReportsView = (function () {
                     'Excel с карточками маршрутов, как на вкладке «Загрузка рейсов» (с её текущими фильтрами).',
                     canData(), 'Нужны вкладка «Загрузка рейсов» и право на выгрузку в Excel.'),
                 card('rp-data-split', 'Загрузка: краевые и межрегиональные',
-                    'Два файла: «Загрузка - КК» (краевые рейсы) и «Загрузка - Межрегионалка» (межрегиональные и международные). Фильтры вкладки не действуют. Каждая выгрузка добавляет лист с датой (не больше 30), повторная за день заменяет лист этого дня. Листы прошлых дней лежат в общей папке.',
-                    canData(), 'Нужны вкладка «Загрузка рейсов» и право на выгрузку в Excel.'),
+                    'Два файла: краевые рейсы и межрегиональные. Фильтры вкладки не действуют.',
+                    canData(), 'Нужны вкладка «Загрузка рейсов» и право на выгрузку в Excel.', '',
+                    'Два файла: «Загрузка - КК» (краевые рейсы) и «Загрузка - Межрегионалка» (межрегиональные и международные). Фильтры вкладки не действуют. Каждая выгрузка добавляет лист с датой (не больше 30), повторная за день заменяет лист этого дня. Листы прошлых дней лежат в общей папке.'),
                 card('rp-sales', 'Управление продажами',
                     'Excel вкладки «Управление продажами»: лист на каждый рейс с отметками по дням.',
                     canSales(), 'Нужна вкладка «Управление продажами».'),
                 card('rp-costs-upload', 'Себестоимость и субсидии',
-                    'Загрузить файл по месяцам (маршрут, тип ВС, субсидия и себестоимость за каждый месяц). На сайт идут последние три месяца и среднее — вкладка «Расчёт расходов». Краевые рейсы — субсидия 0, межрегиональные — как в файле.',
-                    true, '')
+                    'Файл по месяцам: себестоимость и субсидия по маршрутам.',
+                    true, '', '',
+                    'Загрузить файл по месяцам (маршрут, тип ВС, субсидия и себестоимость за каждый месяц). На сайт идут последние три месяца и среднее — вкладка «Расчёт расходов». Краевые рейсы — субсидия 0, межрегиональные — как в файле.')
             ].join('')}</div>
             ${card('rp-econ', 'Для экономистов',
-                `Факт кресел в продаже за прошлую неделю (${weekLabel(weeks.past)}) и план загрузки на следующую (${weekLabel(weeks.next)}), отдельно ВВЛ и МВЛ. Листы: сводка, факт по рейсам, план по рейсам.`,
+                'Кресла в продаже за прошлую неделю и план загрузки на следующую, отдельно ВВЛ и МВЛ.',
                 canEcon(), 'Нужны право на выгрузку в Excel и одна из вкладок: «Загрузка рейсов», «Экономическая таблица», «Расчёт расходов».',
-                canEcon() ? `<div class="rp-preview" id="rp-preview">${previewHtml()}</div>` : '')}`;
+                canEcon() ? `<div class="rp-preview" id="rp-preview">${previewHtml()}</div>` : '',
+                `Факт кресел в продаже за прошлую неделю (${weekLabel(weeks.past)}) и план загрузки на следующую (${weekLabel(weeks.next)}), отдельно ВВЛ и МВЛ. Листы: сводка, факт по рейсам, план по рейсам.`)}`;
         }
         body.innerHTML = `
             <nav class="rp-subtabs" role="tablist">${tabs.map(t => `
                 <button type="button" role="tab" class="rp-subtab${t.id === subtab ? ' rp-subtab-on' : ''}" data-rp-tab="${t.id}" aria-selected="${t.id === subtab}">
-                    ${SUBTAB_ICON[t.id] || ''}<span class="rp-subtab-label">${esc(t.label)}</span>${t.badge ? ` <span class="rp-subtab-badge${t.warn ? ' rp-subtab-badge-warn' : ''}">${esc(t.badge)}</span>` : ''}
+                    ${SUBTAB_ICON[t.id] || ''}<span class="rp-subtab-label">${esc(t.label)}</span>${t.badge ? ` <span class="rp-subtab-badge${t.zero ? ' rp-subtab-badge-zero' : (t.warn ? ' rp-subtab-badge-warn' : '')}"${t.tip ? ` title="${esc(t.tip)}"` : ''}>${esc(t.badge)}</span>` : ''}
                 </button>`).join('')}
             </nav>
-            <div class="rp-subtab-body">${content}</div>`;
+            <div class="rp-subtab-body rp-tab-${subtab}">${content}</div>`;
         // Узкое окно: выбранный раздел может уйти за край полосы — прокручиваем к нему.
         const on = body.querySelector('.rp-subtab-on');
         if (on && on.scrollIntoView) { try { on.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) { /* ignore */ } }
@@ -1021,6 +1071,9 @@ window.ReportsView = (function () {
             </div>
         `;
         const page = panel.querySelector('#rp-page');
+        // Подсказку «?» закрываем щелчком в другом месте и клавишей Esc.
+        const closeHelp = (except) => page.querySelectorAll('details.rp-help[open]').forEach(d => { if (d !== except) d.removeAttribute('open'); });
+        page.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeHelp(null); });
         page.addEventListener('change', (event) => {
             if (typeof ReferenceView !== 'undefined' && ReferenceView.handleChange(event.target, renderBody)) return;
             if (typeof SalesReconcile !== 'undefined' && SalesReconcile.handleChange(event.target, renderBody)) return;
@@ -1034,6 +1087,7 @@ window.ReportsView = (function () {
             if (typeof ReferenceView !== 'undefined') ReferenceView.handleInput(event.target, renderBody);
         });
         page.addEventListener('click', (event) => {
+            closeHelp(event.target.closest('details.rp-help'));
             const btn = event.target.closest('button');
             if (!btn || btn.disabled) return;
             if (typeof ReferenceView !== 'undefined' && ReferenceView.handleClick(btn, renderBody)) return;
@@ -1130,7 +1184,7 @@ window.ReportsView = (function () {
         if (document.getElementById('rp-page')) renderBody();
     }
 
-    return { create, refresh, showSubtab };
+    return { create, refresh, showSubtab, head: headHtml, tiles: tilesHtml };
 })();
 
 function createReportsView(panel) {

@@ -29,7 +29,8 @@ function parseCostCalcRevenue(raw) {
     const s = String(raw || '').trim().replace(/\s/g, '').replace(',', '.');
     if (s === '') return null;
     const n = parseFloat(s);
-    return isNaN(n) ? null : n;
+    // Не число или нереально огромное («1e999») — как пустое поле: на экране не должно быть «Infinity» и «1e+21».
+    return !isFinite(n) || Math.abs(n) > 1e13 ? null : n;
 }
 
 function createCostCalcView(c) {
@@ -38,6 +39,7 @@ function createCostCalcView(c) {
             <div class="table-page-hero card cost-calc-hero">
                 <div class="table-page-hero-main">
                     <h2 class="cost-calc-title">Расчёт расходов</h2>
+                    <span class="table-page-hint">Расчёт на пару рейсов: туда и обратно. Введите доход — увидите результат.</span>
                 </div>
             </div>
             <div class="table-page-body cost-calc-body">
@@ -105,18 +107,226 @@ function costCalcFlightsWord(n) {
 
 const COST_CALC_MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
 
-function costCalcKpiRow(title, expenses, subsidy, revenue, subsidized) {
-    const fin = revenue == null || expenses == null ? null : (revenue - expenses + (subsidy || 0));
-    const finCls = fin == null ? '' : (fin > 0 ? ' cost-calc-pos' : (fin < 0 ? ' cost-calc-neg' : ''));
-    const cell = (label, val, extra = '') => `<div class="cost-calc-kpi${extra}"><span class="cost-calc-kpi-label">${label}</span><span class="cost-calc-kpi-val">${val}</span></div>`;
-    return `<div class="cost-calc-month">
+// Рубли для экрана: ноль — «0 ₽», а не прочерк. Знак минус — настоящий («−»).
+function costCalcMoney(n) {
+    if (n == null || isNaN(n)) return '';
+    const v = Math.round(Number(n));
+    return (v < 0 ? '−' : '') + formatNum(Math.abs(v)) + ' ₽';
+}
+
+// То же, но у прибыли стоит «+».
+function costCalcSigned(n) {
+    const v = Math.round(Number(n));
+    return (v > 0 ? '+' : '') + costCalcMoney(v);
+}
+
+function costCalcPlural(n, one, few, many) {
+    const a = n % 10, b = n % 100;
+    if (a === 1 && b !== 11) return one;
+    if (a >= 2 && a <= 4 && (b < 12 || b > 14)) return few;
+    return many;
+}
+
+function costCalcKpiRow(title, expenses, subsidy, revenue, subsidized, compact) {
+    const noExp = expenses == null;
+    const fin = revenue == null || noExp ? null : (revenue - expenses + (subsidy || 0));
+    const finR = fin == null ? null : Math.round(fin);
+    const finCls = finR == null ? '' : (finR > 0 ? ' cost-calc-pos' : (finR < 0 ? ' cost-calc-neg' : ''));
+    // Плитка: подпись, крупное значение, пояснение мелким серым. Если значения нет — понятный текст вместо прочерка.
+    const cell = (cls, label, val, hint, none) => `<div class="cost-calc-kpi ${cls}${none ? ' cost-calc-kpi-none' : ''}">
+                    <span class="cost-calc-kpi-label">${label}</span>
+                    <span class="cost-calc-kpi-val">${val}</span>
+                    <span class="cost-calc-kpi-hint">${hint}</span>
+                </div>`;
+    let subVal, subHint, subNone = false;
+    if (noExp) { subVal = 'Нет данных'; subHint = 'Нет расходов — нечего сравнивать'; subNone = true; }
+    else if (!subsidized) { subVal = 'Не учитывается'; subHint = 'В поле «Субсидия» выбрано «Нет»'; subNone = true; }
+    else if (subsidy > 0) {
+        const share = Math.round(subsidy / expenses * 100);
+        subVal = costCalcMoney(subsidy);
+        subHint = share >= 100 ? 'Покрывает все расходы' : `Покрывает ${share}% расходов`;
+    } else { subVal = '0 ₽'; subHint = 'Субсидии на этом маршруте нет'; }
+    return `<div class="cost-calc-month${compact ? ' cost-calc-month-compact' : ''}">
             ${title ? `<div class="cost-calc-month-title">${escHtml(title)}</div>` : ''}
             <div class="cost-calc-kpis">
-                ${cell('Расходы', expenses == null ? 'нет данных' : formatRub(expenses))}
-                ${cell('Субсидия', expenses == null ? '—' : (subsidized ? (subsidy ? formatRub(subsidy) : '0 ₽') : '—'))}
-                ${cell('Доход', revenue == null ? '—' : formatRub(revenue))}
-                ${cell('Фин. рез.', fin == null ? '—' : formatRubSigned(fin), ' cost-calc-kpi-fin' + finCls)}
+                ${noExp
+                    ? cell('cost-calc-kpi-exp', 'Расходы', 'Нет данных', 'В файле нет расходов', true)
+                    : cell('cost-calc-kpi-exp', 'Расходы', costCalcMoney(expenses), 'Пара рейсов: туда и обратно')}
+                ${cell('cost-calc-kpi-sub', 'Субсидия', subVal, subHint, subNone)}
+                ${revenue == null
+                    ? cell('cost-calc-kpi-rev', 'Доход', 'Не указан', 'Введите его в поле «Доход, ₽» выше', true)
+                    : cell('cost-calc-kpi-rev', 'Доход', costCalcMoney(revenue), 'Выручка от продажи билетов')}
+                ${fin == null
+                    ? cell('cost-calc-kpi-fin', 'Фин. результат', 'Не рассчитан', noExp ? 'Нет данных о расходах' : 'Появится, когда введёте доход', true)
+                    : cell('cost-calc-kpi-fin' + finCls, 'Фин. результат', costCalcSigned(finR), 'Доход + субсидия − расходы')}
             </div>
+        </div>`;
+}
+
+// ---------- Сколько пассажиров нужно: только по данным сайта ----------
+// Берём вылеты этого маршрута (в обе стороны) на этом типе ВС: проданные билеты и места на рейсе.
+// Один пассажир приносит в среднем: вся выручка ÷ все билеты (билеты за 0 ₽ места занимают, но денег не дают).
+// Нет данных (нет вылетов или мало билетов) — null, число пассажиров на экране не показываем.
+let costCalcPaxMemo = { sig: '', key: '', val: null };
+
+function costCalcCityKey(name) {
+    return String(name || '').toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9]/gi, '');
+}
+
+function costCalcPaxData(fromKey, toKey, acK) {
+    if (typeof groupedData === 'undefined' || typeof salesDetails === 'undefined' || typeof RouteCosts === 'undefined'
+        || typeof getCitiesFromFlight !== 'function' || typeof getAircraftType !== 'function') return null;
+    // Пересчитываем только когда поменялись данные или выбор: набор цифр в поле «Доход» ничего не трогает.
+    const sig = [typeof dataEpoch === 'number' ? dataEpoch : 0, window.krasaviaIngestSeq || 0,
+        typeof lastSalesUpdate !== 'undefined' && lastSalesUpdate ? new Date(lastSalesUpdate).getTime() : 0,
+        typeof PV !== 'undefined' && PV.OWN_FARE_MIN ? PV.OWN_FARE_MIN : 0].join('|');
+    const key = fromKey + '|' + toKey + '|' + acK;
+    if (costCalcPaxMemo.sig === sig && costCalcPaxMemo.key === key) return costCalcPaxMemo.val;
+    let val = null;
+    try {
+        const seats = Object.create(null);
+        const seen = new Set();
+        let tickets = 0;
+        let sum = 0;
+        Object.keys(groupedData).forEach((code) => {
+            const c = getCitiesFromFlight(code);
+            if (!c || c.length !== 2) return;   // рейс с остановкой — деньги по нему на два города не разделить
+            const a = costCalcCityKey(c[0]);
+            const b = costCalcCityKey(c[1]);
+            if (!((a === fromKey && b === toKey) || (a === toKey && b === fromKey))) return;
+            (groupedData[code] || []).forEach((row) => {
+                if (RouteCosts.acKey(getAircraftType(row[4])) !== acK) return;
+                const sk = row[1] + '|' + (typeof cleanFlight === 'function' ? cleanFlight(row[0]) : row[0]);
+                if (seen.has(sk)) return;   // вылет из нескольких строк — билеты считаем один раз
+                seen.add(sk);
+                const au = parseInt(row[5] || 0, 10);
+                if (au > 0) seats[au] = (seats[au] || 0) + 1;
+                (salesDetails[sk] || []).forEach((s) => {
+                    tickets++;
+                    if ((s.fare || 0) > 0) sum += s.fare;
+                });
+            });
+        });
+        const minTickets = typeof PV !== 'undefined' && PV.OWN_FARE_MIN ? PV.OWN_FARE_MIN : 5;
+        if (tickets >= minTickets && sum > 0) {
+            // Мест на рейсе — то, что чаще всего стоит в данных у этих вылетов.
+            let top = 0;
+            let topN = 0;
+            Object.keys(seats).forEach((s) => { if (seats[s] > topN || (seats[s] === topN && +s > top)) { top = +s; topN = seats[s]; } });
+            val = { perPax: sum / tickets, tickets, seats: top || null };
+        }
+    } catch (e) {
+        val = null;
+    }
+    costCalcPaxMemo = { sig, key, val };
+    return val;
+}
+
+// ---------- Блок «Как складывается результат» ----------
+function costCalcFlowCard(expenses, subsidy, revenue, subsidized, basis) {
+    const rev = revenue == null ? null : Math.max(0, revenue);
+    const sub = subsidized ? Math.max(0, subsidy || 0) : 0;
+    const max = Math.max(expenses, sub + (rev || 0), 1);
+    const pct = (v) => Math.round(v / max * 1000) / 10;
+    const bar = (cls, left, width) => (width > 0 ? `<i class="cost-calc-bar ${cls}" style="left:${left}%;width:${width}%"></i>` : '');
+    const row = (name, track, val, none) => `<div class="cost-calc-row">
+                <span class="cost-calc-row-name">${name}</span>
+                <span class="cost-calc-track" aria-hidden="true">${track}</span>
+                <span class="cost-calc-row-val${none ? ' cost-calc-row-none' : ''}">${val}</span>
+            </div>`;
+    const fin = rev == null ? null : Math.round(revenue - expenses + sub);
+    let total;
+    if (fin == null) {
+        total = `<div class="cost-calc-total cost-calc-total-wait">
+                <div class="cost-calc-total-text">
+                    <span class="cost-calc-total-label">Фин. результат</span>
+                    <span class="cost-calc-total-word">Введите доход, чтобы увидеть результат</span>
+                </div>
+            </div>`;
+    } else {
+        const cls = fin > 0 ? ' cost-calc-pos' : (fin < 0 ? ' cost-calc-neg' : '');
+        const word = fin > 0 ? 'Прибыль: денег больше, чем расходов' : (fin < 0 ? 'Убыток: денег меньше, чем расходов' : 'В ноль: расходы покрыты');
+        total = `<div class="cost-calc-total${cls}">
+                <div class="cost-calc-total-text">
+                    <span class="cost-calc-total-label">Фин. результат</span>
+                    <span class="cost-calc-total-word">${word}</span>
+                </div>
+                <span class="cost-calc-total-num">${costCalcSigned(fin)}</span>
+            </div>`;
+    }
+    return `<section class="cost-calc-block cost-calc-flow" aria-label="Как складывается результат">
+            <h3 class="cost-calc-block-title">Как складывается результат</h3>
+            <p class="cost-calc-block-sub">Пара рейсов, туда и обратно${basis ? ' · ' + escHtml(basis) : ''}</p>
+            <div class="cost-calc-scale">
+                ${row('Расходы', bar('cost-calc-bar-exp', 0, pct(expenses)), costCalcMoney(expenses))}
+                ${row('Субсидия', bar('cost-calc-bar-sub', 0, pct(sub)), subsidized ? costCalcMoney(sub) : 'Не учитывается', !subsidized)}
+                ${row('Доход', bar('cost-calc-bar-rev', pct(sub), pct(rev || 0)), rev == null ? 'Не введён' : costCalcMoney(rev), rev == null)}
+                <i class="cost-calc-mark" style="--x:${pct(expenses)}" aria-hidden="true"></i>
+            </div>
+            <p class="cost-calc-legend">Пунктир — сумма расходов. Когда субсидия и доход доходят до него, расходы покрыты.</p>
+            ${total}
+        </section>`;
+}
+
+// ---------- Блок «Выход в ноль» ----------
+function costCalcEvenCard(expenses, subsidy, revenue, subsidized, basis, fromKey, toKey, acK) {
+    const sub = subsidized ? Math.max(0, subsidy || 0) : 0;
+    // Считаем по показанным числам: расходы и субсидия на плитках — те же, что в вычитании.
+    const need = Math.max(0, Math.round(expenses) - Math.round(sub));
+    const stat = (label, val, cap, cls = '') => `<div class="cost-calc-stat${cls}">
+                <span class="cost-calc-stat-label">${label}</span>
+                <span class="cost-calc-stat-val">${val}</span>
+                <span class="cost-calc-stat-cap">${cap}</span>
+            </div>`;
+    let stats;
+    let extra = '';
+    if (need === 0) {
+        stats = stat('Нужный доход', '0 ₽', 'Субсидия уже покрывает расходы');
+    } else {
+        const capNeed = sub > 0 ? 'Расходы минус субсидия' : 'Расходы без субсидии';
+        const pax = costCalcPaxData(fromKey, toKey, acK);
+        if (pax && pax.perPax > 0) {
+            const n = Math.ceil(need / pax.perPax);
+            const seats2 = pax.seats ? pax.seats * 2 : 0;
+            stats = stat('Нужный доход', costCalcMoney(need), capNeed)
+                + stat('Нужно пассажиров', `<span class="cost-calc-stat-approx">около</span> ${formatNum(n)}`, 'На оба рейса: туда и обратно');
+            let seatsText = '';
+            if (seats2) {
+                seatsText = n > seats2
+                    ? ` Мест на двух рейсах: ${formatNum(seats2)} — этого не хватит.`
+                    : ` Мест на двух рейсах: ${formatNum(seats2)}. Нужно заполнить ${Math.max(1, Math.round(n / seats2 * 100))}% мест.`;
+            }
+            extra = `<p class="cost-calc-note-small">Один пассажир в среднем приносит ${costCalcMoney(pax.perPax)} — по ${formatNum(pax.tickets)} ${costCalcPlural(pax.tickets, 'проданному билету', 'проданным билетам', 'проданным билетам')} на этот маршрут и тип ВС.${seatsText}</p>`;
+        } else {
+            stats = stat('Нужный доход', costCalcMoney(need), capNeed);
+            extra = '<p class="cost-calc-note-small">Число пассажиров не посчитать: нет данных о проданных билетах на этот маршрут и тип ВС.</p>';
+        }
+        if (revenue != null && revenue >= 0) {
+            const cover = Math.round(revenue / need * 100);
+            const left = need - Math.round(revenue);
+            const ok = left <= 0;
+            extra = `<div class="cost-calc-gauge${ok ? ' cost-calc-pos' : ' cost-calc-neg'}">
+                <div class="cost-calc-gauge-head"><span>Набрано от нужного дохода</span><b>${cover}%</b></div>
+                <span class="cost-calc-track" aria-hidden="true"><i class="cost-calc-bar cost-calc-bar-rev" style="left:0;width:${Math.min(100, cover)}%"></i></span>
+                <p class="cost-calc-gauge-text">${ok ? (left < 0 ? `Расходы покрыты, запас ${costCalcMoney(-left)}.` : 'Расходы покрыты ровно.') : `Не хватает ${costCalcMoney(left)}.`}</p>
+            </div>` + extra;
+        }
+    }
+    return `<section class="cost-calc-block cost-calc-even" aria-label="Выход в ноль">
+            <h3 class="cost-calc-block-title">Выход в ноль</h3>
+            <p class="cost-calc-block-sub">Какой доход нужен, чтобы расходы покрылись${basis ? ' · ' + escHtml(basis) : ''}</p>
+            <div class="cost-calc-stats">${stats}</div>
+            ${extra}
+        </section>`;
+}
+
+// Оба блока под плитками. expenses — расходы (среднее за месяцы, если файл по месяцам).
+function costCalcInsights(expenses, subsidy, revenue, subsidized, basis, st) {
+    if (expenses == null || isNaN(expenses)) return '';
+    const [fromKey, toKey] = String(st.routeId || '').split('|');
+    return `<div class="cost-calc-cards">
+            ${costCalcFlowCard(expenses, subsidy, revenue, subsidized, basis)}
+            ${costCalcEvenCard(expenses, subsidy, revenue, subsidized, basis, fromKey, toKey, st.ac)}
         </div>`;
 }
 
@@ -131,6 +341,7 @@ function refreshCostCalc() {
             <div class="table-empty-state">
                 <div class="table-empty-icon">📂</div>
                 <div class="table-empty-title">Нет файла расходов</div>
+                <div class="table-empty-hint">Загрузите файл с расходами в разделе «Отчёты».</div>
             </div>`;
         return;
     }
@@ -141,6 +352,7 @@ function refreshCostCalc() {
         result.innerHTML = `
             <div class="table-empty-state">
                 <div class="table-empty-title">В файле нет маршрутов</div>
+                <div class="table-empty-hint">Проверьте файл с расходами в разделе «Отчёты».</div>
             </div>`;
         return;
     }
@@ -184,7 +396,7 @@ function refreshCostCalc() {
             <label class="cost-calc-field">
                 <span>Доход, ₽</span>
                 <input id="cost-calc-rev" type="text" inputmode="decimal" class="cost-calc-input"
-                    value="${escAttr(st.revenue)}" placeholder="0" autocomplete="off">
+                    value="${escAttr(st.revenue)}" placeholder="Например, 1 500 000" autocomplete="off">
             </label>
         </div>`;
 
@@ -231,9 +443,17 @@ function paintCostCalcResult(st) {
     const revenue = parseCostCalcRevenue(st.revenue);
 
     if (!q.found) {
+        // Расходы могут быть в файле только с другим значением субсидии — подсказываем, что переключить.
+        const other = RouteCosts.quote(fromKey, toKey, st.ac, !st.subsidized);
+        const hint = other.found
+            ? (st.subsidized
+                ? 'Для этого маршрута и типа ВС расходы есть без субсидии. В поле «Субсидия» выберите «Нет».'
+                : 'Для этого маршрута и типа ВС расходы есть с субсидией. В поле «Субсидия» выберите «Есть».')
+            : 'Выберите другой маршрут или тип ВС.';
         box.innerHTML = `
             <div class="table-empty-state">
-                <div class="table-empty-title">Нет строки в «Расходах»</div>
+                <div class="table-empty-title">Для этого выбора нет расходов</div>
+                <div class="table-empty-hint">${hint}</div>
             </div>`;
         return;
     }
@@ -243,12 +463,21 @@ function paintCostCalcResult(st) {
         const have = q.months.filter(x => x.expenses != null);
         const avg = (k) => have.reduce((a, x) => a + x[k], 0) / have.length;
         const fl = (n) => (n == null ? '' : ` · по ${n} ${costCalcFlightsWord(n)}`);
-        const rows = q.months.map(x => costCalcKpiRow((COST_CALC_MONTHS[x.m - 1] ? COST_CALC_MONTHS[x.m - 1][0].toUpperCase() + COST_CALC_MONTHS[x.m - 1].slice(1) : `Месяц ${x.m}`) + fl(x.flights), x.expenses, x.subsidy, revenue, !!st.subsidized));
+        const monthName = (m) => (COST_CALC_MONTHS[m - 1] ? COST_CALC_MONTHS[m - 1][0].toUpperCase() + COST_CALC_MONTHS[m - 1].slice(1) : `Месяц ${m}`);
+        const rows = q.months.map(x => costCalcKpiRow(monthName(x.m) + fl(x.flights), x.expenses, x.subsidy, revenue, !!st.subsidized, true));
         const nAll = have.some(x => x.flights != null) ? have.reduce((a, x) => a + (x.flights || 0), 0) : null;
-        rows.push(costCalcKpiRow(`Среднее за ${have.length === q.months.length ? q.months.length : have.length + ' из ' + q.months.length} мес.` + fl(nAll), have.length ? avg('expenses') : null, have.length ? avg('subsidy') : null, revenue, !!st.subsidized));
-        box.innerHTML = rows.join('') + (q.krai ? '<p class="cost-calc-note">Краевой маршрут: субсидия 0 при любом выборе.</p>' : '');
+        const avgWord = `Среднее за ${have.length === q.months.length ? q.months.length : have.length + ' из ' + q.months.length} мес.`;
+        const avgExp = have.length ? avg('expenses') : null;
+        const avgSub = have.length ? avg('subsidy') : null;
+        // Сначала среднее и расчёт по нему (блоки считаются по среднему: в них одно число, а не три), месяцы — ниже, мельче.
+        box.innerHTML = costCalcKpiRow(avgWord + fl(nAll), avgExp, avgSub, revenue, !!st.subsidized)
+            + (q.krai ? '<p class="cost-calc-note">Краевой маршрут: субсидия 0 при любом выборе.</p>' : '')
+            + costCalcInsights(avgExp, avgSub, revenue, !!st.subsidized, avgWord.charAt(0).toLowerCase() + avgWord.slice(1), st)
+            + `<h3 class="cost-calc-months-head">По месяцам</h3>` + rows.join('');
         return;
     }
-    box.innerHTML = costCalcKpiRow('', q.expenses, q.subsidy || 0, revenue, !!st.subsidized);
+    box.innerHTML = costCalcKpiRow('', q.expenses, q.subsidy || 0, revenue, !!st.subsidized)
+        + (q.krai ? '<p class="cost-calc-note">Краевой маршрут: субсидия 0 при любом выборе.</p>' : '')
+        + costCalcInsights(q.expenses, q.subsidy || 0, revenue, !!st.subsidized, '', st);
 }
 

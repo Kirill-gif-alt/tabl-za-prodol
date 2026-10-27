@@ -2582,16 +2582,16 @@ window.ForecastLab = (function () {
             weekChangesAsync().then(() => { if (rerender) rerender(); }).catch(e => console.warn(e));
             return '';
         }
-        if (!list.length) return `<section class="rp-card"><div class="rp-card-head"><h3 class="rp-card-title">Что изменилось за неделю</h3></div>
-            <p class="rp-note">Прогноз моделей по вылетам на 3 недели вперёд почти не изменился (порог — 8% кресел, не меньше 4 пасс.).</p></section>`;
+        if (!list.length) return `<section class="rp-card">${ReportsView.head('Что изменилось за неделю')}
+            <p class="rp-ok">Прогноз моделей по вылетам на 3 недели вперёд почти не изменился (порог — 8% кресел, не меньше 4 пасс.).</p></section>`;
         const rows = list.slice(0, 30).map(c => `<tr>
             <td class="rp-left"><strong>${esc(c.code)}</strong> <span class="rp-muted">${esc(c.dir)}</span></td>
             <td>${esc(c.date)}<div class="rp-muted">через ${c.dtd} дн.</div></td>
             <td>${c.old} → <strong>${c.now}</strong> <span class="rp-muted">из ${c.s}</span></td>
             <td class="${c.delta > 0 ? 'fl-best' : 'fl-warn-slow'}"><strong>${c.delta > 0 ? '▲ +' : '▼ −'}${Math.abs(c.delta)}</strong></td>
             <td class="rp-left fl-warn-why">${c.why.map(esc).join('; ')}</td></tr>`).join('');
-        return `<section class="rp-card"><div class="rp-card-head"><h3 class="rp-card-title">Что изменилось за неделю</h3></div>
-            <p class="rp-card-text">Вылеты на 3 недели вперёд, у которых прогноз моделей сейчас заметно отличается от записанного примерно неделю назад (порог — 8% кресел, не меньше 4 пасс.). Сначала — самые большие изменения. Показано ${Math.min(30, list.length)} из ${list.length}.</p>
+        return `<section class="rp-card">${ReportsView.head('Что изменилось за неделю', 'Вылеты на 3 недели вперёд, у которых прогноз моделей сейчас заметно отличается от записанного примерно неделю назад (порог — 8% кресел, не меньше 4 пасс.). Сначала — самые большие изменения.')}
+            <p class="rp-card-text">Где прогноз за неделю заметно изменился. Сверху — самые большие изменения. Показано ${Math.min(30, list.length)} из ${list.length}.</p>
             <div class="rp-scroll"><table class="rp-table"><thead><tr><th>Рейс</th><th>Вылет</th><th>Прогноз моделей</th><th>Изменение</th><th>Почему</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
     }
 
@@ -2602,7 +2602,7 @@ window.ForecastLab = (function () {
         const list = warnings();
         if (!list) {
             warningsAsync().then(() => { if (rerender) rerender(); }).catch(e => console.warn(e));
-            return `<section class="rp-card"><div class="rp-card-head"><h3 class="rp-card-title">Ранние предупреждения</h3></div>
+            return `<section class="rp-card">${ReportsView.head('Ранние предупреждения')}
                 <p class="rp-note">Считаю прогноз по всем вылетам на ${warnSettings().days} дн. вперёд… Работать на сайте можно.</p></section>`;
         }
         const cfg = warnSettings();
@@ -2621,20 +2621,20 @@ window.ForecastLab = (function () {
                 <td class="rp-left fl-warn-why">${w.why.map(esc).join('; ')}</td>
                 <td class="rp-left fl-warn-why">${w.act.map(esc).join('; ')}</td></tr>`).join('');
         return `<section class="rp-card">
-            <div class="rp-card-head"><h3 class="rp-card-title">Ранние предупреждения</h3></div>
-            <p class="rp-card-text">Все вылеты на ${cfg.days} дн. вперёд: прогноз к вылету и интервал 80% (в карточке рейса — то же). Сначала — самые срочные: сильное отклонение и близкий вылет.</p>
+            ${ReportsView.head('Ранние предупреждения', `Все вылеты на ${cfg.days} дн. вперёд: прогноз к вылету и интервал 80% (в карточке рейса — то же). Сначала — самые срочные: сильное отклонение и близкий вылет.`,
+        canExport() ? `<button type="button" class="btn-primary rp-btn" id="fl-w-xlsx"${list.length ? '' : ' disabled'}>В Excel</button>` : '')}
+            <p class="rp-card-text">Прогноз загрузки по всем вылетам на ${cfg.days} дн. вперёд. Сверху — самые срочные.</p>
             <div class="fl-warn-cfg">
                 <label>Недобор, если прогноз ниже <input type="number" id="fl-w-under" min="10" max="95" value="${cfg.under}">%</label>
                 <label>Перегруз, если выше <input type="number" id="fl-w-over" min="50" max="100" value="${cfg.over}">%</label>
                 <label>На <input type="number" id="fl-w-days" min="3" max="30" value="${cfg.days}"> дн. вперёд</label>
                 <button type="button" class="btn-secondary rp-btn" id="fl-w-apply">Применить</button>
-                ${canExport() ? `<button type="button" class="btn-primary rp-btn" id="fl-w-xlsx"${list.length ? '' : ' disabled'}>В Excel</button>` : ''}
             </div>
             <div class="dr-kpis">
                 ${[['under', 'Риск недобора', counts.under, ''], ['over', 'Риск перегруза', counts.over, ''], ['pace', 'Необычный темп продаж', counts.fast + counts.slow, `выше: ${counts.fast} · ниже: ${counts.slow}`]].map(([k, label, n, sub]) => `<button type="button" class="dr-kpi fl-w-kpi${warnKind === k ? ' fl-w-kpi-on' : ''}" data-fl-wkind="${k}" title="${warnKind === k ? 'Показать все' : 'Показать только эти'}"><div class="dr-kpi-label">${label}</div><div class="dr-kpi-value">${n}</div><div class="dr-kpi-sub">${sub || (warnKind === k ? 'показаны только эти · нажмите ещё раз — все' : 'нажмите — показать только эти')}</div></button>`).join('')}
             </div>
             ${rows ? `<div class="rp-scroll"><table class="rp-table"><thead><tr><th>Рейс</th><th>Вылет</th><th>Сигнал</th><th>Продано</th><th>Прогноз · интервал</th><th>Почему</th><th>Что сделать</th></tr></thead><tbody>${rows}</tbody></table></div>
-                ${shown.length > 60 ? `<p class="rp-note">Показаны 60 самых срочных из ${shown.length} — полный список в Excel.</p>` : ''}` : '<p class="rp-note">Сигналов нет.</p>'}
+                ${shown.length > 60 ? `<p class="rp-note">Показаны 60 самых срочных из ${shown.length} — полный список в Excel.</p>` : ''}` : '<p class="rp-ok">Сигналов нет.</p>'}
             ${sigRows ? `<details class="fl-math"><summary>Насколько сигналам можно верить — проверка на улетевших</summary>
                 <p class="rp-muted">Прогноз за N дней до вылета (честный, как в таблице точности) против факта, при нынешних порогах. «Сбылось» — из поданных сигналов сколько подтвердилось; «Поймали» — из случившихся недоборов/перегрузов сколько было предсказано.</p>
                 <table class="rp-table dr-sum-table"><thead><tr><th>За</th><th>Недобор: сбылось</th><th>Недобор: поймали</th><th>Перегруз: сбылось</th><th>Перегруз: поймали</th></tr></thead><tbody>${sigRows}</tbody></table></details>` : ''}
@@ -2654,8 +2654,8 @@ window.ForecastLab = (function () {
         const range = li && li.from ? (li.from === li.to ? ` за ${li.from}` : ` с ${li.from} по ${li.to}`) : '';
         const liTxt = li && li.at ? `Последняя загрузка истории: ${fmtDate(new Date(li.at).getTime())}${li.file ? ` (${li.file})` : ''} — ${nFl.toLocaleString('ru-RU')} ${plural(nFl, 'вылет', 'вылета', 'вылетов')}${range}.` : '';
         return `<section class="rp-card">
-            <div class="rp-card-head"><h3 class="rp-card-title">История продаж для прогноза</h3></div>
-            <p class="rp-card-text"><strong>Файл истории продаж</strong> (без фамилий и номеров броней) из папки данных загружается сам, когда обновился. На нём модель учится, по нему — «год назад» и норма по дням недели.</p>
+            ${ReportsView.head('История продаж для прогноза', '<strong>Файл истории продаж</strong> (без фамилий и номеров броней) из папки данных загружается сам, когда обновился. На нём модель учится, по нему — «год назад» и норма по дням недели.')}
+            <p class="rp-card-text">Файл истории продаж загружается сам, когда обновился. На нём учится модель.</p>
             <p class="rp-note">${esc(status)}${liTxt ? `<br>${esc(liTxt)}` : ''}</p>
             ${canWrite() ? '<div class="ref-toolbar"><button type="button" class="btn-primary rp-btn" id="fl-hist-load">Загрузить файл истории</button></div>' : '<p class="rp-muted">Загружать историю может тот, у кого есть право «Публикация данных для всех».</p>'}
         </section>`;
@@ -2950,15 +2950,15 @@ window.ForecastLab = (function () {
             ${changesHtml(rerender)}
             ${typeof PriceAdvisor !== 'undefined' ? PriceAdvisor.reportHtml(rerender) : ''}
             <section class="rp-card">
-                <div class="rp-card-head"><h3 class="rp-card-title">Точность прогноза загрузки</h3></div>
-                <p class="rp-card-text">Каждый день сайт записывает прогноз по каждому вылету за 30, 21, 14, 10, 7, 5, 3 и 1 день до вылета, а после вылета — факт.
+                ${ReportsView.head('Точность прогноза загрузки', `Каждый день сайт записывает прогноз по каждому вылету за 30, 21, 14, 10, 7, 5, 3 и 1 день до вылета, а после вылета — факт.
                     Модель учитывает продажи и их темп, файл ожидаемой загрузки, те же дни недели, соседние даты рейса, обратный рейс,
                     день недели, выходные, праздники и каникулы, сезон и тип рейса. Ошибка — в пассажирах, в среднем по вылетам; под числом — сколько вылетов
                     и в какую сторону ошибается (↑ завышает, ↓ занижает). Проверка честная: прогноз за N дней до вылета модель делает, зная только вылеты,
                     улетевшие к тому моменту. Все способы сравниваются на одних и тех же вылетах (последние ${PV.EVAL_WEEKS} недель).
                     Способ выбирается отдельно для вылетов с файлом ожидаемой загрузки, с историей по дням недели и без того и другого,
                     и меняется, только когда новый способ надёжно точнее. «Средний добор всех рейсов» — сколько в среднем добирают все рейсы
-                    за столько же дней до вылета: запасной способ для рейсов без файла и без истории.
+                    за столько же дней до вылета: запасной способ для рейсов без файла и без истории.`)}
+                <p class="rp-card-text">Каждый день сайт записывает прогноз по вылетам, а после вылета — факт. Так видно, насколько прогноз точен.
                     ${ev.anyModel ? '' : '<strong>Модели пока не на чем проверяться: улетевших вылетов мало. Сравниваются простые способы.</strong>'}</p>
                 <div class="dr-kpis">
                     <div class="dr-kpi"><div class="dr-kpi-label">Вылетов с фактом</div><div class="dr-kpi-value">${ev.departures}</div><div class="dr-kpi-sub">записей прогноза: ${ev.samples}</div></div>

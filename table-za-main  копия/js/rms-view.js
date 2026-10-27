@@ -14,6 +14,49 @@ function rmsFilterChanged(el) {
 
 function rmsSel(key, v) { return rmsUiFilters[key] === v ? ' selected' : ''; }
 
+// Пояснение под шапкой: коротко на странице, полностью — по значку «?».
+const RMS_NOTE_SHORT = 'ЗПК — какая часть мест, открытых в продаже, уже занята. «—» значит, что данных нет.';
+const RMS_NOTE_FULL = 'ЗПК = загрузка ÷ (места по снимку − специальные брони). '
+    + 'Продажи за 1–2 дня и выручка берутся только из файла продаж за 14 дней. '
+    + 'Если файла нет, в ячейке стоит «—», а не ноль.';
+
+function toggleRmsHelp() {
+    const full = document.getElementById('rms-help-full');
+    const btn = document.getElementById('rms-help-btn');
+    if (!full || !btn) return;
+    full.hidden = !full.hidden;
+    btn.setAttribute('aria-expanded', full.hidden ? 'false' : 'true');
+}
+
+const RMS_MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+
+// «01.11.2026» → «1 ноя».
+function rmsShortDate(dateStr) {
+    const d = parseLocalDate(dateStr);
+    return d ? `${d.getDate()} ${RMS_MONTHS_SHORT[d.getMonth()]}` : String(dateStr || '');
+}
+
+// Фраза для чипа: «1 ноя · через 5 дн. · занято 4% · отстаёт на 16 пасс.» (части без данных пропускаются).
+function rmsProblemText(f) {
+    const parts = [rmsShortDate(f.date)];
+    if (f.dtd !== null && f.dtd !== undefined) parts.push(f.dtd <= 0 ? 'сегодня' : (f.dtd === 1 ? 'завтра' : `через ${f.dtd} дн.`));
+    if (f.pct !== null && f.pct !== undefined) parts.push(`занято ${f.pct}%`);
+    if (f.delta) parts.push(f.delta < 0 ? `отстаёт на ${-f.delta} пасс.` : `опережает на ${f.delta} пасс.`);
+    return parts.join(' · ');
+}
+
+// Кнопка «Показать все» нужна, только если чипы не помещаются в две строки.
+function updateRmsProblemMore() {
+    const strip = document.getElementById('rms-problem-strip');
+    if (!strip || strip.hidden) return;
+    const list = strip.querySelector('.rms-problem-list');
+    const more = strip.querySelector('.rms-problem-more');
+    if (!list || !more) return;
+    const open = strip.classList.contains('is-open');
+    more.hidden = !open && list.clientHeight > 0 && list.scrollHeight <= list.clientHeight + 1;
+    more.textContent = open ? 'Свернуть' : `Показать все (${list.childElementCount})`;
+}
+
 function createRmsView(c) {
     c.innerHTML = `
         <div class="rms-page table-page">
@@ -23,7 +66,11 @@ function createRmsView(c) {
                         <h2 class="rms-hero-title">RMS · Сводка по рейсам</h2>
                         <div id="rms-toolbar-stats" class="rms-hero-stats"></div>
                     </div>
-                    <p class="rms-hero-note">ЗПК = загрузка / (AU снимка − спец.брони). Продажи за 1–2 дня и выручка — только окно файла 14д. Без файла — «—», не ноль.</p>
+                    <p class="rms-hero-note">
+                        <span>${RMS_NOTE_SHORT}</span>
+                        <button type="button" id="rms-help-btn" class="rms-help" onclick="toggleRmsHelp()" title="${escAttr(RMS_NOTE_FULL)}" aria-label="Пояснение к таблице" aria-expanded="false" aria-controls="rms-help-full">?</button>
+                    </p>
+                    <p id="rms-help-full" class="rms-help-full" hidden>${escHtml(RMS_NOTE_FULL)}</p>
                 </div>
             </div>
             <div id="rms-problem-strip" class="rms-problem-strip" hidden></div>
@@ -65,6 +112,7 @@ function createRmsView(c) {
                     </div>
                 </div>
                 <div id="rms-active-hint" class="rms-active-hint" style="display:none"></div>
+                <div id="rms-cols-note" class="rms-cols-note" role="status" hidden></div>
                 <div id="rms-watchlist" class="table-wrapper rms-wrapper" data-zoom-target="rms"></div>
             </div>
         </div>
@@ -83,14 +131,23 @@ function renderRmsProblemStrip(flights) {
         return;
     }
     strip.hidden = false;
-    strip.innerHTML = `<span class="rms-problem-label">Сверху проблемные</span>`
+    strip.innerHTML = `<div class="rms-problem-head">
+            <span class="rms-problem-label">Сверху проблемные</span>
+            <button type="button" class="rms-problem-more" hidden aria-label="Показать или скрыть остальные рейсы"></button>
+        </div>
+        <div class="rms-problem-list">`
         + problems.map(f => {
             const code = f.orig || f.base;
-            const delta = f.delta === null ? 'Δ —' : `Δ ${f.delta > 0 ? '+' : ''}${String(f.delta).replace('-', '−')}`;
-            return `<button type="button" class="rms-problem-chip" data-rms-base="${escAttr(f.base)}" data-rms-date="${escAttr(f.date)}" data-rms-orig="${escAttr(code)}">
-                <strong>${escHtml(code)}</strong> ${escHtml(f.date)} · ${f.dtd}д · ${f.pct}% · ${escHtml(delta)}
-            </button>`;
-        }).join('');
+            return `<button type="button" class="rms-problem-chip" data-rms-base="${escAttr(f.base)}" data-rms-date="${escAttr(f.date)}" data-rms-orig="${escAttr(code)}" title="${escAttr(`Открыть рейс ${code} за ${f.date}`)}"><strong>${escHtml(code)}</strong> · ${escHtml(rmsProblemText(f))}</button>`;
+        }).join('')
+        + '</div>';
+    // Мерим после отрисовки страницы (один раз, в следующем кадре), а не посреди сборки таблицы.
+    requestAnimationFrame(updateRmsProblemMore);
+    // Ширина окна изменилась — перемерить, нужна ли кнопка (один наблюдатель на весь срок жизни полосы).
+    if (!strip._rmsRO && typeof ResizeObserver !== 'undefined') {
+        strip._rmsRO = new ResizeObserver(updateRmsProblemMore);
+        strip._rmsRO.observe(strip);
+    }
 }
 
 function getRmsRenderSig() {
@@ -107,10 +164,12 @@ function getRmsRenderSig() {
 function renderRmsWatchlist() {
     const container = document.getElementById('rms-watchlist');
     const stats = document.getElementById('rms-toolbar-stats');
+    const colsNote = document.getElementById('rms-cols-note');
     if (!container) return;
     const sig = getRmsRenderSig();
     if (container.dataset.renderSig === sig && container.childElementCount > 0) return;
     delete container.dataset.renderSig;
+    if (colsNote) colsNote.hidden = true;
     if (rmsVirtualHandle) {
         rmsVirtualHandle.destroy();
         rmsVirtualHandle = null;
@@ -159,6 +218,17 @@ function renderRmsWatchlist() {
     }
 
     const hasExpected = expectedReady || showExpectedLoadColumn;
+    // Столбцы про продажи без данных не показываем: во всех строках там было бы одно «—». Считается один раз, не по строкам.
+    const salesOff = !salesReady || !!stale;
+    const showPickup = !salesOff && flights.some(f => f.pickup !== null && f.pickup !== undefined);
+    const showToday = !salesOff;
+    if (colsNote) {
+        const why = salesReady ? 'нет свежих данных' : 'файл продаж не загружен';
+        const note = (!showPickup && !showToday) ? `Столбцы про продажи за 1–2 дня скрыты: ${why}`
+            : (!showPickup ? `Столбец «Продано 1–2 дн.» скрыт: ${why}` : '');
+        colsNote.textContent = note;
+        colsNote.hidden = !note;
+    }
     const rmsRouteCounts = countRmsRoutesByDateBase(flights);
     const rowHtmls = flights.map(f => lazyRow(() => {
         const showRoute = f.route && shouldShowRmsRoute(f, rmsRouteCounts);
@@ -176,7 +246,6 @@ function renderRmsWatchlist() {
         const routeTypeCls = routeType === 'krai' ? 'rms-route-krai' : (routeType === 'interregional' ? 'rms-route-inter' : 'rms-route-unknown');
         const pickupTxt = (f.pickup === null || f.pickup === undefined || !salesReady || stale) ? '—' : f.pickup;
         const todayTxt = salesReady && !stale ? (f.s.today || 0) : '—';
-        const staleTitle = stale ? ` title="Нет свежих данных (файл продаж от ${stale.label})"` : '';
         const mny = typeof getRmsMoney === 'function' ? getRmsMoney(f) : null;
         const remainTxt = f.remainder != null ? f.remainder : '—';
         const fc = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(flightCode, f.date) : null;
@@ -185,7 +254,7 @@ function renderRmsWatchlist() {
         const grp = typeof FlightInsights !== 'undefined' ? FlightInsights.groupSeats(flightCode, f.date) : 0;
         return `
             <tr class="rms-row ${zebra} ${alertCls}" data-rms-base="${escAttr(f.base)}" data-rms-date="${escAttr(f.date)}" data-rms-orig="${escAttr(flightCode)}" data-pm-row="1" tabindex="0">
-                <td class="rms-col-alert">${f.alertLevel >= 2 ? `<span class="rms-alert-badge rms-alert-badge-${f.alertLevel}">${f.alertLevel >= 3 ? 'КРИТ' : '!'}</span>` : ''}</td>
+                <td class="rms-col-alert">${f.alertLevel >= 2 ? `<span class="rms-alert-badge rms-alert-badge-${f.alertLevel}" title="${f.alertLevel >= 3 ? 'Критично' : 'Нужно внимание'}">${f.alertLevel >= 3 ? 'КРИТ' : '!'}</span>` : ''}</td>
                 <td class="rms-col-flight">
                     <div class="rms-flight-code">${escHtml(flightCode)}${routeTypeLabel ? `<span class="rms-route-badge ${routeTypeCls}">${escHtml(routeTypeLabel)}</span>` : ''}${grp ? `<span class="grp-badge" title="В группах ${grp} чел. (заказы от ${FlightInsights.GROUP_MIN} билетов)">Г ${grp}</span>` : ''}</div>
                     <div class="rms-flight-name">${escHtml(flightDir)}</div>
@@ -197,11 +266,11 @@ function renderRmsWatchlist() {
                 <td class="rms-col-remain font-semibold">${remainTxt}</td>
                 <td class="rms-col-fc font-semibold ${fcCls}" title="${escAttr(fcTitle)}">${fc && fc.source !== 'flown' ? escHtml(FlightInsights.forecastShort(fc)) : '—'}</td>
                 ${expectedCells}
-                <td class="rms-col-pickup font-semibold"${staleTitle}>${pickupTxt}</td>
-                <td class="rms-col-today font-bold ${salesReady && !stale && f.s.today ? 'rms-today-hot' : ''}"${staleTitle}>${todayTxt}</td>
+                ${showPickup ? `<td class="rms-col-pickup font-semibold">${pickupTxt}</td>` : ''}
+                ${showToday ? `<td class="rms-col-today font-bold ${f.s.today ? 'rms-today-hot' : ''}">${todayTxt}</td>` : ''}
                 <td class="rms-col-fare font-semibold">${salesReady && f.avg ? formatRub(f.avg) : '—'}</td>
                 <td class="rms-col-money font-semibold" title="${escAttr(typeof SalesAdvice !== 'undefined' ? SalesAdvice.moneyTitle(mny) : '')}">${mny ? Math.round(mny.rub).toLocaleString('ru-RU') : '—'}</td>
-                <td class="rms-col-reason">${escHtml(f.alertReason) || '—'}</td>
+                <td class="rms-col-reason"${f.alertReason ? ` title="${escAttr(f.alertReason)}"` : ''}><span class="rms-reason-text">${f.alertReason ? escHtml(f.alertReason).replace(/(\d) (дн\.|пасс\.)/g, '$1\u00a0$2') : '—'}</span></td>
                 ${markOn ? `<td class="rms-col-mark">${PriceMarks.chipHtml(flightCode, f.date)}</td>` : ''}
             </tr>
         `;
@@ -211,20 +280,20 @@ function renderRmsWatchlist() {
         <table class="data-table rms-table w-full">
             <thead>
                 <tr>
-                    <th class="rms-col-alert"></th>
+                    <th class="rms-col-alert" title="Предупреждение: «КРИТ» — критично, «!» — нужно внимание"></th>
                     <th class="rms-col-flight">Рейс</th>
                     <th class="rms-col-date col-date">Дата</th>
                     <th class="rms-col-dtd" title="Дней до вылета">Дн.</th>
                     <th class="rms-col-load" title="ЗПК — заполнение кресел в продаже, %: загрузка / (кресла в продаже)">ЗПК</th>
-                    <th class="rms-col-remain" title="AU − загрузка − спец.брони">Остаток</th>
-                    <th class="rms-col-fc" title="Прогноз загрузки к вылету — тот же, что в карточке рейса: модель прогноза (если она вам доступна), иначе сколько обычно добирают такие же вылеты в тот же день недели; в скобках — пределы, в которые попадают 8 вылетов из 10">Прогноз к вылету</th>
-                    ${hasExpected ? '<th class="rms-col-forecast" title="Ожидаемая загрузка.xlsx">Ожидаемая</th><th class="rms-col-delta">Δ к ожидаемой</th>' : ''}
-                    <th class="rms-col-pickup" title="Билеты сегодня+вчера из файла 14д">Продано за 1–2 дн.</th>
-                    <th class="rms-col-today" title="Билеты, проданные сегодня, из файла 14д">Сегодня (файл 14д)</th>
-                    <th class="rms-col-fare" title="Среднее по всем билетам вылета в файле продаж">Ср. тариф по всем билетам</th>
+                    <th class="rms-col-remain" title="Остаток мест: места по снимку − загрузка − специальные брони">Остаток</th>
+                    <th class="rms-col-fc" title="Прогноз загрузки к вылету — тот же, что в карточке рейса: модель прогноза (если она вам доступна), иначе сколько обычно добирают такие же вылеты в тот же день недели; в скобках — пределы, в которые попадают 8 вылетов из 10">Прогноз</th>
+                    ${hasExpected ? '<th class="rms-col-forecast" title="Ожидаемая загрузка из файла «Ожидаемая загрузка.xlsx»">Ожидаемая</th><th class="rms-col-delta" title="Разница к ожидаемой загрузке, пассажиров: минус — продано меньше ожидаемого, плюс — больше">Разница</th>' : ''}
+                    ${showPickup ? '<th class="rms-col-pickup" title="Продано за 1–2 дня: билеты за сегодня и вчера из файла продаж за 14 дней">Продано 1–2 дн.</th>' : ''}
+                    ${showToday ? '<th class="rms-col-today" title="Продано сегодня: билеты, проданные сегодня, из файла продаж за 14 дней">Продано сегодня</th>' : ''}
+                    <th class="rms-col-fare" title="Средний тариф по всем билетам вылета в файле продаж">Ср. тариф</th>
                     <th class="rms-col-money" title="Сколько денег под вылетом. Предупреждение: пустые места по прогнозу × средний тариф. «Почти полный» и активные продажи: места, ещё доступные в продаже × последний тариф. Без прогноза или тарифа — «—»">Деньги, ₽</th>
-                    <th class="rms-col-reason">Причина</th>
-                    ${markOn ? '<th class="rms-col-mark" title="Отметка «Управления продажами» за сегодня: клик по чипу или клавиши 1–4 на строке (1 без изменений, 2 внимание, 3 снижение, 4 повышение)">Сегодня</th>' : ''}
+                    <th class="rms-col-reason" title="Почему рейс попал в предупреждения">Причина</th>
+                    ${markOn ? '<th class="rms-col-mark" title="Отметка «Управления продажами» за сегодня: клик по чипу или клавиши 1–4 на строке (1 без изменений, 2 внимание, 3 снижение, 4 повышение)">Отметка</th>' : ''}
                 </tr>
             </thead>
             <tbody id="rms-tbody"></tbody>
@@ -236,7 +305,7 @@ function renderRmsWatchlist() {
             scrollEl: container,
             tbody,
             rows: rowHtmls,
-            rowHeight: 48
+            rowHeight: 49
         });
     } else if (tbody) {
         tbody.innerHTML = rowHtmls.join('');
@@ -247,6 +316,11 @@ function renderRmsWatchlist() {
     if (strip && !strip.dataset.bound) {
         strip.dataset.bound = '1';
         strip.addEventListener('click', (e) => {
+            if (e.target.closest('.rms-problem-more')) {
+                strip.classList.toggle('is-open');
+                updateRmsProblemMore();
+                return;
+            }
             const btn = e.target.closest('[data-rms-base][data-rms-date]');
             if (!btn) return;
             openFlightFromRms(btn.dataset.rmsBase, btn.dataset.rmsDate, btn.dataset.rmsOrig);

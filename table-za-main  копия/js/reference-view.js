@@ -178,11 +178,10 @@ window.ReferenceView = (function () {
             </div>` : '';
         return `
             <section class="rp-card">
-                <div class="rp-card-head"><h3 class="rp-card-title">Периоды субсидии по рейсам</h3>
-                    ${can && !pe ? '<button type="button" class="btn-primary rp-btn" data-refp-new>Добавить рейс</button>' : ''}</div>
-                <p class="rp-card-text">Как в файле «Период субсидии»: указываются периоды <strong>коммерции</strong> — даты, когда субсидии нет.
+                ${ReportsView.head('Периоды субсидии по рейсам', `Как в файле «Период субсидии»: указываются периоды <strong>коммерции</strong> — даты, когда субсидии нет.
                     Вне этих дат рейс субсидируется (если для маршрута задана сумма субсидии). Запись справочника важнее файла;
-                    «Сбросить» — снова брать даты из файла.</p>
+                    «Сбросить» — снова брать даты из файла.`, can && !pe ? '<button type="button" class="btn-primary rp-btn" data-refp-new>Добавить рейс</button>' : '')}
+                <p class="rp-card-text">Даты коммерции — когда субсидии нет. В остальные даты рейс субсидируется.</p>
                 ${importHtml()}
                 ${form}
                 ${rows.length ? `<div class="rp-scroll"><table class="rp-table rp-refs-table">
@@ -377,13 +376,12 @@ window.ReferenceView = (function () {
             </div>` : '';
         return `
             <section class="rp-card">
-                <div class="rp-card-head"><h3 class="rp-card-title">Суммы субсидии и себестоимость по маршрутам</h3>
-                    ${can && !ae ? '<button type="button" class="btn-primary rp-btn" data-refa-new>Добавить маршрут</button>' : ''}</div>
-                <p class="rp-card-text">В каждой ячейке: сверху <strong>субсидия</strong>, ниже себестоимость и число рейсов, по которым она посчитана. Суммы в тыс. ₽ за пару рейсов туда-обратно (на один рейс — половина).
+                ${ReportsView.head('Суммы субсидии и себестоимость по маршрутам', `В каждой ячейке: сверху <strong>субсидия</strong>, ниже себестоимость и число рейсов, по которым она посчитана. Суммы в тыс. ₽ за пару рейсов туда-обратно (на один рейс — половина).
                     Месяцы — из файла себестоимости и субсидий («Отчёты» → «Себестоимость и субсидии»). «Среднее» идёт в экономическую таблицу.
                     Краевым направлениям субсидия всегда 0. Субсидия одна на все месяцы: если она есть хотя бы в одном месяце файла, ставится во все.
                     Если у межрегионального направления в файле нет субсидии ни в одном месяце, берётся субсидия из этого справочника.
-                    Маршрут, которого нет в файле, берётся из справочника целиком.</p>
+                    Маршрут, которого нет в файле, берётся из справочника целиком.`, can && !ae ? '<button type="button" class="btn-primary rp-btn" data-refa-new>Добавить маршрут</button>' : '')}
+                <p class="rp-card-text">Сверху в ячейке — субсидия, ниже — себестоимость. Суммы в тыс. ₽ за пару рейсов туда-обратно.</p>
                 ${importHtml()}
                 ${form}
                 <div class="ref-toolbar"><input type="search" class="cr-input" id="ref-a-filter" placeholder="Поиск: город или тип ВС" value="${esc(amountFilter)}"></div>
@@ -480,12 +478,11 @@ window.ReferenceView = (function () {
             </tr>`).join('');
         return `
             <section class="rp-card">
-                <div class="rp-card-head"><h3 class="rp-card-title">ПКЗ из NAV</h3>
-                    ${can && !ne ? '<button type="button" class="btn-primary rp-btn" data-refn-new>Добавить правило</button>' : ''}</div>
-                <p class="rp-card-text">Правило: <strong>период + направление в одну сторону + тип ВС → ПКЗ, кг</strong>. Значение само подставляется во все
+                ${ReportsView.head('ПКЗ из NAV', `Правило: <strong>период + направление в одну сторону + тип ВС → ПКЗ, кг</strong>. Значение само подставляется во все
                     вылеты, которые подходят (вкладка «ПКЗ», «Творческая», карточки). Обратное направление — отдельное правило.
                     Если подходят несколько — берётся правило с конкретным типом ВС, затем с более поздним началом периода.
-                    Ручное значение, введённое в таблице «ПКЗ» для конкретного вылета, важнее правила.</p>
+                    Ручное значение, введённое в таблице «ПКЗ» для конкретного вылета, важнее правила.`, can && !ne ? '<button type="button" class="btn-primary rp-btn" data-refn-new>Добавить правило</button>' : '')}
+                <p class="rp-card-text">Правило: период, направление и тип ВС дают ПКЗ в кг. Оно подставляется во все подходящие вылеты.</p>
                 ${form}
                 <div class="ref-toolbar">
                     <label>Направление <select class="cr-input" id="ref-n-filter"><option value="">все</option>${dirs.map(d => `<option${d === navFlight ? ' selected' : ''}>${esc(d)}</option>`).join('')}</select></label>
@@ -636,10 +633,9 @@ window.ReferenceView = (function () {
             </tr>`).join('');
         return `
             <section class="rp-card">
-                <div class="rp-card-head"><h3 class="rp-card-title">Рейсы</h3>
-                    ${can && !fe ? '<button type="button" class="btn-primary rp-btn" data-reff-new>Добавить рейс</button>' : ''}</div>
-                <p class="rp-card-text">Номер, маршрут, обратный номер и доп. номера рейса. Новый рейс сразу появляется везде: направление в «Графическом плане» и в таблицах,
-                    пара туда–обратно в «Экономической таблице», доп. номера сводятся к основному. Менять может тот, кому администратор дал право «Справочник рейсов».</p>
+                ${ReportsView.head('Рейсы', `Номер, маршрут, обратный номер и доп. номера рейса. Новый рейс сразу появляется везде: направление в «Графическом плане» и в таблицах,
+                    пара туда–обратно в «Экономической таблице», доп. номера сводятся к основному. Менять может тот, кому администратор дал право «Справочник рейсов».`, can && !fe ? '<button type="button" class="btn-primary rp-btn" data-reff-new>Добавить рейс</button>' : '')}
+                <p class="rp-card-text">Номер, маршрут, обратный номер и доп. номера. Новый рейс сразу появляется везде.</p>
                 ${form}
                 <div class="ref-toolbar">
                     <label>Поиск <input class="cr-input" id="ref-f-filter" type="search" placeholder="номер или город" value="${esc(flFilter)}"></label>
@@ -693,12 +689,11 @@ window.ReferenceView = (function () {
         const removed = can ? CalendarEvents.deletedBuiltins().filter(b => b.from.slice(6) === calYear || b.to.slice(6) === calYear) : [];
         return `
             <section class="rp-card">
-                <div class="rp-card-head"><h3 class="rp-card-title">Календарь событий</h3>
-                    ${can && !ce ? '<button type="button" class="btn-primary rp-btn" data-refc-new>Добавить событие</button>' : ''}</div>
-                <p class="rp-card-text">Праздники, школьные каникулы и свои события (форум, концерт, отмена рейсов). Встроены нерабочие праздничные дни РФ
+                ${ReportsView.head('Календарь событий', `Праздники, школьные каникулы и свои события (форум, концерт, отмена рейсов). Встроены нерабочие праздничные дни РФ
                     на 2025–2027 годы и школьные каникулы по рекомендациям Минпросвещения. Если в крае даты другие, их можно поправить.
                     <strong>Особые дни для нормы</strong>: обычный вылет не сравнивается с праздничными. Праздничный сравнивается с такими же праздничными
-                    (если их мало — с обычными). Отметки видны в «Графическом плане», на вкладке «Сегодня» и в карточке рейса.</p>
+                    (если их мало — с обычными). Отметки видны в «Графическом плане», на вкладке «Сегодня» и в карточке рейса.`, can && !ce ? '<button type="button" class="btn-primary rp-btn" data-refc-new>Добавить событие</button>' : '')}
+                <p class="rp-card-text">Праздники, каникулы и свои события. Отметки видны в графическом плане и в карточке рейса.</p>
                 ${form}
                 <div class="ref-toolbar">
                     <label>Год <select class="cr-input" id="ref-c-year">${years.map(y => `<option${y === calYear ? ' selected' : ''}>${esc(y)}</option>`).join('')}</select></label>
@@ -814,10 +809,10 @@ window.ReferenceView = (function () {
         ].join('');
         return `
             <section class="rp-card">
-                <div class="rp-card-head"><h3 class="rp-card-title">Проверка полноты справочника</h3></div>
-                <p class="rp-card-text">Вылеты на ${CHECK_DAYS} дней вперёд по загруженным данным: всё ли есть для субсидии и экономики. ПКЗ из NAV здесь не проверяется.</p>
+                ${ReportsView.head('Проверка полноты справочника', `Вылеты на ${CHECK_DAYS} дней вперёд по загруженным данным: всё ли есть для субсидии и экономики. ПКЗ из NAV здесь не проверяется.`)}
+                <p class="rp-card-text">Всё ли заполнено для вылетов на ${CHECK_DAYS} дней вперёд.</p>
                 ${typeof groupedData === 'undefined' || !Object.keys(groupedData || {}).length ? '<p class="rp-note">Нет данных: загрузите файлы — проверка идёт по вылетам из них.</p>'
-                    : (body || '<p class="ref-ok ref-check-ok">Всё заполнено: пропусков на ближайшие 60 дней нет.</p>')}
+                    : (body || '<p class="rp-ok">Всё заполнено: пропусков на ближайшие 60 дней нет.</p>')}
             </section>`;
     }
 

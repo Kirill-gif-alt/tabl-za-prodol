@@ -3,11 +3,11 @@
 const RMS_FILTER_FIELDS = {
     pct: { label: 'ЗПК %', step: 1 },
     free: { label: 'Пассажиров', step: 1 },
-    delta: { label: 'Δ от прогноза', step: 1 },
+    delta: { label: 'Разница с ожидаемой', step: 1 },
     dtd: { label: 'Дней до вылета', step: 1 },
-    pickup: { label: 'Продано за 1–2 дн. (файл 14д)', step: 1 },
+    pickup: { label: 'Продано за 1–2 дня', step: 1 },
     remainder: { label: 'Остаток мест', step: 1 },
-    salesToday: { label: 'Продажи сегодня', step: 1 },
+    salesToday: { label: 'Продано сегодня', step: 1 },
     avg: { label: 'Ср. тариф ₽', step: 100 }
 };
 

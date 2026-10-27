@@ -419,7 +419,7 @@ window.PriceAdvisor = (function () {
                 scanAll(PV.PA_REPORT_DAYS).then(list => { report = { sig: want, list, busy: false }; if (rerender) rerender(); })
                     .catch(e => { report.busy = false; console.warn('PriceAdvisor', e); });
             }
-            if (!report.list) return `<section class="rp-card"><div class="rp-card-head"><h3 class="rp-card-title">Ценовой советник</h3></div><p class="rp-note">Считаю оптимальные классы по вылетам на ${PV.PA_REPORT_DAYS} дн.…</p></section>`;
+            if (!report.list) return `<section class="rp-card">${ReportsView.head('Ценовой советник')}<p class="rp-note">Считаю оптимальные классы по вылетам на ${PV.PA_REPORT_DAYS} дн.…</p></section>`;
         }
         const list = report.list;
         const shown = onlyChange ? list.filter(a => a.action === 'up' || a.action === 'down') : list;
@@ -437,14 +437,14 @@ window.PriceAdvisor = (function () {
             <td>${rub(a.bid)}</td>
             <td>${a.cap != null ? rub(a.cap) : '—'}</td></tr>`).join('');
         return `<section class="rp-card">
-            <div class="rp-card-head"><h3 class="rp-card-title">Ценовой советник</h3></div>
-            <p class="rp-card-text">Какой минимальный класс держать открытым, чтобы выручка вылета была наибольшей (всё дешевле — закрыть). Считаем межрегиональные рейсы и Богучаны, Мотыгино, Кодинск. На субсидируемых рейсах — не выше предельного тарифа из «Справочника». Нижняя цена места: дешевле продавать место (и группе) невыгодно.
-                Эластичность спроса пока не измерена, поэтому используется сценарий. Совет — не дальше выбранного числа классов от нынешнего.</p>
+            ${ReportsView.head('Ценовой советник', `Какой минимальный класс держать открытым, чтобы выручка вылета была наибольшей (всё дешевле — закрыть). Считаем межрегиональные рейсы и Богучаны, Мотыгино, Кодинск. На субсидируемых рейсах — не выше предельного тарифа из «Справочника». Нижняя цена места: дешевле продавать место (и группе) невыгодно.
+                Эластичность спроса пока не измерена, поэтому используется сценарий. Совет — не дальше выбранного числа классов от нынешнего.`,
+        typeof ProfileAuth === 'undefined' || ProfileAuth.hasPermission('export_excel') || (ProfileAuth.getCurrentProfile() || {}).isAdmin ? `<button type="button" class="btn-primary rp-btn" id="pa-xlsx"${list.length ? '' : ' disabled'}>В Excel</button>` : '')}
+            <p class="rp-card-text">Какой класс держать открытым, чтобы выручка вылета была наибольшей. Всё дешевле — закрыть.</p>
             <div class="fl-warn-cfg">
                 <label>Эластичность <select id="pa-beta">${[...new Set([-1, -1.5, -2, -3, s.beta])].sort((x, y) => y - x).map(b => `<option value="${b}"${s.beta === b ? ' selected' : ''}>${String(b).replace('.', ',')}${b === DEFAULTS.beta ? ' (по умолчанию)' : ''}</option>`).join('')}</select></label>
                 <label>Шаг от нынешнего класса <select id="pa-corr">${[[0, 'не менять класс'], [1, '±1 класс'], [2, '±2 класса'], ...(s.corridor > 2 && s.corridor < 9 ? [[s.corridor, `±${s.corridor} класса`]] : []), [9, 'без ограничения']].map(([v, l]) => `<option value="${v}"${s.corridor === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
-                <label><input type="checkbox" id="pa-only"${onlyChange ? ' checked' : ''}> только где менять</label>
-                ${typeof ProfileAuth === 'undefined' || ProfileAuth.hasPermission('export_excel') || (ProfileAuth.getCurrentProfile() || {}).isAdmin ? `<button type="button" class="btn-primary rp-btn" id="pa-xlsx"${list.length ? '' : ' disabled'}>В Excel</button>` : ''}
+                <label class="rp-filter"><input type="checkbox" id="pa-only"${onlyChange ? ' checked' : ''}> только где менять</label>
             </div>
             <div class="dr-kpis">
                 <div class="dr-kpi"><div class="dr-kpi-label">Поднять</div><div class="dr-kpi-value">${cnt.up}</div></div>
@@ -454,7 +454,7 @@ window.PriceAdvisor = (function () {
                 <div class="dr-kpi"><div class="dr-kpi-label">Распродан / нет класса</div><div class="dr-kpi-value">${cnt.closed + cnt.nocap}</div><div class="dr-kpi-sub">всего ${list.length} вылетов на ${PV.PA_REPORT_DAYS} дн.</div></div>
             </div>
             ${rows ? `<div class="rp-scroll"><table class="rp-table"><thead><tr><th>Рейс</th><th>Вылет</th><th>Свободно</th><th>Сейчас от</th><th>Совет</th><th>Класс · цена</th><th>Нижняя цена места</th><th>Потолок</th></tr></thead><tbody>${rows}</tbody></table></div>
-                ${shown.length > 80 ? `<p class="rp-note">Показаны 80 ближайших из ${shown.length} — полный список в Excel.</p>` : ''}` : '<p class="rp-note">Менять сейчас нечего.</p>'}
+                ${shown.length > 80 ? `<p class="rp-note">Показаны 80 ближайших из ${shown.length} — полный список в Excel.</p>` : ''}` : '<p class="rp-ok">Менять сейчас нечего.</p>'}
         </section>`;
     }
 

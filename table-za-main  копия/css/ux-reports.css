@@ -1,1 +1,222 @@
 /* Оформление вкладки: reports (ux-reports) */
+
+/* ---------- 1. Тонкая шапка «Отчёты»: название слева, описание серым справа, одна строка ---------- */
+/* Цвет — тот же фирменный, что у шапки сайта (градиент от --nav-bg из styles.css). */
+#rp-page .table-page-hero {
+    padding: 8px 18px;
+    box-shadow: 0 3px 10px rgb(1 42 74 / 0.16);
+}
+#rp-page .table-page-hero-main {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px 18px;
+}
+#rp-page .table-page-hero .rms-hero-title {
+    flex: none;
+    font-size: 1.05rem;
+    line-height: 1.3;
+}
+#rp-page .table-page-hero .table-page-hint {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: right;
+    font-size: 0.78rem;
+    color: rgb(255 255 255 / 0.66);
+}
+@media (max-width: 640px) {
+    #rp-page .table-page-hero-main { flex-direction: column; gap: 2px; }
+    #rp-page .table-page-hero .table-page-hint { white-space: normal; text-align: left; }
+}
+
+/* ---------- 2. Ряд сводных плиток над таблицей ---------- */
+#rp-page .rp-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 340px));
+    gap: 12px;
+}
+#rp-page .rp-tile {
+    min-width: 0;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-left: 4px solid #94a3b8;
+    border-radius: 12px;
+    background: var(--surface);
+}
+#rp-page .rp-tile-bad { border-left-color: #dc2626; }
+#rp-page .rp-tile-warn { border-left-color: #d97706; }
+#rp-page .rp-tile-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+}
+#rp-page .rp-tile-value {
+    margin: 2px 0;
+    font-size: 1.6rem;
+    font-weight: 800;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    color: var(--text);
+}
+#rp-page .rp-tile-bad .rp-tile-value { color: #b91c1c; }
+#rp-page .rp-tile-warn .rp-tile-value { color: #b45309; }
+#rp-page .rp-tile-sub { font-size: 0.75rem; color: var(--text-muted); }
+html[data-theme="dark"] #rp-page .rp-tile { border-left-color: #6b7280; }
+html[data-theme="dark"] #rp-page .rp-tile-bad { border-left-color: #f87171; }
+html[data-theme="dark"] #rp-page .rp-tile-warn { border-left-color: #fbbf24; }
+html[data-theme="dark"] #rp-page .rp-tile-bad .rp-tile-value { color: #fca5a5; }
+html[data-theme="dark"] #rp-page .rp-tile-warn .rp-tile-value { color: #fcd34d; }
+
+/* ---------- 3. Значок «?» с полным текстом ---------- */
+#rp-page .rp-card-head { position: relative; gap: 8px; }
+#rp-page .rp-help { flex: none; margin-right: auto; }
+#rp-page .rp-help-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    background: var(--surface);
+    color: var(--text-muted);
+    font-size: 0.74rem;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+}
+#rp-page .rp-help-btn::-webkit-details-marker { display: none; }
+#rp-page .rp-help-btn:hover,
+#rp-page .rp-help[open] .rp-help-btn,
+#rp-page .rp-help-btn:focus-visible { border-color: var(--accent); color: var(--text); outline: none; }
+#rp-page .rp-help-pop {
+    position: absolute;
+    left: 0;
+    top: calc(100% + 6px);
+    z-index: 30;
+    width: min(560px, 100%);
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    box-shadow: 0 10px 28px rgb(15 23 42 / 0.18);
+    font-size: 0.82rem;
+    font-weight: 400;
+    line-height: 1.5;
+    color: var(--text);
+}
+
+/* ---------- 4. Единые «В Excel», галочки-фильтры и спокойные пустые состояния ---------- */
+/* «В Excel» в Справочнике — как в остальных отчётах (зелёная, справа). Загрузка из Excel — рядом, светлая. */
+#rp-page .ref-excel { margin: 0; gap: 8px; }
+#rp-page .ref-excel .filter-btn {
+    min-width: 0;
+    padding: 7px 16px;
+    border-radius: 10px;
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+html:not([data-theme="dark"]) #rp-page [data-ref-xl-export] { background: #047857; border-color: #047857; color: #fff; }
+html:not([data-theme="dark"]) #rp-page [data-ref-xl-export]:hover { background: #065f46; border-color: #065f46; color: #fff; }
+html[data-theme="dark"] #rp-page [data-ref-xl-export] { background: var(--accent, #238636); border-color: var(--accent, #238636); color: #fff; }
+html[data-theme="dark"] #rp-page [data-ref-xl-export]:hover { filter: brightness(1.1); color: #fff; }
+#rp-page .rp-card-head .rp-btn { white-space: nowrap; }
+
+/* Галочка-фильтр над таблицей. */
+#rp-page .rp-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 12px 0 8px;
+    padding: 5px 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 0.8rem;
+    cursor: pointer;
+    user-select: none;
+}
+#rp-page .ref-toolbar .rp-filter,
+#rp-page .fl-warn-cfg .rp-filter { margin: 0; }
+#rp-page .rp-filter input { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+#rp-page .rp-filter:hover { border-color: var(--accent); }
+#rp-page .rp-filter:has(input:checked) { border-color: var(--accent); }
+
+/* Пустое состояние «всё хорошо»: зелёная плашка с галочкой вместо пустого места. */
+#rp-page .rp-ok {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 12px 0 0;
+    padding: 12px 14px;
+    border: 1px solid #a7f3d0;
+    border-radius: 10px;
+    background: #ecfdf5;
+    color: #065f46;
+    font-size: 0.86rem;
+    font-weight: 600;
+    line-height: 1.4;
+}
+#rp-page .rp-ok::before {
+    content: "";
+    flex: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #059669 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / 12px 12px no-repeat;
+}
+html[data-theme="dark"] #rp-page .rp-ok {
+    border-color: rgb(16 185 129 / 0.4);
+    background: rgb(16 185 129 / 0.12);
+    color: #6ee7b7;
+}
+
+/* Карточка «Проверка рейсов»: красная рамка не нужна — ошибки уже видны в плитках и в таблице. */
+#rp-page .rp-checks { border-color: color-mix(in srgb, var(--border) 85%, transparent); }
+.no-cmix #rp-page .rp-checks { border-color: var(--border); }
+
+/* ---------- 5. Значок-счётчик на внутренней вкладке: 0 — серый ---------- */
+#rp-page .rp-subtab-badge-zero { background: #e2e8f0; color: #64748b; }
+#rp-page .rp-subtab-on .rp-subtab-badge-zero { background: #fff; color: #64748b; }
+html[data-theme="dark"] #rp-page .rp-subtab-badge-zero { background: #30363d; color: #b1bac4; }
+html[data-theme="dark"] #rp-page .rp-subtab-on .rp-subtab-badge-zero { background: #fff; color: #475569; }
+
+/* ---------- Одинаковые отступы между внутренними вкладками и содержимым ---------- */
+#rp-page .rp-body { gap: 14px; }
+#rp-page .rp-subtab-body { gap: 14px; }
+#rp-page .rp-subtab-body > .rp-card:first-child,
+#rp-page .rp-subtab-body > .rp-tiles:first-child { margin-top: 0; }
+#rp-page .rp-card-text { margin-top: 4px; }
+#rp-page .rp-subtab-body > .rp-note { margin: 0; }
+
+/* Справочник: плитки, потом одна строка «История изменений ... В Excel», потом разделы. */
+#rp-page .rp-tab-refs {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px 10px;
+}
+#rp-page .rp-tab-refs > * { order: 5; flex: 1 1 100%; min-width: 0; }
+#rp-page .rp-tab-refs > .rp-tiles { order: 0; }
+#rp-page .rp-tab-refs > .ref-hist-bar { order: 1; flex: 0 0 auto; margin: 0; }
+#rp-page .rp-tab-refs > .ref-excel { order: 2; flex: 1 1 auto; justify-content: flex-end; }
+#rp-page .rp-tab-refs > .ref-hist { order: 3; }
+#rp-page .rp-tab-refs > .ref-sections { order: 4; margin: 0; }
+
+/* Карточки выгрузок узкие: если кнопка не помещается рядом с названием, она переходит на следующую строку. */
+#rp-page .rp-export-grid .rp-card-head { flex-wrap: wrap; row-gap: 8px; }
+
+/* Узкий экран: плитки в два столбца, подсказка на всю ширину карточки. */
+@media (max-width: 560px) {
+    #rp-page .rp-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    #rp-page .rp-tile { padding: 8px 10px; }
+    #rp-page .rp-tile-value { font-size: 1.35rem; }
+}

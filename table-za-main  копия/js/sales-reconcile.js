@@ -363,20 +363,30 @@ window.SalesReconcile = (function () {
                 <td class="${x.big ? (x.diff > 0 ? 'dr-neg' : 'rc-more') : ''}">${x.diff > 0 ? '+' : ''}${String(x.diff).replace('-', '−')}</td>
                 <td class="rp-left">${esc(x.reason)}</td>
             </tr>`).join('');
-        return `
-            <section class="rp-card">
-                <div class="rp-card-head"><h3 class="rp-card-title">Сверка продаж и загрузки</h3></div>
-                <p class="rp-card-text">Проверяем будущие вылеты. Загрузку берём из файла «загрузка таб». <strong>В файле</strong> — сколько билетов файл продаж
+        const less = r.rows.filter(x => x.big && x.diff > 0).length;
+        const more = r.rows.filter(x => x.big && x.diff < 0).length;
+        const tiles = ReportsView.tiles([
+            { label: 'Осталось расхождений', value: String(r.divergent), tone: r.divergent ? 'bad' : '' },
+            { label: 'Продаж меньше загрузки', value: String(less), sub: 'билеты не найдены в файле', tone: less ? 'bad' : '' },
+            { label: 'Продаж больше загрузки', value: String(more), sub: 'незакрытые возвраты или обмены', tone: more ? 'warn' : '' },
+            { label: 'Исправлено автоматически', value: String(r.fixedFlights), sub: `билетов перенесено: ${r.fixedTickets}` }
+        ]);
+        const help = `Проверяем будущие вылеты. Загрузку берём из файла «загрузка таб». <strong>В файле</strong> — сколько билетов файл продаж
                     записал на этот номер и дату. Если рейс перенесли или дали доп. номер, файл оставляет билеты на старом месте.
                     Сайт переносит их сам: в один день — между основным и доп. номером, при переносе даты — на ближайший вылет рейса (±7 дней).
-                    <strong>После сверки</strong> — с этими числами считаются нормы, подсказки и прогноз. Красным — где расхождение осталось.</p>
+                    <strong>После сверки</strong> — с этими числами считаются нормы, подсказки и прогноз. Красным — где расхождение осталось.`;
+        return `
+            ${tiles}
+            <section class="rp-card">
+                ${ReportsView.head('Сверка продаж и загрузки', help)}
+                <p class="rp-card-text">Сверяем продажи с загрузкой на будущие вылеты. Красным — где расхождение осталось.</p>
                 <div class="ref-toolbar">
-                    <label class="ref-check-inline"><input type="checkbox" id="rc-only"${onlyDivergent ? ' checked' : ''}> только где осталось расхождение</label>
-                    <span class="rp-muted">Вылетов проверено: ${r.checked} · исправлено автоматически: ${r.fixedFlights} (билетов перенесено: ${r.fixedTickets}) · осталось расхождение: ${r.divergent}</span>
+                    <label class="rp-filter"><input type="checkbox" id="rc-only"${onlyDivergent ? ' checked' : ''}> только где осталось расхождение</label>
+                    <span class="rp-muted">Вылетов проверено: ${r.checked}</span>
                 </div>
                 ${body ? `<div class="rp-scroll"><table class="rp-table dr-table">
                     <thead><tr><th>Вылет</th><th>Рейс</th><th>Направление</th><th>Загрузка</th><th title="Сколько билетов файл продаж записал на этот номер и дату">В файле</th><th title="После переноса билетов">После сверки</th><th>Перенесено</th><th title="Загрузка − продажи после сверки">Разница</th><th>Причина</th></tr></thead>
-                    <tbody>${body}</tbody></table></div>` : '<p class="rp-note">Расхождений нет: продажи совпадают с загрузкой.</p>'}
+                    <tbody>${body}</tbody></table></div>` : '<p class="rp-ok">Расхождений нет: продажи совпадают с загрузкой.</p>'}
             </section>`;
     }
 
@@ -387,5 +397,5 @@ window.SalesReconcile = (function () {
         return true;
     }
 
-    return { run, html, handleChange, canView, badge };
+    return { run, html, handleChange, canView, badge, hasSales };
 })();
