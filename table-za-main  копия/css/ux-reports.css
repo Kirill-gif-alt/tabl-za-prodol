@@ -76,6 +76,9 @@ html[data-theme="dark"] #rp-page .rp-tile-warn .rp-tile-value { color: #fcd34d; 
 #rp-page .rp-card-head { position: relative; gap: 8px 12px; }
 #rp-page .rp-card-heading { display: flex; align-items: center; gap: 8px; min-width: 0; }
 #rp-page .rp-help { flex: none; }
+/* Карточки выгрузок узкие: название занимает остаток строки; кнопка уходит на новую строку, только если не помещается даже при переносе слов. */
+#rp-page .rp-export-grid .rp-card-head { flex-wrap: wrap; }
+#rp-page .rp-export-grid .rp-card-heading { flex: 1 1 0; min-width: auto; }
 #rp-page .rp-help-btn {
     display: inline-flex;
     align-items: center;
@@ -212,9 +215,6 @@ html[data-theme="dark"] #rp-page .rp-subtab-on .rp-subtab-badge-zero { backgroun
 #rp-page .rp-tab-refs > .ref-excel { order: 2; flex: 1 1 auto; justify-content: flex-end; }
 #rp-page .rp-tab-refs > .ref-hist { order: 3; }
 #rp-page .rp-tab-refs > .ref-sections { order: 4; margin: 0; }
-
-/* Карточки выгрузок узкие: если кнопка не помещается рядом с названием, она переходит на следующую строку. */
-#rp-page .rp-export-grid .rp-card-head { flex-wrap: wrap; }
 
 /* Узкий экран: плитки в два столбца, подсказка на всю ширину карточки. */
 @media (max-width: 560px) {
