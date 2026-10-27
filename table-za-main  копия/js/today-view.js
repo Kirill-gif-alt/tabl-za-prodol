@@ -516,7 +516,7 @@ window.TodayView = (function () {
         if (typeof currentTab !== 'undefined' && currentTab === 'today') render();
     });
 
-    return { create, refresh };
+    return { create, refresh, aheadDays };
 })();
 
 function createTodayView(panel) {

@@ -1034,9 +1034,9 @@ window.ReportsView = (function () {
                     'Excel с карточками маршрутов, как на вкладке «Загрузка рейсов» (с её текущими фильтрами).',
                     canData(), 'Нужны вкладка «Загрузка рейсов» и право на выгрузку в Excel.'),
                 card('rp-data-split', 'Загрузка: краевые и межрегиональные',
-                    'Два файла: краевые рейсы и межрегиональные. Фильтры вкладки не действуют.',
+                    'Два файла: краевые рейсы и межрегиональные. Поиск и тип рейса не действуют, «Скрыть улетевшие» и сортировка действуют.',
                     canData(), 'Нужны вкладка «Загрузка рейсов» и право на выгрузку в Excel.', '',
-                    'Два файла: «Загрузка - КК» (краевые рейсы) и «Загрузка - Межрегионалка» (межрегиональные и международные). Фильтры вкладки не действуют. Каждая выгрузка добавляет лист с датой (не больше 30), повторная за день заменяет лист этого дня. Листы прошлых дней лежат в общей папке.'),
+                    'Два файла: «Загрузка - КК» (краевые рейсы) и «Загрузка - Межрегионалка» (межрегиональные и международные). Поиск и тип рейса не действуют, «Скрыть улетевшие» и сортировка действуют. Каждая выгрузка добавляет лист с датой (не больше 30), повторная за день заменяет лист этого дня. Листы прошлых дней лежат в общей папке.'),
                 card('rp-sales', 'Управление продажами',
                     'Excel вкладки «Управление продажами»: лист на каждый рейс с отметками по дням.',
                     canSales(), 'Нужна вкладка «Управление продажами».'),
@@ -1074,7 +1074,11 @@ window.ReportsView = (function () {
             + ':' + (typeof SubsidyRef !== 'undefined' ? SubsidyRef.revision() : 0)
             + ':' + (typeof SharedOverrides !== 'undefined' && SharedOverrides.navRevision ? SharedOverrides.navRevision() : 0);
         const checks = checksList().map(i => i.code + i.date).join(',');
-        return [epoch, today, prof, rows, checksOn, checks].join('|');
+        const revs = [typeof SalesManagement !== 'undefined' && SalesManagement.markRevision ? SalesManagement.markRevision() : 0,
+            typeof SalesArchive !== 'undefined' && SalesArchive.revision ? SalesArchive.revision() : 0,
+            typeof Params !== 'undefined' && Params.revision ? Params.revision() : 0,
+            typeof DecisionMoney !== 'undefined' && DecisionMoney.revision ? DecisionMoney.revision() : 0].join(':');
+        return [epoch, today, prof, rows, checksOn, checks, revs].join('|');
     }
 
     function create(panel) {

@@ -138,7 +138,7 @@ function computeRowMetrics(row, base) {
         const belowMin = Math.max(PV.ADVICE_THRESHOLD_MIN, Math.round(seatsOnSale * 0.05));
         if (delta !== null && delta < -PV.RMS_CRIT_DELTA && dtd <= PV.RMS_CRIT_DAYS) {
             alertLevel = 3;
-            alertReason = `Отставание ${delta} пасс., вылет через ${dtd} дн.`;
+            alertReason = `Отставание −${Math.abs(delta)} пасс., вылет через ${dtd} дн.`;
         } else if (delta !== null && delta <= -belowMin && dtd <= PV.RMS_WARN_DAYS) {
             alertLevel = 2;
             alertReason = `Ниже прогноза на ${Math.abs(delta)} пасс.`;

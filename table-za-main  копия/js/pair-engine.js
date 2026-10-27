@@ -461,14 +461,16 @@ function buildTableSalesSumRowHtml(beforeSalesCols, sums, fareCols = 0, showExpa
     const s = sums || {};
     const salesReady = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(typeof dataLoadStatus !== 'undefined' && dataLoadStatus.sales);
     const sn = (v) => salesReady ? formatNum(v || 0) : '—';
+    // файл продаж старше 1 дня: «сегодня» и «вчера» по нему не видны, нули ничего не значат (как в RMS и на «Сегодня»)
+    const snRecent = (v) => (salesReady && !(typeof getStaleSalesInfo === 'function' && getStaleSalesInfo())) ? formatNum(v || 0) : '—';
     const farePlaceholders = fareCols > 0
         ? Array.from({ length: fareCols }, () => '<th class="col-extra table-head-sum-skip"></th>').join('')
         : '';
     const expandCell = showExpand ? '<th class="table-head-sum-skip col-expand-head"></th>' : '';
     return `<tr class="table-sales-sum-row">
         <th colspan="${beforeSalesCols}" class="table-head-sum-skip"></th>
-        <th class="table-head-sum-cell table-head-sum-today"><span class="table-head-sum-label">Σ</span> ${sn(s.tSum)}</th>
-        <th class="table-head-sum-cell table-head-sum-yesterday">${sn(s.ySum)}</th>
+        <th class="table-head-sum-cell table-head-sum-today"><span class="table-head-sum-label">Σ</span> ${snRecent(s.tSum)}</th>
+        <th class="table-head-sum-cell table-head-sum-yesterday">${snRecent(s.ySum)}</th>
         <th class="table-head-sum-cell">${sn(s.d2Sum)}</th>
         <th class="table-head-sum-cell">${sn(s.d7Sum)}</th>
         <th class="table-head-sum-cell">${sn(s.d14Sum)}</th>

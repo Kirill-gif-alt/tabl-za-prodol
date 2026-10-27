@@ -280,6 +280,8 @@ function collectSameWeekdayCohort(baseFlight, flyDateStr, flightCode) {
             });
         });
     }
+    // Один и тот же порядок при каждой загрузке (архив отдаёт вылеты не по порядку): сначала ближние даты.
+    dates.sort((a, b) => (a.dayGap - b.dayGap) || (parseLocalDate(a.date) - parseLocalDate(b.date)));
     // Праздники и каникулы не смешиваются с обычными днями (календарь событий в «Справочнике»).
     return typeof CalendarEvents !== 'undefined' ? CalendarEvents.filterCohort(dates, flyDateStr) : dates;
 }

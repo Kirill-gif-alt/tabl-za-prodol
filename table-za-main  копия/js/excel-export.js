@@ -1182,7 +1182,8 @@ function exportRmsToExcel() {
     }
 
     const hasExpected = Object.keys(expectedLoadData).length > 0;
-    const salesReady = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(typeof dataLoadStatus !== 'undefined' && dataLoadStatus.sales);
+    const salesFileOn = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(typeof dataLoadStatus !== 'undefined' && dataLoadStatus.sales);
+    const salesReady = salesFileOn && !(typeof getStaleSalesInfo === 'function' && getStaleSalesInfo());   // файл продаж старше 1 дня: нули ничего не значат, как на экране
     const headers = ['Код рейса', 'Тип рейса', 'Направление', 'Дата вылета', 'Дней до вылета', 'ЗПК %', 'Загрузка', 'Остаток', 'Прогноз к вылету', 'Прогноз ЗПК %'];
     if (hasExpected) headers.push('Ожидаемая', 'Δ к ожидаемой');
     headers.push('Продано за 1–2 дн. (файл 14д)', 'Сегодня (файл 14д)', 'Ср. тариф по всем билетам', 'Уровень предупреждения', 'Причина');
