@@ -417,7 +417,7 @@ window.FlightCard = (function () {
         const staleSales = salesReady && typeof getStaleSalesInfo === 'function' ? getStaleSalesInfo() : null;
         // У улетевшего рейса ожидаемой нет — как в «Динамике продаж» и на Графплане.
         const showEv = !!m && !m.flew;
-        const dtdTxt = m && m.dtd != null ? (m.dtd < 0 ? 'улетел' : `за ${m.dtd} дн.`) : '';
+        const dtdTxt = m && m.dtd != null ? (m.dtd < 0 ? 'улетел' : (m.dtd === 0 ? 'вылет сегодня' : `за ${m.dtd} дн.`)) : '';
         const status = m && m.closed ? 'закрыт' : '';
         const deltaCls = m && m.delta != null ? (m.delta < 0 ? 'fc-neg' : (m.delta > 0 ? 'fc-pos' : '')) : '';
         const canTab = (t) => typeof ProfileAuth === 'undefined' || ProfileAuth.canAccessTab(t);

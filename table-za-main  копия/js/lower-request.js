@@ -96,7 +96,8 @@ window.LowerRequest = (function () {
 
     function dirOf(code) {
         const d = typeof getFlightDirection === 'function' ? String(getFlightDirection(typeof getBaseFlight === 'function' ? getBaseFlight(code) : code) || '') : '';
-        return d.replace(/\s*[—–-]\s*/g, ' – ').replace(/\s+/g, ' ').trim() || code;
+        // Пробелы ставим только вокруг тире между городами («Кызыл - Улан-Удэ» → «Кызыл – Улан-Удэ»); дефис внутри названия («Горно-Алтайск», «KV-999») не трогаем.
+        return d.replace(/\s*[—–]\s*|\s+-\s+/g, ' – ').replace(/\s+/g, ' ').trim() || code;
     }
 
     // Порядок: пары «туда — обратно» рядом (101, 102; 301, 302), нечётный раньше чётного.

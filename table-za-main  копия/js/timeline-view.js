@@ -34,8 +34,8 @@ const TIMELINE_HUB_UTC = 7;
 const TIMELINE_AIRPORT_UTC = {
     KJA: 7, ABA: 7, KYZ: 7, KEJ: 7, NOZ: 7, RGK: 7, TOF: 7,
     NSK: 7, IAA: 7, HTG: 7, DKS: 7, THX: 7, MJY: 7, KCY: 7,
-    BXY: 7, TTK: 7, SBT: 7, HTA: 8, UUD: 8, ULN: 8, NZG: 8, IKT: 8,
-    ULK: 9, TLK: 9, BQS: 9, NNY: 9, CZR: 9, PYR: 9,
+    BXY: 7, TTK: 7, SBT: 7, UUD: 8, ULN: 8, UBN: 8, NZG: 8, IKT: 8,
+    HTA: 9, ULK: 9, TLK: 9, BQS: 9, NNY: 9, CZR: 9, PYR: 9, PYJ: 9, OLZ: 9,
     NJC: 5, HMA: 5, SGC: 5
 };
 

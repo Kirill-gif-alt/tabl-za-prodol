@@ -974,11 +974,12 @@ function actuallyRenderPkzTable(base, targetDate = null) {
     if (!cont || !ttl) return;
     if (tableSort.by === 'dtd') tableSort = { by: 'date', dir: 'asc' };
 
-    const flightCount = groupedData[base]?.length || 0;
+    // Число вылетов — в горизонте ПКЗ (столько строк в таблице), а не всех вылетов рейса в файле: раньше «81 · горизонт 10 дн.» при пяти строках.
+    const flightCount = (groupedData[base] || []).filter(r => r[1] && isPkzHorizonDate?.(r[1])).length;
     ttl.innerHTML = `
         <span class="table-flight-code">${escHtml(base)}</span>
         <span class="table-flight-route">${escHtml(getFlightDirection(base))}</span>
-        <span class="table-flight-badge">${flightCount} · горизонт ${typeof PV.PKZ_HORIZON_DAYS !== 'undefined' ? PV.PKZ_HORIZON_DAYS : 10} дн.</span>
+        <span class="table-flight-badge">${flightCount} ${pluralRu(flightCount, 'вылет', 'вылета', 'вылетов')} · горизонт ${typeof PV.PKZ_HORIZON_DAYS !== 'undefined' ? PV.PKZ_HORIZON_DAYS : 10} дн.</span>
     `;
 
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
@@ -1042,7 +1043,7 @@ function actuallyRenderPkzTable(base, targetDate = null) {
         const fd = parseLocalDate(date);
         const flew = fd ? fd < todayStart : false;
         const denom = seatsOnSale;
-        const pct = (denom > 0) ? Math.round(free / denom * 100) : 0;
+        const pct = (denom > 0) ? Math.round(free / denom * 100) : null;   // нет кресел в продаже — прочерк, как в «Динамике продаж»
         const route = getRouteFromRow(row);
         const showRoute = shouldShowRouteForRow(row, routeCounts);
         const ac = getAircraftType(row[4]);
@@ -1050,11 +1051,11 @@ function actuallyRenderPkzTable(base, targetDate = null) {
         let cls = (getWeekNumber(fd) % 2 === 0) ? 'week-even' : 'week-odd';
         if (closed) cls = 'closed-flight';
         else if (flew) cls = 'flew-flight';
-        else if (pct >= 100) cls = 'full-loaded';
+        else if (pct != null && pct >= 100) cls = 'full-loaded';
 
         const status = (closed || flew)
             ? (closed ? '<span class="closed-text">ЗАКРЫТ</span>' : '<span class="flew-text">УЛЕТЕЛ</span>')
-            : `<span class="${pct >= 75 ? 'occupancy-high' : 'occupancy-med'}">${pct}%</span>`;
+            : (pct == null ? '—' : `<span class="${pct >= 75 ? 'occupancy-high' : 'occupancy-med'}">${pct}%</span>`);
 
         const details = typeof getPkzFlightDetails === 'function'
             ? getPkzFlightDetails(row, orig, { showSales: false })

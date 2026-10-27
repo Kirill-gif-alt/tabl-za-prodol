@@ -35,6 +35,11 @@ window.MlModel = (function () {
 
     function dirOf(base) { try { return typeof getFlightDirection === 'function' ? String(getFlightDirection(base) || '') : ''; } catch (e) { return ''; } }
     function dowOf(ts) { return (new Date(ts).getDay() + 6) % 7; }
+    // Дата вылета в истории — местная полночь: через toISOString() она сдвигалась бы на сутки назад (Красноярск, UTC+7).
+    function ymd(ts) {
+        const d = new Date(ts);
+        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
 
     // ---------- история: индекс по уровням с накопленными суммами ----------
     // Для каждого уровня и ключа — вылеты по возрастанию даты и накопленные суммы (итог/места, продано к h0/места).
@@ -333,7 +338,7 @@ window.MlModel = (function () {
         }
         const model = {
             sig: signature(hist), trainedAt: new Date().toISOString(), nFlights: hist.length,
-            period: { from: new Date(hist[0].ts).toISOString().slice(0, 10), to: new Date(hist[hist.length - 1].ts).toISOString().slice(0, 10) },
+            period: { from: ymd(hist[0].ts), to: ymd(hist[hist.length - 1].ts) },
             metrics, hz
         };
         S.model = model;
@@ -397,7 +402,10 @@ window.MlModel = (function () {
     function health() {
         const m = S.model;
         if (S.status === 'ready' && m) {
-            return { status: 'ok', model_loaded: true, version: m.sig, trained_at: m.trainedAt, n_flights: m.nFlights, data_period: m.period, metrics: m.metrics };
+            // Период — по истории в памяти (местные даты): у модели, сохранённой раньше, он мог быть записан со сдвигом на сутки.
+            const hs = S.hist && S.hist.length ? S.hist : null;
+            const period = hs ? { from: ymd(hs[0].ts), to: ymd(hs[hs.length - 1].ts) } : m.period;
+            return { status: 'ok', model_loaded: true, version: m.sig, trained_at: m.trainedAt, n_flights: m.nFlights, data_period: period, metrics: m.metrics };
         }
         if (S.status === 'training') return { status: 'training', model_loaded: false, progress: S.progress };
         return { status: 'no_model', model_loaded: false, detail: S.err || '' };

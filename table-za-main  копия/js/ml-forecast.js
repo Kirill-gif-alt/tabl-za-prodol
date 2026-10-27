@@ -88,7 +88,8 @@ window.MlForecast = (function () {
         const lag = typeof observedFromDtd === 'function' ? observedFromDtd(date) : 0;
         const dtd = Math.max(real, lag);
         if (dtd > 180) return null;
-        return { reis: String(code).toUpperCase(), flydate: date, current_booked: Math.max(0, Math.round(sold)), total_au: Math.round(seats), dtd, dtdReal: real };
+        const closed = typeof closedFlights !== 'undefined' && typeof getSalesLookupKey === 'function' && closedFlights.has(getSalesLookupKey(row));
+        return { reis: String(code).toUpperCase(), flydate: date, current_booked: Math.max(0, Math.round(sold)), total_au: Math.round(seats), dtd, dtdReal: real, closed };
     }
     function keyOf(i) { return [i.reis, i.flydate, i.current_booked, i.total_au, i.dtd, st.health && st.health.version || ''].join('|'); }
 
@@ -161,11 +162,13 @@ window.MlForecast = (function () {
     }
 
     // Главное число: прогноз горизонта, ближайшего к сегодняшнему дню до вылета.
-    function headline(res, dtd) {
+    function headline(res, dtd, inp) {
         if (!res || !res.horizons) return null;
         const key = nearestKey(dtd);
         const h = res.horizons[key];
         if (!h) return null;
+        // Продажи закрыты — добора не будет: итог = продано, как у модели 1.
+        if (inp && inp.closed) return { key, pred: inp.current_booked, conf: 0.99, ok: true, flags: [], chosen: '', closed: true };
         return { key, pred: h.pred, conf: h.confidence, ok: !res.critic || res.critic.ok !== false,
             flags: res.critic && res.critic.flags || [], chosen: res.critic && res.critic.chosen_model || '' };
     }
@@ -233,7 +236,7 @@ window.MlForecast = (function () {
         if (f.s === 'err') {
             return { tile: `<div class="fc-it fc-it-muted">${tag}<div class="fc-it-note">Не получилось: ${esc(f.err)}</div></div>`, chip: '' };
         }
-        const h = headline(f.res, f.inp.dtd);
+        const h = headline(f.res, f.inp.dtd, f.inp);
         if (!h) return { tile: '', chip: '' };
         const seats = f.inp.total_au;
         const lf = Math.round(h.pred / seats * 100);
@@ -241,7 +244,7 @@ window.MlForecast = (function () {
         const hz = HZ.find(x => x.key === h.key);
         const all = HZ.map(x => `${x.label}: ${f.res.horizons[x.key] ? f.res.horizons[x.key].pred : '—'}`).join('\n');
         const warn = flagTexts(h.flags);
-        const tip = [
+        const tip = h.closed ? 'Продажи по рейсу закрыты — добора не будет, итог равен проданному (как у модели 1).' : [
             'Вторая модель (машинное обучение): по кривой продаж этого рейса, по прошлым вылетам рейса и направления, дню недели и сезону.',
             `Прогноз с точки «${hz.label}» — она ближе всего к сегодняшнему дню.`,
             f.inp.dtdReal != null && f.inp.dtd !== f.inp.dtdReal ? `Продажи в файле — на ${f.inp.dtd - f.inp.dtdReal} ${pluralRu(f.inp.dtd - f.inp.dtdReal, 'день', 'дня', 'дней')} старше сегодняшнего дня: срок считается от дня среза данных.` : '',
@@ -259,7 +262,7 @@ window.MlForecast = (function () {
         const tile = `<div class="fc-it fc-it-${tone}" title="${esc(tip)}">${tag}
             <div class="fc-it-value">${h.pred} <span class="fc-it-of">из ${seats}</span></div>
             <div class="fc-it-sub"><strong>${lf}%</strong>${esc(diff)}</div>
-            <div class="fc-it-note">${err != null ? `обычно ошибается на ±${esc(String(Math.round(err * 10) / 10).replace('.', ','))} · ` : ''}уверенность ${Math.round(h.conf * 100)}%${warn.length ? ' · есть замечания' : ''}</div>
+            <div class="fc-it-note">${h.closed ? 'продажи закрыты — добора не будет' : `${err != null ? `обычно ошибается на ±${esc(String(Math.round(err * 10) / 10).replace('.', ','))} · ` : ''}уверенность ${Math.round(h.conf * 100)}%${warn.length ? ' · есть замечания' : ''}`}</div>
             <div class="fc-it-note">${open}</div>
         </div>`;
         return { tile, chip: `<span class="fc-ins-chip fc-ins-ml">модель 2: ${h.pred}/${seats} · ${lf}%</span>` };
@@ -318,14 +321,14 @@ window.MlForecast = (function () {
         for (let i = 0; i < list.length; i += 20) {
             list.slice(i, i + 20).forEach(z => {
                 const e = entry(z.inp);
-                const m2 = e && e.s === 'ok' ? headline(e.res, z.inp.dtd) : null;
+                const m2 = e && e.s === 'ok' ? headline(e.res, z.inp.dtd, z.inp) : null;
                 let m1 = null;
                 try { m1 = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(z.x.code, z.x.date) : null; } catch (err) { m1 = null; }
                 // Вылет «сегодня и раньше» у модели 1 — не прогноз, а факт (final = продано): в карточке его не показывают, и здесь тоже.
                 const m1v = m1 && m1.final != null && m1.source !== 'flown' ? m1.final : null;
                 rows.push({ code: z.x.code, date: z.x.date, ts: dateTs(z.x.date), dir: typeof getFlightDirection === 'function' ? getFlightDirection(z.x.code) : '',
                     sold: z.inp.current_booked, seats: z.inp.total_au, dtd: z.inp.dtdReal != null ? z.inp.dtdReal : z.inp.dtd, m1: m1v, m2: m2 ? m2.pred : null,
-                    diff: m1v != null && m2 ? m2.pred - m1v : null, err: e && e.s === 'err' ? e.err : '', flags: m2 ? flagTexts(m2.flags) : [] });
+                    diff: m1v != null && m2 ? m2.pred - m1v : null, err: e && e.s === 'err' ? e.err : '', flags: m2 ? (m2.closed ? ['продажи закрыты — итог равен проданному'] : flagTexts(m2.flags)) : [] });
             });
             if (token !== wstate.building) return;
             await new Promise(r => setTimeout(r, 0));
@@ -351,7 +354,9 @@ window.MlForecast = (function () {
         const bits = [];
         if (st.state === 'training') bits.push(`обучение: ${Math.round((h.progress || 0) * 100)}%`);
         if (st.state === 'ready') {
-            if (h.trained_at) bits.push('обучена ' + String(h.trained_at).slice(0, 10).split('-').reverse().join('.'));
+            // Дата обучения — местная (в ISO она по Гринвичу: ночью по Красноярску показывала бы вчера).
+            const tr = h.trained_at ? new Date(h.trained_at) : null;
+            if (tr && !isNaN(tr.getTime())) bits.push('обучена ' + (typeof formatDateRu === 'function' ? formatDateRu(tr) : String(h.trained_at).slice(0, 10).split('-').reverse().join('.')));
             if (h.n_flights) bits.push(`${Number(h.n_flights).toLocaleString('ru-RU')} ${pluralRu(h.n_flights, 'вылет', 'вылета', 'вылетов')} в истории`);
             if (h.data_period && h.data_period.from) bits.push(`период ${String(h.data_period.from).split('-').reverse().join('.')} — ${String(h.data_period.to).split('-').reverse().join('.')}`);
         }
@@ -413,7 +418,7 @@ window.MlForecast = (function () {
         if (st.state !== 'ready') return helpHtml();
         const m = (st.health && st.health.metrics) || {};
         const cols = ['_baseline_booked', 'hmean', 'ratio', 'gbm', 'ensemble'];
-        const fmt = (v) => v == null ? '—' : String(Math.round(v * 10) / 10).replace('.', ',');
+        const fmt = (v) => v == null ? '—' : (Math.round(v * 10) / 10).toFixed(1).replace('.', ',');
         const rows = HZ.map(h => {
             const r = m[h.key] || {};
             const vals = cols.map(c => r[c] && typeof r[c].mae === 'number' ? r[c].mae : null);

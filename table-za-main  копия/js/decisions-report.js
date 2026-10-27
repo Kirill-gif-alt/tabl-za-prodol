@@ -87,6 +87,20 @@ window.DecisionsReport = (function () {
 
     function rubPlain(n) { return n == null || !Number.isFinite(Number(n)) ? '—' : Math.round(n).toLocaleString('ru-RU') + ' ₽'; }
 
+    // Средний тариф до и после решения. Если рубли по решению посчитаны, берём ТЕ ЖЕ цифры, что в расчёте
+    // («был 15 236 ₽» в подробностях), а не тариф «По билетам» (другое окно и пересчитанный тариф): иначе у одного решения
+    // на одном экране два разных «тарифа до». После решения без продаж тарифа нет — пишем «—», а не прежний.
+    function fares(r, m) {
+        const e = r.e;
+        let before = e && e.before.avg != null ? e.before.avg : null;
+        let after = e && e.after.avg != null ? e.after.avg : null;
+        if (m && (m.stage === 'final' || m.stage === 'prelim') && m.priceBefore > 0) {
+            before = m.priceBefore;
+            after = m.factAll > 0 && m.priceAfter > 0 ? m.priceAfter : null;
+        }
+        return { before, after };
+    }
+
     // Состояние денежной оценки одного решения для экрана и Excel.
     function moneyState(r) {
         const m = moneyOf(r);
@@ -236,7 +250,7 @@ window.DecisionsReport = (function () {
                 <td class="rp-left"><strong>${esc(g.key)}</strong></td>
                 <td>${g.n}</td>
                 <td>${g.money.definite}${g.money.definite ? ` <span class="dr-usual">${g.money.worked} / ${g.money.failed}</span>` : ''}</td>
-                <td class="rp-nowrap">${g.money.definite ? `<span class="${g.money.sum >= 0 ? 'dr-pos' : 'dr-neg'}">${rub(g.money.sum)}</span>` : '—'}${g.money.finalN ? `<div class="dr-usual" title="С поправкой на шум и сдвиг метода — как «Общий итог» вверху страницы">все оценённые, с поправкой ${rub(g.money.sumAdj)}</div>` : ''}</td>
+                <td class="rp-nowrap">${g.money.definite ? `<span class="${g.money.sum >= 0 ? 'dr-pos' : 'dr-neg'}">${rub(g.money.sum)}</span>` : '—'}${g.money.finalN ? `<div class="dr-usual" title="Все оценённые решения с поправкой на шум и сдвиг метода — та же сумма, что «Снижения», «Повышения» и «Общий итог» вверху страницы">с поправкой ${rub(g.money.sumAdj)}</div>` : ''}</td>
                 <td>${g.money.approx}</td>
                 <td>${g.money.unclear + g.money.na}</td>
                 <td>${g.money.wait}</td>
@@ -291,8 +305,9 @@ window.DecisionsReport = (function () {
             const st = moneyState(r);
             const m = st.m;
             const usual = (x) => (x ? `<span class="dr-usual">обычно ${x.value}</span>` : '');
-            const fare = e && e.before.avg != null && e.after.avg != null
-                ? `${Math.round(e.before.avg).toLocaleString('ru-RU')} → ${Math.round(e.after.avg).toLocaleString('ru-RU')} ₽` : '—';
+            const fr = fares(r, m);
+            const fare = fr.before != null && fr.after != null
+                ? `${Math.round(fr.before).toLocaleString('ru-RU')} → ${Math.round(fr.after).toLocaleString('ru-RU')} ₽` : '—';
             const cls = m && (m.clsBefore || m.clsAfter) ? `${esc(m.clsBefore || '?')} → ${esc(m.clsAfter || '?')}` : (r.clsFrom || r.clsTo ? `${esc(r.clsFrom || '?')} → ${esc(r.clsTo || '?')}` : '—');
             const hasNum = m && (m.stage === 'final' || m.stage === 'prelim') && m.delta != null;
             const effect = hasNum ? `<strong class="${m.delta >= 0 ? 'dr-pos' : 'dr-neg'}">${rub(m.delta)}</strong><div class="dr-usual">${rub(m.lo)} … ${rub(m.hi)}</div>` : '—';
@@ -344,7 +359,7 @@ window.DecisionsReport = (function () {
                 lines.push(m.volPure != null
                     ? `Разница <b>${rub(m.delta)}</b>: из-за цены ${rub(m.priceEffect)}, из-за количества билетов ${rub(m.volPure)}.`
                     : `Разница <b>${rub(m.delta)}</b>: из-за количества билетов ${rub(m.volume)}, из-за цены ${rub(m.priceEffect)}.`);
-                if (m.driftN >= 3 && Math.abs((m.drift || 1) - 1) >= 0.01) lines.push(`Тариф и без решения вырос бы: у похожих вылетов за это время в среднем на ${numRu(Math.round((m.drift - 1) * 1000) / 10)}% (по ${m.driftN} вылетам). Поэтому цена «без решения» взята выше прежней.`);
+                if (m.driftN >= 3 && Math.abs((m.drift || 1) - 1) >= 0.01) lines.push(`Тариф и без решения вырос бы: у похожих вылетов за это время в среднем на ${numRu(Math.round((m.drift - 1) * 1000) / 10)}% (по ${m.driftN} ${pluralRu(m.driftN, 'вылету', 'вылетам', 'вылетам')}). Поэтому цена «без решения» взята выше прежней.`);
                 if (m.priceOnly != null && Math.abs(m.delta - m.priceOnly) >= 1000) lines.push(up
                     ? `Результат от <b>${rub(m.rangeLow)}</b> (вся нехватка билетов из-за повышения) до <b>${rub(m.rangeHigh)}</b> (нехватка из-за слабого спроса, покупатели не ушли; считаем только цену).`
                     : `Результат от <b>${rub(m.rangeLow)}</b> (прибавка билетов — просто спрос выше обычного; считаем только цену) до <b>${rub(m.rangeHigh)}</b> (вся прибавка из-за снижения).`);
@@ -358,7 +373,7 @@ window.DecisionsReport = (function () {
                 else if (tone === 'lpos') say = `Скорее помогло:${m.pPos != null ? ` вероятность плюса около ${m.pPos}%,` : ''} диапазон включает ноль, наверняка сказать нельзя.`;
                 else if (tone === 'lneg') say = `Скорее навредило:${m.pPos != null ? ` вероятность минуса около ${100 - m.pPos}%,` : ''} диапазон включает ноль, наверняка сказать нельзя.`;
                 else say = 'Ждём итога: зафиксируем, когда пройдёт окно или вылет.';
-                tags.push(`Доверие: ${m.grade === 'A' ? 'высокое' : (m.grade === 'B' ? 'среднее' : 'низкое')} (${m.k} ${m.k === 1 ? 'похожий вылет' : (m.k < 5 ? 'похожих вылета' : 'похожих вылетов')})`);
+                tags.push(`Доверие: ${m.grade === 'A' ? 'высокое' : (m.grade === 'B' ? 'среднее' : 'низкое')} (${m.k} ${pluralRu(m.k, 'похожий вылет', 'похожих вылета', 'похожих вылетов')})`);
                 if (!m.frozen) tags.push('не зафиксировано');
             }
             if (m && m.flags && m.flags.length) lines.push('<span class="dp-flags">Почему доверие низкое: ' + m.flags.map(esc).join('; ') + '.</span>');
@@ -466,7 +481,7 @@ window.DecisionsReport = (function () {
                 ${DecisionsViz.howToRead('<span class="dp-chip dp-wait">ЖДЁМ ИТОГА</span> срок после решения не прошёл')}
                 ${dash}
                 ${body ? `<div class="dr-list-title">Все решения <span class="rp-muted">· ${list.length}</span></div>${DecisionsViz.toneBar(cards, toneFilter, 'dp-tone')}${DecisionsViz.list(cards, toneFilter)}<details class="dp-more"><summary>Сводки и подробная таблица</summary>${sums}<div class="dv-grid">${DecisionsViz.columns('Эффект по неделям решений', weekItems, 'Неделя начинается с даты внизу; только определённые решения')}</div><div class="rp-scroll"><table class="rp-table dr-table">
-                    <thead><tr><th>Решение</th><th>Рейс</th><th>Вылет</th><th>Что</th><th title="Класс до → после (из отметки или по продажам)">Класс</th><th title="Билетов в окне после решения / сколько ожидали">Билетов</th><th>Ср. тариф до → после</th><th title="Выручка в окне минус ожидаемая по прежней цене; в строке — диапазон ≈90%">Эффект</th><th>Объём / цена</th><th>Итог</th></tr></thead>
+                    <thead><tr><th>Решение</th><th>Рейс</th><th>Вылет</th><th>Что</th><th title="Класс до → после (из отметки или по продажам)">Класс</th><th title="Билетов в окне после решения / сколько ожидали">Билетов</th><th title="Те же билеты и тот же срок, что в расчёте рублей">Ср. тариф до → после</th><th title="Выручка в окне минус ожидаемая по прежней цене; в строке — диапазон (около ${confPct(pv('MONEY_NOISE_Z', 1.9))}%)">Эффект</th><th>Объём / цена</th><th>Итог</th></tr></thead>
                     <tbody>${body}</tbody></table></div></details>` : '<p class="rp-note">За период решений «снижение/повышение» нет.</p>'}
             </section>`;
     }
@@ -493,8 +508,8 @@ window.DecisionsReport = (function () {
                     kind: KIND[r.status] || r.status,
                     before: e ? e.before.n : '', normBefore: e && e.normBefore ? e.normBefore.value : '',
                     after: e ? e.after.n : '', normAfter: e && e.normAfter ? e.normAfter.value : '',
-                    fareBefore: e && e.before.avg != null ? Math.round(e.before.avg) : '',
-                    fareAfter: e && e.after.avg != null ? Math.round(e.after.avg) : '',
+                    fareBefore: fares(r, m).before != null ? Math.round(fares(r, m).before) : '',
+                    fareAfter: fares(r, m).after != null ? Math.round(fares(r, m).after) : '',
                     effect: fin ? m.delta : '', corr: fin ? (m.corr || 0) : '', lo: fin ? m.lo : '', hi: fin ? m.hi : '', volume: fin ? m.volume : '', priceEffect: fin ? m.priceEffect : '',
                     grade: fin ? (m.grade === 'A' ? 'высокое' : (m.grade === 'B' ? 'среднее' : 'низкое')) : '', clsBefore: m ? (m.clsBefore || '') : '', clsAfter: m ? (m.clsAfter || '') : '',
                     expAll: m && m.expAll != null ? m.expAll : '', factAll: m && m.factAll != null ? m.factAll : '', analogs: m && m.k != null ? m.k : '',
@@ -525,7 +540,22 @@ window.DecisionsReport = (function () {
         try { localStorage.setItem(VIEW_KEY, view); } catch (e) { /* ignore */ }
     }
 
+    // Новая отметка (своя из карточки/RMS или чужая из файла), пока отчёт открыт на экране, — итоги обновляются сами.
+    // Когда отчёт скрыт, перерисовку делает «Отчёты» при возврате на вкладку (см. ReportsView.refresh).
+    let lastRerender = null;
+    let markTimer = null;
+    document.addEventListener('krasavia:mark', () => {
+        if (!lastRerender) return;
+        clearTimeout(markTimer);
+        markTimer = setTimeout(() => {
+            if (typeof currentTab !== 'undefined' && currentTab !== 'reports') return;
+            if (!document.querySelector('.dr-card')) return;
+            lastRerender();
+        }, 600);
+    });
+
     function html(rerender) {
+        if (typeof rerender === 'function') lastRerender = rerender;
         const sw = `<div class="dr-viewseg" role="tablist"><button type="button" role="tab" class="${view === 'tickets' ? 'on' : ''}" data-dr-view="tickets">По билетам</button><button type="button" role="tab" class="${view === 'money' ? 'on' : ''}" data-dr-view="money">В рублях</button></div>`;
         return sw + (view === 'money' ? moneyHtml(rerender) : DecisionsTickets.html());
     }

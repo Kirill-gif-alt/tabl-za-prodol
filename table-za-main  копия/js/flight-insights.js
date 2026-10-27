@@ -137,6 +137,21 @@ window.FlightInsights = (function () {
     function computeForecast(code, date) {
         const simple = computeSimple(code, date);
         if (simple && simple.source === 'flown') return simple;
+        // Продажи закрыты — добора не будет, итог = продано. Модель 1 так считает за 30 дней до вылета (forecast-lab.js);
+        // дальше этого срока (и у простого расчёта) закрытый рейс получал «добор по прошлым вылетам» — то же число теперь на любом сроке.
+        const rowC = rowOf(code, date);
+        if (rowC && typeof closedFlights !== 'undefined' && typeof getSalesLookupKey === 'function' && closedFlights.has(getSalesLookupKey(rowC))) {
+            const seatsC = getSeatsOnSale(rowC);
+            const loadC = getSoldFromRow(rowC);
+            const dtdC = typeof getDaysUntil === 'function' ? getDaysUntil(date) : null;
+            if (seatsC > 0 && dtdC != null && dtdC > 0) {
+                return {
+                    final: loadC, lo: loadC, hi: loadC, lf: Math.round(loadC / seatsC * 100), seats: seatsC, load: loadC, dtd: dtdC, n: 0,
+                    soldOutDtd: null, groups: groupSeats(code, date), source: 'model',
+                    model: { method: 'продажи закрыты', err: 0, h: null, team: [], shared: false }, simple: null
+                };
+            }
+        }
         let ml = null;
         try { ml = typeof ForecastLab !== 'undefined' && ForecastLab.forecastFor ? ForecastLab.forecastFor(code, date) : null; } catch (e) { ml = null; }
         if (!ml || ml.final == null) return simple;
@@ -312,6 +327,7 @@ window.FlightInsights = (function () {
             ? `по ${f.n} ${plural(f.n, 'прошлому вылету', 'прошлым вылетам', 'прошлым вылетам')} в этот день недели`
             : 'по файлу ожидаемой загрузки (своей истории пока мало)';
         let tail = '';
+        if (f.model && f.model.method === 'продажи закрыты') return `Продажи закрыты: итог равен проданному — ${f.final} из ${f.seats} (${f.lf}%)`;
         if (f.load >= f.seats) tail = ' · уже распродан';
         else if (f.soldOutDtd != null) tail = f.soldOutDtd === 0 ? ' · распродастся к дню вылета' : ` · распродастся примерно за ${f.soldOutDtd} дн. до вылета — можно поднимать`;
         else if (f.lf < PV.ADVICE_FC_LOW) tail = ' · не доберёт: стоит снижать или продвигать';

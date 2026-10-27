@@ -904,7 +904,7 @@ window.NetworkMap = (function () {
             : (p._bind && p._bind.fromCity
                 ? `${p._bind.fromCity} → ${p._bind.toCity}`
                 : '');
-        const alt = p.gnd ? 'на земле' : (p.estimated ? '' : (p.alt > 50 ? Math.round(p.alt / 100) * 100 + ' ft' : ''));
+        const alt = p.gnd ? 'на земле' : (p.estimated ? '' : (p.alt > 50 ? 'высота ' + Math.round(p.alt * 0.3048 / 100) * 100 + ' м' : ''));   // радар отдаёт футы — показываем метры
         const src = p.estimated ? 'по расписанию' : '';
         return [code, route, alt, src].filter(Boolean).join(' · ');
     }
@@ -1614,7 +1614,7 @@ window.NetworkMap = (function () {
         renderUnknown(data);
         const stats = document.getElementById('nmap-stats');
         if (stats) {
-            stats.textContent = `${periodCaption()} · ${data.lines.length} направлений · ${data.cities.length} пунктов`;
+            stats.textContent = `${periodCaption()} · ${data.lines.length} ${pluralRu(data.lines.length, 'направление', 'направления', 'направлений')} · ${data.cities.length} ${pluralRu(data.cities.length, 'пункт', 'пункта', 'пунктов')}`;
         }
         redraw('all');
         if (raf) cancelAnimationFrame(raf);

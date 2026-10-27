@@ -753,7 +753,9 @@ window.SalesManagement = (function () {
         return out;
     }
 
-    // Отметки ячейки: [{ status, author, updatedAt, clsFrom?, clsTo? }], самая новая первой, не больше трёх авторов.
+    // Отметки ячейки: [{ status, author, updatedAt, clsFrom?, clsTo? }], самая новая первой, ВСЕ авторы.
+    // Ограничение «до трёх» — только для показа в ячейке (getMarks); журнал решений, карточка и «своя отметка» видят всех:
+    // иначе решение первого человека пропадало бы из отчёта, когда трое других отметили «без изменений» позже.
     function cellEntries(key) {
         const rev = markRevision();
         if (entriesCache.rev !== rev) entriesCache = { rev, map: new Map() };
@@ -781,16 +783,15 @@ window.SalesManagement = (function () {
         pending.forEach(p => { if (p.key === key) apply(p.author, p.s, p.at, p); });
         const list = [...by.values()]
             .filter(e => statusOk(e.status))
-            .sort((x, y) => (String(x.updatedAt) < String(y.updatedAt) ? 1 : -1))
-            .slice(0, MAX_AUTHORS);
+            .sort((x, y) => (String(x.updatedAt) < String(y.updatedAt) ? 1 : -1));
         entriesCache.map.set(key, list);
         return list;
     }
 
-    // Все отметки ячейки, новая первой.
+    // Отметки ячейки для показа (в таблице и Excel), новая первой, не больше трёх авторов.
     function getMarks(flight, dep, check) {
         const key = markKey(flight, dep, check);
-        return key ? cellEntries(key) : [];
+        return key ? cellEntries(key).slice(0, MAX_AUTHORS) : [];
     }
 
     // Самая новая отметка ячейки (для чипов, «Творческой», RMS).
@@ -801,7 +802,8 @@ window.SalesManagement = (function () {
     // Своя отметка в ячейке (по подписи).
     function getOwnMark(flight, dep, check, author) {
         const id = authorId(authorSignature(author || profileName()));
-        return getMarks(flight, dep, check).find(e => authorId(e.author) === id) || null;
+        const key = markKey(flight, dep, check);
+        return (key ? cellEntries(key) : []).find(e => authorId(e.author) === id) || null;
     }
 
     // Все отметки вылета по датам проверки: [{ check, status, author, updatedAt }], от ранних к поздним.
