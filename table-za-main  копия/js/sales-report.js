@@ -515,7 +515,7 @@ function buildDateRangeInclusive(fromDate, toDate) {
 function buildFlightCommentBlockHtml(flight, date) {
     const text = typeof FlightComments !== 'undefined' ? FlightComments.get(flight, date) : '';
     return `
-        <div class="flight-comment-box" data-comment-flight="${escAttr(flight)}" data-comment-date="${escAttr(date)}">
+        <div class="flight-comment-box" data-comment-flight="${escAttr(flight)}" data-comment-date="${escAttr(date)}" data-comment-base="${escAttr(typeof FlightComments !== 'undefined' ? FlightComments.updatedAtOf(flight, date) : '')}">
             <label class="flight-comment-label">Комментарий к рейсу</label>
             <textarea class="flight-comment-input" rows="2">${escHtml(text)}</textarea>
             <div class="flight-comment-actions">
@@ -537,11 +537,20 @@ function bindFlightCommentBox(root) {
         const fl = box.dataset.commentFlight;
         const dt = box.dataset.commentDate;
         const author = typeof ProfileAuth !== 'undefined' ? ProfileAuth.getCurrentProfile()?.name : '';
-        const saved = await FlightComments.set(fl, dt, ta?.value || '', author);
+        const saved = await FlightComments.set(fl, dt, ta?.value || '', author, { base: box.dataset.commentBase || '' });
         if (!saved) {
             if (st) st.textContent = 'Не сохранено';
             return;
         }
+        if (saved.conflict) {
+            // Пока вы правили, комментарий изменил другой человек. Ничего не записано, ваш текст остался в окне.
+            const c = saved.conflict;
+            box.dataset.commentBase = c.updatedAt;   // следующее нажатие «Сохранить» запишет ваш вариант
+            if (st) st.textContent = `Комментарий уже изменил(а) ${c.author || 'другой пользователь'}: «${c.text.slice(0, 200)}». Ваш текст не потерян — проверьте и нажмите «Сохранить» ещё раз`;
+            if (typeof showToast === 'function') showToast('Комментарий к рейсу только что изменил другой пользователь', 'error');
+            return;
+        }
+        box.dataset.commentBase = FlightComments.updatedAtOf(fl, dt);
         // Не записался в общую папку — комментарий остаётся на этом компьютере; причину уже показало сообщение об ошибке.
         if (st) st.textContent = saved.shared ? 'Сохранено' : 'Сохранено только на этом компьютере';
         if (saved.shared && typeof showToast === 'function') showToast('Комментарий сохранён');

@@ -206,8 +206,11 @@ window.FlightCard = (function () {
             const rootStyle = document.documentElement.getAttribute('style') || '';
             const rootCls = document.documentElement.className || '';
             const theme = document.documentElement.getAttribute('data-theme') || '';
+            // onclick в самом окне: «открыть вкладку» и «Сравнение моделей» выносят вперёд основное окно. Вызов opener.focus()
+            // должен идти из окна, где был клик (иначе Chrome может не поднять окно), а наши обработчики живут в основной странице.
+            const focusOpener = "var t=event.target;t=t&&t.closest&&t.closest('[data-fc-tab],[data-fc=ml-window]');if(t&&window.opener){try{window.opener.focus()}catch(e){}}";
             doc.open();
-            doc.write(`<!doctype html><html lang="ru" class="${attr(rootCls)}"${theme ? ` data-theme="${attr(theme)}"` : ''} style="${attr(rootStyle)}"><head><meta charset="utf-8"><title>КРАСАВИА · Карточка рейса</title></head><body class="fc-window-body"></body></html>`);
+            doc.write(`<!doctype html><html lang="ru" class="${attr(rootCls)}"${theme ? ` data-theme="${attr(theme)}"` : ''} style="${attr(rootStyle)}"><head><meta charset="utf-8"><title>КРАСАВИА · Карточка рейса</title></head><body class="fc-window-body" onclick="${attr(focusOpener)}"></body></html>`);
             doc.close();
             // Стили — встроенной копией: подключить styles.css в такое окно Chrome не даёт (см. flight-card-window-css.js).
             const style = doc.createElement('style');
@@ -216,14 +219,34 @@ window.FlightCard = (function () {
             doc.addEventListener('keydown', onKey);
             // Окно закрыли — карточка возвращается на страницу (если она включена кнопкой ▤).
             // Событие закрытия приходит не всегда, поэтому ещё и проверяем раз в секунду.
+            // Тема и цвета основной страницы (data-theme, переменные в style) копируются в окно сразу и при каждой смене.
+            const syncRoot = () => {
+                try {
+                    const src = document.documentElement;
+                    const dst = doc.documentElement;
+                    dst.className = src.className;
+                    const th = src.getAttribute('data-theme');
+                    if (th) dst.setAttribute('data-theme', th); else dst.removeAttribute('data-theme');
+                    dst.setAttribute('style', src.getAttribute('style') || '');
+                } catch (e) { /* окно закрывается */ }
+            };
+            let rootWatch = null;
+            if (typeof MutationObserver === 'function') {
+                rootWatch = new MutationObserver(syncRoot);
+                rootWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
+            }
             let done = false;
             const back = () => {
                 if (done) return;
                 done = true;
                 clearInterval(watch);
-                if (popup === w) popup = null;
+                if (rootWatch) rootWatch.disconnect();
+                // Окно закрыли сами (крестик браузера) — карточка возвращается на страницу и режим «страница» запоминается.
+                // Если окно закрыла сама карточка (✕, ▤, ⧉ в окне), popup уже обнулён — режим не трогаем.
+                const byUser = popup === w;
+                if (byUser) popup = null;
                 if (chart && chart.canvas && chart.canvas.ownerDocument === doc) chart = null;
-                if (mode === 'window') saveMode('page');
+                if (byUser && mode === 'window') saveMode('page');
                 setTimeout(() => { if (isShown()) show(); }, 0);
             };
             const watch = setInterval(() => { if (w.closed) back(); }, 1000);
@@ -231,6 +254,25 @@ window.FlightCard = (function () {
         }
         try { w.focus(); } catch (e) { /* ignore */ }
         return true;
+    }
+
+    // Короткое сообщение внизу окна карточки: сообщения сайта (toast) показываются в основном окне, а оно может быть не на виду.
+    let flashTimer = 0;
+    function flash(text) {
+        if (!popupAlive()) return;
+        const doc = popup.document;
+        let el = doc.getElementById('fc-flash');
+        if (!el) {
+            el = doc.createElement('div');
+            el.id = 'fc-flash';
+            el.className = 'fc-flash';
+            el.setAttribute('role', 'status');
+            doc.body.appendChild(el);
+        }
+        el.textContent = text;
+        el.hidden = false;
+        clearTimeout(flashTimer);
+        flashTimer = setTimeout(() => { el.hidden = true; }, 4500);
     }
 
     function setMode(next) {
@@ -537,7 +579,9 @@ window.FlightCard = (function () {
         const set = e.target.closest('[data-pm-set]');
         if (set && typeof PriceMarks !== 'undefined') {
             // В отдельном окне общий обработчик страницы кнопки не видит — отмечаем отсюда.
-            if (hostDoc() !== document) PriceMarks.setToday(set.dataset.pmCode, set.dataset.pmDate, set.dataset.pmSet || null);
+            if (hostDoc() !== document && !PriceMarks.setToday(set.dataset.pmCode, set.dataset.pmDate, set.dataset.pmSet || null)) {
+                flash('Отметка не поставлена — причина показана в основном окне');
+            }
             return;
         }
         const b = e.target.closest('[data-fc], [data-fc-tab]');
@@ -558,7 +602,13 @@ window.FlightCard = (function () {
         else if (a === 'pair') swapPair();
         else if (a === 'window') setMode('window');
         else if (a === 'dock') setMode('page');
-        else if (a === 'ml-window') { if (typeof MlForecast !== 'undefined') MlForecast.openWindow('compare'); }
+        else if (a === 'ml-window') {
+            // Окно сравнения моделей всегда в основном окне: из карточки-окна выносим основное окно вперёд и говорим об этом.
+            if (typeof MlForecast !== 'undefined' && MlForecast.openWindow('compare') !== false && hostDoc() !== document) {
+                try { window.focus(); } catch (err) { /* ignore */ }
+                flash('Сравнение моделей открыто в основном окне');
+            }
+        }
         else if (a === 'insights') {
             insightsState = !insightsOpen();
             try { localStorage.setItem(INSIGHTS_KEY, insightsState ? '1' : '0'); } catch (err) { /* ignore */ }

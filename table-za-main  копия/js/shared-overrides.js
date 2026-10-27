@@ -115,16 +115,39 @@ window.SharedOverrides = (function () {
         return null;
     }
 
-    async function persist(filename, localKey, values) {
+    // Правки, не попавшие в общий файл (нет связи, папка закрыта на запись), хранятся на этом компьютере
+    // с пометкой unsynced и дописываются сами: сначала через 15 с, затем реже (до 2 мин).
+    const RETRY_FIRST_MS = 15000;
+    const RETRY_MAX_MS = 120000;
+    const retries = {};   // имя файла → { timer, ms }
+
+    function scheduleRetry(filename, localKey, getValues, ms) {
+        const st = retries[filename] || (retries[filename] = { timer: null, ms: RETRY_FIRST_MS });
+        if (st.timer) return;
+        st.timer = setTimeout(async () => {
+            st.timer = null;
+            const ok = await persist(filename, localKey, getValues(), true);
+            if (ok) {
+                st.ms = RETRY_FIRST_MS;
+                if (typeof showToast === 'function') showToast('Правки записаны в общую папку');
+            } else {
+                st.ms = Math.min(st.ms * 3, RETRY_MAX_MS);
+                scheduleRetry(filename, localKey, getValues);
+            }
+        }, ms || st.ms);
+    }
+
+    // quiet — повторная запись в фоне: сообщение об ошибке уже было показано.
+    async function persist(filename, localKey, values, quiet) {
         // Перед записью сливаем с общим файлом: правки других ПК, сделанные после нашей загрузки, не теряются.
         // Запись идёт «только если файл не менялся с прочтения»; если его успели изменить — читаем и сливаем заново.
-        const saveLocal = (p) => {
+        const saveLocal = (p, unsynced) => {
             try {
-                localStorage.setItem(localKey, JSON.stringify(p));
+                localStorage.setItem(localKey, JSON.stringify(Object.assign({}, p, { unsynced: !!unsynced })));
             } catch { /* ignore */ }
         };
         let payload = { version: 1, updatedAt: new Date().toISOString(), values };
-        saveLocal(payload);   // на этом компьютере правка сохранена сразу, что бы ни случилось с общим файлом
+        saveLocal(payload, true);   // на этом компьютере правка сохранена сразу, что бы ни случилось с общим файлом
         let res = { ok: false, readFailed: true };
         if (typeof SharedStorage !== 'undefined' && SharedStorage.updateJsonFile) {
             res = await SharedStorage.updateJsonFile(filename, (cur) => ({
@@ -133,16 +156,20 @@ window.SharedOverrides = (function () {
                 values: mergeKeyMaps(cur && cur.values, values)
             })).catch(() => ({ ok: false, readFailed: true }));
         }
-        if (res.ok && res.data && res.data.values) {
+        const shared = !!(res.ok && res.data && res.data.values);
+        if (shared) {
             Object.keys(res.data.values).forEach(k => { values[k] = res.data.values[k]; });   // заодно видим чужие правки
             payload = res.data;
-            saveLocal(payload);
-        } else if (typeof showToast === 'function') {
-            showToast(res.readFailed
-                ? 'Общий файл недоступен — правка видна только на этом компьютере'
-                : (res.conflict
-                    ? 'Правка не записана: файл часто меняют другие. Повторите ввод'
-                    : 'Правка не записана в общую папку — видна только на этом компьютере'), 'error');
+            saveLocal(payload, false);
+        } else {
+            if (!quiet && typeof showToast === 'function') {
+                showToast(res.readFailed
+                    ? 'Общий файл недоступен — правка видна только на этом компьютере, запись повторится сама'
+                    : (res.conflict
+                        ? 'Правка не записана: файл часто меняют другие. Запись повторится сама'
+                        : 'Правка не записана в общую папку — видна только на этом компьютере, запись повторится сама'), 'error');
+            }
+            if (!quiet) scheduleRetry(filename, localKey, () => (filename === SUB_FILE ? subsidy : pkzNav));
         }
         if (typeof SalesSync !== 'undefined') {
             try {
@@ -156,6 +183,7 @@ window.SharedOverrides = (function () {
                 }
             } catch { /* ignore */ }
         }
+        return shared;
     }
 
     async function loadOne(filename, localKey) {
@@ -174,6 +202,10 @@ window.SharedOverrides = (function () {
         pkzNav = await loadOne(NAV_FILE, NAV_LOCAL);
         subsidyRev++;
         navRev++;
+        // Прошлый сеанс не успел записать правки в общий файл — дописываем сейчас.
+        const pend = (key) => { const l = readLocal(key); return !!(l && l.unsynced); };
+        if (pend(SUB_LOCAL)) scheduleRetry(SUB_FILE, SUB_LOCAL, () => subsidy, 1500);
+        if (pend(NAV_LOCAL)) scheduleRetry(NAV_FILE, NAV_LOCAL, () => pkzNav, 1500);
         return true;
     }
 
