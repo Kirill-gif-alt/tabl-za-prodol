@@ -170,22 +170,24 @@ window.SalesDayLog = (function () {
 
     async function mergeAndWrite0(file, additions, tick) {
         // Строгое чтение: файл не прочитался (ошибка, нет доступа) — не перезаписываем журнал.
-        const read = await SharedStorage.readJsonFileStrict(file).catch(() => ({ ok: false }));
-        if (!read.ok) return false;
-        const remote = read.data;
-        const flights = remote && remote.flights && typeof remote.flights === 'object' ? { ...remote.flights } : {};
-        let changed = false;
-        let i = 0;
-        for (const k of Object.keys(additions)) {
-            const m = mergeFlight(flights[k], additions[k]);
-            if (m.changed) { flights[k] = m.rec; changed = true; }
-            if ((++i & 31) === 0) await tick();
-        }
+        // Запись «только если файл не менялся с прочтения»: вылеты, которые другой ПК добавил между чтением и записью,
+        // не теряются (при расхождении журнал перечитывается и сливается заново).
+        let merged = null;
+        const res = await SharedStorage.updateJsonFile(file, async (remote) => {
+            const flights = remote && remote.flights && typeof remote.flights === 'object' ? { ...remote.flights } : {};
+            let changed = false;
+            let i = 0;
+            for (const k of Object.keys(additions)) {
+                const m = mergeFlight(flights[k], additions[k]);
+                if (m.changed) { flights[k] = m.rec; changed = true; }
+                if ((++i & 31) === 0) await tick();
+            }
+            merged = flights;
+            return changed ? { version: 1, updatedAt: new Date().toISOString(), flights } : false;   // нечего добавлять — файл не трогаем
+        }).catch(() => ({ ok: false }));
         // Что есть в файле (с нашими слияниями) — доступно и для чтения в этой сессии.
-        Object.keys(flights).forEach(k => { if (flights[k] && flights[k].d) store[k] = flights[k]; });
-        if (!changed) return true;
-        const ok = await SharedStorage.writeJsonFile(file, { version: 1, updatedAt: new Date().toISOString(), flights });
-        return ok;
+        if (merged) Object.keys(merged).forEach(k => { if (merged[k] && merged[k].d) store[k] = merged[k]; });
+        return !!(res.ok || res.aborted);
     }
 
     async function capture0() {

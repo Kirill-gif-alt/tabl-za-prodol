@@ -459,81 +459,86 @@ window.SalesManagement = (function () {
         routesDirty = false;
         historyDirty = false;
         holdEnds = false;
-        const remote = await readRemote();
-        const marks = { ...((remote && remote.marks) || {}) };
-        batch.forEach((mark, key) => {
-            if (!mark) {
-                delete marks[key];
-                return;
+        // Слияние с тем, что сейчас в общем файле; зовётся заново, если файл успели изменить до нашей записи.
+        const build = (remote) => {
+            const marks = { ...((remote && remote.marks) || {}) };
+            batch.forEach((mark, key) => {
+                if (!mark) {
+                    delete marks[key];
+                    return;
+                }
+                const remoteAt = marks[key] && marks[key].updatedAt || '';
+                if (String(mark.updatedAt || '') >= String(remoteAt)) marks[key] = mark;
+            });
+            Object.keys(cache.marks).forEach(key => {
+                if (batch.has(key) || dirty.has(key)) return;
+                const local = cache.marks[key];
+                if (!local) return;
+                if (!marks[key]) {
+                    if (String(remote && remote.updatedAt || '') > String(local.updatedAt || '')) return;
+                    marks[key] = local;
+                } else if (String(local.updatedAt || '') > String(marks[key].updatedAt || '')) {
+                    marks[key] = local;
+                }
+            });
+            dirty.forEach((mark, key) => {
+                if (!mark) delete marks[key];
+                else marks[key] = mark;
+            });
+            cache.marks = marks;
+            markRev++;
+            if (!saveRoutes) {
+                const remoteAt = (remote && remote.routesUpdatedAt) || '';
+                if (String(remoteAt) > String(cache.routesUpdatedAt || '')) {
+                    cache.enabledRoutes = normalizeRouteList(remote && remote.enabledRoutes);
+                    cache.routesUpdatedAt = remote.routesUpdatedAt || null;
+                }
             }
-            const remoteAt = marks[key] && marks[key].updatedAt || '';
-            if (String(mark.updatedAt || '') >= String(remoteAt)) marks[key] = mark;
-        });
-        Object.keys(cache.marks).forEach(key => {
-            if (batch.has(key) || dirty.has(key)) return;
-            const local = cache.marks[key];
-            if (!local) return;
-            if (!marks[key]) {
-                if (String(remote && remote.updatedAt || '') > String(local.updatedAt || '')) return;
-                marks[key] = local;
-            } else if (String(local.updatedAt || '') > String(marks[key].updatedAt || '')) {
-                marks[key] = local;
+            if (remote && remote.departures) mergeDepartureMaps(cache.departures, normalizeDepartures(remote.departures));
+            syncWithLive(cache.departures);
+            if (!pinEnds && remote) {
+                const raisedRows = laterDate(dateOnly(cache.rowsTo), dateOnly(remote.rowsTo));
+                const raisedCols = laterDate(dateOnly(cache.colsTo), dateOnly(remote.colsTo));
+                if (raisedRows) cache.rowsTo = raisedRows;
+                if (raisedCols) cache.colsTo = raisedCols;
             }
-        });
-        dirty.forEach((mark, key) => {
-            if (!mark) delete marks[key];
-            else marks[key] = mark;
-        });
-        cache.marks = marks;
-        markRev++;
-        if (!saveRoutes) {
-            const remoteAt = (remote && remote.routesUpdatedAt) || '';
-            if (String(remoteAt) > String(cache.routesUpdatedAt || '')) {
-                cache.enabledRoutes = normalizeRouteList(remote && remote.enabledRoutes);
-                cache.routesUpdatedAt = remote.routesUpdatedAt || null;
+            if (!saveHistory && remote && String(remote.rangesUpdatedAt || '') > String(cache.rangesUpdatedAt || '')) {
+                const remoteRowsFrom = dateOnly(remote.rowsFrom);
+                const remoteColsFrom = dateOnly(remote.historyFrom);
+                if (remoteRowsFrom) cache.rowsFrom = remoteRowsFrom;
+                if (remoteColsFrom) cache.historyFrom = remoteColsFrom;
+                const remoteRowsTo = dateOnly(remote.rowsTo);
+                const remoteColsTo = dateOnly(remote.colsTo);
+                if (remoteRowsTo) cache.rowsTo = remoteRowsTo;
+                if (remoteColsTo) cache.colsTo = remoteColsTo;
+                cache.rangesUpdatedAt = remote.rangesUpdatedAt || null;
             }
-        }
-        if (remote && remote.departures) mergeDepartureMaps(cache.departures, normalizeDepartures(remote.departures));
-        syncWithLive(cache.departures);
-        if (!pinEnds && remote) {
-            const raisedRows = laterDate(dateOnly(cache.rowsTo), dateOnly(remote.rowsTo));
-            const raisedCols = laterDate(dateOnly(cache.colsTo), dateOnly(remote.colsTo));
-            if (raisedRows) cache.rowsTo = raisedRows;
-            if (raisedCols) cache.colsTo = raisedCols;
-        }
-        if (!saveHistory && remote && String(remote.rangesUpdatedAt || '') > String(cache.rangesUpdatedAt || '')) {
-            const remoteRowsFrom = dateOnly(remote.rowsFrom);
-            const remoteColsFrom = dateOnly(remote.historyFrom);
-            if (remoteRowsFrom) cache.rowsFrom = remoteRowsFrom;
-            if (remoteColsFrom) cache.historyFrom = remoteColsFrom;
-            const remoteRowsTo = dateOnly(remote.rowsTo);
-            const remoteColsTo = dateOnly(remote.colsTo);
-            if (remoteRowsTo) cache.rowsTo = remoteRowsTo;
-            if (remoteColsTo) cache.colsTo = remoteColsTo;
-            cache.rangesUpdatedAt = remote.rangesUpdatedAt || null;
-        }
-        if (!dateOnly(cache.rowsFrom)) cache.rowsFrom = DEFAULT_ROWS_FROM;
-        if (!dateOnly(cache.historyFrom)) cache.historyFrom = DEFAULT_COLS_FROM;
-        cache.version = 1;
-        cache.updatedAt = new Date().toISOString();
-        const payload = {
-            version: 1,
-            updatedAt: cache.updatedAt,
-            marks: cache.marks,
-            enabledRoutes: Array.isArray(cache.enabledRoutes) ? cache.enabledRoutes.slice() : null,
-            routesUpdatedAt: cache.routesUpdatedAt || null,
-            historyFrom: colsFromValue(),
-            rowsFrom: rowsFromValue(),
-            rowsTo: dateOnly(cache.rowsTo) || null,
-            colsTo: dateOnly(cache.colsTo) || null,
-            rangesUpdatedAt: cache.rangesUpdatedAt || null,
-            departures: cache.departures || {}
+            if (!dateOnly(cache.rowsFrom)) cache.rowsFrom = DEFAULT_ROWS_FROM;
+            if (!dateOnly(cache.historyFrom)) cache.historyFrom = DEFAULT_COLS_FROM;
+            cache.version = 1;
+            cache.updatedAt = new Date().toISOString();
+            return {
+                version: 1,
+                updatedAt: cache.updatedAt,
+                marks: cache.marks,
+                enabledRoutes: Array.isArray(cache.enabledRoutes) ? cache.enabledRoutes.slice() : null,
+                routesUpdatedAt: cache.routesUpdatedAt || null,
+                historyFrom: colsFromValue(),
+                rowsFrom: rowsFromValue(),
+                rowsTo: dateOnly(cache.rowsTo) || null,
+                colsTo: dateOnly(cache.colsTo) || null,
+                rangesUpdatedAt: cache.rangesUpdatedAt || null,
+                departures: cache.departures || {}
+            };
         };
-        try { localStorage.setItem(LOCAL_KEY, JSON.stringify(cache)); } catch (e) { /* ignore */ }
+        // Перечитать общий файл → слить → записать «только если файл не менялся с прочтения».
+        // Не удалось прочитать файл — не пишем: иначе общие данные затёрлись бы своей устаревшей копией.
         let ok = false;
-        if (typeof SharedStorage !== 'undefined' && typeof SharedStorage.writeJsonFile === 'function') {
-            ok = await SharedStorage.writeJsonFile(FILE, payload);
+        if (typeof SharedStorage !== 'undefined' && typeof SharedStorage.updateJsonFile === 'function') {
+            const res = await SharedStorage.updateJsonFile(FILE, (remote) => build(remote));
+            ok = !!res.ok;
         }
+        try { localStorage.setItem(LOCAL_KEY, JSON.stringify(cache)); } catch (e) { /* ignore */ }
         if (!ok) {
             batch.forEach((mark, key) => {
                 if (!dirty.has(key)) dirty.set(key, mark);
@@ -908,8 +913,12 @@ window.SalesManagement = (function () {
         return inPeopleQueue(persistPeopleNow);
     }
 
+    // Сообщение о неудачной записи отметок — не чаще раза в минуту (повторы идут сами, пока связи нет).
+    let marksFailToastAt = 0;
+    let marksHadFailure = false;
+
     async function persistPeopleNow() {
-        if (!pending.size || typeof SharedStorage === 'undefined' || !SharedStorage.readJsonFileStrict) return;
+        if (!pending.size || typeof SharedStorage === 'undefined' || !SharedStorage.updateJsonFile) return;
         const groups = new Map();
         pending.forEach((p, id) => {
             const file = marksFile(monthOfKey(p.key), p.slug);
@@ -920,19 +929,22 @@ window.SalesManagement = (function () {
         for (const [file, items] of groups) {
             const month = file.split('/')[1];
             const slug = items[0][1].slug;
-            const read = await SharedStorage.readJsonFileStrict(file);
-            if (!read.ok) { failed = true; continue; }
-            const remote = read.data && typeof read.data === 'object' ? read.data : {};
-            const marks = { ...(remote.marks && typeof remote.marks === 'object' ? remote.marks : {}) };
-            items.forEach(([, p]) => {
-                const prev = marks[p.key];
-                if (!prev || String(prev.at || '') <= String(p.at)) marks[p.key] = { s: p.s, at: p.at, ...markExtra(p.s, p) };
+            // Свой файл: прочитать, добавить отметки, записать «только если файл не менялся с прочтения»
+            // (один и тот же человек может работать с двух компьютеров). Не удалось прочитать — не пишем.
+            let payload = null;
+            const res = await SharedStorage.updateJsonFile(file, (cur) => {
+                const remote = cur && typeof cur === 'object' ? cur : {};
+                const marks = { ...(remote.marks && typeof remote.marks === 'object' ? remote.marks : {}) };
+                items.forEach(([, p]) => {
+                    const prev = marks[p.key];
+                    if (!prev || String(prev.at || '') <= String(p.at)) marks[p.key] = { s: p.s, at: p.at, ...markExtra(p.s, p) };
+                });
+                payload = { version: 1, author: items[items.length - 1][1].author, updatedAt: new Date().toISOString(), marks };
+                return payload;
             });
-            const payload = { version: 1, author: items[items.length - 1][1].author, updatedAt: new Date().toISOString(), marks };
-            const ok = await SharedStorage.writeJsonFile(file, payload);
-            if (!ok) { failed = true; continue; }
+            if (!res.ok || !payload) { failed = true; continue; }
             if (!people[month]) people[month] = {};
-            people[month][slug] = { author: payload.author, marks };
+            people[month][slug] = { author: payload.author, marks: payload.marks };
             items.forEach(([id, p]) => { if (pending.get(id) === p) pending.delete(id); });
         }
         savePending();
@@ -940,9 +952,16 @@ window.SalesManagement = (function () {
         lastWriteOk = !failed;
         updateSaveStatus();
         if (failed && pending.size) {
+            marksHadFailure = true;
+            if (typeof showToast === 'function' && Date.now() - marksFailToastAt > 60000) {
+                marksFailToastAt = Date.now();
+                showToast('Отметка не записана в общую папку — сохранена на этом компьютере, запись повторится сама', 'error');
+            }
             schedulePeoplePersist(peopleRetryMs);
             peopleRetryMs = Math.min(peopleRetryMs * 3, 120000);
         } else {
+            if (marksHadFailure && !failed && typeof showToast === 'function') showToast('Отметки записаны в общую папку');
+            marksHadFailure = false;
             peopleRetryMs = 10000;
         }
     }

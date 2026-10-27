@@ -537,9 +537,14 @@ function bindFlightCommentBox(root) {
         const fl = box.dataset.commentFlight;
         const dt = box.dataset.commentDate;
         const author = typeof ProfileAuth !== 'undefined' ? ProfileAuth.getCurrentProfile()?.name : '';
-        await FlightComments.set(fl, dt, ta?.value || '', author);
-        if (st) st.textContent = 'Сохранено';
-        if (typeof showToast === 'function') showToast('Комментарий сохранён');
+        const saved = await FlightComments.set(fl, dt, ta?.value || '', author);
+        if (!saved) {
+            if (st) st.textContent = 'Не сохранено';
+            return;
+        }
+        // Не записался в общую папку — комментарий остаётся на этом компьютере; причину уже показало сообщение об ошибке.
+        if (st) st.textContent = saved.shared ? 'Сохранено' : 'Сохранено только на этом компьютере';
+        if (saved.shared && typeof showToast === 'function') showToast('Комментарий сохранён');
         ['table-container', 'pkz-table-container'].forEach(id => {
             FlightComments.markRows(document.getElementById(id));
         });

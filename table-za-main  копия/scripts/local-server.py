@@ -5,10 +5,12 @@ import hashlib
 import json
 import os
 import re
+import socket
 import sys
 import tempfile
 import threading
 import time
+import uuid
 import urllib.error
 import urllib.request
 from urllib.parse import unquote, urlparse
@@ -58,7 +60,90 @@ FCLOG_RE = re.compile(r"^forecast-log/\d{4}-\d{2}\.json$", re.ASCII)
 DMONEY_RE = re.compile(r"^decision-money/\d{4}-\d{2}\.json$", re.ASCII)
 MAX_BODY = 64 * 1024 * 1024
 SOCKET_TIMEOUT = 30   # зависший клиент не держит поток и память бесконечно
-WRITE_LOCK = threading.Lock()
+_NAME_LOCKS = {}
+_NAME_LOCKS_GUARD = threading.Lock()
+
+
+def _name_lock(name):
+    with _NAME_LOCKS_GUARD:
+        return _NAME_LOCKS.setdefault(name, threading.Lock())
+
+
+# Замок на файл между серверами. У каждого ПК свой сервер, а папка shared общая (по сети): замок потоков внутри
+# процесса защищает только этот сервер, поэтому проверка отпечатка (X-Krasavia-If-Match) и подмена файла у двух ПК
+# могли пройти одновременно и затереть друг друга. Файл-замок «.<имя>.lock» создаётся атомарно (O_EXCL, на SMB тоже)
+# на время проверки и записи и удаляется сразу после неё.
+LOCK_WAIT = 20          # сколько секунд ждём чужую запись, потом отвечаем «занято» (503)
+LOCK_STALE = 10         # замок, который столько секунд не меняется, считаем брошенным (ПК упал посреди записи)
+
+
+class LockBusy(OSError):
+    pass
+
+
+def _lock_sig(path):
+    try:
+        st = os.stat(path)
+        return (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return None
+
+
+def acquire_file_lock(target):
+    """Взять замок на файл у всех серверов, работающих с этой папкой. Возвращает (путь замка, метка)."""
+    lock_path = os.path.join(os.path.dirname(target), "." + os.path.basename(target) + ".lock")
+    token = "%s:%d:%s" % (socket.gethostname(), os.getpid(), uuid.uuid4().hex)
+    start = time.monotonic()
+    seen_sig, seen_at = None, start
+    while True:
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            try:
+                os.write(fd, token.encode("utf-8", "replace"))
+            finally:
+                os.close(fd)
+            return lock_path, token
+        except FileExistsError:
+            pass
+        except PermissionError:
+            # Windows/SMB: замок как раз удаляют — это ожидание. Нет самого замка — папка закрыта на запись, это ошибка.
+            if not os.path.exists(lock_path):
+                raise
+        now = time.monotonic()
+        sig = _lock_sig(lock_path)
+        # Устарел ли замок, судим по своим часам: пока мы ждём, он не менялся дольше LOCK_STALE секунд
+        # (время файла на сервере и часы ПК могут расходиться, поэтому на возраст файла не смотрим).
+        if sig is None:
+            seen_sig, seen_at = None, now
+            continue
+        if sig != seen_sig:
+            seen_sig, seen_at = sig, now
+        elif now - seen_at > LOCK_STALE:
+            if _lock_sig(lock_path) == sig:
+                try:
+                    os.remove(lock_path)
+                    sys.stderr.write("stale lock removed: %s\n" % os.path.basename(lock_path))
+                except OSError:
+                    pass
+            seen_sig, seen_at = None, now
+            continue
+        if now - start > LOCK_WAIT:
+            raise LockBusy("file is busy")
+        time.sleep(0.015 + 0.03 * (hash(token) % 7) / 7)
+
+
+def release_file_lock(lock):
+    lock_path, token = lock
+    try:
+        with open(lock_path, "rb") as f:
+            mine = f.read(256).decode("utf-8", "replace") == token
+    except OSError:
+        return
+    if mine:                      # замок могли снять как брошенный и взять другим — чужой не трогаем
+        try:
+            os.remove(lock_path)
+        except OSError:
+            pass
 ALLOWED_HOSTS = {"127.0.0.1:%d" % PORT, "localhost:%d" % PORT}
 
 # Вторая модель прогноза (папка ml-forecast): отдельная служба на своём порту. Сайт ходит к ней через этот сервер,
@@ -284,10 +369,15 @@ class Handler(SimpleHTTPRequestHandler):
             json.loads(body.decode("utf-8"))
         except (UnicodeDecodeError, ValueError):
             return self._send_json(400, {"error": "bad json"})
+        lock = None
         try:
-            with WRITE_LOCK:
-                os.makedirs(SHARED_DIR, exist_ok=True)
-                target = os.path.join(SHARED_DIR, *name.split("/"))
+            os.makedirs(SHARED_DIR, exist_ok=True)
+            target = os.path.join(SHARED_DIR, *name.split("/"))
+            target_dir = os.path.dirname(target)
+            os.makedirs(target_dir, exist_ok=True)
+            # Сначала очередь потоков этого сервера, затем замок на файл для остальных серверов (других ПК) на ту же папку.
+            with _name_lock(name):
+                lock = acquire_file_lock(target)
                 # Запись «только если файл не менялся с прочтения»: отпечаток SHA-1 прочитанных байтов или absent (файла не было).
                 want = self.headers.get("X-Krasavia-If-Match")
                 if want:
@@ -302,8 +392,6 @@ class Handler(SimpleHTTPRequestHandler):
                         return self._send_json(409, {"error": "changed"})
                 backup_if_due(name, self.headers.get("X-Krasavia-Backup") == "force")
                 # Сначала во временный файл, потом подмена: другие ПК не прочитают недописанный файл.
-                target_dir = os.path.dirname(target)
-                os.makedirs(target_dir, exist_ok=True)
                 fd, tmp = tempfile.mkstemp(prefix="." + os.path.basename(target) + ".", suffix=".tmp", dir=target_dir)
                 try:
                     with os.fdopen(fd, "wb") as f:
@@ -329,9 +417,15 @@ class Handler(SimpleHTTPRequestHandler):
                     except OSError:
                         pass
                     raise
+        except LockBusy:
+            sys.stderr.write("write %s busy: another PC holds the file lock\n" % name)
+            return self._send_json(503, {"error": "busy"})
         except OSError as e:
             sys.stderr.write("write %s failed: %s\n" % (name, e))
             return self._send_json(500, {"error": "write failed"})   # без путей к файлам в ответе
+        finally:
+            if lock:
+                release_file_lock(lock)
         return self._send_json(200, {"ok": True})
 
     def end_headers(self):

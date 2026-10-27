@@ -1588,24 +1588,28 @@ window.ForecastLab = (function () {
         let ok = true;
         let changedAny = false;
         for (const month of Object.keys(additions)) {
-            const read = await SharedStorage.readJsonFileStrict(fileOf(month)).catch(() => ({ ok: false }));
-            if (!read.ok) { ok = false; continue; }
-            // Файл записан более новой версией сайта — не трогаем, чтобы не потерять её поля.
-            if (read.data && Number(read.data.version) > VERSION) { ok = false; continue; }
-            const merged = Object.create(null);
-            const remote = read.data && read.data.flights;
-            if (remote && typeof remote === 'object') Object.keys(remote).forEach(k => { const e = normEntry(remote[k]); if (e) merged[k] = e; });
+            // Перечитать файл → слить → записать «только если файл не менялся с прочтения»: записи другого ПК,
+            // появившиеся между чтением и записью, не теряются (при расхождении — заново).
+            let merged = null;
+            let remote = null;
+            let newer = false;
             let changed = false;
-            Object.keys(additions[month]).forEach(k => { if (mergeEntry(merged, k, additions[month][k])) changed = true; });
-            let written = true;
-            if (changed) {
-                written = await SharedStorage.writeJsonFile(fileOf(month), { version: VERSION, updatedAt: new Date().toISOString(), flights: merged });
-                ok = written && ok;
-                if (written) changedAny = true;
-            }
+            const res = await SharedStorage.updateJsonFile(fileOf(month), (cur) => {
+                // Файл записан более новой версией сайта — не трогаем, чтобы не потерять её поля.
+                if (cur && Number(cur.version) > VERSION) { newer = true; return false; }
+                merged = Object.create(null);
+                remote = cur && cur.flights;
+                if (remote && typeof remote === 'object') Object.keys(remote).forEach(k => { const e = normEntry(remote[k]); if (e) merged[k] = e; });
+                changed = false;
+                Object.keys(additions[month]).forEach(k => { if (mergeEntry(merged, k, additions[month][k])) changed = true; });
+                return changed ? { version: VERSION, updatedAt: new Date().toISOString(), flights: merged } : false;   // нечего добавлять — файл не трогаем
+            }).catch(() => ({ ok: false, readFailed: true }));
+            if (newer || res.readFailed || (!res.ok && !res.aborted)) { ok = false; if (newer || res.readFailed) continue; }
+            const written = !!res.ok;
+            if (written) changedAny = true;
             // В память — только записанное: иначе повторная запись решит, что всё уже сохранено.
-            const source = written ? merged : (remote && typeof remote === 'object' ? remote : {});
-            Object.keys(source).forEach(k => { const e = written ? source[k] : normEntry(source[k]); if (e) mergeEntry(log, k, e); });
+            const source = (written || res.aborted) ? merged : (remote && typeof remote === 'object' ? remote : {});
+            if (source) Object.keys(source).forEach(k => { const e = (written || res.aborted) ? source[k] : normEntry(source[k]); if (e) mergeEntry(log, k, e); });
         }
         if (changedAny) invalidate();
         lastCapture = { at: Date.now(), recorded, finals, backfilled, ok, stale };

@@ -245,9 +245,14 @@ window.SalesArchive = (function () {
 
     async function mergeAndWrite0(file, kind, additions) {
         // Строгое чтение: если файл не прочитался (ошибка, нет доступа), не перезаписываем архив.
-        const read = await SharedStorage.readJsonFileStrict(file).catch(() => ({ ok: false }));
-        if (!read.ok) return false;
-        const remote = read.data;
+        // Запись «только если файл не менялся с прочтения»: вылеты, которые другой ПК записал между чтением и записью,
+        // не теряются (при расхождении файл перечитывается и сливается заново).
+        const res = await SharedStorage.updateJsonFile(file, (remote) => mergeArchive(remote, kind, additions)).catch(() => ({ ok: false }));
+        return !!(res.ok || res.aborted);
+    }
+
+    // Слияние добавок с содержимым файла: новый вид файла или false, если добавлять нечего.
+    function mergeArchive(remote, kind, additions) {
         const out = { version: 1, updatedAt: new Date().toISOString() };
         let changed = false;
         if (kind === 'curves') {
@@ -283,8 +288,7 @@ window.SalesArchive = (function () {
             });
             out.flights = flights;
         }
-        if (!changed) return true;
-        return SharedStorage.writeJsonFile(file, out);
+        return changed ? out : false;
     }
 
     // Записать архив по текущим данным. Только у публикующего и только когда данные новые.

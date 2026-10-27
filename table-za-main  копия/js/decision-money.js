@@ -765,17 +765,23 @@ window.DecisionMoney = (function () {
         entries.forEach(e => { const mo = monthOf(e.check); if (mo) { if (!byMonth.has(mo)) byMonth.set(mo, []); byMonth.get(mo).push(e); } });
         let ok = true;
         for (const [month, list] of byMonth) {
-            const r = await SharedStorage.readJsonFileStrict(fileOf(month)).catch(() => ({ ok: false }));
-            if (!r.ok) { ok = false; continue; }
-            const items = (r.data && r.data.items) || {};
-            list.forEach(e => {
-                const old = items[e.key];
-                if (old && old.stage === 'final' && old.v === METHOD_VERSION) return;                               // итог уже зафиксирован — не трогаем
-                if (old && old.stage === 'prelim' && e.stage === 'prelim') return;       // ранний сигнал один раз
-                items[e.key] = e;
-            });
-            const written = await SharedStorage.writeJsonFile(fileOf(month), { version: 1, updatedAt: new Date().toISOString(), items });
-            if (written) { Object.keys(items).forEach(k => store.set(k, items[k])); rev++; } else ok = false;
+            // Перечитать файл → добавить свои итоги → записать «только если файл не менялся с прочтения»:
+            // итоги, которые другой ПК зафиксировал между чтением и записью, не теряются (при расхождении — заново).
+            let items = null;
+            const res = await SharedStorage.updateJsonFile(fileOf(month), (cur) => {
+                const next = Object.assign({}, (cur && cur.items) || {});
+                let changed = false;
+                list.forEach(e => {
+                    const old = next[e.key];
+                    if (old && old.stage === 'final' && old.v === METHOD_VERSION) return;                               // итог уже зафиксирован — не трогаем
+                    if (old && old.stage === 'prelim' && e.stage === 'prelim') return;       // ранний сигнал один раз
+                    next[e.key] = e;
+                    changed = true;
+                });
+                items = next;
+                return changed ? { version: 1, updatedAt: new Date().toISOString(), items: next } : false;   // всё уже записано — файл не трогаем
+            }).catch(() => ({ ok: false }));
+            if (res.ok || res.aborted) { Object.keys(items).forEach(k => store.set(k, items[k])); rev++; } else ok = false;
         }
         return ok;
     }
@@ -789,12 +795,12 @@ window.DecisionMoney = (function () {
         if (res.stage === 'final' || res.stage === 'prelim') {
             if (typeof SharedStorage !== 'undefined' && canFreeze()) {
                 const month = monthOf(m.check);
-                const r = await SharedStorage.readJsonFileStrict(fileOf(month)).catch(() => ({ ok: false }));
-                if (r.ok) {
-                    const items = (r.data && r.data.items) || {};
+                const res = await SharedStorage.updateJsonFile(fileOf(month), (cur) => {
+                    const items = Object.assign({}, (cur && cur.items) || {});
                     items[key] = entry;
-                    if (await SharedStorage.writeJsonFile(fileOf(month), { version: 1, updatedAt: new Date().toISOString(), items })) { store.set(key, entry); rev++; }
-                }
+                    return { version: 1, updatedAt: new Date().toISOString(), items };
+                }).catch(() => ({ ok: false }));
+                if (res.ok) { store.set(key, entry); rev++; }
             }
         }
         return entry;

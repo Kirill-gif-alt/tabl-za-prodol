@@ -117,27 +117,32 @@ window.SharedOverrides = (function () {
 
     async function persist(filename, localKey, values) {
         // Перед записью сливаем с общим файлом: правки других ПК, сделанные после нашей загрузки, не теряются.
-        let read = { ok: true, data: null };
-        if (typeof SharedStorage !== 'undefined' && SharedStorage.readJsonFileStrict) {
-            read = await SharedStorage.readJsonFileStrict(filename).catch(() => ({ ok: false }));
-            if (read.ok && read.data && read.data.values) {
-                const merged = mergeKeyMaps(read.data.values, values);
-                Object.keys(merged).forEach(k => { values[k] = merged[k]; });
-            }
-        }
-        const payload = {
-            version: 1,
-            updatedAt: new Date().toISOString(),
-            values
+        // Запись идёт «только если файл не менялся с прочтения»; если его успели изменить — читаем и сливаем заново.
+        const saveLocal = (p) => {
+            try {
+                localStorage.setItem(localKey, JSON.stringify(p));
+            } catch { /* ignore */ }
         };
-        try {
-            localStorage.setItem(localKey, JSON.stringify(payload));
-        } catch { /* ignore */ }
-        if (read.ok && typeof SharedStorage !== 'undefined' && SharedStorage.writeJsonFile) {
-            const written = await SharedStorage.writeJsonFile(filename, payload);
-            if (!written && typeof showToast === 'function') showToast('Правка не записана в общую папку — видна только на этом компьютере', 'error');
+        let payload = { version: 1, updatedAt: new Date().toISOString(), values };
+        saveLocal(payload);   // на этом компьютере правка сохранена сразу, что бы ни случилось с общим файлом
+        let res = { ok: false, readFailed: true };
+        if (typeof SharedStorage !== 'undefined' && SharedStorage.updateJsonFile) {
+            res = await SharedStorage.updateJsonFile(filename, (cur) => ({
+                version: 1,
+                updatedAt: new Date().toISOString(),
+                values: mergeKeyMaps(cur && cur.values, values)
+            })).catch(() => ({ ok: false, readFailed: true }));
+        }
+        if (res.ok && res.data && res.data.values) {
+            Object.keys(res.data.values).forEach(k => { values[k] = res.data.values[k]; });   // заодно видим чужие правки
+            payload = res.data;
+            saveLocal(payload);
         } else if (typeof showToast === 'function') {
-            showToast('Общий файл недоступен — правка видна только на этом компьютере', 'error');
+            showToast(res.readFailed
+                ? 'Общий файл недоступен — правка видна только на этом компьютере'
+                : (res.conflict
+                    ? 'Правка не записана: файл часто меняют другие. Повторите ввод'
+                    : 'Правка не записана в общую папку — видна только на этом компьютере'), 'error');
         }
         if (typeof SalesSync !== 'undefined') {
             try {

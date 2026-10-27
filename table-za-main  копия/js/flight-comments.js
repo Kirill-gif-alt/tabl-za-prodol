@@ -68,26 +68,36 @@ window.FlightComments = (function () {
             updatedAt: now,
             author: author || (typeof ProfileAuth !== 'undefined' ? ProfileAuth.getCurrentProfile()?.name : '') || ''
         };
-        // Перед записью перечитываем общий файл — иначе затрём комментарии, добавленные другими.
-        let read = { ok: false };
-        if (typeof SharedStorage !== 'undefined' && typeof SharedStorage.readJsonFileStrict === 'function') {
-            read = await SharedStorage.readJsonFileStrict(FILE).catch(() => ({ ok: false }));
-            if (read.ok && read.data?.comments) cache.comments = mergeComments(cache.comments, read.data.comments);
-        }
         cache.comments[k] = entry;
         cache.updatedAt = now;
+        const saveLocal = () => {
+            try {
+                localStorage.setItem(LOCAL_KEY, JSON.stringify(cache));
+            } catch { /* ignore */ }
+        };
+        saveLocal();   // на этом компьютере комментарий сохранён сразу, что бы ни случилось с общим файлом
 
-        try {
-            localStorage.setItem(LOCAL_KEY, JSON.stringify(cache));
-        } catch { /* ignore */ }
-
-        if (read.ok && typeof SharedStorage.writeJsonFile === 'function') {
-            const written = await SharedStorage.writeJsonFile(FILE, cache);
-            if (!written && typeof showToast === 'function') showToast('Комментарий не записан в общую папку — виден только на этом компьютере', 'error');
-        } else if (typeof showToast === 'function') {
-            showToast('Общий файл комментариев недоступен — комментарий виден только на этом компьютере', 'error');
+        // Общий файл: перечитать → слить со своим → записать «только если файл не менялся с прочтения».
+        // Комментарии, которые другие успели добавить между чтением и записью, не теряются (при расхождении — заново).
+        let res = { ok: false, readFailed: true };
+        if (typeof SharedStorage !== 'undefined' && typeof SharedStorage.updateJsonFile === 'function') {
+            res = await SharedStorage.updateJsonFile(FILE, (cur) => ({
+                version: 1,
+                updatedAt: now,
+                comments: mergeComments(cur && cur.comments, cache.comments)
+            })).catch(() => ({ ok: false, readFailed: true }));
         }
-        return true;
+        if (res.ok && res.data && res.data.comments) {
+            cache.comments = mergeComments(cache.comments, res.data.comments);   // заодно видим чужие комментарии
+            saveLocal();
+        } else if (typeof showToast === 'function') {
+            showToast(res.readFailed
+                ? 'Общий файл комментариев недоступен — комментарий виден только на этом компьютере'
+                : (res.conflict
+                    ? 'Комментарий не записан: файл комментариев часто меняют другие. Нажмите «Сохранить» ещё раз'
+                    : 'Комментарий не записан в общую папку — виден только на этом компьютере'), 'error');
+        }
+        return { ok: true, shared: !!res.ok };
     }
 
     function markRows(container) {

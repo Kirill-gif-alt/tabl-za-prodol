@@ -47,7 +47,9 @@ window.SharedStorage = (function () {
     let serverWrite = null;
 
     let capsFailedAt = 0;
+    let capsReadOnlyAt = 0;   // сервер ответил, но общая папка закрыта на запись: проверяем снова, когда доступ вернут
     async function detectServerWrite() {
+        if (serverWrite === false && capsReadOnlyAt && Date.now() - capsReadOnlyAt > 15000) serverWrite = null;
         if (serverWrite !== null) return serverWrite;
         if (typeof location === 'undefined' || location.protocol !== 'http:') { serverWrite = false; return serverWrite; }
         // Разовый сбой сети не отключает запись через сервер на всю сессию: повторяем не чаще раза в 4 с.
@@ -60,6 +62,7 @@ window.SharedStorage = (function () {
                 serverWrite = !!caps.sharedWrite;
                 serverHistory = !!caps.history;
                 serverCas = !!caps.cas;
+                capsReadOnlyAt = serverWrite ? 0 : Date.now();
             }
             capsFailedAt = 0;
         } catch { serverWrite = null; capsFailedAt = Date.now(); return false; }
@@ -483,7 +486,10 @@ window.SharedStorage = (function () {
         if (!data || typeof data !== 'object') return { ok: false, error: 'Не удалось прочитать копию' };
         lastBackupAt[filename] = 0;
         const ok = await writeViaHandle(filename, data, { forceBackup: true });
-        return ok ? { ok: true, data } : { ok: false, error: 'Не удалось записать файл — подключите общую папку' };
+        if (ok) return { ok: true, data };
+        return { ok: false, error: isLinked()
+            ? 'Не удалось записать файл. Проверьте, что общая папка доступна для записи, и повторите'
+            : 'Не удалось записать файл — подключите общую папку' };
     }
 
     async function writeViaHandle(filename, data, opts) {
@@ -658,16 +664,20 @@ window.SharedStorage = (function () {
         // Без подключённой папки записать нельзя — не качаем файл журнала зря.
         if (!(rootHandle || await detectServerWrite() || await restoreRootHandle())) return false;
         // Не удалось прочитать общий журнал — не пишем, иначе затрём чужие события.
-        const read = await readJsonFileStrict(ACTIVITY_FILE);
-        if (!read.ok) return false;
-        const remote = Array.isArray(read.data?.events) ? read.data.events : [];
-        const merged = mergeActivityEvents(remote, events, 2000);
-        const payload = {
-            version: 1,
-            updatedAt: new Date().toISOString(),
-            events: merged
-        };
-        return writeViaHandle(ACTIVITY_FILE, payload);
+        // Запись «только если файл не менялся с прочтения»: события другого ПК, попавшие в файл между нашим чтением
+        // и записью, не теряются (при расхождении журнал перечитывается и сливается заново).
+        const res = await updateJsonFile(ACTIVITY_FILE, (cur) => {
+            const remote = Array.isArray(cur?.events) ? cur.events : [];
+            // Своих новых событий нет — файл не переписываем (и не мешаем другим ПК).
+            const known = new Set(remote.map(e => e && e.id));
+            if (!(events || []).some(e => e && e.id && !known.has(e.id))) return false;
+            return {
+                version: 1,
+                updatedAt: new Date().toISOString(),
+                events: mergeActivityEvents(remote, events, 2000)
+            };
+        });
+        return !!res.ok || !!res.aborted;
     }
 
     async function readEventsFromFileHandle(fileHandle) {
@@ -751,7 +761,7 @@ window.SharedStorage = (function () {
     // Результат: { ok, data } | { ok:false, readFailed | writeFailed | aborted }.
     async function updateJsonFile(filename, mutate) {
         const sig = (d) => { try { return JSON.stringify(d === undefined ? null : d); } catch { return ''; } };
-        for (let attempt = 0; attempt < 5; attempt++) {
+        for (let attempt = 0; attempt < 8; attempt++) {
             const last = attempt >= 2;
             const r = await readJsonFileStrict(filename, true);
             if (!r.ok) return { ok: false, readFailed: true };
@@ -764,7 +774,12 @@ window.SharedStorage = (function () {
                 if (r2.ok && sig(r2.data) !== before) continue;   // файл изменили, пока считали, — берём свежий
             }
             if (!(await writeViaHandle(filename, next, opts))) {
-                if (opts.conflict) continue;   // кто-то записал раньше — применяем правку к его файлу
+                if (opts.conflict) {
+                    // Кто-то записал раньше — применяем правку к его файлу. Короткая случайная пауза, чтобы двое
+                    // не сталкивались снова и снова в один и тот же момент.
+                    await new Promise(res => setTimeout(res, 15 + Math.random() * 40 * (attempt + 1)));
+                    continue;
+                }
                 return { ok: false, writeFailed: true, data: next };
             }
             if (r.sha || last) return { ok: true, data: next };
@@ -772,7 +787,8 @@ window.SharedStorage = (function () {
             if (!r3.ok || sig(r3.data) === sig(next)) return { ok: true, data: next };
             // Другой человек записал свой вариант поверх нашего — применяем правку к его файлу.
         }
-        return { ok: false, writeFailed: true };
+        // conflict: файл всё время менялся другими — запись не прошла (чужое не затёрто), можно повторить.
+        return { ok: false, writeFailed: true, conflict: true };
     }
 
     return {
