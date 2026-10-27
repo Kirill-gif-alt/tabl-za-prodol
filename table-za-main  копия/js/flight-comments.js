@@ -27,6 +27,17 @@ window.FlightComments = (function () {
         return out;
     }
 
+    // Файл мог быть восстановлен из резервной копии (restoredAt): записи старше этого момента, оставшиеся
+    // в кэше браузера, не должны вернуть ошибочное содержимое обратно.
+    function newerThan(map, since) {
+        if (!since) return map;
+        const out = {};
+        Object.entries(map && typeof map === 'object' ? map : {}).forEach(([k, v]) => {
+            if (v && String(v.updatedAt || '') >= String(since)) out[k] = v;
+        });
+        return out;
+    }
+
     function saveLocal() {
         try {
             localStorage.setItem(LOCAL_KEY, JSON.stringify({ ...cache, unsynced }));
@@ -47,7 +58,7 @@ window.FlightComments = (function () {
         try {
             local = JSON.parse(localStorage.getItem(LOCAL_KEY) || 'null');
         } catch { /* ignore */ }
-        const merged = mergeComments(remote?.comments, local?.comments);
+        const merged = mergeComments(remote?.comments, newerThan(local?.comments, remote?.restoredAt));
         if (remote?.comments || local?.comments) {
             cache = {
                 version: 1,
@@ -91,12 +102,15 @@ window.FlightComments = (function () {
                 const stop = mutateExtra(cur);
                 if (stop) return false;
             }
-            return { version: 1, updatedAt: new Date().toISOString(), comments: mergeComments(cur && cur.comments, cache.comments) };
+            const since = cur && cur.restoredAt ? String(cur.restoredAt) : '';
+            const payload = { version: 1, updatedAt: new Date().toISOString(), comments: mergeComments(cur && cur.comments, newerThan(cache.comments, since)) };
+            if (since) payload.restoredAt = since;
+            return payload;
         }).catch(() => ({ ok: false, readFailed: true }));
     }
 
     function markSynced(data) {
-        if (data && data.comments) cache.comments = mergeComments(cache.comments, data.comments);   // заодно видим чужие комментарии
+        if (data && data.comments) cache.comments = mergeComments(newerThan(cache.comments, data.restoredAt), data.comments);   // заодно видим чужие комментарии
         if (!inflight) { unsynced = false; retryMs = RETRY_FIRST_MS; }
         saveLocal();
     }

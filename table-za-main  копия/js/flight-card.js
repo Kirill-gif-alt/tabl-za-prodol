@@ -183,6 +183,21 @@ window.FlightCard = (function () {
         if (local && !inPage) local.hidden = true;
     }
 
+    // На http(s) правила карточки берём из тех же таблиц стилей, что и у страницы (файлы уже в кэше браузера): оформление окна
+    // не отстаёт от styles.css. Встроенная копия остаётся для file:// и для первого показа; любая неудача — остаёмся на копии.
+    function liveWindowCss(styleEl) {
+        try {
+            if (typeof window.FLIGHT_CARD_WINDOW_CSS_BUILD !== 'function' || typeof fetch !== 'function') return;
+            if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
+            const urls = Array.from(document.styleSheets).map(s => s.href).filter(h => h && h.indexOf(location.origin + '/') === 0);
+            if (!urls.length) return;
+            Promise.all(urls.map(u => fetch(u).then(r => (r.ok ? r.text() : '')))).then(texts => {
+                const css = window.FLIGHT_CARD_WINDOW_CSS_BUILD(texts);
+                if (css && css.indexOf('.flight-card') >= 0 && styleEl.isConnected && styleEl.textContent !== css) styleEl.textContent = css;
+            }).catch(() => { /* остаётся встроенная копия */ });
+        } catch (e) { /* остаётся встроенная копия */ }
+    }
+
     function openPopup() {
         let w = window.open('', 'krasavia-flight-card', 'width=500,height=900');
         if (!w) {
@@ -216,6 +231,7 @@ window.FlightCard = (function () {
             const style = doc.createElement('style');
             style.textContent = window.FLIGHT_CARD_WINDOW_CSS || '';
             doc.head.appendChild(style);
+            liveWindowCss(style);
             doc.addEventListener('keydown', onKey);
             // Окно закрыли — карточка возвращается на страницу (если она включена кнопкой ▤).
             // Событие закрытия приходит не всегда, поэтому ещё и проверяем раз в секунду.

@@ -6287,9 +6287,9 @@ body.flight-card-pinned { padding-right: 470px; }
 body.fc-window-body { margin: 0; background: var(--surface, #fff); }
 body.fc-window-body .flight-card { position: static; width: auto; max-width: none; min-height: 100vh; box-shadow: none; border: none; animation: none; }
 @media (max-width: 1100px) { body.flight-card-pinned { padding-right: 0; } }
-/* Сообщения (toast) при показанной карточке — левее неё: иначе карточка (выше по слою) закрывает текст */
-body.flight-card-pinned .toast-container { right: 484px; }
-@media (max-width: 560px) { body.flight-card-pinned .toast-container { right: 24px; z-index: 14001; } }
+/* Сообщения (toast) при показанной карточке: выше неё по слою и левее неё — иначе карточка закрывает текст */
+body.flight-card-pinned .toast-container { z-index: 14001; right: 484px; }
+@media (max-width: 560px) { body.flight-card-pinned .toast-container { right: 24px; } }
 
 /* «Управление продажами»: несколько отметок в ячейке — части своих цветов, новая слева */
 .sm-cell.sm-multi { padding: 0 !important; }

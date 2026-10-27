@@ -484,6 +484,10 @@ window.SharedStorage = (function () {
     async function restoreHistory(filename, id) {
         const data = await readHistory(filename, id);
         if (!data || typeof data !== 'object') return { ok: false, error: 'Не удалось прочитать копию' };
+        // Метка «восстановлено из копии»: общие правки (комментарии, субсидия) хранятся ещё и в браузере каждого ПК
+        // и при загрузке сливаются по времени — без метки более новые ошибочные записи из кэша вернули бы всё назад.
+        // Записи старше метки в кэше игнорируются (см. flight-comments.js, shared-overrides.js).
+        if (!Array.isArray(data)) data.restoredAt = new Date().toISOString();
         lastBackupAt[filename] = 0;
         const ok = await writeViaHandle(filename, data, { forceBackup: true });
         if (ok) return { ok: true, data };
@@ -497,6 +501,9 @@ window.SharedStorage = (function () {
         // Сначала сервер — он всегда может записать; папка браузера — запасной путь.
         if (await writeViaServer(filename, data, opts)) return true;
         if (opts && opts.conflict) return false;   // файл изменился после прочтения — через папку поверх не пишем
+        // Запись с проверкой («файл не менялся с прочтения») через папку проверить нечем: сервер ответил ошибкой
+        // (папка закрыта, файл занят другим ПК) — не пишем мимо проверки, вызывающий повторит позже.
+        if (opts && opts.ifMatch) return false;
         const handle = rootHandle || await restoreRootHandle();
         if (!handle) return false;
         try {

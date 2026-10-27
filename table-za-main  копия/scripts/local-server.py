@@ -73,8 +73,9 @@ def _name_lock(name):
 # процесса защищает только этот сервер, поэтому проверка отпечатка (X-Krasavia-If-Match) и подмена файла у двух ПК
 # могли пройти одновременно и затереть друг друга. Файл-замок «.<имя>.lock» создаётся атомарно (O_EXCL, на SMB тоже)
 # на время проверки и записи и удаляется сразу после неё.
-LOCK_WAIT = 20          # сколько секунд ждём чужую запись, потом отвечаем «занято» (503)
-LOCK_STALE = 10         # замок, который столько секунд не меняется, считаем брошенным (ПК упал посреди записи)
+LOCK_WAIT = 45          # сколько секунд ждём чужую запись, потом отвечаем «занято» (503)
+LOCK_STALE = 30         # замок, который столько секунд не меняется, считаем брошенным (ПК упал посреди записи);
+                        # запись даже большого файла по сети идёт заметно быстрее
 
 
 class LockBusy(OSError):
@@ -132,6 +133,21 @@ def acquire_file_lock(target):
         time.sleep(0.015 + 0.03 * (hash(token) % 7) / 7)
 
 
+def sweep_stale_tmp(target):
+    """Удалить временные файлы «.<имя>.*.tmp», оставшиеся от записи, которую оборвали (ПК выключили, окно закрыли)."""
+    folder, base = os.path.dirname(target), os.path.basename(target)
+    prefix = "." + base + "."
+    try:
+        for fn in os.listdir(folder):
+            if fn.startswith(prefix) and fn.endswith(".tmp"):
+                try:
+                    os.remove(os.path.join(folder, fn))
+                except OSError:
+                    pass
+    except OSError:
+        pass
+
+
 def release_file_lock(lock):
     lock_path, token = lock
     try:
@@ -144,6 +160,8 @@ def release_file_lock(lock):
             os.remove(lock_path)
         except OSError:
             pass
+
+
 ALLOWED_HOSTS = {"127.0.0.1:%d" % PORT, "localhost:%d" % PORT}
 
 # Вторая модель прогноза (папка ml-forecast): отдельная служба на своём порту. Сайт ходит к ней через этот сервер,
@@ -378,6 +396,8 @@ class Handler(SimpleHTTPRequestHandler):
             # Сначала очередь потоков этого сервера, затем замок на файл для остальных серверов (других ПК) на ту же папку.
             with _name_lock(name):
                 lock = acquire_file_lock(target)
+                # Пока замок у нас, временных файлов этого же имени ни у кого нет: оставшиеся — от оборванной записи.
+                sweep_stale_tmp(target)
                 # Запись «только если файл не менялся с прочтения»: отпечаток SHA-1 прочитанных байтов или absent (файла не было).
                 want = self.headers.get("X-Krasavia-If-Match")
                 if want:

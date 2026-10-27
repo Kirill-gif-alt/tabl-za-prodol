@@ -74,6 +74,18 @@ window.SharedOverrides = (function () {
         return out;
     }
 
+    // Файл мог быть восстановлен из резервной копии (restoredAt): правки старше этого момента, оставшиеся
+    // в кэше браузера, не должны вернуть ошибочные значения обратно.
+    function newerThan(map, since) {
+        if (!since) return map;
+        const out = {};
+        Object.keys(map || {}).forEach((k) => {
+            const e = map[k];
+            if (e && String(e.at || '') >= String(since)) out[k] = e;
+        });
+        return out;
+    }
+
     async function readRemote(filename) {
         if (typeof SharedStorage === 'undefined' || !SharedStorage.readJsonFile) return null;
         try {
@@ -150,14 +162,21 @@ window.SharedOverrides = (function () {
         saveLocal(payload, true);   // на этом компьютере правка сохранена сразу, что бы ни случилось с общим файлом
         let res = { ok: false, readFailed: true };
         if (typeof SharedStorage !== 'undefined' && SharedStorage.updateJsonFile) {
-            res = await SharedStorage.updateJsonFile(filename, (cur) => ({
-                version: 1,
-                updatedAt: new Date().toISOString(),
-                values: mergeKeyMaps(cur && cur.values, values)
-            })).catch(() => ({ ok: false, readFailed: true }));
+            res = await SharedStorage.updateJsonFile(filename, (cur) => {
+                const since = cur && cur.restoredAt ? String(cur.restoredAt) : '';
+                const next = {
+                    version: 1,
+                    updatedAt: new Date().toISOString(),
+                    values: mergeKeyMaps(cur && cur.values, newerThan(values, since))
+                };
+                if (since) next.restoredAt = since;
+                return next;
+            }).catch(() => ({ ok: false, readFailed: true }));
         }
         const shared = !!(res.ok && res.data && res.data.values);
         if (shared) {
+            // Файл восстановлен из копии — устаревшие правки из памяти убираем, остальное берём из файла.
+            if (res.data.restoredAt) Object.keys(values).forEach(k => { if (!(k in res.data.values)) delete values[k]; });
             Object.keys(res.data.values).forEach(k => { values[k] = res.data.values[k]; });   // заодно видим чужие правки
             payload = res.data;
             saveLocal(payload, false);
@@ -191,8 +210,9 @@ window.SharedOverrides = (function () {
         const disk = await readDataRoot(filename);
         const local = readLocal(localKey);
         let values = {};
+        const since = remote && remote.restoredAt ? String(remote.restoredAt) : '';
         [local, disk, remote].forEach((pack) => {
-            if (pack && pack.values) values = mergeKeyMaps(values, pack.values);
+            if (pack && pack.values) values = mergeKeyMaps(values, pack === remote ? pack.values : newerThan(pack.values, since));
         });
         return values;
     }

@@ -1,8 +1,11 @@
 // Стили карточки рейса для отдельного окна (FlightCard, режим «в отдельном окне»).
-// В окне, открытом из страницы file://, Chrome не подключает styles.css и не даёт прочитать его правила,
-// поэтому нужные правила лежат здесь копией из styles.css и css/*.css: всё, что относится к карточке
-// (.flight-card, .fc-*, .pm-*, .mode-*, .sm-st-*, .vd-*, .booking-curve-verdict*, .filter-btn), вместе с тёмной темой
-// и правилами под @media. Поменяли оформление карточки в styles.css — обновите и здесь (порядок правил сохраняется).
+// Окно открывается пустым (about:blank), и подключить в него styles.css напрямую нельзя: на file:// Chrome этого не даёт.
+// Поэтому правила карточки (.flight-card, .fc-*, .pm-*, .mode-*, .sm-st-*, .vd-*, .booking-curve-verdict*, .filter-btn — вместе
+// с тёмной темой и @media) лежат здесь:
+//  • FLIGHT_CARD_WINDOW_CSS — встроенная копия из styles.css и css/*.css. Нужна для file:// и для первого показа окна.
+//  • FLIGHT_CARD_WINDOW_CSS_BUILD(тексты таблиц) — строит такой же набор правил из текста styles.css. На http(s) окно сразу
+//    после открытия подменяет копию свежим набором, так что новые правила карточки попадают в окно без правки этого файла.
+// Копию обновляют тем же кодом (выбор правил по префиксам классов); без обновления копия работает на file:// по состоянию на её дату.
 window.FLIGHT_CARD_WINDOW_CSS = [
     "* { box-sizing: border-box; }",
     "body.fc-window-body { margin: 0; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: var(--text, #012a4a); background: var(--surface, #fff); }",
@@ -135,3 +138,104 @@ window.FLIGHT_CARD_WINDOW_CSS = [
     "html[data-theme=\"dark\"] .fc-ins-ml { color: #67e8f9; background: rgba(103, 232, 249, 0.12); }",
     ".fc-ml-link { padding: 0; border: 0; background: none; color: var(--accent, #2563eb); font: inherit; font-size: 0.7rem; text-decoration: underline; cursor: pointer; }"
 ].join('\n');
+
+window.FLIGHT_CARD_WINDOW_CSS_BUILD = (function () {
+    function buildCardCss(sheetTexts) {
+        // Классы карточки: по префиксам. Лишнее (шапка, чипы таблиц, окно сравнения моделей) — в SKIP.
+        const PREFIX = /^(fc-|pm-|mode-|sm-st-|vd-|booking-curve-verdict|flight-card|filter-btn$)/;
+        const SKIP = /^(flight-card-toggle|flight-card-pinned|flight-card-open|fc-row-problem|fc-flag|pm-chip|pm-pop|mlw)/;
+    
+        // Разбор таблицы стилей на правила; вложенность только через @media.
+        function parse(source) {
+            const out = [];
+            function block(text, wrap) {
+                let pos = 0;
+                while (pos < text.length) {
+                    while (pos < text.length && /\s/.test(text[pos])) pos++;
+                    if (pos >= text.length) return;
+                    let j = pos, q = null, paren = 0;
+                    for (; j < text.length; j++) {
+                        const ch = text[j];
+                        if (q) { if (ch === q && text[j - 1] !== '\\') q = null; }
+                        else if (ch === '"' || ch === "'") q = ch;
+                        else if (ch === '(') paren++;
+                        else if (ch === ')') paren--;
+                        else if ((ch === '{' || ch === ';') && paren <= 0) break;
+                    }
+                    const head = text.slice(pos, j).trim();
+                    if (text[j] === ';') { pos = j + 1; continue; }
+                    let depth = 0, k = j;
+                    q = null;
+                    for (; k < text.length; k++) {
+                        const ch = text[k];
+                        if (q) { if (ch === q && text[k - 1] !== '\\') q = null; continue; }
+                        if (ch === '"' || ch === "'") { q = ch; continue; }
+                        if (ch === '{') depth++;
+                        else if (ch === '}') { depth--; if (depth === 0) break; }
+                    }
+                    const body = text.slice(j + 1, k);
+                    if (head.startsWith('@media')) block(body, (wrap ? wrap + ' and ' : '') + head.slice(6).trim());
+                    else if (head.startsWith('@keyframes')) out.push({ wrap, kind: 'keyframes', name: head.split(/\s+/)[1], text: head + ' { ' + body.replace(/\s+/g, ' ').trim() + ' }' });
+                    else if (!head.startsWith('@')) out.push({ wrap, kind: 'rule', sel: head, body: body.replace(/\s+/g, ' ').trim() });
+                    pos = k + 1;
+                }
+            }
+            block(source.replace(/\/\*[\s\S]*?\*\//g, ''), '');
+            return out;
+        }
+    
+        function splitTop(sel) {
+            const parts = [];
+            let depth = 0, cur = '';
+            for (const ch of sel) {
+                if (ch === '(' || ch === '[') depth++;
+                else if (ch === ')' || ch === ']') depth--;
+                if (ch === ',' && depth === 0) { parts.push(cur.trim()); cur = ''; } else cur += ch;
+            }
+            if (cur.trim()) parts.push(cur.trim());
+            return parts;
+        }
+        const classesOf = (part) => (part.replace(/\[[^\]]*\]/g, '').replace(/"[^"]*"/g, '').match(/\.(-?[_a-zA-Z][\w-]*)/g) || []).map(x => x.slice(1));
+    
+        const all = [];
+        sheetTexts.forEach(t => parse(String(t || '')).forEach(r => all.push(r)));
+        const known = new Set(['no-cmix']);
+        all.forEach(r => {
+            if (r.kind !== 'rule') return;
+            splitTop(r.sel).forEach(p => classesOf(p).forEach(c => { if (PREFIX.test(c) && !SKIP.test(c)) known.add(c); }));
+        });
+        function keepPart(part) {
+            if ((part.match(/#[\w-]+/g) || []).some(i => i !== '#flight-card')) return false;
+            const cls = classesOf(part);
+            if (!cls.length) return /^(:root|html\[data-theme="(dark|light)"\])$/.test(part);
+            return cls.every(c => known.has(c) && !SKIP.test(c)) && cls.some(c => c !== 'no-cmix');
+        }
+    
+        // Окно: базовые правила и сообщение внизу окна (flash).
+        const lines = [
+            "* { box-sizing: border-box; }",
+            "body.fc-window-body { margin: 0; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: var(--text, #012a4a); background: var(--surface, #fff); }",
+            ".fc-flash { position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 20; padding: 10px 14px; border-radius: 10px; background: var(--primary, #012a4a); color: #fff; font-size: 0.82rem; font-weight: 600; box-shadow: 0 8px 24px rgb(15 23 42 / 0.28); }",
+            ".fc-flash[hidden] { display: none; }"
+        ];
+        let curWrap = null, buf = [];
+        const flush = () => {
+            if (!buf.length) return;
+            if (curWrap) lines.push('@media ' + curWrap + ' { ' + buf.join(' ') + ' }'); else buf.forEach(x => lines.push(x));
+            buf = [];
+        };
+        all.forEach(r => {
+            let t = null;
+            if (r.kind === 'rule') {
+                const parts = splitTop(r.sel).filter(keepPart);
+                if (parts.length) t = parts.join(', ') + ' { ' + r.body + ' }';
+            } else if (/^fc-/.test(r.name)) t = r.text;
+            if (!t) return;
+            if (r.wrap !== curWrap) { flush(); curWrap = r.wrap; }
+            buf.push(t);
+        });
+        flush();
+        return lines;
+    }
+    return function (sheetTexts) { return buildCardCss(sheetTexts).join('\n'); };
+})();
