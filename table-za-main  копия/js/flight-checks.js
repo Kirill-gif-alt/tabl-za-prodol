@@ -357,32 +357,41 @@ window.FlightChecks = (function () {
         return out.sort((a, b) => (parseInt(a.flights[0].slice(3), 10) || 0) - (parseInt(b.flights[0].slice(3), 10) || 0));
     }
 
-    // Режим даты вылета: 'subsidy' — субсидия, 'commercial' — у маршрута есть субсидия, но не на эту дату,
-    // null — рейс без субсидии (краевой, KV-247/248, исключение) или нет файла расходов.
+    // Режим даты вылета на межрегиональном рейсе: 'subsidy' — на эту дату субсидия есть, 'commercial' — субсидии нет
+    // (дата вне периодов субсидии, маршрута нет в файле субсидий, рейс без субсидии или исключён в справочнике).
+    // null — рейс не межрегиональный (краевой и т.п.): метка не нужна. Проверки ошибок (issuesFor) этот режим не меняют.
     let modeCache = { token: '', map: new Map() };
-    function modeFor(code, date, row) {
+    function modeInfo(code, date, row) {
         const fl = cleanFlight(code);
-        if (!fl || !date) return null;
+        if (!fl || !date) return { mode: null, route: false };
         const token = revisionToken() + '|' + (typeof dataEpoch === 'number' ? dataEpoch : 0)
             + '|' + (typeof RouteCosts !== 'undefined' && RouteCosts.loaded ? 1 : 0);
         if (modeCache.token !== token) modeCache = { token, map: new Map() };
         const key = fl + '|' + date;
         if (modeCache.map.has(key)) return modeCache.map.get(key);
-        let mode = null;
-        if (!(typeof getFlightRouteType === 'function' && getFlightRouteType(fl) !== 'interregional')) {
+        let res = { mode: null, route: false };
+        if (typeof getFlightRouteType === 'function' && getFlightRouteType(fl) === 'interregional') {
             const r = row || (typeof getFlightRowForDate === 'function' ? getFlightRowForDate(getBaseFlight(fl), date, fl) : null);
             const sub = subsidyInfo({ code: fl, date, row: r });
-            mode = sub.excluded ? null : (sub.subsidized ? 'subsidy' : (sub.commercial ? 'commercial' : null));
+            // route — маршрут в файле субсидий есть, но на эту дату её нет (для подсказки).
+            res = sub.subsidized && !sub.excluded ? { mode: 'subsidy', route: true } : { mode: 'commercial', route: !!sub.commercial };
         }
-        modeCache.map.set(key, mode);
-        return mode;
+        modeCache.map.set(key, res);
+        return res;
+    }
+
+    function modeFor(code, date, row) {
+        return modeInfo(code, date, row).mode;
     }
 
     function modeBadge(code, date, row) {
         if (typeof ProfileAuth !== 'undefined' && typeof ProfileAuth.featureOn === 'function' && !ProfileAuth.featureOn('subsidy_mode')) return '';
-        const mode = modeFor(code, date, row);
-        if (mode === 'subsidy') return '<span class="mode-badge mode-sub" title="Субсидия на эту дату (по периодам субсидий)">С</span>';
-        if (mode === 'commercial') return '<span class="mode-badge mode-com" title="Коммерция: на эту дату субсидии нет, хотя маршрут субсидированный">К</span>';
+        const info = modeInfo(code, date, row);
+        if (info.mode === 'subsidy') return '<span class="mode-badge mode-sub" title="Субсидия на эту дату (по периодам субсидий)">С</span>';
+        if (info.mode === 'commercial') {
+            const why = info.route ? 'на эту дату субсидии нет, хотя маршрут субсидированный' : 'на этом рейсе субсидии нет';
+            return `<span class="mode-badge mode-com" title="Коммерция: ${why}">К</span>`;
+        }
         return '';
     }
 
