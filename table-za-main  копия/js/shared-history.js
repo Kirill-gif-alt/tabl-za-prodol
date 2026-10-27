@@ -12,7 +12,10 @@ window.SharedHistory = (function () {
         'flights.json': 'Справочник рейсов',
         'pkz-nav.json': 'ПКЗ',
         'flight-comments.json': 'Комментарии к рейсам',
-        'creative-layouts.json': 'Творческая (макеты)'
+        'creative-layouts.json': 'Творческая (макеты)',
+        'params.json': 'Параметры расчётов',
+        'fare-grid.json': 'Сетка тарифов',
+        'lower-requests.json': 'Запрос на понижение'
     };
 
     function esc(v) {
