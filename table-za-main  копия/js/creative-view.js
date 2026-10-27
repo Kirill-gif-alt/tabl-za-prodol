@@ -147,6 +147,14 @@ window.CreativeView = (function () {
         return s ? (s[key] || 0) : null;
     }
 
+    // Файл продаж старше суток: «сегодня», «вчера» и «подбор» по нему не видны — как в RMS и на «Сегодня», прочерк вместо нуля.
+    let staleMemo = { at: 0, v: false };
+    function salesStale() {
+        const now = Date.now();
+        if (now - staleMemo.at > 1000) staleMemo = { at: now, v: typeof getStaleSalesInfo === 'function' && !!getStaleSalesInfo() };
+        return staleMemo.v;
+    }
+
     function numOrNull(v) {
         return v == null || v === '' || isNaN(v) ? null : Number(v);
     }
@@ -178,13 +186,13 @@ window.CreativeView = (function () {
         { key: 'zpk', group: 'load', label: 'ЗПК, %', type: 'pct', agg: 'ratio', num: 'sold', den: 'seats', scale: 100, get: c => { const m = metricsOf(c); return m ? m.pct : null; } },
         { key: 'remainder', group: 'load', label: 'Остаток мест', type: 'num', agg: 'sum', sumFloor0: true, get: c => (typeof getSeatRemainder === 'function' ? getSeatRemainder(c.row) : null) },
 
-        { key: 'salesToday', group: 'sales', label: 'Продано сегодня', type: 'num', agg: 'sum', get: c => bucketValue(c, 'today') },
-        { key: 'salesYesterday', group: 'sales', label: 'Продано вчера', type: 'num', agg: 'sum', get: c => bucketValue(c, 'yesterday') },
+        { key: 'salesToday', group: 'sales', label: 'Продано сегодня', type: 'num', agg: 'sum', get: c => (salesStale() ? null : bucketValue(c, 'today')) },
+        { key: 'salesYesterday', group: 'sales', label: 'Продано вчера', type: 'num', agg: 'sum', get: c => (salesStale() ? null : bucketValue(c, 'yesterday')) },
         { key: 'salesDay2', group: 'sales', label: 'Продано позавчера', type: 'num', agg: 'sum', get: c => bucketValue(c, 'day2') },
         { key: 'sales7', group: 'sales', label: 'Продано за 7 дн. (с сегодня)', type: 'num', agg: 'sum', get: c => bucketValue(c, 'd7') },
         { key: 'sales14', group: 'sales', label: 'Продано за 14 дней', type: 'num', agg: 'sum', get: c => bucketValue(c, 'd14') },
         { key: 'sales30', group: 'sales', label: 'Продано за 30 дней', type: 'num', agg: 'sum', get: c => bucketValue(c, 'd30') },
-        { key: 'pickup', group: 'sales', label: 'Подбор (сегодня + вчера)', type: 'num', agg: 'sum', get: c => { const s = salesBucket(c); return s ? (s.today || 0) + (s.yesterday || 0) : null; } },
+        { key: 'pickup', group: 'sales', label: 'Подбор (сегодня + вчера)', type: 'num', agg: 'sum', get: c => { if (salesStale()) return null; const s = salesBucket(c); return s ? (s.today || 0) + (s.yesterday || 0) : null; } },
         { key: 'tickets', group: 'sales', label: 'Билетов в файле продаж', type: 'num', agg: 'sum', get: c => salesCount(c) },
         { key: 'avgFare', group: 'sales', label: 'Средний тариф', type: 'rub', agg: 'ratio', numFn: c => { const a = salesAgg(c); return a ? a.sum : null; }, denFn: c => { const a = salesAgg(c); return a ? a.paid : null; }, scale: 1, get: c => { const a = salesAgg(c); return a && a.avg ? a.avg : null; } },
         { key: 'lastFare', group: 'sales', label: 'Последний тариф', type: 'rub', agg: 'avg', get: c => { const a = salesAgg(c); return a && a.last ? a.last : null; } },
@@ -439,7 +447,9 @@ window.CreativeView = (function () {
         const ov = typeof SharedOverrides !== 'undefined' && SharedOverrides.subsidyRevision
             ? SharedOverrides.subsidyRevision() + ':' + (SharedOverrides.navRevision ? SharedOverrides.navRevision() : 0) + ':' + (typeof SubsidyRef !== 'undefined' ? SubsidyRef.revision() : 0)
             : '';
-        return [epoch, rows, today, ov, JSON.stringify(layout), marks].join('|');
+        // Прогноз к вылету и безубыточность меняются без новых данных: обучилась модель, архив продаж, календарь, параметры.
+        const an = typeof analyticsRevision === 'function' ? analyticsRevision() : '';
+        return [epoch, rows, today, ov, JSON.stringify(layout), marks, an].join('|');
     }
 
     function collectContexts() {

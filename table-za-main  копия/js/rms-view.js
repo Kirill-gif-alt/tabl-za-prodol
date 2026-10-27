@@ -54,7 +54,7 @@ function updateRmsProblemMore() {
     if (!list || !more) return;
     const open = strip.classList.contains('is-open');
     more.hidden = !open && list.clientHeight > 0 && list.scrollHeight <= list.clientHeight + 1;
-    more.textContent = open ? 'Свернуть' : `Показать все (${list.childElementCount})`;
+    more.textContent = open ? 'Свернуть' : `Развернуть (${list.childElementCount})`;
 }
 
 function createRmsView(c) {
@@ -124,7 +124,8 @@ function createRmsView(c) {
 function renderRmsProblemStrip(flights) {
     const strip = document.getElementById('rms-problem-strip');
     if (!strip) return;
-    const problems = flights.filter(f => f.alertLevel >= 2).slice(0, 10);
+    const allProblems = flights.filter(f => f.alertLevel >= 2);
+    const problems = allProblems.slice(0, 10);
     if (!problems.length) {
         strip.hidden = true;
         strip.innerHTML = '';
@@ -132,7 +133,7 @@ function renderRmsProblemStrip(flights) {
     }
     strip.hidden = false;
     strip.innerHTML = `<div class="rms-problem-head">
-            <span class="rms-problem-label">Сверху проблемные</span>
+            <span class="rms-problem-label">Сверху проблемные${allProblems.length > problems.length ? ` · ${problems.length} из ${allProblems.length}` : ''}</span>
             <button type="button" class="rms-problem-more" hidden aria-label="Показать или скрыть остальные рейсы"></button>
         </div>
         <div class="rms-problem-list">`
@@ -184,11 +185,12 @@ function renderRmsWatchlist() {
     }
 
     const flights = getRmsFilteredFlights();
+    const rmsDays = parseInt(document.getElementById('rms-days-filter')?.value || '30', 10) || 30;
     const kpi = getGlobalKPIs();
     const alertCnt = flights.filter(f => f.alertLevel >= 2).length;
     // Средняя загрузка — по местам: сумма проданных / сумма кресел в продаже.
     const seatSum = flights.reduce((a, f) => a + (f.total || 0), 0);
-    const avgLoad = seatSum ? Math.round(flights.reduce((a, f) => a + (f.total ? f.free : 0), 0) / seatSum * 100) : 0;
+    const avgLoad = seatSum ? Math.round(flights.reduce((a, f) => a + (f.total ? f.free : 0), 0) / seatSum * 100) : null;
     const stale = typeof getStaleSalesInfo === 'function' ? getStaleSalesInfo() : null;
     const salesReady = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(dataLoadStatus && dataLoadStatus.sales);
     const expectedReady = typeof hasExpectedFileLoaded === 'function' ? hasExpectedFileLoaded() : Object.keys(expectedLoadData || {}).length > 0;
@@ -197,11 +199,11 @@ function renderRmsWatchlist() {
     const checkedToday = markOn ? flights.filter(f => PriceMarks.todayMark(f.orig || f.base, f.date)).length : 0;
     if (stats) {
         stats.innerHTML = `
-            <span class="rms-hero-badge">Открытых: <strong>${flights.length}</strong></span>
+            <span class="rms-hero-badge" title="${escAttr(`Вылеты на ${rmsDays} ${pluralRu(rmsDays, 'день', 'дня', 'дней')} вперёд, считая сегодня. Закрытые и улетевшие не входят. Учтены фильтры и условия.`)}">Открытых: <strong>${flights.length}</strong></span>
             ${markOn ? `<span class="rms-hero-badge" title="Рейсов в списке с отметкой «Управления продажами» за сегодня">Проверено сегодня: <strong>${checkedToday}/${flights.length}</strong></span>` : ''}
-            <span class="rms-hero-badge rms-hero-badge-warn">Предупр.: <strong>${alertCnt}</strong></span>
-            <span class="rms-hero-badge">Продано сегодня: <strong>${!salesReady ? '—' : (stale ? `нет свежих данных (от ${stale.label})` : kpi.todaySales)}</strong></span>
-            <span class="rms-hero-badge">Ср. ЗПК: <strong>${avgLoad}%</strong></span>
+            <span class="rms-hero-badge rms-hero-badge-warn" title="Рейсы со значком «!» или «КРИТ» в этом списке. Число ⚠ в шапке сайта считается за 30 дней и без фильтров.">Предупр.: <strong>${alertCnt}</strong></span>
+            <span class="rms-hero-badge" title="Все билеты, проданные сегодня, по всей сети: фильтры таблицы не учитываются">Продано сегодня: <strong>${!salesReady ? '—' : (stale ? `нет свежих данных (от ${stale.label})` : kpi.todaySales)}</strong></span>
+            <span class="rms-hero-badge">Ср. ЗПК: <strong>${avgLoad === null ? '—' : avgLoad + '%'}</strong></span>
         `;
     }
     updateRmsConditionsBadge();
@@ -209,10 +211,11 @@ function renderRmsWatchlist() {
 
     const condCount = getActiveRmsConditions().length;
     if (!flights.length) {
+        const salesCond = getActiveRmsConditions().some(c => c.field === 'pickup' || c.field === 'salesToday');
         renderTableEmptyState(
             container,
             condCount ? 'Нет рейсов по условиям' : 'Нет рейсов по фильтрам',
-            ''
+            salesCond && (!salesReady || stale) ? (salesReady ? 'Нет свежих данных о продажах — условия по продажам не работают.' : 'Файл продаж не загружен — условия по продажам не работают.') : ''
         );
         return;
     }
@@ -262,7 +265,7 @@ function renderRmsWatchlist() {
                 </td>
                 <td class="rms-col-date col-date font-semibold">${escHtml(f.date)}${typeof FlightChecks !== 'undefined' && FlightChecks.modeBadge ? FlightChecks.modeBadge(flightCode, f.date) : ''}</td>
                 <td class="rms-col-dtd font-bold ${f.dtd <= 3 ? 'dtd-urgent' : ''}">${f.dtd}</td>
-                <td class="rms-col-load font-semibold"><span class="${f.pct >= 75 ? 'occupancy-high' : 'occupancy-med'}">${f.pct}%</span> <span class="rms-load-sub">${f.free} пасс.</span></td>
+                <td class="rms-col-load font-semibold"><span class="${f.pct >= 75 ? 'occupancy-high' : 'occupancy-med'}">${f.pct === null || f.pct === undefined ? '—' : f.pct + '%'}</span> <span class="rms-load-sub">${f.free} пасс.</span></td>
                 <td class="rms-col-remain font-semibold">${remainTxt}</td>
                 <td class="rms-col-fc font-semibold ${fcCls}" title="${escAttr(fcTitle)}">${fc && fc.source !== 'flown' ? escHtml(FlightInsights.forecastShort(fc)) : '—'}</td>
                 ${expectedCells}

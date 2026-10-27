@@ -631,6 +631,8 @@ function renderDataBoard() {
     track.dataset.renderSig = '';
 
     const chunks = [];
+    let cardsShown = 0;   // маршруты, у которых есть что показать (при «Скрыть улет.» часть маршрутов остаётся пустой)
+    const statsLine = (n, rows) => `${n} ${pluralRu(n, 'маршрут', 'маршрута', 'маршрутов')} · ${rows} ${pluralRu(rows, 'дата', 'даты', 'дат')}`;
     const finish = (statsText) => {
         if (gen !== dataBoardRenderGen) return;
         // Порции HTML запоминаются при построении: сериализовать готовый DOM заново не нужно.
@@ -648,18 +650,26 @@ function renderDataBoard() {
         if (gen !== dataBoardRenderGen) return;
         if (start === 0 && !pairs.length) {
             track.innerHTML = `<div class="data-board-empty">Нет маршрутов по выбранному фильтру</div>`;
-            finish('0 маршрутов');
+            finish(statsLine(0, 0));
             return;
         }
         const end = start + (start === 0 ? FIRST_CHUNK : CHUNK);
         const slice = pairs.slice(start, end);
-        const html = slice.map(pair => buildDataRouteCardHtml(pair, todayStart)).filter(Boolean).join('');
+        const cards = slice.map(pair => buildDataRouteCardHtml(pair, todayStart)).filter(Boolean);
+        cardsShown += cards.length;
+        const html = cards.join('');
         if (html) { track.insertAdjacentHTML('beforeend', html); chunks.push(html); }
         if (end < pairs.length) {
             requestAnimationFrame(() => paintChunk(end));
             return;
         }
-        finish(`${pairs.length} маршрутов · ${_dataBoardRowAcc} дат`);
+        if (!cardsShown) {
+            // Маршруты есть, но все даты скрыты («Скрыть улет.»): вместо пустого экрана — пояснение.
+            const none = '<div class="data-board-empty">Нет рейсов по выбранным фильтрам</div>';
+            track.insertAdjacentHTML('beforeend', none);
+            chunks.push(none);
+        }
+        finish(statsLine(cardsShown, _dataBoardRowAcc));
     };
 
     paintChunk(0);

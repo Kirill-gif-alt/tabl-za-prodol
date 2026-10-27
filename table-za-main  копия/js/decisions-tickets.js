@@ -54,7 +54,7 @@ window.DecisionsTickets = (function () {
             const dk = [m.flight, m.dep, m.check, m.status].join('|');
             if (seen.has(dk)) {
                 const r0 = seen.get(dk);
-                if (m.author && !r0.author.split(' / ').includes(m.author)) r0.author = r0.author ? r0.author + ' / ' + m.author : m.author;
+                if (m.author && !r0.authors.includes(m.author)) { r0.authors.push(m.author); r0.authors.sort((a, b) => a.localeCompare(b, 'ru')); r0.author = r0.authors.join(' / '); }
                 return;
             }
             const ago = daysAgo(m.check);
@@ -64,7 +64,7 @@ window.DecisionsTickets = (function () {
             let e = null;
             try { e = PriceMarks.effectFor(base, code, m.dep, { check: m.check, status: m.status }); } catch (err) { e = null; }
             out.push({
-                code, base, dep: m.dep, check: m.check, status: m.status, author: m.author || '',
+                code, base, dep: m.dep, check: m.check, status: m.status, author: m.author || '', authors: m.author ? [m.author] : [],
                 direction: typeof getFlightDirection === 'function' ? getFlightDirection(code) : '',
                 e,
                 done: !!(e && e.complete && e.effect != null)
@@ -76,15 +76,20 @@ window.DecisionsTickets = (function () {
         return out;
     }
 
+    // «1 билет», «2 билета», «5 билетов»; у дробного числа — всегда «билета» («0,5 билета», «5,5 билета»).
     function plural(n) {
-        const a = Math.abs(n) % 100; const b = a % 10;
+        const v = Math.round(Number(n) * 10) / 10;
+        if (!Number.isInteger(v)) return 'билета';
+        const a = Math.abs(v) % 100; const b = a % 10;
         if (a > 10 && a < 20) return 'билетов';
         return b === 1 ? 'билет' : (b >= 2 && b <= 4 ? 'билета' : 'билетов');
     }
 
+    function numRu(n) { return String(Math.round(Number(n) * 10) / 10).replace('.', ','); }
+
     function signed(n) {
         if (n == null) return '—';
-        return (n > 0 ? '+' : (n < 0 ? '−' : '')) + String(Math.abs(n)).replace('.', ',');
+        return (n > 0 ? '+' : (n < 0 ? '−' : '')) + numRu(Math.abs(n));
     }
 
     // «Сработало» — по билетам против нормы (PriceMarks.judge); «рано судить» в долю не входит.
@@ -108,6 +113,18 @@ window.DecisionsTickets = (function () {
             const k = keyFn(r);
             if (!map.has(k)) map.set(k, []);
             map.get(k).push(r);
+        });
+        return [...map.entries()].map(([k, l]) => ({ key: k, ...summarize(l) })).sort((a, b) => b.n - a.n);
+    }
+
+    // Группы по людям: решение, отмеченное двумя людьми, считается у каждого из них.
+    function groupByPeople(list) {
+        const map = new Map();
+        list.forEach(r => {
+            (r.authors && r.authors.length ? r.authors : ['—']).forEach(a => {
+                if (!map.has(a)) map.set(a, []);
+                map.get(a).push(r);
+            });
         });
         return [...map.entries()].map(([k, l]) => ({ key: k, ...summarize(l) })).sort((a, b) => b.n - a.n);
     }
@@ -173,7 +190,7 @@ window.DecisionsTickets = (function () {
         const body = list.map(r => {
             const e = r.e;
             const v = verdictOf(r);
-            const usual = (x) => (x ? `<span class="dr-usual">обычно ${x.value}</span>` : '');
+            const usual = (x) => (x ? `<span class="dr-usual">обычно ${numRu(x.value)}</span>` : '');
             const fare = e && e.before.avg != null && e.after.avg != null
                 ? `${Math.round(e.before.avg).toLocaleString('ru-RU')} → ${Math.round(e.after.avg).toLocaleString('ru-RU')} ₽` : '—';
             return `
@@ -200,13 +217,13 @@ window.DecisionsTickets = (function () {
             else if (tone === 'wait') big = 'ждём итога';
             const lines = [];
             if (e) {
-                lines.push(`За ${wd()} ДО решения продали <b>${e.before.n}</b> ${plural(e.before.n)}${e.normBefore ? ` (обычно ${e.normBefore.value})` : ''}.`);
-                lines.push(up ? `ПОСЛЕ решения до вылета продали <b>${e.after.n}</b> ${plural(e.after.n)}${e.normAfter ? ` (обычно ${e.normAfter.value})` : ''}.`
-                    : `За ${wd()} ПОСЛЕ решения продали <b>${e.after.n}</b> ${plural(e.after.n)}${e.normAfter ? ` (обычно ${e.normAfter.value})` : ''}.`);
+                lines.push(`За ${wd()} ДО решения продали <b>${e.before.n}</b> ${plural(e.before.n)}${e.normBefore ? ` (обычно ${numRu(e.normBefore.value)})` : ''}.`);
+                lines.push(up ? `ПОСЛЕ решения до вылета продали <b>${e.after.n}</b> ${plural(e.after.n)}${e.normAfter ? ` (обычно ${numRu(e.normAfter.value)})` : ''}.`
+                    : `За ${wd()} ПОСЛЕ решения продали <b>${e.after.n}</b> ${plural(e.after.n)}${e.normAfter ? ` (обычно ${numRu(e.normAfter.value)})` : ''}.`);
                 if (e.before.avg != null && e.after.avg != null) lines.push(`Средний тариф был ${Math.round(e.before.avg).toLocaleString('ru-RU')} ₽, стал ${Math.round(e.after.avg).toLocaleString('ru-RU')} ₽.`);
             }
             const say = tone === 'pos' ? 'Помогло: ' + esc(v.text) + '.' : (tone === 'neg' ? 'Навредило: ' + esc(v.text) + '.' : (tone === 'wait' ? esc(v.text) + '.' : 'Не считаем: ' + esc(v.text) + '.'));
-            const short = e ? (up ? `после: ${e.after.n}${e.normAfter ? ' (обычно ' + e.normAfter.value + ')' : ''}` : `продали ${e.after.n}${e.normAfter ? ' вместо ' + e.normAfter.value : ''}`) : esc(v.text);
+            const short = e ? (up ? `после: ${e.after.n}${e.normAfter ? ' (обычно ' + numRu(e.normAfter.value) + ')' : ''}` : `продали ${e.after.n}${e.normAfter ? ' вместо ' + numRu(e.normAfter.value) : ''}`) : esc(v.text);
             return DecisionsViz.plainRow({
                 tone,
                 key: [r.code, r.dep, r.check, r.status].join('|'),
@@ -217,7 +234,7 @@ window.DecisionsTickets = (function () {
                 tags: [`<button type="button" class="filter-btn rp-open" data-open-base="${esc(r.base)}" data-open-code="${esc(r.code)}" data-open-date="${esc(r.dep)}">Открыть вылет →</button>`]
             });
         });
-        const summary = list.length ? DecisionsViz.strip([{ label: 'Решений', value: total.n }, { label: 'Помогли', value: total.good, cls: 'dr-pos' }, { label: 'Навредили', value: total.judged - total.good, cls: 'dr-neg' }, { label: 'Мало данных', value: total.n - total.judged }, { label: 'Билетов к обычному', value: total.avg == null ? '—' : signed(total.avg), cls: total.avg > 0 ? 'dr-pos' : (total.avg < 0 ? 'dr-neg' : '') }]) : '';
+        const summary = list.length ? DecisionsViz.strip([{ label: 'Решений', value: total.n }, { label: 'Помогли', value: total.good, cls: 'dr-pos' }, { label: 'Навредили', value: total.judged - total.good, cls: 'dr-neg' }, { label: 'Мало данных', value: total.done - total.judged + total.noNorm }, { label: 'Ждём итога', value: total.waiting }, { label: 'Билетов к обычному', value: total.avg == null ? '—' : signed(total.avg), cls: total.avg > 0 ? 'dr-pos' : (total.avg < 0 ? 'dr-neg' : '') }]) : '';
         const dash = list.length ? `<div class="dv-grid dv-grid2">
             ${DecisionsViz.stack('Итог решений', [
                 { label: 'Помогло', value: total.good, cls: 'dv-pos' },
@@ -228,7 +245,7 @@ window.DecisionsTickets = (function () {
         </div>` : '';
         const sums = list.length ? `<div class="dr-sums">
             ${summaryTable('По направлениям', groupBy(list, r => r.direction || r.code), 'Направление')}
-            ${summaryTable('По людям', groupBy(list, r => r.author || '—'), 'Кто')}
+            ${summaryTable('По людям (решение двух людей считается у каждого)', groupByPeople(list), 'Кто')}
         </div>` : '';
         return `
             <section class="rp-card dr-card">
@@ -262,7 +279,7 @@ window.DecisionsTickets = (function () {
             total: summarize(list),
             byKind: g(r => KIND[r.status] || r.status),
             byDir: g(r => r.direction || r.code),
-            byAuthor: g(r => r.author || '—'),
+            byAuthor: groupByPeople(list),
             rows: list.map(r => {
                 const e = r.e;
                 const v = verdictOf(r);
@@ -287,5 +304,13 @@ window.DecisionsTickets = (function () {
         return false;
     }
 
-    return { canView, html, handleClick, exportData, summarize, setPeriod: (n) => { if (PERIODS.includes(n)) period = n; } };
+    // Период и вид решений общие с вкладкой «В рублях» (DecisionsReport): при переключении вида они не сбрасываются.
+    return {
+        canView, html, handleClick, exportData, summarize,
+        setPeriod: (n) => { if (PERIODS.includes(n)) period = n; },
+        setKind: (k) => { kindFilter = k === 'down' || k === 'up' ? k : ''; },
+        getPeriod: () => period,
+        getKind: () => kindFilter,
+        resetTone: () => { toneFilter = ''; }
+    };
 })();

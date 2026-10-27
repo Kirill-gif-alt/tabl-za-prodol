@@ -307,9 +307,14 @@ window.ActivityLog = (function () {
 
     // ---------- отбор записей ----------
 
-    // «Сегодня» (1 день) — с полуночи, а не последние 24 часа.
+    // Период — календарные дни, как «7 дней» на других вкладках: сегодня и ещё N−1 прошлых, с полуночи.
+    // Не «последние N×24 часа»: иначе первый день окна обрезан по времени и не совпадает с подписью дня в списке.
     function periodStart(days) {
-        return days === 1 ? new Date().setHours(0, 0, 0, 0) : (days > 0 ? Date.now() - days * 86400000 : 0);
+        if (!(days > 0)) return 0;
+        const d = new Date();
+        d.setHours(0, 0, 0, 0);
+        d.setDate(d.getDate() - (days - 1));
+        return d.getTime();
     }
 
     // Строка для поиска считается один раз на запись (записи живут в кэше, а поиск набирается по буквам).
@@ -525,9 +530,12 @@ window.ActivityLog = (function () {
         const badge = container.querySelector('#stats-total-badge');
         if (!badge) return;
         const period = PERIOD_TEXT[v.filters.days] || PERIOD_TEXT[0];
-        const n = v.inPeriod;
+        // «Из» — сколько записей подходит под условия (их число совпадает с чипом «Все»), а не всё за период:
+        // иначе при скрытых переходах по вкладкам выходит «показано 40 из 120», хотя скрывать больше нечего.
+        const n = v.list.length;
+        const hidden = v.inPeriod - n;
         badge.textContent = `Показано ${v.shown} из ${n} ${pluralRu(n, 'записи', 'записей', 'записей')} за ${period}`;
-        badge.title = `За период: ${n}. Подходят под условия: ${v.list.length}. На экране: ${v.shown}.`;
+        badge.title = `За период: ${v.inPeriod}. Подходят под условия: ${n}${hidden > 0 ? ` (скрыто фильтрами: ${hidden})` : ''}. На экране: ${v.shown}.`;
     }
 
     function updateFoot(container, v) {
@@ -564,7 +572,8 @@ window.ActivityLog = (function () {
             const oneLabel = { profileId: 'Показать всех пользователей', action: 'Показать все действия', query: 'Очистить поиск' };
             if (keys) fix = `<button type="button" class="jr-btn" data-jr-fix="${keys}">${(culprits.length || parts.length) === 1 ? oneLabel[keys] : 'Сбросить фильтры'}</button>`;
         }
-        return `<div class="jr-empty-title">За выбранный период записей нет</div><div class="jr-empty-hint">${escHtml(hint)}</div>${fix}`;
+        const title = !events.length ? 'Записей пока нет' : (v.inPeriod ? 'По выбранным условиям записей нет' : 'За выбранный период записей нет');
+        return `<div class="jr-empty-title">${title}</div><div class="jr-empty-hint">${escHtml(hint)}</div>${fix}`;
     }
 
     // Кнопка «ещё» нужна только там, где текст реально не помещается в 2 строки (зависит от ширины окна).

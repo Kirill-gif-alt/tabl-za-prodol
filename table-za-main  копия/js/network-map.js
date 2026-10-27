@@ -96,7 +96,7 @@ window.NetworkMap = (function () {
     }
 
     function emptyLeg() {
-        return { n: 0, au: 0, sold: 0, avs: 0, zpkSum: 0, zpkN: 0, closed: 0, open: 0, nearest: null, flights: [] };
+        return { n: 0, au: 0, sold: 0, avs: 0, zSold: 0, zSeats: 0, closed: 0, open: 0, nearest: null, flights: [] };
     }
 
     function addLeg(leg, m, orig, avsVal) {
@@ -104,14 +104,15 @@ window.NetworkMap = (function () {
         const sold = m.free || 0;
         const avs = avsVal || 0;
         const denom = Math.max(0, au - avs);
-        const zpk = denom > 0 ? sold / denom : null;
         leg.n++;
         leg.au += au;
         leg.sold += sold;
         leg.avs += avs;
-        if (zpk != null && Number.isFinite(zpk)) {
-            leg.zpkSum += zpk;
-            leg.zpkN++;
+        // ЗПК направления = загрузка / кресла в продаже по всем вылетам (как в «Загрузке рейсов» и в «Творческой»),
+        // а не среднее из процентов отдельных вылетов: иначе вылет на 40 кресел весит как вылет на 120.
+        if (denom > 0) {
+            leg.zSold += sold;
+            leg.zSeats += denom;
         }
         if (m.closed) leg.closed++;
         else leg.open++;
@@ -122,8 +123,8 @@ window.NetworkMap = (function () {
     }
 
     function legAvg(leg) {
-        if (!leg || !leg.zpkN) return null;
-        return Math.round((leg.zpkSum / leg.zpkN) * 100);
+        if (!leg || !(leg.zSeats > 0)) return null;
+        return Math.round(leg.zSold / leg.zSeats * 100);
     }
 
     function pointId(p) {
@@ -211,9 +212,9 @@ window.NetworkMap = (function () {
             const au = line.ab.au + line.ba.au;
             const sold = line.ab.sold + line.ba.sold;
             const avs = line.ab.avs + line.ba.avs;
-            const zpkN = line.ab.zpkN + line.ba.zpkN;
-            const zpkSum = line.ab.zpkSum + line.ba.zpkSum;
-            const avgZpk = zpkN ? Math.round((zpkSum / zpkN) * 100) : null;
+            const zSeats = line.ab.zSeats + line.ba.zSeats;
+            const zSold = line.ab.zSold + line.ba.zSold;
+            const avgZpk = zSeats > 0 ? Math.round(zSold / zSeats * 100) : null;
             const allClosed = n > 0 && line.ab.open + line.ba.open === 0;
             const remain = Math.max(0, au - sold - avs);
             const zpkAb = legAvg(line.ab);
@@ -1675,7 +1676,7 @@ window.NetworkMap = (function () {
                         <label class="nmap-check"><input type="checkbox" id="nmap-open-only" checked> Только открытые</label>
                     </div>
                     <div class="nmap-legend">
-                        <span>ЗПК направления (среднее туда и обратно)</span>
+                        <span>ЗПК направления (туда и обратно вместе)</span>
                         <div class="nmap-legend-bar"></div>
                         <div class="nmap-legend-scale"><span>0%</span><span>50%</span><span>100%</span></div>
                         <p class="nmap-muted">Одна дуга на пару городов. Оранжевый борт — радар, тёмно-синий — оценка по расписанию и дальности. Эфир только сегодня.</p>

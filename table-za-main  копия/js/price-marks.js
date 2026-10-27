@@ -31,10 +31,24 @@ window.PriceMarks = (function () {
         return typeof SalesManagement !== 'undefined' && typeof SalesManagement.marksFor === 'function';
     }
 
-    // Решения по вылету (без «проверено без изменений»).
+    // Решения по вылету (без «проверено без изменений»). Одно решение, отмеченное двумя людьми, — одна запись
+    // (как в отчёте «Решения»): иначе в карточке оно шло бы дважды, а на графике рисовалось бы два маркера.
     function decisions(code, flyDate) {
         if (!available()) return [];
-        return SalesManagement.marksFor(code, flyDate).filter(m => DECISIONS.has(m.status));
+        const out = [];
+        const seen = new Map();
+        SalesManagement.marksFor(code, flyDate).filter(m => DECISIONS.has(m.status)).forEach(m => {
+            const k = m.check + '|' + m.status;
+            const prev = seen.get(k);
+            if (!prev) {
+                const item = Object.assign({}, m);
+                seen.set(k, item);
+                out.push(item);
+                return;
+            }
+            if (m.author && !String(prev.author || '').split(' / ').includes(m.author)) prev.author = prev.author ? prev.author + ' / ' + m.author : m.author;
+        });
+        return out;
     }
 
     function todayMark(code, flyDate) {
@@ -155,19 +169,26 @@ window.PriceMarks = (function () {
             const tol = Math.max(1, Math.round((e.expected || 0) * 0.1));
             if ((e.expected || 0) + e.after.n < 3) return { cls: 'none', text: 'мало продаж для вывода', short: 'рано судить', worked: null };
             return e.effect >= -tol
-                ? { cls: 'pos', text: `по новой цене добрали как обычно (${e.after.n} при обычных ${fmtN(Math.round(e.expected * 10) / 10)})`, short: 'сработало', worked: true }
-                : { cls: 'neg', text: `после повышения добрали меньше обычного: ${e.after.n} вместо ${fmtN(Math.round(e.expected * 10) / 10)}, загрузка ${e.finalLf != null ? Math.round(e.finalLf * 100) + '%' : '—'}`, short: 'не сработало', worked: false };
+                ? { cls: 'pos', text: `по новой цене добрали как обычно (${e.after.n} при обычных ${fmtN(e.expected)})`, short: 'сработало', worked: true }
+                : { cls: 'neg', text: `после повышения добрали меньше обычного: ${e.after.n} вместо ${fmtN(e.expected)}, загрузка ${e.finalLf != null ? Math.round(e.finalLf * 100) + '%' : '—'}`, short: 'не сработало', worked: false };
         }
         return e.effect > 0 ? { cls: 'pos', text: `продаётся лучше обычного ${signedN(e.effect)}`, short: 'сработало', worked: true }
             : { cls: 'neg', text: e.effect < 0 ? `хуже обычного ${signedN(e.effect)}` : 'без изменений', short: 'не сработало', worked: false };
     }
 
-    function signedN(n) {
-        return (n > 0 ? '+' : (n < 0 ? '−' : '')) + Math.abs(n);
+    // Дробные числа билетов — с запятой и без хвоста вида 0,30000000000000004.
+    function fmtN(v) {
+        return String(Math.round(Number(v) * 10) / 10).replace('.', ',');
     }
 
-    function fmtN(v) {
-        return String(v).replace('.', ',');
+    function signedN(n) {
+        return (n > 0 ? '+' : (n < 0 ? '−' : '')) + fmtN(Math.abs(n));
+    }
+
+    // «1 билет», «2 билета», «5 билетов»; у дробного числа — всегда «билета» («0,5 билета», «5,5 билета»).
+    function ticketWord(n) {
+        const v = Math.round(Number(n) * 10) / 10;
+        return Number.isInteger(v) ? pluralRu(v, 'билет', 'билета', 'билетов') : 'билета';
     }
 
     function rub(v) {
@@ -179,15 +200,15 @@ window.PriceMarks = (function () {
     }
 
     function tickets(n) {
-        return `${n} ${pluralRu(n, 'билет', 'билета', 'билетов')}`;
+        return `${fmtN(n)} ${ticketWord(n)}`;
     }
 
     // Понятное описание: сколько продали до и после решения, сколько обычно, и вывод.
     function effectLines(e, status) {
         if (!e) return [];
-        const usual = (x) => (x ? ` (обычно ${x.value})` : '');
+        const usual = (x) => (x ? ` (обычно ${fmtN(x.value)})` : '');
         const lines = e.untilDeparture
-            ? [`До решения: ${tickets(e.before.n)} за ${winDays()}${usual(e.normBefore)} → после решения до вылета: ${tickets(e.after.n)}${e.normAfter ? ` (обычно добирают ${e.normAfter.value})` : ''}${e.complete ? '' : ' — вылет ещё впереди'}`]
+            ? [`До решения: ${tickets(e.before.n)} за ${winDays()}${usual(e.normBefore)} → после решения до вылета: ${tickets(e.after.n)}${e.normAfter ? ` (обычно добирают ${fmtN(e.normAfter.value)})` : ''}${e.complete ? '' : ' — вылет ещё впереди'}`]
             : [`До решения: ${tickets(e.before.n)} за ${winDays()}${usual(e.normBefore)} → после: ${tickets(e.after.n)}${usual(e.normAfter)}${e.complete ? '' : ' — дни ещё идут'}`];
         if (e.before.avg != null && e.after.avg != null && e.before.avg !== e.after.avg) {
             const d = e.after.avg - e.before.avg;
@@ -195,13 +216,12 @@ window.PriceMarks = (function () {
         }
         let verdict;
         if (!e.complete) verdict = e.untilDeparture ? 'Итог повышения будет после вылета: важно, заполнится ли рейс' : `Итог будет, когда пройдут ${winDays()} после решения`;
-        else if (e.untilDeparture && e.finalLf != null && e.finalLf >= 0.95) verdict = `Итог: рейс заполнился (${Math.round(e.finalLf * 100)}%) — повышение мест не стоило`;
-        else if (e.untilDeparture && e.effect != null) verdict = e.effect >= 0 ? `Итог: после повышения добрали не меньше обычного (${signedN(e.effect)})` : `Итог: после повышения добрали меньше обычного — на ${tickets(Math.round(-e.effect))}`;
         else if (e.effect == null) verdict = 'Сравнить не с чем: мало прошлых вылетов в этот день недели';
-        // В карточке — по билетам (рубли — в отчёте «Решения»).
-        else if (e.effect > 0) verdict = `Итог: после решения продаётся лучше обычного — на ${tickets(e.effect)}`;
-        else if (e.effect < 0) verdict = `Итог: после решения продаётся хуже обычного — на ${tickets(-e.effect)}`;
-        else verdict = 'Итог: продаётся как обычно';
+        else {
+            // Тот же вывод, что в отчёте «Решения» → «По билетам» (допуск 10% у повышения, «рано судить» при малых продажах).
+            const j = judge(e, status);
+            verdict = `${j.worked === true ? 'Помогло' : (j.worked === false ? 'Навредило' : 'Пока вывода нет')}: ${j.text}`;
+        }
         lines.push(verdict);
         return lines;
     }
@@ -213,7 +233,8 @@ window.PriceMarks = (function () {
         const esc = typeof escHtml === 'function' ? escHtml : String;
         const rows = list.map(m => {
             const e = m.status === 'attn' ? null : effectFor(base, code, flyDate, m);
-            const cls = e && e.complete && e.effect != null ? (e.effect > 0 ? 'pm-eff-up' : (e.effect < 0 ? 'pm-eff-down' : '')) : '';
+            const jd = e && e.complete && e.effect != null ? judge(e, m.status) : null;
+            const cls = jd ? (jd.worked === true ? 'pm-eff-up' : (jd.worked === false ? 'pm-eff-down' : '')) : '';
             const lines = effectLines(e, m.status);
             return `<li class="pm-item">
                 <div class="pm-item-head"><span class="pm-glyph pm-${m.status}">${GLYPH[m.status]}</span>

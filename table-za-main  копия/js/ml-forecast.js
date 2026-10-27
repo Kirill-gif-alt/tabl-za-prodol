@@ -81,9 +81,14 @@ window.MlForecast = (function () {
         if (!row) return null;
         const seats = typeof getSeatsOnSale === 'function' ? getSeatsOnSale(row) : 0;
         const sold = typeof getSoldFromRow === 'function' ? getSoldFromRow(row) : 0;
-        const dtd = typeof getDaysUntil === 'function' ? getDaysUntil(date) : null;
-        if (!(seats > 0) || dtd == null || dtd < 0 || dtd > 180) return null;
-        return { reis: String(code).toUpperCase(), flydate: date, current_booked: Math.max(0, Math.round(sold)), total_au: Math.round(seats), dtd };
+        const real = typeof getDaysUntil === 'function' ? getDaysUntil(date) : null;
+        if (!(seats > 0) || real == null || real < 0) return null;
+        // Продажи в файле — на день среза данных, а не на сегодня (файл может быть старше суток). Как в модели 1,
+        // считаем срок от дня среза: иначе 5 проданных «за 2 дня до вылета» на деле были проданы за 22 дня.
+        const lag = typeof observedFromDtd === 'function' ? observedFromDtd(date) : 0;
+        const dtd = Math.max(real, lag);
+        if (dtd > 180) return null;
+        return { reis: String(code).toUpperCase(), flydate: date, current_booked: Math.max(0, Math.round(sold)), total_au: Math.round(seats), dtd, dtdReal: real };
     }
     function keyOf(i) { return [i.reis, i.flydate, i.current_booked, i.total_au, i.dtd, st.health && st.health.version || ''].join('|'); }
 
@@ -239,6 +244,7 @@ window.MlForecast = (function () {
         const tip = [
             'Вторая модель (машинное обучение): по кривой продаж этого рейса, по прошлым вылетам рейса и направления, дню недели и сезону.',
             `Прогноз с точки «${hz.label}» — она ближе всего к сегодняшнему дню.`,
+            f.inp.dtdReal != null && f.inp.dtd !== f.inp.dtdReal ? `Продажи в файле — на ${f.inp.dtd - f.inp.dtdReal} ${pluralRu(f.inp.dtd - f.inp.dtdReal, 'день', 'дня', 'дней')} старше сегодняшнего дня: срок считается от дня среза данных.` : '',
             err != null ? `На вылетах, которых модель не видела, она ошибалась в среднем на ${String(Math.round(err * 10) / 10).replace('.', ',')} пасс.` : '',
             `Все точки:\n${all}`,
             warn.length ? 'Замечания:\n' + warn.join('\n') : ''
@@ -288,6 +294,12 @@ window.MlForecast = (function () {
         return out;
     }
 
+    // Чем отличаются данные, по которым построена таблица окна: загрузка файлов, новый день, переобучение, параметры.
+    function winSig() {
+        return [typeof dataEpoch === 'number' ? dataEpoch : 0, today(), typeof analyticsRevision === 'function' ? analyticsRevision() : '',
+            st.health && st.health.version || ''].join('|');
+    }
+
     function dateTs(s) { const d = parseLocalDate(s); return d ? d.getTime() : 0; }
 
     async function buildCompare() {
@@ -309,15 +321,17 @@ window.MlForecast = (function () {
                 const m2 = e && e.s === 'ok' ? headline(e.res, z.inp.dtd) : null;
                 let m1 = null;
                 try { m1 = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(z.x.code, z.x.date) : null; } catch (err) { m1 = null; }
-                const m1v = m1 && m1.final != null ? m1.final : null;
+                // Вылет «сегодня и раньше» у модели 1 — не прогноз, а факт (final = продано): в карточке его не показывают, и здесь тоже.
+                const m1v = m1 && m1.final != null && m1.source !== 'flown' ? m1.final : null;
                 rows.push({ code: z.x.code, date: z.x.date, ts: dateTs(z.x.date), dir: typeof getFlightDirection === 'function' ? getFlightDirection(z.x.code) : '',
-                    sold: z.inp.current_booked, seats: z.inp.total_au, dtd: z.inp.dtd, m1: m1v, m2: m2 ? m2.pred : null,
+                    sold: z.inp.current_booked, seats: z.inp.total_au, dtd: z.inp.dtdReal != null ? z.inp.dtdReal : z.inp.dtd, m1: m1v, m2: m2 ? m2.pred : null,
                     diff: m1v != null && m2 ? m2.pred - m1v : null, err: e && e.s === 'err' ? e.err : '', flags: m2 ? flagTexts(m2.flags) : [] });
             });
             if (token !== wstate.building) return;
             await new Promise(r => setTimeout(r, 0));
         }
         wstate.rows = rows;
+        wstate.sig = winSig();
         wstate.status = '';
         renderWin();
     }
@@ -455,7 +469,7 @@ window.MlForecast = (function () {
         const t = e.target;
         if (t.closest('[data-mlw="close"]') || t.classList.contains('mlw-backdrop')) return closeWindow();
         const tab = t.closest('[data-mlw-tab]');
-        if (tab) { wstate.tab = tab.dataset.mlwTab; renderWin(); if (wstate.tab === 'compare' && !wstate.rows.length && !wstate.building) buildCompare(); return; }
+        if (tab) { wstate.tab = tab.dataset.mlwTab; renderWin(); if (wstate.tab === 'compare' && st.state === 'ready' && !wstate.status && (!wstate.rows.length || wstate.sig !== winSig())) buildCompare(); return; }
         const act = t.closest('[data-mlw]');
         if (act && act.dataset.mlw === 'recheck') {
             refreshHealth(true).then(() => { renderWin(); if (st.state === 'ready' && wstate.tab === 'compare') buildCompare(); });
@@ -525,8 +539,10 @@ window.MlForecast = (function () {
         if (tab) wstate.tab = tab;
         renderWin();
         refreshHealth(true).then(() => {
+            // Данные загрузили заново, наступил новый день или модель переучилась — прежняя таблица устарела.
+            if (wstate.rows.length && wstate.sig !== winSig()) wstate.rows = [];
             renderWin();
-            if (st.state === 'ready' && wstate.tab === 'compare' && !wstate.rows.length) buildCompare();
+            if (st.state === 'ready' && wstate.tab === 'compare' && !wstate.rows.length && !wstate.status) buildCompare();
         });
         return true;
     }
@@ -534,6 +550,7 @@ window.MlForecast = (function () {
     function closeWindow() {
         if (win) win.classList.remove('open');
         wstate.building++;      // отменяет незаконченный расчёт
+        wstate.status = '';
     }
 
     // Новая загрузка данных: расчёты устарели.
@@ -544,7 +561,14 @@ window.MlForecast = (function () {
     if (typeof MlModel !== 'undefined') {
         MlModel.onChange(() => {
             if (modelTimer) return;
-            modelTimer = setTimeout(() => { modelTimer = 0; st.at = 0; st.pending = null; refreshHealth(true).then(() => { if (win && win.classList.contains('open')) renderWin(); notify(); }); }, 400);
+            modelTimer = setTimeout(() => { modelTimer = 0; st.at = 0; st.pending = null; refreshHealth(true).then(() => {
+                if (win && win.classList.contains('open')) {
+                    if (wstate.rows.length && wstate.sig !== winSig()) wstate.rows = [];
+                    renderWin();
+                    if (st.state === 'ready' && wstate.tab === 'compare' && !wstate.rows.length && !wstate.status) buildCompare();
+                }
+                notify();
+            }); }, 400);
         });
     }
 

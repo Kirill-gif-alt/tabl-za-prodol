@@ -50,16 +50,27 @@ function normalizeRmsConditions(conditions) {
         }));
 }
 
+// Файл продаж старше суток: считается один раз на отбор, а не на каждый рейс.
+let rmsStaleMemo = null;
+function rmsSalesStale() {
+    if (rmsStaleMemo !== null) return rmsStaleMemo;
+    return typeof getStaleSalesInfo === 'function' && !!getStaleSalesInfo();
+}
+
 function getRmsFlightFieldValue(f, field) {
     switch (field) {
         case 'pct': return f.pct;
         case 'free': return f.free;
         case 'delta': return f.delta;
         case 'dtd': return f.dtd;
-        case 'pickup': return f.pickup;
+        case 'pickup':
+            // Файл продаж старый: на экране «—», в отборе это «нет данных», а не ноль.
+            if (rmsSalesStale()) return null;
+            return f.pickup;
         case 'remainder': return f.remainder;
         case 'salesToday':
             if (typeof hasSalesFileLoaded === 'function' && !hasSalesFileLoaded()) return null;
+            if (rmsSalesStale()) return null;
             return f.s?.today ?? 0;
         case 'avg': return f.avg;
         default: return null;
@@ -88,7 +99,12 @@ function getActiveRmsConditions() {
 function applyRmsConditions(flights) {
     const list = getActiveRmsConditions();
     if (!list.length) return flights;
-    return flights.filter(f => list.every(c => evaluateRmsCondition(f, c)));
+    rmsStaleMemo = typeof getStaleSalesInfo === 'function' && !!getStaleSalesInfo();
+    try {
+        return flights.filter(f => list.every(c => evaluateRmsCondition(f, c)));
+    } finally {
+        rmsStaleMemo = null;
+    }
 }
 
 function describeRmsCondition(cond) {

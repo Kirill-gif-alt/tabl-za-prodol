@@ -127,6 +127,11 @@ window.DecisionsReport = (function () {
             t.lo += m.lo || 0;
             t.hi += m.hi || 0;
         });
+        // Как в верхней полосе: «помогло» = твёрдо + «скорее» + «чуть» (и ориентировочные по знаку эффекта).
+        t.good = t.worked + t.leanPos + t.weakPos;
+        t.bad = t.failed + t.leanNeg + t.weakNeg;
+        // Итог по всем оценённым С поправкой на шум и сдвиг — та же цифра, что «Общий итог» вверху и плитка на «Сегодня».
+        t.sumAdj = t.sumAll + t.corrSum;
         return t;
     }
 
@@ -144,7 +149,7 @@ window.DecisionsReport = (function () {
                 const r0 = seen.get(dk);
                 if (!r0.clsFrom && m.clsFrom) r0.clsFrom = m.clsFrom;
                 if (!r0.clsTo && m.clsTo) r0.clsTo = m.clsTo;
-                if (m.author && !r0.author.split(' / ').includes(m.author)) r0.author = r0.author ? r0.author + ' / ' + m.author : m.author;
+                if (m.author && !r0.authors.includes(m.author)) { r0.authors.push(m.author); r0.authors.sort((a, b) => a.localeCompare(b, 'ru')); r0.author = r0.authors.join(' / '); }
                 return;
             }
             const ago = daysAgo(m.check);
@@ -154,7 +159,7 @@ window.DecisionsReport = (function () {
             let e = null;
             try { e = PriceMarks.effectFor(base, code, m.dep, { check: m.check, status: m.status }); } catch (err) { e = null; }
             out.push({
-                code, base, dep: m.dep, check: m.check, status: m.status, author: m.author || '',
+                code, base, dep: m.dep, check: m.check, status: m.status, author: m.author || '', authors: m.author ? [m.author] : [],
                 clsFrom: m.clsFrom || '', clsTo: m.clsTo || '',
                 direction: typeof getFlightDirection === 'function' ? getFlightDirection(code) : '',
                 e,
@@ -202,6 +207,18 @@ window.DecisionsReport = (function () {
         return [...map.entries()].map(([k, l]) => ({ key: k, ...summarize(l) })).sort(sortFn || ((a, b) => b.n - a.n));
     }
 
+    // Группы по людям: решение, отмеченное двумя людьми, считается у каждого из них.
+    function groupByPeople(list) {
+        const map = new Map();
+        list.forEach(r => {
+            (r.authors && r.authors.length ? r.authors : ['—']).forEach(a => {
+                if (!map.has(a)) map.set(a, []);
+                map.get(a).push(r);
+            });
+        });
+        return [...map.entries()].map(([k, l]) => ({ key: k, ...summarize(l) })).sort((a, b) => b.n - a.n);
+    }
+
     // Итог одной строки: вердикт для экрана и для Excel.
     function verdictOf(r) {
         return PriceMarks.judge(r.e, r.status);
@@ -219,13 +236,14 @@ window.DecisionsReport = (function () {
                 <td class="rp-left"><strong>${esc(g.key)}</strong></td>
                 <td>${g.n}</td>
                 <td>${g.money.definite}${g.money.definite ? ` <span class="dr-usual">${g.money.worked} / ${g.money.failed}</span>` : ''}</td>
-                <td class="rp-nowrap">${g.money.definite ? `<span class="${g.money.sum >= 0 ? 'dr-pos' : 'dr-neg'}">${rub(g.money.sum)}</span>` : '—'}${g.money.finalN ? `<div class="dr-usual">все оценённые ${rub(g.money.sumAll)}</div>` : ''}</td>
+                <td class="rp-nowrap">${g.money.definite ? `<span class="${g.money.sum >= 0 ? 'dr-pos' : 'dr-neg'}">${rub(g.money.sum)}</span>` : '—'}${g.money.finalN ? `<div class="dr-usual" title="С поправкой на шум и сдвиг метода — как «Общий итог» вверху страницы">все оценённые, с поправкой ${rub(g.money.sumAdj)}</div>` : ''}</td>
                 <td>${g.money.approx}</td>
-                <td>${g.money.unclear + g.money.na + g.money.wait}</td>
+                <td>${g.money.unclear + g.money.na}</td>
+                <td>${g.money.wait}</td>
             </tr>`).join('');
         return `<div class="dr-sum">
             <div class="dr-sum-title">${esc(title)}</div>
-            <table class="rp-table dr-sum-table"><thead><tr><th>${esc(keyLabel)}</th><th>Решений</th><th title="Решения с твёрдым итогом «помогло / навредило» (диапазон не включает ноль и эффект выше порога)">Определено</th><th title="Сверху — сумма только по твёрдым итогам, снизу — по всем оценённым решениям">Эффект</th><th title="Помогло или навредило, но данных мало (доверие низкое): в первую сумму не входят">Ориент.</th><th title="Мало данных, ждём итога или не считаем: в сумму не входят">Мало данных</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+            <table class="rp-table dr-sum-table"><thead><tr><th>${esc(keyLabel)}</th><th>Решений</th><th title="Решения с твёрдым итогом «помогло / навредило» (диапазон не включает ноль и эффект выше порога)">Определено</th><th title="Сверху — сумма только по твёрдым итогам, снизу — по всем оценённым решениям с поправкой на шум и сдвиг (как «Общий итог» вверху)">Эффект</th><th title="Помогло или навредило, но данных мало (доверие низкое): в первую сумму не входят">Ориент.</th><th title="Вывода нет или решение не считается: в сумму не входит">Мало данных</th><th title="Срок после решения ещё не прошёл">Ждём итога</th></tr></thead><tbody>${rowsHtml}</tbody></table>
             ${groups.length > 10 ? `<div class="rp-muted">и ещё ${groups.length - 10} — полный список в Excel</div>` : ''}
         </div>`;
     }
@@ -334,11 +352,11 @@ window.DecisionsReport = (function () {
                 if (tone === 'pos') say = approx ? 'Ориентировочно помогло: даже в худшем случае плюс, но данных мало (доверие низкое).' : 'Помогло: даже в худшем случае заработали больше, чем без решения.';
                 else if (tone === 'neg') say = approx ? 'Ориентировочно навредило: даже в лучшем случае минус, но данных мало (доверие низкое).' : 'Навредило: даже в лучшем случае заработали меньше, чем без решения.';
                 else if (tone === 'unk') say = 'Мало данных: результат мог быть и плюсом, и минусом. В твёрдую сумму такое решение не входит.';
-                else if (tone === 'wpos') say = `Чуть помогло: эффект есть, но слабый (вероятность плюса около ${m.pPos}%). Одно такое решение ничего не доказывает, смотрите общий итог.`;
-                else if (tone === 'wneg') say = `Чуть навредило: эффект есть, но слабый (вероятность минуса около ${100 - m.pPos}%). Одно такое решение ничего не доказывает, смотрите общий итог.`;
+                else if (tone === 'wpos') say = `Чуть помогло: эффект есть, но слабый${m.pPos != null ? ` (вероятность плюса около ${m.pPos}%)` : ''}. Одно такое решение ничего не доказывает, смотрите общий итог.`;
+                else if (tone === 'wneg') say = `Чуть навредило: эффект есть, но слабый${m.pPos != null ? ` (вероятность минуса около ${100 - m.pPos}%)` : ''}. Одно такое решение ничего не доказывает, смотрите общий итог.`;
                 else if (tone === 'flat') say = `Без заметного эффекта: разница меньше порога значимости (${minPct}% выручки или ${minRub} ₽, берётся большее).`;
-                else if (tone === 'lpos') say = `Скорее помогло: вероятность плюса около ${m.pPos}%, но диапазон включает ноль, наверняка сказать нельзя.`;
-                else if (tone === 'lneg') say = `Скорее навредило: вероятность минуса около ${100 - m.pPos}%, но диапазон включает ноль — наверняка сказать нельзя.`;
+                else if (tone === 'lpos') say = `Скорее помогло:${m.pPos != null ? ` вероятность плюса около ${m.pPos}%,` : ''} диапазон включает ноль, наверняка сказать нельзя.`;
+                else if (tone === 'lneg') say = `Скорее навредило:${m.pPos != null ? ` вероятность минуса около ${100 - m.pPos}%,` : ''} диапазон включает ноль, наверняка сказать нельзя.`;
                 else say = 'Ждём итога: зафиксируем, когда пройдёт окно или вылет.';
                 tags.push(`Доверие: ${m.grade === 'A' ? 'высокое' : (m.grade === 'B' ? 'среднее' : 'низкое')} (${m.k} ${m.k === 1 ? 'похожий вылет' : (m.k < 5 ? 'похожих вылета' : 'похожих вылетов')})`);
                 if (!m.frozen) tags.push('не зафиксировано');
@@ -362,14 +380,14 @@ window.DecisionsReport = (function () {
                 big: tone === 'unk' ? '≈ ' + rub(m.delta) : big, short, say, range, lines, tags
             });
         });
-        const good = mt.worked + mt.leanPos + mt.weakPos; const bad = mt.failed + mt.leanNeg + mt.weakNeg;
+        const good = mt.good; const bad = mt.bad;
         // итог с поправкой: на вылетах без решений он около нуля
-        const totSales = mt.sumAll; const tot = totSales + mt.corrSum; const tsd = Math.sqrt(mt.varSum) * pv('MONEY_NOISE_Z', 1.9);   // ошибки разных решений почти не связаны (проверено на вылетах без решений): складываем как независимые
+        const totSales = mt.sumAll; const tot = mt.sumAdj; const tsd = Math.sqrt(mt.varSum) * pv('MONEY_NOISE_Z', 1.9);   // ошибки разных решений почти не связаны (проверено на вылетах без решений): складываем как независимые
         const nOc = mt.finalN;
-        const dAdj = down.money.sumAll + down.money.corrSum; const uAdj = up.money.sumAll + up.money.corrSum;   // как и общий итог: с поправкой на шум и сдвиг
+        const dAdj = down.money.sumAdj; const uAdj = up.money.sumAdj;   // как и общий итог: с поправкой на шум и сдвиг
         const summary = list.length ? DecisionsViz.strip([{ label: 'Решений', value: total.n }, { label: 'Помогло', value: good, cls: 'dr-pos' }, { label: 'Навредило', value: bad, cls: 'dr-neg' }, { label: 'Без заметного эффекта', value: mt.flat }, { label: 'Мало данных', value: mt.unclear + mt.na }, { label: 'Ждём итога', value: mt.wait }]
             .concat(!kindFilter ? [{ label: 'Снижения', value: down.money.finalN ? rub(dAdj) : '—', cls: dAdj > 0 ? 'dr-pos' : (dAdj < 0 ? 'dr-neg' : '') }, { label: 'Повышения', value: up.money.finalN ? rub(uAdj) : '—', cls: uAdj > 0 ? 'dr-pos' : (uAdj < 0 ? 'dr-neg' : '') }] : [])
-            .concat([{ label: 'Общий итог по оценённым', value: mt.finalN ? rub(tot) : '—', cls: tot > 0 ? 'dr-pos' : (tot < 0 ? 'dr-neg' : '') }])) + (mt.finalN ? `<div class="dp-reasons">Общий итог по ${nOc} ${pluralRu(nOc, 'оценённому решению', 'оценённым решениям', 'оценённым решениям')}: ${rub(tot)}, диапазон ${rub(tot - tsd)} … ${rub(tot + tsd)} (около ${confPct(pv('MONEY_NOISE_Z', 1.9))}%). Диапазон суммы уже, чем у отдельных решений: ошибки разных решений почти не связаны и частично гасят друг друга. ${Math.abs(mt.corrSum) >= 1000 ? `Это с поправкой на шум и сдвиг метода: по продажам ${rub(totSales)}, поправка ${rub(mt.corrSum)}. ` : ''}Твёрдых «помогло / навредило» ${mt.definite}, их сумма ${mt.definite ? rub(mt.sum) : '—'} (остальные в неё не входят). Ещё ${mt.leanPos + mt.leanNeg} «скорее», ${mt.weakPos + mt.weakNeg} «чуть», ${mt.unclear} без вывода (мало данных). Снижения и повышения считаются по всем оценённым решениям.</div>` : '') : '';
+            .concat([{ label: 'Общий итог по оценённым', value: mt.finalN ? rub(tot) : '—', cls: tot > 0 ? 'dr-pos' : (tot < 0 ? 'dr-neg' : '') }])) + (mt.finalN ? `<div class="dp-reasons">Общий итог по ${nOc} ${pluralRu(nOc, 'оценённому решению', 'оценённым решениям', 'оценённым решениям')}: ${rub(tot)}, диапазон ${rub(Math.round((tot - tsd) / 100) * 100)} … ${rub(Math.round((tot + tsd) / 100) * 100)} (около ${confPct(pv('MONEY_NOISE_Z', 1.9))}%). Диапазон суммы уже, чем у отдельных решений: ошибки разных решений почти не связаны и частично гасят друг друга. ${Math.abs(mt.corrSum) >= 1000 ? `Это с поправкой на шум и сдвиг метода: по продажам ${rub(totSales)}, поправка ${rub(mt.corrSum)}. ` : ''}${mt.definite ? `Твёрдых «помогло / навредило» ${mt.definite}, их сумма ${rub(mt.sum)} (остальные в неё не входят).` : 'Твёрдых «помогло / навредило» пока нет.'} Ещё ${mt.leanPos + mt.leanNeg} «скорее», ${mt.weakPos + mt.weakNeg} «чуть», ${mt.unclear} без вывода (мало данных). Снижения и повышения считаются по всем оценённым решениям.</div>` : '') : '';
         const reasonNote = mt.na ? `<div class="dp-reasons">Не считаем (${mt.na}): ${Object.entries(mt.reasons).sort((a, b) => b[1] - a[1]).map(([k, v]) => esc(k) + ' — ' + v).join('; ')}.</div>` : '';
         const sts = list.map(moneyState);
         // График по направлениям: 8 лучших и 3 худших по сумме, в порядке убывания модуля эффекта.
@@ -463,7 +481,7 @@ window.DecisionsReport = (function () {
             total: summarize(list),
             byKind: g(r => KIND[r.status] || r.status),
             byDir: g(r => r.direction || r.code),
-            byAuthor: g(r => r.author || '—'),
+            byAuthor: groupByPeople(list),
             byLead: groupBy(list, leadOf, leadSort),
             rows: list.map(r => {
                 const e = r.e;
@@ -477,7 +495,7 @@ window.DecisionsReport = (function () {
                     after: e ? e.after.n : '', normAfter: e && e.normAfter ? e.normAfter.value : '',
                     fareBefore: e && e.before.avg != null ? Math.round(e.before.avg) : '',
                     fareAfter: e && e.after.avg != null ? Math.round(e.after.avg) : '',
-                    effect: fin ? m.delta : '', lo: fin ? m.lo : '', hi: fin ? m.hi : '', volume: fin ? m.volume : '', priceEffect: fin ? m.priceEffect : '',
+                    effect: fin ? m.delta : '', corr: fin ? (m.corr || 0) : '', lo: fin ? m.lo : '', hi: fin ? m.hi : '', volume: fin ? m.volume : '', priceEffect: fin ? m.priceEffect : '',
                     grade: fin ? (m.grade === 'A' ? 'высокое' : (m.grade === 'B' ? 'среднее' : 'низкое')) : '', clsBefore: m ? (m.clsBefore || '') : '', clsAfter: m ? (m.clsAfter || '') : '',
                     expAll: m && m.expAll != null ? m.expAll : '', factAll: m && m.factAll != null ? m.factAll : '', analogs: m && m.k != null ? m.k : '',
                     method: m && m.v != null ? m.v : '', verdict: st.short, text: (st.reason ? (st.reason.indexOf(st.text) === 0 ? st.reason : st.text + ': ' + st.reason) : st.text) + (m && m.flags && m.flags.length ? ' [' + m.flags.join('; ') + ']' : '')
@@ -512,10 +530,24 @@ window.DecisionsReport = (function () {
         return sw + (view === 'money' ? moneyHtml(rerender) : DecisionsTickets.html());
     }
 
+    // Период и вид решений («все / снижение / повышение») общие для «По билетам» и «В рублях»:
+    // иначе после смены вида отчёт показывал бы другой период, и те же решения давали бы другие числа.
     function handleClick(btn, rerender) {
-        if (btn.dataset.drView) { setView(btn.dataset.drView); rerender(); return true; }
-        return view === 'money' ? moneyClick(btn, rerender) : DecisionsTickets.handleClick(btn, rerender);
+        if (btn.dataset.drView) {
+            setView(btn.dataset.drView);
+            toneFilter = '';   // наборы меток в двух видах разные: фильтр по метке не переносим
+            if (typeof DecisionsTickets !== 'undefined' && DecisionsTickets.resetTone) DecisionsTickets.resetTone();
+            rerender();
+            return true;
+        }
+        const wasMoney = view === 'money';
+        const handled = wasMoney ? moneyClick(btn, rerender) : DecisionsTickets.handleClick(btn, rerender);
+        if (handled && typeof DecisionsTickets !== 'undefined' && DecisionsTickets.getPeriod) {
+            if (wasMoney) { DecisionsTickets.setPeriod(period); DecisionsTickets.setKind(kindFilter); }
+            else { period = DecisionsTickets.getPeriod(); kindFilter = DecisionsTickets.getKind(); }
+        }
+        return handled;
     }
 
-    return { canView, html, handleClick, view: () => view, setPeriod: (n) => { if (PERIODS.includes(n)) period = n; }, setView: (v) => { if (v === 'money' || v === 'tickets') view = v; }, exportData: () => (view === 'money' ? moneyExport() : DecisionsTickets.exportData()), summarize };
+    return { canView, html, handleClick, view: () => view, setPeriod: (n) => { if (PERIODS.includes(n)) { period = n; if (typeof DecisionsTickets !== 'undefined') DecisionsTickets.setPeriod(n); } }, setView: (v) => { if (v === 'money' || v === 'tickets') view = v; }, exportData: () => (view === 'money' ? moneyExport() : DecisionsTickets.exportData()), summarize };
 })();

@@ -200,7 +200,10 @@ function renderHeaderKpi() {
     const featureOn = (key) => typeof ProfileAuth === 'undefined' || typeof ProfileAuth.featureOn !== 'function' || ProfileAuth.featureOn(key);
     let k;
     try { k = getGlobalKPIs(); } catch (e) { console.warn('header kpi', e); return; }
-    const salesReady = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(dataLoadStatus && dataLoadStatus.sales);
+    const salesReady0 = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(dataLoadStatus && dataLoadStatus.sales);
+    // Файл продаж старше 1 дня: «0 продаж сегодня» значило бы «нет свежих данных», а не «не продаём» — как на «Сегодня» и в RMS, тут «—».
+    const staleSales = salesReady0 && typeof getStaleSalesInfo === 'function' ? getStaleSalesInfo() : null;
+    const salesReady = salesReady0 && !staleSales;
     const sales = Number(k.todaySales) || 0;
     const revK = Math.round((Number(k.todayRevenue) || 0) / 1000);
     const alerts = Number(k.alertCount) || 0;
@@ -216,14 +219,14 @@ function renderHeaderKpi() {
     };
     if (featureOn('header_kpi')) {
         const outside = Number(k.todayOutside) || 0;
-        items.push(item(salesReady ? sales : '—', 'продаж', salesReady && outside ? `Продано сегодня, из них вне загрузки: ${outside}` : ''), item(salesReady ? (revK + ' тыс.') : '—', '₽'));
+        items.push(item(salesReady ? sales.toLocaleString('ru-RU') : '—', salesReady ? pluralRu(sales, 'продажа', 'продажи', 'продаж') : 'продаж', salesReady && outside ? `Продано сегодня, из них вне загрузки: ${outside}` : ''), item(salesReady ? (revK.toLocaleString('ru-RU') + ' тыс.') : '—', '₽'));
     }
     if (alerts && featureOn('rms_header_alerts')) {
         safe(() => {
             const al = document.createElement('span');
             al.className = 'header-kpi-alert';
             al.textContent = '⚠ ' + alerts;
-            al.title = `Сигналы RMS: ${alerts}.${canRms ? ' Нажмите, чтобы открыть.' : ''}`;
+            al.title = `Сигналы RMS по вылетам на 30 дней: ${alerts}.${canRms ? ' Нажмите, чтобы открыть.' : ''}`;
             if (canRms) al.addEventListener('click', () => switchMainTab('rms'));
             return al;
         });
@@ -232,7 +235,7 @@ function renderHeaderKpi() {
     if (typeof MorningSummary !== 'undefined') safe(() => MorningSummary.headerChip());
     // Файл продаж давно не обновлялся — «0 продаж за сегодня» означает «нет свежих данных», а не «не продаём».
     safe(() => {
-        if (!salesReady || typeof lastSalesUpdate === 'undefined' || !lastSalesUpdate) return null;
+        if (!salesReady0 || typeof lastSalesUpdate === 'undefined' || !lastSalesUpdate) return null;
         const upd = new Date(lastSalesUpdate);
         const t = parseLocalDate(typeof getTodayDate === 'function' ? getTodayDate() : '');
         if (!t) return null;
@@ -376,7 +379,9 @@ function toggleReturnFlight() {
 
 function updateHeaderWithLastUpdate(){
     const el=document.getElementById('last-update-text');
-    if(!el||!lastSalesUpdate)return;
+    if(!el)return;
+    // Продажи сброшены (загрузили только таб) — старую дату в шапке не оставляем.
+    if(!lastSalesUpdate){document.getElementById('last-update-info')?.classList.add('hidden');return;}
     // Вручную, без toLocaleString: создание форматтера при входе стоило ~0,1 с на слабом ПК.
     const d=lastSalesUpdate, p2=n=>String(n).padStart(2,'0');
     el.textContent=`${p2(d.getDate())}.${p2(d.getMonth()+1)}.${d.getFullYear()}, ${p2(d.getHours())}:${p2(d.getMinutes())}`;

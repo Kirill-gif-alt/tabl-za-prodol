@@ -723,7 +723,11 @@ window.ReferenceView = (function () {
 
     function completeness() {
         const sig = checkSig();
-        if (checkMemo.sig === sig && checkMemo.res) return checkMemo.res;
+        // Файл расходов или периодов загрузили заново (кнопка в «Отчётах») — список пропусков пересчитывается.
+        const fd = typeof RouteCosts !== 'undefined' && RouteCosts.fileData ? RouteCosts.fileData() : null;
+        const fileRows = fd ? fd.costRows : null;
+        const filePeriods = fd ? fd.periodsByNum : null;
+        if (checkMemo.sig === sig && checkMemo.res && checkMemo.fileRows === fileRows && checkMemo.filePeriods === filePeriods) return checkMemo.res;
         const noPeriods = new Map();
         const noCost = new Map();
         const noSub = new Map();
@@ -774,7 +778,7 @@ window.ReferenceView = (function () {
         const list = (m) => [...m.values()].sort((a, b) => b.n - a.n);
         const res = { noPeriods: list(noPeriods), noCost: list(noCost), noSub: list(noSub), noRoute: list(noRoute), overlaps };
         res.total = res.noPeriods.length + res.noCost.length + res.noSub.length + res.noRoute.length + res.overlaps.length;
-        checkMemo = { sig, res };
+        checkMemo = { sig, res, fileRows, filePeriods };
         return res;
     }
 
@@ -856,7 +860,10 @@ window.ReferenceView = (function () {
 
     function sheetRows(id) {
         if (id === 'fares') {
+            // Как на экране: рейсы без субсидии (KV-247/248) в справочник не попадают, даже если запись с ними есть в файле.
             return FareRefs.list().filter(e => e.mode === 'limit')
+                .map(e => ({ ...e, flights: e.flights.filter(f => !(typeof FlightChecks !== 'undefined' && FlightChecks.isNeverSubsidized && FlightChecks.isNeverSubsidized(f))) }))
+                .filter(e => e.flights.length)
                 .map(e => [e.flights.join(', '), e.fareCode || '', e.adult, e.child != null ? e.child : '', e.note || '']);
         }
         if (id === 'periods') {

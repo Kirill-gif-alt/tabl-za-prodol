@@ -475,7 +475,8 @@ window.ReportsView = (function () {
         const tiles = tilesHtml([
             { label: 'Рейсов с ошибкой', value: fmt(flightsAll.size), tone: flightsAll.size ? 'bad' : '' },
             { label: 'Из них до вылета', value: fmt(flightsFuture.size), tone: flightsFuture.size ? 'bad' : '' },
-            { label: 'Ошибок всего', value: fmt(all.length) }
+            // Число строк в таблице ниже: зависит от галочки «только рейсы до вылета». Рейс может дать несколько ошибок.
+            { label: checksFutureOnly ? 'Ошибок до вылета' : 'Ошибок всего', value: fmt(shown.length) }
         ]);
         const exportBtn = `<button type="button" class="btn-primary rp-btn" id="rp-checks-export"${all.length && hasPerm('export_excel') ? '' : ' disabled'}>В Excel</button>`;
         const body = !all.length
@@ -629,7 +630,7 @@ window.ReportsView = (function () {
                             </tr>`).join('')}</tbody>
                     </table>
                 </div>
-                ${suggestions.length > ready.length ? '<p class="rp-note">Серым — ненадёжные подсказки: меньше 20 взрослых билетов или больше 5% билетов дороже предела (возможно, несколько субсидированных тарифов по периодам). Их «Принять все» не трогает.</p>' : ''}
+                ${suggestions.length > ready.length ? `<p class="rp-note">Серым — ненадёжные подсказки: меньше ${typeof PV !== 'undefined' && PV.CHECKS_SUGGEST_MIN ? PV.CHECKS_SUGGEST_MIN : 20} взрослых билетов или больше 5% билетов дороже предела (возможно, несколько субсидированных тарифов по периодам). Их «Принять все» не трогает.</p>` : ''}
             </div>` : '';
         const missingHtml = missing.length
             ? `<p class="rp-note rp-warn">Субсидированные рейсы до вылета без тарифа в справочнике — для них проверка тарифа не выполняется: ${missing.map(c => can ? `<button type="button" class="rp-chip" data-ref-fill="${esc(c)}">${esc(c)}</button>` : `<span class="rp-chip">${esc(c)}</span>`).join(' ')}</p>`
@@ -764,9 +765,11 @@ window.ReportsView = (function () {
             toast('Выгрузка недоступна для вашего профиля', 'error');
             return;
         }
-        const all = checksList();
+        const everything = checksList();
+        // В файл идёт то же, что видно на экране: с галочкой «только рейсы до вылета» улетевшие не выгружаются.
+        const all = checksFutureOnly ? everything.filter(i => i.state !== 'Улетел') : everything;
         if (!all.length) {
-            toast('Ошибок нет — выгружать нечего', 'error');
+            toast(everything.length ? 'До вылета ошибок нет. Снимите галочку, чтобы выгрузить улетевшие.' : 'Ошибок нет — выгружать нечего', 'error');
             return;
         }
         const folder = typeof excelPrepareFolder === 'function' ? await excelPrepareFolder('econ') : null;
@@ -791,9 +794,20 @@ window.ReportsView = (function () {
             ? await excelSaveWorkbook(lib, wb, filename, folder)
             : (lib.writeFile(wb, filename), { where: 'download' });
         if (typeof ActivityLog !== 'undefined') ActivityLog.log('export', 'Проверка рейсов');
-        const msg = `Файл готов: ошибок ${all.length}`;
+        const msg = `Файл готов, ошибок: ${all.length}`;
         if (typeof excelAnnounceSaved === 'function') excelAnnounceSaved(saved, msg);
         else toast(msg);
+    }
+
+    // Дробные числа билетов (ожидали 4,1; итог −3,5; в среднем +0,9) в Excel показываем с десятыми: формат '#,##0' округлял их до целых,
+    // и на экране было «+0,9», а в файле «1». Целые остаются целыми.
+    function showTenths(lib, ws, cols) {
+        Object.keys(ws).forEach(addr => {
+            if (addr.charAt(0) === '!') return;
+            const cell = ws[addr];
+            if (!cell || cell.t !== 'n' || Number.isInteger(cell.v)) return;
+            if (cols.indexOf(lib.utils.decode_cell(addr).c) !== -1) cell.z = '#,##0.0';
+        });
     }
 
     // «Решения» → Excel: лист «Журнал» (каждое решение) и «Сводка» (по типу, направлениям, людям).
@@ -821,6 +835,7 @@ window.ReportsView = (function () {
         j.table(1, ['Решение от', 'Кто', 'Рейс', 'Направление', 'Вылет', 'Решение', 'До, бил.', 'Обычно до', 'После, бил.', 'Обычно после', 'Ср. тариф до, ₽', 'Ср. тариф после, ₽', 'Итог, бил.', 'Результат'],
             d.rows.map(r => ({ leftCols: [1, 3, 13], cells: [r.check, r.author, r.code, r.direction, r.dep, r.kind, r.before, r.normBefore, r.after, r.normAfter, r.fareBefore, r.fareAfter, r.effect, r.text] })));
         const wsJ = j.finish([12, 18, 10, 30, 12, 14, 10, 11, 11, 13, 15, 16, 11, 44], 2);
+        showTenths(lib, wsJ, [7, 9, 12]);
         const s = sheetWriter(lib);
         const sec = style(SECTION, 'FFFFFF', true, 'left');
         const pct = (v) => (v == null ? '' : v);   // число, а не «67%»: в Excel его можно сортировать и складывать
@@ -837,8 +852,9 @@ window.ReportsView = (function () {
         r = block(r, 'Итого', [{ key: 'Все решения', ...t }], 'Решения');
         r = block(r, 'По типу решения', d.byKind, 'Решение');
         r = block(r, 'По направлениям', d.byDir, 'Направление');
-        block(r, 'По людям', d.byAuthor, 'Кто');
+        block(r, 'По людям (решение двух людей считается у каждого)', d.byAuthor, 'Кто');
         const wsS = s.finish([34, 10, 10, 13, 11, 13, 17, 24], 0);
+        showTenths(lib, wsS, [6]);
         const wb = lib.utils.book_new();
         lib.utils.book_append_sheet(wb, wsJ, 'Журнал');
         lib.utils.book_append_sheet(wb, wsS, 'Сводка');
@@ -876,28 +892,31 @@ window.ReportsView = (function () {
         const stamp = typeof excelExportStamp === 'function' ? excelExportStamp() : ru(new Date());
         const head = `Журнал решений · ${d.period} дн. · решения: ${d.kind} · выгрузка ${stamp}`;
         const j = sheetWriter(lib);
-        j.title(0, head, 25, style('FFFFFF', NAVY, true, 'left'));
-        j.table(1, ['Решение от', 'Кто', 'Рейс', 'Направление', 'Вылет', 'Решение', 'До, бил.', 'Обычно до', 'После, бил.', 'Обычно после', 'Ср. тариф до, ₽', 'Ср. тариф после, ₽', 'Эффект, ₽', 'От, ₽', 'До, ₽', 'Объём, ₽', 'Цена, ₽', 'Надёжность', 'Класс до', 'Класс после', 'Билетов ожид.', 'Билетов факт', 'Аналогов', 'Версия метода', 'Результат'],
-            d.rows.map(r => ({ leftCols: [1, 3, 22], cells: [r.check, r.author, r.code, r.direction, r.dep, r.kind, r.before, r.normBefore, r.after, r.normAfter, r.fareBefore, r.fareAfter, r.effect, r.lo, r.hi, r.volume, r.priceEffect, r.grade, r.clsBefore, r.clsAfter, r.expAll, r.factAll, r.analogs, r.method, r.text] })));
-        const wsJ = j.finish([12, 18, 10, 30, 12, 14, 10, 11, 11, 13, 15, 16, 13, 12, 12, 12, 12, 11, 10, 11, 12, 12, 10, 10, 60], 2);
+        j.title(0, head, 26, style('FFFFFF', NAVY, true, 'left'));
+        j.table(1, ['Решение от', 'Кто', 'Рейс', 'Направление', 'Вылет', 'Решение', 'До, бил.', 'Обычно до', 'После, бил.', 'Обычно после', 'Ср. тариф до, ₽', 'Ср. тариф после, ₽', 'Эффект по продажам, ₽', 'От, ₽', 'До, ₽', 'Объём, ₽', 'Цена, ₽', 'Поправка на шум и сдвиг, ₽', 'Надёжность', 'Класс до', 'Класс после', 'Билетов ожид.', 'Билетов факт', 'Аналогов', 'Версия метода', 'Результат'],
+            d.rows.map(r => ({ leftCols: [1, 3, 25], cells: [r.check, r.author, r.code, r.direction, r.dep, r.kind, r.before, r.normBefore, r.after, r.normAfter, r.fareBefore, r.fareAfter, r.effect, r.lo, r.hi, r.volume, r.priceEffect, r.corr, r.grade, r.clsBefore, r.clsAfter, r.expAll, r.factAll, r.analogs, r.method, r.text] })));
+        const wsJ = j.finish([12, 18, 10, 30, 12, 14, 10, 11, 11, 13, 15, 16, 13, 12, 12, 12, 12, 14, 11, 10, 11, 12, 12, 10, 10, 60], 2);
+        showTenths(lib, wsJ, [7, 9, 21]);
         const s = sheetWriter(lib);
         const sec = style(SECTION, 'FFFFFF', true, 'left');
+        // Те же числа, что на экране: «Помогло / Навредило» с «скорее» и «чуть», «Мало данных» и «Ждём итога» отдельно,
+        // «Эффект по всем оценённым» — с поправкой на шум и сдвиг (как «Общий итог»), рядом отдельно по продажам и поправка.
         const block = (r, title, groups, keyLabel) => {
-            s.title(r++, title, 11, sec);
-            const head = [keyLabel, 'Решений', 'Оценено', 'Определено', 'Помогло', 'Навредило', 'Эффект по определённым, ₽', 'Эффект по всем оценённым, ₽', 'Ориентировочно (доверие низкое)', 'Мало данных', 'Не считаем или ждём итога'];
+            s.title(r++, title, 16, sec);
+            const head = [keyLabel, 'Решений', 'Оценено', 'Определено (твёрдо)', 'Твёрдо помогло', 'Твёрдо навредило', 'Помогло (с «скорее» и «чуть»)', 'Навредило (с «скорее» и «чуть»)', 'Без заметного эффекта', 'Мало данных', 'Ждём итога', 'Эффект по определённым, ₽', 'Эффект по всем оценённым, ₽ (с поправкой, как «Общий итог»)', 'В том числе по продажам, ₽', 'В том числе поправка на шум и сдвиг, ₽', 'Ориентировочно (доверие низкое)'];
             return s.table(r, head,
-                groups.map(g => ({ cells: [g.key, g.n, g.money.finalN, g.money.definite, g.money.worked, g.money.failed, g.money.definite ? Math.round(g.money.sum) : '', g.money.finalN ? Math.round(g.money.sumAll) : '', g.money.approx, g.money.unclear, g.money.na + g.money.wait] }))) + 1;
+                groups.map(g => ({ cells: [g.key, g.n, g.money.finalN, g.money.definite, g.money.worked, g.money.failed, g.money.good, g.money.bad, g.money.flat, g.money.unclear + g.money.na, g.money.wait, g.money.definite ? Math.round(g.money.sum) : '', g.money.finalN ? Math.round(g.money.sumAdj) : '', g.money.finalN ? Math.round(g.money.sumAll) : '', g.money.finalN ? Math.round(g.money.corrSum) : '', g.money.approx] }))) + 1;
         };
         let r = 0;
-        s.title(r++, head, 11, style('FFFFFF', NAVY, true, 'left'));
+        s.title(r++, head, 16, style('FFFFFF', NAVY, true, 'left'));
         r++;
         const t = d.total;
         r = block(r, 'Итого', [{ key: 'Все решения', ...t }], 'Решения');
         r = block(r, 'По типу решения', d.byKind, 'Решение');
         r = block(r, 'По направлениям', d.byDir, 'Направление');
         r = block(r, 'За сколько дней до вылета принято решение', d.byLead, 'Срок');
-        block(r, 'По людям', d.byAuthor, 'Кто');
-        const wsS = s.finish([34, 10, 10, 12, 11, 13, 24, 24, 18, 14, 18], 0);
+        block(r, 'По людям (решение двух людей считается у каждого)', d.byAuthor, 'Кто');
+        const wsS = s.finish([34, 10, 10, 14, 12, 13, 16, 16, 14, 12, 12, 22, 34, 20, 22, 18], 0);
         const wb = lib.utils.book_new();
         lib.utils.book_append_sheet(wb, wsJ, 'Журнал');
         lib.utils.book_append_sheet(wb, wsS, 'Сводка');

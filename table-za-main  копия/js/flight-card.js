@@ -317,7 +317,9 @@ window.FlightCard = (function () {
         const f = FI.forecast(code, date);
         if (f && f.source !== 'flown') {
             const isModel = f.source === 'model';
-            const range = f.lo != null && f.hi != null && f.lo !== f.hi ? `${isModel ? 'в 8 случаях из 10: ' : 'разброс '}${f.lo}–${f.hi}` : '';
+            // «8 из 10» — доля из параметров расчётов (PV.CONF_LEVEL), как в RMS и «Сегодня».
+            const confN = typeof PV !== 'undefined' && PV.CONF_LEVEL > 0 ? Math.round(PV.CONF_LEVEL * 10) : 8;
+            const range = f.lo != null && f.hi != null && f.lo !== f.hi ? `${isModel ? `в ${confN} ${pluralRu(confN, 'случае', 'случаях', 'случаях')} из 10: ` : 'разброс '}${f.lo}–${f.hi}` : '';
             const histNote = (s) => (s.source === 'history'
                 ? `по ${s.n} ${pluralRu(s.n, 'прошлому вылету', 'прошлым вылетам', 'прошлым вылетам')} в этот день недели`
                 : 'по файлу ожидаемой загрузки');
@@ -326,7 +328,7 @@ window.FlightCard = (function () {
             // Один прогноз. Из чего он сложен — в подсказке (без второго числа рядом).
             const tip = isModel ? [
                 'Прогноз модели — тот же у всех сотрудников и во всех вкладках. Она учитывает продажи и их темп, вылеты в тот же день недели, файл ожидаемой загрузки, прошлый год, календарь и сама доучивается на каждом улетевшем вылете.',
-                f.lo != null ? `В 8 случаях из 10 итог будет от ${f.lo} до ${f.hi}.` : '',
+                f.lo != null ? `В ${confN} ${pluralRu(confN, 'случае', 'случаях', 'случаях')} из 10 итог будет от ${f.lo} до ${f.hi}.` : '',
                 f.model.h ? `Способ: ${f.model.method}; за ${f.model.h} дн. до вылета ошибается в среднем на ${String(f.model.err).replace('.', ',')} пасс.` : '',
                 f.model.method === 'комитет моделей' && f.model.team && f.model.team.length > 1 ? `Веса на этом рейсе: ${f.model.team.slice(0, 4).map(x => `${x.label} ${x.w}%`).join(', ')}.` : '',
                 f.simple ? `Только ${histNote(f.simple)} было бы ${f.simple.final} — это один из способов внутри модели.` : ''
@@ -384,9 +386,17 @@ window.FlightCard = (function () {
         </div>`;
     }
 
+    // Что менялось с последней отрисовки: загрузка данных, новый день, обучение модели, параметры.
+    let renderedSig = '';
+    function dataSig() {
+        return [typeof dataEpoch === 'number' ? dataEpoch : 0, typeof getTodayDate === 'function' ? getTodayDate() : '',
+            typeof analyticsRevision === 'function' ? analyticsRevision() : ''].join('|');
+    }
+
     function render() {
         const panel = ensurePanel();
         if (!state) return;
+        renderedSig = dataSig();
         panel.hidden = false;
         const { code, date } = state;
         const base = getBaseFlight(code);
@@ -403,6 +413,10 @@ window.FlightCard = (function () {
         const modeMark = typeof FlightChecks !== 'undefined' && FlightChecks.modeBadge ? FlightChecks.modeBadge(code, date, row) : '';
         const issues = typeof FlightChecks !== 'undefined' && FlightChecks.enabled() ? FlightChecks.issuesFor(code, date) : [];
         const comment = typeof FlightComments !== 'undefined' ? FlightComments.get(code, date) : '';
+        // Файл продаж старше суток: «продано за 1–2 дня» по нему не видно (как в RMS и на «Сегодня» — прочерк, а не ноль).
+        const staleSales = salesReady && typeof getStaleSalesInfo === 'function' ? getStaleSalesInfo() : null;
+        // У улетевшего рейса ожидаемой нет — как в «Динамике продаж» и на Графплане.
+        const showEv = !!m && !m.flew;
         const dtdTxt = m && m.dtd != null ? (m.dtd < 0 ? 'улетел' : `за ${m.dtd} дн.`) : '';
         const status = m && m.closed ? 'закрыт' : '';
         const deltaCls = m && m.delta != null ? (m.delta < 0 ? 'fc-neg' : (m.delta > 0 ? 'fc-pos' : '')) : '';
@@ -430,10 +444,10 @@ window.FlightCard = (function () {
             ${issues.length ? `<div class="fc-issues">${issues.map(i => `<div>! ${esc(i.title)}: ${esc(i.detail)}</div>`).join('')}</div>` : ''}
             <div class="fc-tiles">
                 ${tile('Загрузка, пасс.', m ? `${m.free} <span class="fc-tile-of">из ${m.total}</span>` : '—', m && m.pct != null ? `<span class="fc-tile-pct">${m.pct}%</span> мест занято` : '', 'fc-tile-load')}
-                ${tile('Ожидаемая', m && m.evR != null ? String(m.evR) : '—', '')}
-                ${tile('Δ к ожидаемой', m && m.delta != null ? `<span class="${deltaCls}">${m.delta > 0 ? '+' : ''}${m.delta}</span>` : '—', '')}
+                ${tile('Ожидаемая', showEv && m.evR != null ? String(m.evR) : '—', '')}
+                ${tile('Δ к ожидаемой', showEv && m.delta != null ? `<span class="${deltaCls}">${m.delta > 0 ? '+' : ''}${m.delta}</span>` : '—', '')}
                 ${tile('Остаток', m && m.remainder != null ? String(m.remainder) : '—', '')}
-                ${tile('Продано за 1–2 дн.', m && m.pickup != null && salesReady ? String(m.pickup) : '—', '')}
+                ${tile('Продано за 1–2 дн.', m && m.pickup != null && salesReady && !staleSales ? String(m.pickup) : '—', staleSales ? esc(`нет свежих данных (от ${staleSales.label})`) : '')}
                 ${tile('Ср. тариф', m && m.avg && salesReady ? esc(formatRub(m.avg)) : '—', '')}
             </div>
             ${insightsHtml(code, date)}
@@ -567,6 +581,13 @@ window.FlightCard = (function () {
     }
 
     document.addEventListener('keydown', onKey);
+
+    // Данные загрузили заново — карточка сама показывает новые числа (раньше оставались прежние, пока не кликнешь рейс).
+    // Проверка — одно сравнение строк раз в 2 секунды, и только пока карточка показана.
+    setInterval(() => {
+        if (!state || document.hidden || window.ingestQuiet || !isShown()) return;
+        if (dataSig() !== renderedSig) render();
+    }, 2000);
 
     // Отметка поставлена — обновить кнопки и маркеры в открытой карточке.
     document.addEventListener('krasavia:mark', () => { if (state && isShown()) render(); });
