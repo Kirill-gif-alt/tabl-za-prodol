@@ -287,5 +287,5 @@ window.DecisionsTickets = (function () {
         return false;
     }
 
-    return { canView, html, handleClick, exportData, summarize };
+    return { canView, html, handleClick, exportData, summarize, setPeriod: (n) => { if (PERIODS.includes(n)) period = n; } };
 })();

@@ -209,7 +209,7 @@ window.TodayView = (function () {
                 const e = DecisionMoney.get(x.key);
                 if (!e || e.v !== DecisionMoney.METHOD_VERSION || e.stage !== 'final') return;
                 ready++;
-                sum += e.delta || 0;
+                sum += (e.delta || 0) + (e.corr || 0);      // как «Общий итог» в Отчётах → Решения: с поправкой на шум и сдвиг
                 if (pos.includes(e.verdict)) better++;
                 else if (neg.includes(e.verdict)) worse++;
             });
@@ -421,7 +421,7 @@ window.TodayView = (function () {
                         <div class="td-stat"><span>Загрузка вылетов, 7 дней</span><b>${k.lf != null ? k.lf + '%' : '—'}</b><em>${fmt(k.sold)} из ${fmt(k.seats)} мест · ${fmt(k.n)} ${pluralRu(k.n, 'вылет', 'вылета', 'вылетов')}</em></div>
                         <div class="td-stat"><span>Продано сегодня</span>${stale ? `<b>—</b><em>нет свежих данных (от ${esc(stale.label)})</em>` : `<b>${fmt(k.todaySales)}</b><em>${fmt(Math.round(k.todayRevenue / 1000))} тыс. ₽</em>`}</div>
                         <div class="td-stat" title="Продано на вылеты ближайших 7 дней минус сколько обычно продавали к этому дню (по тем же рейсам и дням недели)"><span>К обычному</span>${norm ? `<b>${signed(norm.diff)} пасс.</b><em>по ${norm.n} из ${norm.total} вылетов, 7 дней</em>` : `<b>—</b><em>${normBuilding ? 'считаю…' : 'нет нормы'}</em>`}</div>
-                        ${dec ? `<div class="td-stat" title="Итоги решений «снизить» и «повысить» за 30 дней, которые уже посчитаны и зафиксированы. Подробно: Отчёты → Решения"><span>Решения за 30 дн.</span><b>${signedRub(dec.sum)}</b><em>лучше ${dec.better}, хуже ${dec.worse} · итог есть у ${dec.ready} из ${dec.total}</em></div>` : ''}
+                        ${dec ? `<div class="td-stat td-stat-link" data-td-decisions role="button" tabindex="0" title="Общий итог решений «снизить» и «повысить» за 30 дней по тем, у кого итог уже посчитан, — та же цифра, что «Общий итог по оценённым» в Отчётах → Решения при периоде 30 дней. Нажмите, чтобы открыть."><span>Решения за 30 дн.</span><b>${signedRub(dec.sum)}</b><em>лучше ${dec.better}, хуже ${dec.worse} · итог есть у ${dec.ready} из ${dec.total}</em></div>` : ''}
                     </div>
                     ${dayStripHtml(pend)}
                     <div class="td-tabs" role="tablist">${tabs.map(t => `<button type="button" role="tab" class="td-tab${t.id === tab ? ' td-tab-on' : ''}" data-td-tab="${t.id}">${esc(t.label)}</button>`).join('')}
@@ -444,6 +444,14 @@ window.TodayView = (function () {
         if (tb) { tab = tb.dataset.tdTab; render(); return; }
         const day = t.closest('[data-td-day]');
         if (day) { pickDay = day.dataset.tdDay; tab = 'day'; render(); return; }
+        if (t.closest('[data-td-decisions]')) {
+            // Тот же период, что в плитке: 30 дней, вкладка «В рублях».
+            if (typeof DecisionsReport !== 'undefined') { DecisionsReport.setPeriod(30); DecisionsReport.setView('money'); }
+            if (typeof DecisionsTickets !== 'undefined') DecisionsTickets.setPeriod(30);
+            if (typeof ReportsView !== 'undefined') ReportsView.showSubtab('decisions');
+            switchMainTab('reports');
+            return;
+        }
         if (t.closest('[data-td-gaps]')) {
             if (typeof ReportsView !== 'undefined') ReportsView.showSubtab('refs');
             if (typeof ReferenceView !== 'undefined') ReferenceView.openSection('check');

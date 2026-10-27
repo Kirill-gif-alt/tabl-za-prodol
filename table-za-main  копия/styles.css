@@ -8480,3 +8480,8 @@ html[data-theme="dark"] .mlw-best { color: #34d399; }
 .mlw-narrow { max-width: 460px; }
 .mlw-warn { margin: 0; padding-left: 18px; font-size: 0.8rem; color: var(--text-muted); }
 @media (max-width: 720px) { .mlw-panel { width: calc(100vw - 16px); } .mlw-body { padding: 10px 12px 14px; } }
+
+/* Плитка «Решения за 30 дн.» на странице «Сегодня» открывает отчёт */
+.td-stat-link { cursor: pointer; }
+.td-stat-link:hover { box-shadow: 0 0 0 2px var(--primary, #012a4a) inset; }
+.td-stat-link:focus-visible { outline: 2px solid var(--accent, #2563eb); outline-offset: 2px; }

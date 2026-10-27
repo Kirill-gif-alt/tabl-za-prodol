@@ -517,5 +517,5 @@ window.DecisionsReport = (function () {
         return view === 'money' ? moneyClick(btn, rerender) : DecisionsTickets.handleClick(btn, rerender);
     }
 
-    return { canView, html, handleClick, view: () => view, exportData: () => (view === 'money' ? moneyExport() : DecisionsTickets.exportData()), summarize };
+    return { canView, html, handleClick, view: () => view, setPeriod: (n) => { if (PERIODS.includes(n)) period = n; }, setView: (v) => { if (v === 'money' || v === 'tickets') view = v; }, exportData: () => (view === 'money' ? moneyExport() : DecisionsTickets.exportData()), summarize };
 })();
