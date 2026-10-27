@@ -46,7 +46,7 @@ window.ReportsView = (function () {
     // Строка заголовка отчёта: название, значок «?», справа — кнопка (например, «В Excel»).
     // Название и текст подсказки — готовый HTML (экранировать должен вызывающий).
     function headHtml(title, help, right) {
-        return `<div class="rp-card-head"><h3 class="rp-card-title">${title}</h3>${help ? helpHtml(help) : ''}${right || ''}</div>`;
+        return `<div class="rp-card-head"><div class="rp-card-heading"><h3 class="rp-card-title">${title}</h3>${help ? helpHtml(help) : ''}</div>${right || ''}</div>`;
     }
 
     // Ряд сводных плиток: { label, value, sub, tone } — tone: bad (красный), warn (жёлтый) или пусто (серый).

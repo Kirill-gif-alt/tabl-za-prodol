@@ -215,7 +215,7 @@ html[data-theme="dark"] .jr-chip.is-active {
 
 .jr-col-time { width: 68px; }
 .jr-col-user { width: 210px; }
-.jr-col-act { width: 250px; }
+.jr-col-act { width: 268px; }
 
 .jr-table th {
     position: sticky;
@@ -310,7 +310,7 @@ html[data-theme="dark"] .jr-chip.is-active {
     max-width: 100%;
     min-height: 22px;
     padding: 2px 10px 2px 8px;
-    border-radius: 999px;
+    border-radius: 11px;
     background: hsl(var(--h) var(--s) 92%);
     color: hsl(var(--h) var(--fs) var(--fl));
     font-size: 0.74rem;

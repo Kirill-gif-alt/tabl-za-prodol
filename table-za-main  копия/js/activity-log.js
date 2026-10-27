@@ -405,7 +405,7 @@ window.ActivityLog = (function () {
                 limit: BATCH,
                 shown: 0,
                 list: [], times: [], keys: [], dayCounts: new Map(), lastDay: -1,
-                inPeriod: 0, headId: '', visible: false, resizeTimer: 0, ro: null
+                inPeriod: 0, headId: '', resizeTimer: 0, ro: null
             };
         }
         return container._jr;
@@ -570,7 +570,7 @@ window.ActivityLog = (function () {
     // Кнопка «ещё» нужна только там, где текст реально не помещается в 2 строки (зависит от ширины окна).
     function measureClamps(container) {
         const list = container.querySelector('#jr-list');
-        if (!list || !list.clientWidth) return;   // вкладка скрыта — измерять нечего
+        if (!list || container.hidden || !list.clientWidth) return;   // вкладка скрыта — измерять нечего (сделаем при показе)
         const els = list.querySelectorAll('.jr-det[data-long]');
         const flags = [];
         for (const el of els) flags.push(el.classList.contains('is-open') || el.scrollHeight > el.clientHeight + 1);
@@ -679,6 +679,11 @@ window.ActivityLog = (function () {
         if (container._jrBound) return;
         container._jrBound = true;
 
+        if (typeof MutationObserver !== 'undefined') {
+            new MutationObserver(() => { if (!container.hidden) onShown(container); })
+                .observe(container, { attributes: true, attributeFilter: ['hidden'] });
+        }
+
         container.addEventListener('click', ev => {
             const t = ev.target;
             if (!(t instanceof Element)) return;
@@ -723,18 +728,24 @@ window.ActivityLog = (function () {
         if (v.ro) { try { v.ro.disconnect(); } catch { /* ignore */ } v.ro = null; }
         if (typeof ResizeObserver !== 'undefined' && list) {
             v.ro = new ResizeObserver(() => {
-                const was = v.visible;
-                v.visible = list.clientWidth > 0;
+                if (container.hidden) return;
                 clearTimeout(v.resizeTimer);
-                v.resizeTimer = setTimeout(() => {
-                    if (!v.visible || !container.isConnected) return;
-                    // Вкладку снова открыли, а в журнале за это время появились записи — покажем их.
-                    if (!was && cache && (cache[0] ? cache[0].id || '' : '') !== v.headId) { renderInto(container); return; }
-                    measureClamps(container);   // ширина изменилась — «ещё» нужно не везде
-                }, 120);
+                v.resizeTimer = setTimeout(() => measureClamps(container), 120);   // ширина изменилась — «ещё» нужно не везде
             });
             v.ro.observe(list);
         }
+    }
+
+    // Скрытая вкладка «замораживается» (не перерисовывается), поэтому при возврате смотрим сами:
+    // если за это время в журнале появились записи — покажем их, иначе только пересчитаем кнопки «ещё».
+    function onShown(container) {
+        const v = getView(container);
+        clearTimeout(v.resizeTimer);
+        v.resizeTimer = setTimeout(() => {
+            if (!container.isConnected || container.hidden) return;
+            if (cache && (cache[0] ? cache[0].id || '' : '') !== v.headId) { renderInto(container); return; }
+            measureClamps(container);
+        }, 60);
     }
 
     async function renderInto(container, state) {

@@ -73,8 +73,9 @@ html[data-theme="dark"] #rp-page .rp-tile-bad .rp-tile-value { color: #fca5a5; }
 html[data-theme="dark"] #rp-page .rp-tile-warn .rp-tile-value { color: #fcd34d; }
 
 /* ---------- 3. Значок «?» с полным текстом ---------- */
-#rp-page .rp-card-head { position: relative; gap: 8px; }
-#rp-page .rp-help { flex: none; margin-right: auto; }
+#rp-page .rp-card-head { position: relative; gap: 8px 12px; }
+#rp-page .rp-card-heading { display: flex; align-items: center; gap: 8px; min-width: 0; }
+#rp-page .rp-help { flex: none; }
 #rp-page .rp-help-btn {
     display: inline-flex;
     align-items: center;
@@ -194,8 +195,9 @@ html[data-theme="dark"] #rp-page .rp-subtab-on .rp-subtab-badge-zero { backgroun
 #rp-page .rp-subtab-body { gap: 14px; }
 #rp-page .rp-subtab-body > .rp-card:first-child,
 #rp-page .rp-subtab-body > .rp-tiles:first-child { margin-top: 0; }
-#rp-page .rp-card-text { margin-top: 4px; }
-#rp-page .rp-subtab-body > .rp-note { margin: 0; }
+#rp-page .rp-tab-checks > .rp-note,
+#rp-page .rp-tab-reconcile > .rp-note,
+#rp-page .rp-tab-forecast > .rp-note { margin: 0; }
 
 /* Справочник: плитки, потом одна строка «История изменений ... В Excel», потом разделы. */
 #rp-page .rp-tab-refs {
@@ -212,7 +214,7 @@ html[data-theme="dark"] #rp-page .rp-subtab-on .rp-subtab-badge-zero { backgroun
 #rp-page .rp-tab-refs > .ref-sections { order: 4; margin: 0; }
 
 /* Карточки выгрузок узкие: если кнопка не помещается рядом с названием, она переходит на следующую строку. */
-#rp-page .rp-export-grid .rp-card-head { flex-wrap: wrap; row-gap: 8px; }
+#rp-page .rp-export-grid .rp-card-head { flex-wrap: wrap; }
 
 /* Узкий экран: плитки в два столбца, подсказка на всю ширину карточки. */
 @media (max-width: 560px) {
