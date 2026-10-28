@@ -9,7 +9,7 @@
 window.FLIGHT_CARD_WINDOW_CSS = [
     "* { box-sizing: border-box; }",
     "body.fc-window-body { margin: 0; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: var(--text, #012a4a); background: var(--surface, #fff); }",
-    ".fc-flash { position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 20; padding: 10px 14px; border-radius: 10px; background: var(--primary, #012a4a); color: #fff; font-size: 0.82rem; font-weight: 600; box-shadow: 0 8px 24px rgb(15 23 42 / 0.28); }",
+    ".fc-flash { position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 20; padding: 10px 14px; border-radius: 10px; background: #1e293b; color: #fff; font-size: 0.82rem; font-weight: 600; box-shadow: 0 8px 24px rgb(15 23 42 / 0.28); }",
     ".fc-flash[hidden] { display: none; }",
     ":root { --primary: #012A4A; --primary-light: #023a5e; --nav-bg: #012A4A; --accent: #10b981; --accent-hover: #059669; --surface: #ffffff; --bg: #f0f4f8; --border: #e2e8f0; --text: #012A4A; --text-muted: #64748b; --data-leg-out: #eff6ff; --data-leg-in: #ecfdf5; --data-flew-bg: #e8ecf1; --main-chip-open-bg: #012A4A; --main-chip-open-text: #ffffff; --main-chip-open-border: #023a5e; --main-chip-low-bg: #fff7ed; --main-chip-low-text: #9a3412; --main-chip-low-border: #fdba74; --main-chip-full-bg: #ecfdf5; --main-chip-full-text: #047857; --main-chip-full-border: #6ee7b7; --main-chip-closed-bg: #fef2f2; --main-chip-closed-text: #991b1b; --main-chip-closed-border: #fca5a5; --main-chip-flew-bg: #f1f5f9; --main-chip-flew-text: #475569; --main-chip-flew-border: #cbd5e1; --table-head-bg: #012A4A; --table-row-even: #dbeafe; --table-row-odd: #ffffff; --pair-out-head: #1e40af; --pair-in-head: #047857; --pair-leg-out-bg: #eff6ff; --pair-leg-in-bg: #ecfdf5; --data-card-head-bg: #f8fafc; --rms-head-bg: #012A4A; --rms-row-even: #f1f5f9; --muted-bg: #f8fafc; --hover-bg: #f1f5f9; --shadow-sm: 0 1px 3px rgb(1 42 74 / 0.06); --shadow-md: 0 8px 24px -4px rgb(1 42 74 / 0.12); --radius: 16px; --radius-lg: 20px; }",
     ".filter-btn { border: 1px solid transparent; background: transparent; color: #475569; font-size: 0.74rem; font-weight: 600; padding: 6px 12px; border-radius: 9px; cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s, box-shadow 0.12s; white-space: nowrap; }",
@@ -215,7 +215,7 @@ window.FLIGHT_CARD_WINDOW_CSS_BUILD = (function () {
         const lines = [
             "* { box-sizing: border-box; }",
             "body.fc-window-body { margin: 0; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: var(--text, #012a4a); background: var(--surface, #fff); }",
-            ".fc-flash { position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 20; padding: 10px 14px; border-radius: 10px; background: var(--primary, #012a4a); color: #fff; font-size: 0.82rem; font-weight: 600; box-shadow: 0 8px 24px rgb(15 23 42 / 0.28); }",
+            ".fc-flash { position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 20; padding: 10px 14px; border-radius: 10px; background: #1e293b; color: #fff; font-size: 0.82rem; font-weight: 600; box-shadow: 0 8px 24px rgb(15 23 42 / 0.28); }",
             ".fc-flash[hidden] { display: none; }"
         ];
         let curWrap = null, buf = [];
