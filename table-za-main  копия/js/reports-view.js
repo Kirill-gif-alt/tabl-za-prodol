@@ -448,16 +448,23 @@ window.ReportsView = (function () {
 
     const CHECKS_HELP = 'Проверяем субсидированные рейсы: межрегиональные, у которых в «Экономической таблице» субсидия больше 0. Краевые не субсидируются. Ошибка — если продан детский билет со скидкой 50% (…/CN50) или билет дороже предельного тарифа из справочника. Рейс с ошибкой помечен «!» в «Загрузке рейсов», «Экономической таблице» и «Динамике продаж».';
 
-    function checksHtml() {
-        if (typeof FlightChecks === 'undefined' || !FlightChecks.enabled()) return '';
-        if (!hasData()) {
-            return `<section class="rp-card rp-checks" id="rp-checks">${headHtml('Проверка рейсов', CHECKS_HELP)}<p class="rp-note">Данных нет — нажмите «Загрузить» или «Последние».</p></section>`;
-        }
+    // Плитки «Ошибки тарифов» — в общем ряду раздела «Проверки».
+    function checksTileList() {
+        if (typeof FlightChecks === 'undefined' || !FlightChecks.enabled() || !hasData()) return [];
         const all = checksList();
         const flightKey = (i) => i.code + '|' + i.date;
         const flightsAll = new Set(all.map(flightKey));
+        const flightsFuture = new Set(all.filter(i => i.state !== 'Улетел').map(flightKey));
+        return [
+            { label: 'Тарифы: рейсов с ошибкой', value: fmt(flightsAll.size), tone: flightsAll.size ? 'bad' : '' },
+            { label: 'Тарифы: из них до вылета', value: fmt(flightsFuture.size), tone: flightsFuture.size ? 'bad' : '' }
+        ];
+    }
+
+    // Блок «Ошибки тарифов» (бывшая «Проверка рейсов»).
+    function checksCard() {
+        const all = checksList();
         const future = all.filter(i => i.state !== 'Улетел');
-        const flightsFuture = new Set(future.map(flightKey));
         const shown = checksFutureOnly ? future : all;
         const canOpen = canTab('pair') || canTab('table');
         const rows = shown.map(i => `
@@ -472,16 +479,12 @@ window.ReportsView = (function () {
                 <td>${esc(i.subsidySource)}</td>
                 <td>${canOpen ? `<button type="button" class="filter-btn rp-open" data-open-base="${esc(i.base)}" data-open-code="${esc(i.code)}" data-open-date="${esc(i.date)}">Открыть</button>` : ''}</td>
             </tr>`).join('');
-        const tiles = tilesHtml([
-            { label: 'Рейсов с ошибкой', value: fmt(flightsAll.size), tone: flightsAll.size ? 'bad' : '' },
-            { label: 'Из них до вылета', value: fmt(flightsFuture.size), tone: flightsFuture.size ? 'bad' : '' },
-            // Число строк в таблице ниже: зависит от галочки «только рейсы до вылета». Рейс может дать несколько ошибок.
-            { label: checksFutureOnly ? 'Ошибок до вылета' : 'Ошибок всего', value: fmt(shown.length) }
-        ]);
         const exportBtn = `<button type="button" class="btn-primary rp-btn" id="rp-checks-export"${all.length && hasPerm('export_excel') ? '' : ' disabled'}>В Excel</button>`;
+        // Число строк в таблице зависит от галочки «только рейсы до вылета». Рейс может дать несколько ошибок.
         const body = !all.length
             ? '<p class="rp-ok">Ошибок нет: все проверенные рейсы в порядке.</p>'
-            : `<label class="rp-filter"><input type="checkbox" id="rp-checks-future"${checksFutureOnly ? ' checked' : ''}> только рейсы до вылета</label>
+            : `<div class="ref-toolbar"><label class="rp-filter"><input type="checkbox" id="rp-checks-future"${checksFutureOnly ? ' checked' : ''}> только рейсы до вылета</label>
+                <span class="rp-muted">${checksFutureOnly ? 'Ошибок до вылета' : 'Ошибок всего'}: ${fmt(shown.length)}</span></div>
                 ${shown.length ? `<div class="rp-scroll">
                     <table class="rp-table rp-checks-table">
                         <thead><tr><th>Дата</th><th>Рейс</th><th>Направление</th><th>Статус</th><th>Ошибка</th><th>Билетов</th><th>Подробно</th><th>Субсидия по</th><th></th></tr></thead>
@@ -489,12 +492,22 @@ window.ReportsView = (function () {
                     </table>
                 </div>` : '<p class="rp-ok">До вылета ошибок нет. Снимите галочку, чтобы увидеть улетевшие.</p>'}`;
         return `
-            ${tiles}
             <section class="rp-card rp-checks${all.length ? '' : ' rp-checks-clean'}" id="rp-checks">
-                ${headHtml(`${all.length ? '<span class="fc-flag fc-flag-big" aria-hidden="true"></span> ' : ''}Проверка рейсов`, CHECKS_HELP, exportBtn)}
+                ${headHtml(`${all.length ? '<span class="fc-flag fc-flag-big" aria-hidden="true"></span> ' : ''}Ошибки тарифов`, CHECKS_HELP, exportBtn)}
                 <p class="rp-card-text">Проверяем билеты на рейсах с субсидией. Ошибка — детский билет со скидкой 50% или цена выше предела.</p>
                 ${body}
             </section>`;
+    }
+
+    // Раздел «Проверки»: общие плитки сверху, ниже «Ошибки тарифов» и «Расхождения продаж и загрузки».
+    function checksPageHtml() {
+        const checksOn = typeof FlightChecks !== 'undefined' && FlightChecks.enabled();
+        const recOn = typeof SalesReconcile !== 'undefined' && SalesReconcile.canView();
+        if (!hasData()) {
+            return `<section class="rp-card rp-checks" id="rp-checks">${headHtml('Проверки', CHECKS_HELP)}<p class="rp-note">Данных нет — нажмите «Загрузить» или «Последние».</p></section>`;
+        }
+        const tiles = (checksOn ? checksTileList() : []).concat(recOn ? SalesReconcile.tileList() : []);
+        return tilesHtml(tiles) + (checksOn ? checksCard() : '') + (recOn ? SalesReconcile.card() : '');
     }
 
     // ---------- справочник субсидированных тарифов ----------
@@ -971,8 +984,13 @@ window.ReportsView = (function () {
 
     // Внутренние вкладки: проверка, справочник (только с правом), выгрузки.
     const SUBTAB_KEY = 'krasavia_reports_subtab';
+    // Прежние разделы: «Проверка рейсов» и «Сверка» слились в «Проверки», «Прогноз и предупреждения» стал «Модели».
+    const SUBTAB_ALIAS = { reconcile: 'checks', forecast: 'models' };
+    const SUBTAB_ANCHOR = { checks: 'rp-checks', reconcile: 'rp-reconcile' };
+    let pendingScroll = '';
     let subtab = '';
     try { subtab = localStorage.getItem(SUBTAB_KEY) || ''; } catch (e) { /* ignore */ }
+    subtab = SUBTAB_ALIAS[subtab] || subtab;
 
     function canRefs() {
         return typeof FareRefs !== 'undefined' && FareRefs.canEdit();
@@ -983,24 +1001,24 @@ window.ReportsView = (function () {
     function subtabs() {
         const list = [];
         const checksOn = typeof FlightChecks !== 'undefined' && FlightChecks.enabled();
-        if (checksOn) {
+        const recOn = typeof SalesReconcile !== 'undefined' && SalesReconcile.canView();
+        if (checksOn || recOn) {
+            // Один счётчик на оба блока: рейсы с ошибкой тарифа до вылета + вылеты с расхождением продаж и загрузки.
             const has = hasData();
-            const n = has ? new Set(checksList().filter(i => i.state !== 'Улетел').map(i => i.code + '|' + i.date)).size : 0;
-            list.push({ id: 'checks', label: 'Проверка рейсов', badge: has ? String(n) : '', zero: has && !n, tip: 'Рейсов с ошибкой до вылета' });
+            const nChecks = checksOn && has ? new Set(checksList().filter(i => i.state !== 'Улетел').map(i => i.code + '|' + i.date)).size : 0;
+            const hasSales = recOn && has && (!SalesReconcile.hasSales || SalesReconcile.hasSales());
+            const nRec = hasSales ? SalesReconcile.badge() : 0;
+            const n = nChecks + nRec;
+            list.push({ id: 'checks', label: 'Проверки', badge: has ? String(n) : '', zero: has && !n, tip: `Рейсов с ошибкой тарифа до вылета: ${nChecks}; вылетов с расхождением продаж и загрузки: ${nRec}` });
         }
+        if (typeof DecisionsReport !== 'undefined' && DecisionsReport.canView()) list.push({ id: 'decisions', label: 'Решения', badge: '' });
+        if (typeof ModelsView !== 'undefined' && ModelsView.canView()) list.push({ id: 'models', label: 'Модели', badge: '' });
+        else if (typeof PriceAdvisor !== 'undefined' && PriceAdvisor.canView()) list.push({ id: 'models', label: 'Ценовой советник', badge: '' });
         if (typeof ReferenceView !== 'undefined' ? ReferenceView.canAny() : canRefs()) {
             const has = canRefs() && hasData() && checksOn && typeof FlightChecks !== 'undefined';
             const miss = has ? FlightChecks.missingRefs().length : 0;
             list.push({ id: 'refs', label: 'Справочник', badge: has ? miss + ' без предела' : '', warn: !!miss, zero: has && !miss, tip: 'Рейсов без предельного тарифа' });
         }
-        if (typeof SalesReconcile !== 'undefined' && SalesReconcile.canView()) {
-            const has = hasData() && (!SalesReconcile.hasSales || SalesReconcile.hasSales());
-            const n = has ? SalesReconcile.badge() : 0;
-            list.push({ id: 'reconcile', label: 'Сверка', badge: has ? String(n) : '', zero: has && !n, tip: 'Вылетов с расхождением' });
-        }
-        if (typeof DecisionsReport !== 'undefined' && DecisionsReport.canView()) list.push({ id: 'decisions', label: 'Решения', badge: '' });
-        if (typeof ForecastLab !== 'undefined' && ForecastLab.canView()) list.push({ id: 'forecast', label: 'Прогноз и предупреждения', badge: '' });
-        else if (typeof PriceAdvisor !== 'undefined' && PriceAdvisor.canView()) list.push({ id: 'forecast', label: 'Ценовой советник', badge: '' });
         list.push({ id: 'export', label: 'Выгрузки в Excel', badge: '' });
         return list;
     }
@@ -1010,24 +1028,24 @@ window.ReportsView = (function () {
     const SUBTAB_ICON = {
         checks: ICON('<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/>'),
         refs: ICON('<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5z"/><path d="M4 19a2 2 0 0 1 2-2h13"/>'),
-        reconcile: ICON('<path d="M7 7h12l-3-3"/><path d="M17 17H5l3 3"/>'),
         decisions: ICON('<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>'),
-        forecast: ICON('<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>'),
+        models: ICON('<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>'),
         export: ICON('<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/>')
     };
 
     function renderBody() {
         const body = document.getElementById('rp-body');
         if (!body) return;
+        if (typeof ModelsView !== 'undefined') ModelsView.unmount();      // график и фоновые расчёты прежней отрисовки
         const tabs = subtabs();
+        subtab = SUBTAB_ALIAS[subtab] || subtab;
         if (!tabs.some(t => t.id === subtab)) subtab = tabs[0].id;
         const weeks = weekBounds();
         let content = '';
-        if (subtab === 'checks') content = checksHtml();
+        if (subtab === 'checks') content = checksPageHtml();
         else if (subtab === 'refs') content = refsTiles() + (typeof ReferenceView !== 'undefined' ? ReferenceView.html(refsHtml) : refsHtml());
         else if (subtab === 'decisions') content = DecisionsReport.html(renderBody);
-        else if (subtab === 'forecast' && typeof ForecastLab !== 'undefined') content = ForecastLab.html(renderBody);
-        else if (subtab === 'reconcile') content = SalesReconcile.html();
+        else if (subtab === 'models') content = typeof ModelsView !== 'undefined' && ModelsView.canView() ? ModelsView.html(renderBody) : (typeof PriceAdvisor !== 'undefined' ? PriceAdvisor.reportHtml(renderBody) : '');
         else {
             content = `<div class="rp-export-grid">${[
                 card('rp-data', 'Загрузка рейсов',
@@ -1061,6 +1079,12 @@ window.ReportsView = (function () {
         // Узкое окно: выбранный раздел может уйти за край полосы — прокручиваем к нему.
         const on = body.querySelector('.rp-subtab-on');
         if (on && on.scrollIntoView) { try { on.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) { /* ignore */ } }
+        if (subtab === 'models' && typeof ModelsView !== 'undefined' && ModelsView.canView()) ModelsView.mount(body);
+        if (pendingScroll) {
+            const id = pendingScroll;
+            pendingScroll = '';
+            requestAnimationFrame(() => { const el = document.getElementById(id); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+        }
         previewSig = signature();
     }
 
@@ -1087,7 +1111,7 @@ window.ReportsView = (function () {
                 <div class="table-page-hero">
                     <div class="table-page-hero-main">
                         <h2 class="rms-hero-title">Отчёты</h2>
-                        <span class="table-page-hint">Проверки, справочник, сверка продаж, решения, прогноз и выгрузки в Excel</span>
+                        <span class="table-page-hint">Проверки, решения, модели прогноза, справочник и выгрузки в Excel</span>
                     </div>
                 </div>
                 <div class="table-page-body rp-body" id="rp-body"></div>
@@ -1096,7 +1120,13 @@ window.ReportsView = (function () {
         const page = panel.querySelector('#rp-page');
         // Подсказку «?» закрываем щелчком в другом месте и клавишей Esc.
         const closeHelp = (except) => page.querySelectorAll('details.rp-help[open]').forEach(d => { if (d !== except) d.removeAttribute('open'); });
-        page.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeHelp(null); });
+        page.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') closeHelp(null);
+            else if (typeof ModelsView !== 'undefined') ModelsView.handleKey(event);
+        });
+        page.addEventListener('dblclick', (event) => { if (typeof ModelsView !== 'undefined') ModelsView.handleDblClick(event); });
+        // «toggle» у <details> не всплывает — ловим на стадии перехвата (блок «Подробно для аналитика»).
+        page.addEventListener('toggle', (event) => { if (typeof ModelsView !== 'undefined') ModelsView.handleToggle(event.target, renderBody); }, true);
         page.addEventListener('change', (event) => {
             if (typeof ReferenceView !== 'undefined' && ReferenceView.handleChange(event.target, renderBody)) return;
             if (typeof SalesReconcile !== 'undefined' && SalesReconcile.handleChange(event.target, renderBody)) return;
@@ -1111,6 +1141,7 @@ window.ReportsView = (function () {
         });
         page.addEventListener('click', (event) => {
             closeHelp(event.target.closest('details.rp-help'));
+            if (typeof ModelsView !== 'undefined' && ModelsView.handleClick(event, renderBody)) return;
             const btn = event.target.closest('button');
             if (!btn || btn.disabled) return;
             if (typeof ReferenceView !== 'undefined' && ReferenceView.handleClick(btn, renderBody)) return;
@@ -1201,6 +1232,9 @@ window.ReportsView = (function () {
 
     // Открыть нужную внутреннюю вкладку (например, из счётчика ошибок в шапке).
     function showSubtab(id) {
+        const anchor = SUBTAB_ANCHOR[id] || '';
+        id = SUBTAB_ALIAS[id] || id;
+        pendingScroll = anchor;
         subtab = id;
         if (id === 'refs' && typeof ReferenceView !== 'undefined') ReferenceView.openSection('fares');
         try { localStorage.setItem(SUBTAB_KEY, id); } catch (e) { /* ignore */ }
