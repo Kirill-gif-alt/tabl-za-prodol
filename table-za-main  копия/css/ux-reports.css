@@ -222,3 +222,126 @@ html[data-theme="dark"] #rp-page .rp-subtab-on .rp-subtab-badge-zero { backgroun
     #rp-page .rp-tile { padding: 8px 10px; }
     #rp-page .rp-tile-value { font-size: 1.35rem; }
 }
+
+/* ---------- «Проверки»: общие плитки сверху, под ними два блока ---------- */
+#rp-page .rp-tab-checks > .rp-card[id] { scroll-margin-top: 12px; }
+#rp-page .rp-tab-checks .ref-toolbar { margin: 10px 0 4px; }
+
+/* ---------- «Модели» ---------- */
+#rp-page .rp-tab-models > .rp-note { margin: 0; }
+#rp-page .md-root { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+#rp-page .md-muted { color: var(--text-muted); font-size: 0.78rem; }
+#rp-page .md-wait { color: var(--text-muted); }
+
+/* Две карточки моделей */
+#rp-page .md-models { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+#rp-page .md-models-1 { grid-template-columns: minmax(0, 1fr); }
+#rp-page .md-model { padding: 14px 16px; }
+#rp-page .md-model-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+#rp-page .md-model-title { margin: 0; font-size: 1rem; font-weight: 700; color: var(--text); }
+#rp-page .md-model-sub { margin: 4px 0 10px; font-size: 0.78rem; color: var(--text-muted); }
+#rp-page .md-model-note { margin: 10px 0 0; font-size: 0.84rem; color: var(--text); line-height: 1.45; }
+#rp-page .md-pill { flex: none; padding: 2px 10px; border-radius: 999px; font-size: 0.74rem; font-weight: 700; white-space: nowrap; }
+#rp-page .md-pill-ok { background: rgb(4 120 87 / 0.12); color: #047857; }
+#rp-page .md-pill-warn { background: rgb(180 83 9 / 0.13); color: #b45309; }
+#rp-page .md-pill-bad { background: rgb(185 28 28 / 0.12); color: #b91c1c; }
+html[data-theme="dark"] #rp-page .md-pill-ok { background: rgb(16 185 129 / 0.16); color: #6ee7b7; }
+html[data-theme="dark"] #rp-page .md-pill-warn { background: rgb(245 158 11 / 0.16); color: #fcd34d; }
+html[data-theme="dark"] #rp-page .md-pill-bad { background: rgb(248 113 113 / 0.16); color: #fca5a5; }
+#rp-page .md-hz { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+#rp-page .md-hz-i { padding: 8px 10px; border-radius: 10px; background: var(--muted-bg, #f8fafc); outline: 2px solid transparent; outline-offset: -2px; min-width: 0; }
+#rp-page .md-hz-i i { display: block; font-style: normal; font-size: 0.72rem; color: var(--text-muted); }
+#rp-page .md-hz-i b { display: block; font-size: 1.3rem; font-weight: 800; line-height: 1.3; color: var(--text); font-variant-numeric: tabular-nums; }
+#rp-page .md-hz-i.md-best { outline-color: #10b981; }
+#rp-page .md-verdict { padding: 10px 16px; font-size: 0.86rem; line-height: 1.45; color: var(--text); }
+
+/* Таблица «Ближайшие рейсы» */
+#rp-page .md-flights .rp-card-head { align-items: flex-start; flex-wrap: wrap; }
+#rp-page .md-cfg { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 0.78rem; color: var(--text-muted); }
+#rp-page .md-cfg label { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+#rp-page .md-cfg input { width: 52px; margin: 0; padding: 3px 6px; font-size: 0.8rem; }
+#rp-page .md-cfg .filter-btn { padding: 4px 12px; font-size: 0.78rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+#rp-page .md-cfg .filter-btn:hover { border-color: var(--accent, #2563eb); }
+#rp-page .md-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin: 10px 0; }
+#rp-page .md-chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 auto; min-width: 0; }
+#rp-page .md-chip {
+    padding: 4px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface);
+    color: var(--text-muted); font: inherit; font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+#rp-page .md-chip:hover { border-color: var(--accent, #2563eb); color: var(--text); }
+#rp-page .md-chip-on, #rp-page .md-chip-on:hover { background: var(--primary, #012a4a); border-color: var(--primary, #012a4a); color: #fff; }
+html[data-theme="dark"] #rp-page .md-chip-on, html[data-theme="dark"] #rp-page .md-chip-on:hover { background: #e6edf3; border-color: #e6edf3; color: #0d1117; }
+#rp-page .md-pending { font-size: 0.76rem; color: var(--text-muted); }
+#rp-page .md-xlsx { margin-left: auto; min-width: 0; padding: 5px 16px; font-size: 0.8rem; }
+
+/* Строка 36–40 px: одна строка текста, без абзацев. В окне 1600×1000 помещается 18–19 рейсов. */
+#rp-page .md-scroll { max-height: min(78vh, 820px); overflow: auto; }
+#rp-page .md-table { font-size: 0.8rem; }
+#rp-page .md-table th, #rp-page .md-table td { white-space: nowrap; }
+#rp-page .md-table thead th { padding: 8px 10px; text-align: left; }
+#rp-page .md-table td { height: 38px; padding: 0 10px; line-height: 1.2; vertical-align: middle; text-align: left; }
+#rp-page .md-table td:first-child { font-weight: 400; }
+#rp-page .md-table .md-num { text-align: right; font-variant-numeric: tabular-nums; }
+#rp-page .md-table th.md-num { text-align: right; }
+#rp-page .md-table tbody tr[data-md-key] { cursor: pointer; user-select: none; }
+#rp-page .md-table tbody tr[data-md-key]:focus-visible { outline: 2px solid var(--accent, #2563eb); outline-offset: -2px; }
+#rp-page .md-flight b { font-weight: 700; color: var(--text); }
+#rp-page .md-dir { display: inline-block; max-width: 210px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; color: var(--text-muted); font-size: 0.76rem; }
+#rp-page .md-lf { color: var(--text-muted); font-size: 0.76rem; }
+#rp-page .md-pos { color: #047857; font-weight: 700; }
+#rp-page .md-neg { color: #b91c1c; font-weight: 700; }
+html[data-theme="dark"] #rp-page .md-pos { color: #6ee7b7; }
+html[data-theme="dark"] #rp-page .md-neg { color: #fca5a5; }
+#rp-page .md-sortable { cursor: pointer; }
+#rp-page .md-sortable:hover { text-decoration: underline; }
+#rp-page .md-sorted::after { content: " ↓"; }
+#rp-page .md-short { max-width: 470px; color: var(--text); }
+#rp-page .md-short-in { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+#rp-page .md-short span { display: block; max-width: 430px; overflow: hidden; text-overflow: ellipsis; }
+#rp-page .md-expand {
+    flex: none; padding: 0 5px; border: 0; background: transparent; color: var(--text-muted);
+    font-size: 0.85rem; cursor: pointer; border-radius: 4px;
+}
+#rp-page .md-expand:hover { color: var(--text); background: var(--hover-bg, #eef2f7); }
+#rp-page .md-sg { display: inline-block; padding: 2px 8px; border-radius: 7px; font-size: 0.74rem; font-weight: 700; line-height: 1.3; }
+#rp-page .md-sg + .md-sg { margin-left: 4px; }
+#rp-page .md-sg-under { background: #fee2e2; color: #991b1b; }
+#rp-page .md-sg-over { background: #fef3c7; color: #92400e; }
+#rp-page .md-sg-diff { background: #e0f2fe; color: #075985; }
+#rp-page .md-sg-pace { background: #e0e7ff; color: #3730a3; }
+html[data-theme="dark"] #rp-page .md-sg-under { background: #3b1717; color: #fca5a5; }
+html[data-theme="dark"] #rp-page .md-sg-over { background: #3a2a0a; color: #fcd34d; }
+html[data-theme="dark"] #rp-page .md-sg-diff { background: #0c2f45; color: #7dd3fc; }
+html[data-theme="dark"] #rp-page .md-sg-pace { background: #1e2250; color: #c7d2fe; }
+#rp-page .md-table tr.md-row-open > td { background-color: var(--hover-bg, #eef2f7); }
+#rp-page .md-table tr.md-detail > td { height: auto; padding: 0; background-color: var(--muted-bg, #f8fafc) !important; white-space: normal; }
+#rp-page .md-detail-body { display: flex; flex-direction: column; gap: 3px; padding: 8px 14px 10px; font-size: 0.8rem; line-height: 1.45; color: var(--text); max-width: 1100px; }
+#rp-page .md-foot { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+#rp-page .md-foot .filter-btn { padding: 4px 14px; font-size: 0.78rem; }
+
+/* График «Точность по срокам» */
+#rp-page .md-acc-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; }
+#rp-page .md-chart-wrap { position: relative; height: 230px; margin-top: 6px; }
+
+/* Свёрнутый блок «Подробно для аналитика» */
+#rp-page .md-analyst-card { padding: 0; }
+#rp-page .md-analyst > summary {
+    padding: 12px 16px; cursor: pointer; font-weight: 600; font-size: 0.86rem; color: var(--text); list-style: none;
+    border-radius: var(--radius-lg, 12px);
+}
+#rp-page .md-analyst > summary::-webkit-details-marker { display: none; }
+#rp-page .md-analyst > summary::before { content: "▸"; display: inline-block; width: 1.1em; color: var(--text-muted); }
+#rp-page .md-analyst[open] > summary::before { content: "▾"; }
+#rp-page .md-analyst > summary:hover { background: var(--hover-bg, #eef2f7); }
+#rp-page .md-analyst-body { display: flex; flex-direction: column; gap: 14px; padding: 4px 16px 16px; }
+#rp-page .md-analyst-body > .rp-card { margin: 0; }
+#rp-page .md-analyst-body .mlw-lead { margin: 6px 0 8px; font-size: 0.84rem; }
+#rp-page .md-analyst-body .mlw-note { margin: 8px 0 0; }
+
+@media (max-width: 900px) {
+    #rp-page .md-models { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 560px) {
+    #rp-page .md-hz { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    #rp-page .md-xlsx { margin-left: 0; }
+}

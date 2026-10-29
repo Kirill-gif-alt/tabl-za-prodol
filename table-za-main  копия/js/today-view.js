@@ -1,13 +1,15 @@
 // «Сегодня» — стартовая страница: главное за день одним экраном.
-//  • строка-вывод: сколько ждёт решения, ошибок тарифов, пропусков справочника;
-//  • ключевые цифры: загрузка вылетов на 7 дней, продано сегодня, отклонение от обычного, итог решений за 30 дней;
-//  • полоса дней (сегодня и столько дней вперёд, сколько выбрано в «Вперёд на»): загрузка и число решений;
-//    клик — вылеты этого дня;
-//  • таблица: «Ждут решения» / «Ошибки тарифов» / «Вылеты дня»; клик по строке — карточка рейса
-//    (если она показана кнопкой ▤), «Открыть» — рейс в «Управлении продажами» или «Динамике продаж».
+//  • заголовок с загрузкой вылетов на 7 дней, одна плашка про старые данные (с кнопкой «Загрузить свежие данные»);
+//  • четыре крупные плитки: ждут отметки / можно повысить цену / стоит снизить цену / ошибки в тарифах —
+//    клик по плитке отбирает строки таблицы; ниже строка поменьше: продано сегодня, к обычному, решения за 30 дней;
+//  • полоса дней (сегодня и столько дней вперёд, сколько выбрано в «Вперёд на»): число вылетов к отметке; клик — вылеты этого дня;
+//  • таблица: «Ждут отметки» / «Ошибки тарифов» / «Вылеты дня»; сортировка; клик по строке — карточка рейса
+//    (если она показана кнопкой ▤), двойной клик — подробности под строкой, «Открыть» — рейс в «Управлении продажами» или «Динамике продаж».
 // Считает лениво и только при открытии страницы; подсказки — те же, что в УП и сводке (SalesAdvice).
 window.TodayView = (function () {
     let tab = 'advice';         // advice | errors | day
+    let filter = 'all';         // отбор «Ждут отметки» плиткой: all | up | down
+    let detailKey = '';         // рейс|дата, у которого открыты подробности (двойной клик)
     let pickDay = '';           // выбранный день полосы (ДД.ММ.ГГГГ)
     let selected = null;        // { code, date }
     let advice = [];
@@ -32,6 +34,18 @@ window.TodayView = (function () {
     }
     function setAheadDays(v) {
         try { localStorage.setItem(aheadKey(), String(v)); } catch (e) { /* ignore */ }
+    }
+
+    // «Сначала»: самые денежные | самые срочные | по дате. Запоминается на профиль.
+    const SORT_OPTIONS = [['money', 'самые денежные'], ['urgent', 'самые срочные'], ['date', 'по дате']];
+    const SORT_KEY = 'krasavia_today_sort_';
+    function sortBy() {
+        let v = '';
+        try { v = localStorage.getItem(aheadKey().replace(AHEAD_KEY, SORT_KEY)) || ''; } catch (e) { /* ignore */ }
+        return SORT_OPTIONS.some(o => o[0] === v) ? v : 'money';
+    }
+    function setSortBy(v) {
+        try { localStorage.setItem(aheadKey().replace(AHEAD_KEY, SORT_KEY), v); } catch (e) { /* ignore */ }
     }
 
     function esc(v) {
@@ -124,6 +138,11 @@ window.TodayView = (function () {
     // Подсказки посчитаны под нынешние данные и окно дней (иначе «0 ждут решения» — это ещё не итог).
     function adviceReady() {
         return typeof SalesAdvice === 'undefined' || adviceSig === sig();
+    }
+
+    // Хоть раз посчитано: цифры в плитках и полосе дней показываем сразу, не мигая «…» при пересчёте.
+    function adviceBuilt() {
+        return typeof SalesAdvice === 'undefined' || adviceSig !== '';
     }
 
     function sig() {
@@ -273,14 +292,6 @@ window.TodayView = (function () {
         return typeof SalesAdvice === 'undefined' || typeof PV === 'undefined' || PV.HINT_TODAY === 1;
     }
 
-    function leadText(p, errs, gaps) {
-        const parts = [];
-        if (canTab('sales')) parts.push(!hintsOn() ? 'подсказки по вылетам выключены' : !adviceReady() ? 'подсказки по вылетам считаются…' : p ? `${p} ${pluralRu(p, 'вылет ждёт', 'вылета ждут', 'вылетов ждут')} отметки (вылеты на ${aheadDays()} дн.)` : `все вылеты на ${aheadDays()} дн. в норме или уже отмечены`);
-        if (typeof FlightChecks !== 'undefined' && FlightChecks.enabled()) parts.push(errs ? `${errs} ${pluralRu(errs, 'рейс', 'рейса', 'рейсов')} с ошибкой тарифа` : 'ошибок тарифов нет');
-        if (gaps) parts.push(`в справочнике ${gaps} ${pluralRu(gaps, 'пропуск', 'пропуска', 'пропусков')}`);
-        return parts.length ? (t => t.charAt(0).toUpperCase() + t.slice(1))(parts.join(', ') + '.') : '';
-    }
-
     // ---------- полоса дней ----------
 
     function dayStripHtml(pend) {
@@ -288,11 +299,15 @@ window.TodayView = (function () {
         pend.forEach(a => byDay.set(a.date, (byDay.get(a.date) || 0) + 1));
         const cells = [];
         const days = aheadDays() + 1;
+        // Число «к отметке» — только если подсказки посчитаны и доступны; иначе число вылетов дня.
+        const marks = canTab('sales') && hintsOn();
+        const ready = adviceBuilt();
         for (let i = 0; i < days; i++) {
             const date = shift(today(), i);
             const deps = departuresOn(date);
-            const sold = deps.reduce((s, d) => s + d.sold, 0);
-            const seats = deps.reduce((s, d) => s + d.seats, 0);
+            let sold = 0;
+            let seats = 0;
+            deps.forEach(d => { sold += d.sold; seats += d.seats; });
             const lf = seats ? Math.round(sold / seats * 100) : null;
             const dt = parseLocalDate(date);
             const dow = dt && typeof DAYS_RU !== 'undefined' ? DAYS_RU[dt.getDay()] : '';
@@ -301,25 +316,49 @@ window.TodayView = (function () {
             const cls = lf == null ? '' : lf >= 85 ? 'td-hi' : lf >= 60 ? 'td-mid' : lf >= 40 ? 'td-low' : 'td-bad';
             const calEv = typeof CalendarEvents !== 'undefined' ? CalendarEvents.on(date)[0] : null;
             const calName = calEv ? CalendarEvents.label(date) : '';
+            const level = !marks || !ready ? '' : dec >= 4 ? ' td-day-hi' : dec ? ' td-day-lo' : ' td-day-zero';
+            const num = marks ? (ready ? dec : '…') : deps.length;
+            const cap = marks ? 'к отметке' : pluralRu(deps.length, 'вылет', 'вылета', 'вылетов');
             cells.push(`
-                <button type="button" class="td-day${pickDay === date && tab === 'day' ? ' td-day-on' : ''}${wk ? ' td-day-wk' : ''}" data-td-day="${esc(date)}" title="${esc(date)}${calName ? ' · ' + esc(calName) : ''}: ${deps.length} ${pluralRu(deps.length, 'вылет', 'вылета', 'вылетов')}${lf != null ? `, загрузка ${lf}%` : ''}${dec ? `, ждут отметки: ${dec}` : ''}">
+                <button type="button" class="td-day${level}${i === 0 ? ' td-day-today' : ''}${pickDay === date && tab === 'day' ? ' td-day-on' : ''}${wk ? ' td-day-wk' : ''}" data-td-day="${esc(date)}" title="${esc(date)}${calName ? ' · ' + esc(calName) : ''}: ${deps.length} ${pluralRu(deps.length, 'вылет', 'вылета', 'вылетов')}${lf != null ? `, загрузка ${lf}%` : ''}${dec ? `, ждут отметки: ${dec}` : ''}">
                     <span class="td-dow">${calEv ? `<span class="cal-dot cal-dot-${esc(calEv.type)}"></span>` : ''}${esc(i === 0 ? 'сегодня' : i === 1 ? 'завтра' : dow)}</span>
                     <span class="td-date">${esc(date.slice(0, 5))}</span>
+                    <span class="td-num">${num}</span>
+                    <span class="td-cap">${esc(cap)}</span>
                     <span class="td-bar"><i class="${cls}" style="width:${lf || 0}%"></i></span>
-                    <span class="td-meta">${lf != null ? lf + '%' : '—'} · ${deps.length}</span>
-                    ${dec ? `<span class="td-dec">${dec} к отметке</span>` : '<span class="td-dec td-dec-none">&nbsp;</span>'}
                 </button>`);
         }
-        return `<div class="td-days">${cells.join('')}</div>`;
+        return `<div class="td-days-card">
+            <div class="td-days-head"><b>Ближайшие ${days} ${pluralRu(days, 'день', 'дня', 'дней')}${marks ? ' — сколько рейсов ждут отметки' : ''}</b><span class="td-muted">нажмите на день — покажу только его вылеты</span></div>
+            <div class="td-days">${cells.join('')}</div></div>`;
     }
 
     // ---------- таблица ----------
 
-    const LABEL = { down: '▼ снизить', up: '▲ повысить', attn: '! внимание' };
+    const LABEL = { down: '▼ Снизить цену', up: '▲ Повысить цену', attn: '● Внимание' };
+
+    function lfCls(lf) {
+        return lf >= 60 ? 'td-lf-hi' : lf >= 30 ? 'td-lf-mid' : 'td-lf-lo';
+    }
 
     function loadCell(sold, seats) {
         const lf = seats ? Math.round(sold / seats * 100) : 0;
-        return `<div class="td-lf"><span class="td-lf-bar"><i style="width:${Math.min(100, lf)}%"></i></span><span>${fmt(sold)}/${fmt(seats)}</span></div>`;
+        return `<div class="td-sold"><span class="td-sold-n"><b>${fmt(sold)}</b> из ${fmt(seats)}</span><span class="td-lf-bar" title="Занято ${lf}%"><i class="${lfCls(lf)}" style="width:${Math.min(100, lf)}%"></i></span></div>`;
+    }
+
+    function diffHtml(d) {
+        const v = Math.round(Number(d) || 0);
+        return `<span class="${v > 0 ? 'td-pos' : v < 0 ? 'td-neg' : 'td-muted'}">${signed(v)}</span>`;
+    }
+
+    function inDaysText(dtd) {
+        return dtd == null ? '' : dtd < 0 ? 'вылетел' : dtd === 0 ? 'сегодня' : dtd === 1 ? 'завтра' : `через ${dtd} ${pluralRu(dtd, 'день', 'дня', 'дней')}`;
+    }
+
+    function pillHtml(adv) {
+        if (adv && adv.status) return `<span class="td-pill td-pill-${adv.status}" title="${esc(adv.text || '')}">${LABEL[adv.status]}</span>`;
+        if (adv) return '<span class="td-pill">В норме</span>';
+        return `<span class="td-muted" title="${esc(hintsOn() ? 'Подсказки нет: вылет сегодня или вне окна, рейс закрыт, либо нет нормы и плана' : 'Подсказки выключены в «Параметрах расчётов»')}">—</span>`;
     }
 
     function rowHtml(item, extraCell) {
@@ -329,26 +368,55 @@ window.TodayView = (function () {
         const ac = r && typeof getAircraftType === 'function' ? getAircraftType(r[4]) : '';
         const dtd = daysUntil(item.date);
         const adv = item.adv !== undefined ? item.adv : (typeof SalesAdvice !== 'undefined' ? SalesAdvice.forDeparture(item.code, item.date, aheadDays(), 'today') : null);
-        // «Обычно / план»: если есть только план, одно число не должно читаться как «обычно».
+        // «К этой дате обычно»: если есть только план, одно число не должно читаться как «обычно».
         const refUsual = adv && adv.refs ? adv.refs.find(x => x.label.indexOf('обычно') === 0) : null;
         const refPlan = adv && adv.refs ? adv.refs.find(x => x.label.indexOf('по плану') === 0) : null;
-        const ref = adv && adv.refs ? (refUsual ? refUsual.value : '—') + (refPlan ? ' / ' + refPlan.value : '') : '—';
+        let refCell = '—';
+        if (refUsual) {
+            refCell = `<span class="td-usual-n">${fmt(refUsual.value)}</span> ${diffHtml(refUsual.d)}${refPlan ? `<div class="td-muted">по плану ${fmt(refPlan.value)} ${diffHtml(refPlan.d)}</div>` : ''}`;
+        } else if (refPlan) {
+            refCell = `<span class="td-usual-n">${fmt(refPlan.value)}</span> ${diffHtml(refPlan.d)}<div class="td-muted">по плану</div>`;
+        }
         const on = selected && selected.code === item.code && selected.date === item.date;
         const fc = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(item.code, item.date) : null;
-        const fcCls = fc && fc.source !== 'flown' ? (fc.soldOutDtd != null && fc.load < fc.seats ? ' td-fc-up' : (fc.lf < 60 ? ' td-fc-down' : '')) : '';
+        const fcOk = fc && fc.source !== 'flown';
+        const fcCls = fcOk ? (fc.soldOutDtd != null && fc.load < fc.seats ? ' td-fc-up' : (fc.lf < 60 ? ' td-fc-down' : '')) : '';
+        const fcRange = fcOk && fc.lo != null && fc.hi != null && fc.lo !== fc.hi ? ` <span class="td-muted">от ${fmt(fc.lo)} до ${fmt(fc.hi)}</span>` : '';
         const grp = typeof FlightInsights !== 'undefined' ? FlightInsights.groupSeats(item.code, item.date) : 0;
+        const key = item.code + '|' + item.date;
         return `
             <tr class="td-row${on ? ' td-row-on' : ''}" data-td-code="${esc(item.code)}" data-td-date="${esc(item.date)}">
-                <td><strong>${esc(item.code)}</strong>${grp ? `<span class="grp-badge" title="В группах ${grp} чел.">Г ${grp}</span>` : ''}</td>
+                <td class="td-code"><strong>${esc(item.code)}</strong>${grp ? `<span class="grp-badge" title="В группах ${grp} чел.">Г ${grp}</span>` : ''}</td>
                 <td>${esc(typeof getFlightDirection === 'function' ? getFlightDirection(item.code) : '')}<div class="td-muted">${esc(ac)}</div></td>
-                <td class="td-nowrap">${esc(item.date.slice(0, 5))}<div class="td-muted">${dtd == null ? '' : dtd === 0 ? 'сегодня' : dtd + ' дн.'}</div></td>
+                <td class="td-nowrap">${esc(item.date.slice(0, 5))}<div class="td-muted">${esc(inDaysText(dtd))}</div></td>
                 <td>${loadCell(sold, seats)}</td>
-                <td class="td-nowrap${fcCls}" title="${esc(fc ? FlightInsights.forecastText(fc) : 'Мало истории для прогноза')}">${fc && fc.source !== 'flown' ? esc(FlightInsights.forecastShort(fc)) : '—'}</td>
-                <td class="td-nowrap">${esc(ref)}</td>
+                <td class="td-nowrap" title="${esc(fc ? FlightInsights.forecastText(fc) : 'Мало истории для прогноза')}">${fcOk ? `<b class="td-fc-n${fcCls}">${fmt(fc.final)}</b>${fcRange}` : '—'}</td>
+                <td class="td-nowrap" title="Сколько пассажиров обычно продают к этому дню; цветом — насколько нынешние продажи выше или ниже">${refCell}</td>
                 ${item.showMoney ? `<td class="td-nowrap td-money" title="${esc(typeof SalesAdvice !== 'undefined' ? SalesAdvice.moneyTitle(item.money) : '')}">${item.money ? fmt(item.money.rub) : '—'}</td>` : ''}
-                <td>${extraCell != null ? extraCell : (adv && adv.status ? `<span class="td-pill td-pill-${adv.status}">${LABEL[adv.status]}</span>` : (adv ? '<span class="td-pill">в норме</span>' : `<span class="td-muted" title="${esc(hintsOn() ? 'Подсказки нет: вылет сегодня или вне окна, рейс закрыт, либо нет нормы и плана' : 'Подсказки выключены в «Параметрах расчётов»')}">—</span>`))}</td>
+                <td>${extraCell != null ? extraCell : pillHtml(adv)}</td>
                 <td class="td-go-cell">${openable(item.code, item.date) ? '<button type="button" class="td-go" data-td-go title="Открыть рейс в «Управлении продажами» (если он там есть) или в «Динамике продаж»">Открыть</button>' : ''}</td>
-            </tr>`;
+            </tr>${detailKey === key ? detailRowHtml(item.code, item.date, item.showMoney ? 9 : 8) : ''}`;
+    }
+
+    // Подробности под строкой (двойной клик): то, что раньше пряталось в подсказках. Считается только по запросу, из готовых кэшей.
+    function detailRowHtml(code, date, cols) {
+        const lines = [];
+        const adv = typeof SalesAdvice !== 'undefined' ? SalesAdvice.forDeparture(code, date, aheadDays(), 'today') : null;
+        if (adv) {
+            lines.push(['Подсказка', adv.text]);
+            lines.push(['Порог', `подсказка появляется, когда продажи отличаются от обычного или плана не меньше чем на ${adv.threshold} ${pluralRu(adv.threshold, 'пассажира', 'пассажиров', 'пассажиров')}`]);
+            if (adv.money) lines.push(['Выручка', SalesAdvice.moneyTitle(adv.money)]);
+        }
+        const fc = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(code, date) : null;
+        if (fc && fc.source !== 'flown') lines.push(['Прогноз', FlightInsights.forecastText(fc)]);
+        const grp = typeof FlightInsights !== 'undefined' ? FlightInsights.groupSeats(code, date) : 0;
+        if (grp) lines.push(['Группы', `в группах ${grp} чел.`]);
+        if (typeof FlightChecks !== 'undefined' && FlightChecks.enabled()) {
+            FlightChecks.list().filter(i => i.code === code && i.date === date && i.state !== 'Улетел')
+                .forEach(i => lines.push(['Ошибка тарифа', `${i.title}: ${i.detail}`]));
+        }
+        if (!lines.length) lines.push(['', 'Подробностей нет: по этому вылету мало данных.']);
+        return `<tr class="td-detail" data-td-detail="${esc(code + '|' + date)}"><td colspan="${cols}"><dl class="td-detail-list">${lines.map(l => `<div><dt>${esc(l[0])}</dt><dd>${esc(l[1])}</dd></div>`).join('')}</dl></td></tr>`;
     }
 
     function depMinutes(row) {
@@ -380,22 +448,43 @@ window.TodayView = (function () {
         if (typeof FlightCard !== 'undefined') FlightCard.maybeOpen(code, date);
     }
 
+    // Порядок «Ждут отметки»: самые денежные — где больше денег (без суммы — в конце, по виду подсказки);
+    // самые срочные — чей вылет ближе; по дате — по дате и времени вылета.
+    function sortedAdvice(list, by) {
+        const order = { down: 0, attn: 1, up: 2 };
+        const rub = (a) => (a.money ? a.money.rub : -1);
+        const num = (a) => parseInt(a.code.slice(3), 10) || 0;
+        if (by === 'urgent') return list.slice().sort((a, b) => a.dtd - b.dtd || rub(b) - rub(a) || order[a.status] - order[b.status] || num(a) - num(b));
+        if (by === 'date') {
+            const key = new Map(list.map(a => {
+                const d = parseLocalDate(a.date);
+                return [a, [d ? d.getTime() : 0, depMinutes(rowFor(a.code, a.date))]];
+            }));
+            return list.slice().sort((a, b) => key.get(a)[0] - key.get(b)[0] || key.get(a)[1] - key.get(b)[1] || num(a) - num(b));
+        }
+        return list.slice().sort((a, b) => rub(b) - rub(a) || order[a.status] - order[b.status] || a.dtd - b.dtd);
+    }
+
+    const HEAD_TIP_FC = 'Сколько пассажиров ждём к вылету (тот же прогноз, что в карточке и RMS); «от … до …» — пределы, в которые попадают 8 вылетов из 10';
+    const HEAD_TIP_USUAL = 'Сколько обычно продают к этой дате; цветом — насколько нынешние продажи выше (+) или ниже (−)';
+
     function tableHtml(pend, errs) {
         let rows = '';
         let empty = '';
         let more = '';
-        let head = '<th>Рейс</th><th>Маршрут</th><th>Вылет</th><th>Загрузка</th><th title="Прогноз загрузки к вылету (тот же, что в карточке и RMS); в скобках — пределы, в которые попадают 8 вылетов из 10">Прогноз</th><th>Обычно / план</th><th>Подсказка</th><th></th>';
+        const headHead = '<th>Рейс</th><th>Маршрут</th><th>Вылет</th><th>Продано из мест</th>'
+            + `<th title="${HEAD_TIP_FC}">Ждём к вылету</th><th title="${HEAD_TIP_USUAL}">К этой дате обычно</th>`;
+        let head = headHead + '<th>Что сделать</th><th></th>';
         if (tab === 'advice') {
-            const order = { down: 0, attn: 1, up: 2 };
-            // Сверху то, где больше денег; без суммы (нет прогноза или тарифа) — в конце, по виду подсказки.
-            const rub = (a) => (a.money ? a.money.rub : -1);
-            const list = pend.slice().sort((a, b) => rub(b) - rub(a) || order[a.status] - order[b.status] || a.dtd - b.dtd);
-            head = head.replace('<th>Подсказка</th>', '<th title="Сколько денег под вылетом. ▼ и !: пустые места по прогнозу × средний тариф. ▲: места, ещё доступные в продаже × последний тариф. Без прогноза или тарифа — «—»">Деньги, ₽</th><th>Подсказка</th>');
+            const shown = filter === 'all' ? pend : pend.filter(a => a.status === filter);
+            const list = sortedAdvice(shown, sortBy());
+            head = headHead + '<th class="td-th-r" title="Сколько денег под вылетом. ▼ и ●: пустые места по прогнозу × средний тариф. ▲: места, ещё доступные в продаже × последний тариф. Без прогноза или тарифа — «—»">Выручка, ₽</th><th>Что сделать</th><th></th>';
             if (list.length > 200) more = `<p class="td-empty">Показаны первые 200 из ${list.length}.</p>`;
             rows = list.slice(0, 200).map(a => rowHtml({ code: a.code, date: a.date, adv: a, money: a.money || null, showMoney: true })).join('');
-            empty = canTab('sales') ? (!hintsOn() ? 'Подсказки на этой странице выключены в «Параметрах расчётов».' : !adviceReady() ? 'Считаю подсказки по вылетам…' : `Все вылеты на ${aheadDays()} дн. в норме или уже отмечены сегодня.`) : 'Нет доступа к «Управлению продажами».';
+            empty = !canTab('sales') ? 'Нет доступа к «Управлению продажами».' : !hintsOn() ? 'Подсказки на этой странице выключены в «Параметрах расчётов».' : !adviceReady() ? 'Считаю подсказки по вылетам…'
+                : filter !== 'all' ? `Среди вылетов на ${aheadDays()} дн. нет таких, где стоит «${filter === 'up' ? 'повысить цену' : 'снизить цену'}».` : `Все вылеты на ${aheadDays()} дн. в норме или уже отмечены сегодня.`;
         } else if (tab === 'errors') {
-            head = '<th>Рейс</th><th>Маршрут</th><th>Вылет</th><th>Загрузка</th><th title="Прогноз загрузки к вылету (тот же, что в карточке и RMS); в скобках — пределы, в которые попадают 8 вылетов из 10">Прогноз</th><th>Обычно / план</th><th>Ошибка</th><th></th>';
+            head = headHead + '<th>Что не так</th><th></th>';
             rows = errs.map(e => rowHtml({ code: e.code, date: e.date }, `<span class="td-err">${esc(e.items.map(i => i.title).join(', '))}</span>`)).join('');
             empty = 'Ошибок тарифов нет.';
         } else {
@@ -404,6 +493,64 @@ window.TodayView = (function () {
             empty = `На ${date} вылетов нет.`;
         }
         return `<div class="td-table-wrap">${rows ? `<table class="td-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>` : `<p class="td-empty">${esc(empty)}</p>`}${more}</div>`;
+    }
+
+    // ---------- плитки ----------
+
+    function bigTile(cls, label, value, note, opts) {
+        const o = opts || {};
+        const act = o.filter ? ` data-td-filter="${o.filter}" role="button" tabindex="0" aria-pressed="${o.on ? 'true' : 'false'}"` : '';
+        return `<div class="td-big ${cls}${o.filter ? ' td-big-act' : ''}${o.on ? ' td-big-on' : ''}"${act}${o.title ? ` title="${esc(o.title)}"` : ''}>
+            <span class="td-big-label">${esc(label)}</span><b class="td-big-n">${value}</b><em class="td-big-note">${note}</em></div>`;
+    }
+
+    function bigTilesHtml(pend, errs, gaps) {
+        const sales = canTab('sales');
+        const checks = typeof FlightChecks !== 'undefined' && FlightChecks.enabled();
+        const ready = adviceBuilt();
+        const hints = hintsOn();
+        let up = 0;
+        let down = 0;
+        let attn = 0;
+        let upPass = 0;
+        pend.forEach(a => {
+            if (a.status === 'up') {
+                up++;
+                const u = a.refs ? a.refs.find(x => x.label.indexOf('обычно') === 0) : null;
+                if (u) upPass += u.d;
+            } else if (a.status === 'down') down++;
+            else attn++;
+        });
+        const n = (v) => !hints ? '—' : !ready ? '…' : String(v);
+        const off = !hints ? 'подсказки выключены' : !ready ? 'считаю…' : '';
+        const days = aheadDays();
+        const tiles = [];
+        if (sales) {
+            tiles.push(bigTile('td-big-red', 'Ждут вашей отметки', n(pend.length),
+                off || `вылеты на ${days} ${pluralRu(days, 'день', 'дня', 'дней')} вперёд${attn ? ` · из них «Внимание»: ${attn}` : ''}`,
+                { filter: 'all', on: tab === 'advice' && filter === 'all', title: 'Вылеты, по которым ещё нет сегодняшней отметки. Нажмите — показать их все' }));
+            tiles.push(bigTile('td-big-green', 'Можно повысить цену', n(up),
+                off || `продаётся лучше обычного${upPass > 0 ? ` · +${fmt(upPass)} пасс. к обычному` : ''}`,
+                { filter: 'up', on: tab === 'advice' && filter === 'up', title: 'Нажмите — показать только вылеты, где можно повысить цену' }));
+            tiles.push(bigTile('td-big-amber', 'Стоит снизить цену', n(down),
+                off || 'продаётся хуже обычного',
+                { filter: 'down', on: tab === 'advice' && filter === 'down', title: 'Нажмите — показать только вылеты, где стоит снизить цену' }));
+        }
+        if (checks || gaps) {
+            const gapsNote = gaps ? `${gaps} ${pluralRu(gaps, 'пропуск', 'пропуска', 'пропусков')} в справочнике · <span class="td-link" role="link" tabindex="0" data-td-gaps>открыть справочник</span>` : 'пропусков в справочнике нет';
+            tiles.push(bigTile('td-big-blue', 'Ошибки в тарифах', checks ? String(errs.length) : '—',
+                checks ? gapsNote : `проверка тарифов выключена · ${gapsNote}`,
+                checks ? { filter: 'errors', on: tab === 'errors', title: 'Нажмите — показать рейсы с ошибкой тарифа' } : {}));
+        }
+        return tiles.length ? `<div class="td-bigs">${tiles.join('')}</div>` : '';
+    }
+
+    function smallTilesHtml(k, stale, norm, dec) {
+        return `<div class="td-stats${dec ? ' td-stats-3' : ''}">
+            <div class="td-stat"${k.salesReady && !stale && k.todayOutside ? ` title="Из них вне загрузки (чартеры, доп. номера): ${fmt(k.todayOutside)}"` : ''}><span>Продано сегодня</span>${!k.salesReady ? '<b>—</b><em>файл продаж не загружен</em>' : stale ? `<b>—</b><em>нет свежих данных (от ${esc(stale.label)})</em>` : `<b>${fmt(k.todaySales)}</b><em>${fmt(Math.round(k.todayRevenue / 1000))} тыс. ₽</em>`}</div>
+            <div class="td-stat" title="Продано на вылеты ближайших 7 дней минус сколько обычно продавали к этому дню (по тем же рейсам и дням недели)"><span>К обычному</span>${norm ? `<b>${signed(norm.diff)} пасс.</b><em>по ${norm.n} из ${norm.total} вылетов, 7 дней</em>` : `<b>—</b><em>${normBuilding ? 'считаю…' : 'нет нормы'}</em>`}</div>
+            ${dec ? `<div class="td-stat td-stat-link" data-td-decisions role="button" tabindex="0" title="Общий итог решений «снизить» и «повысить» за 30 дней по тем, у кого итог уже зафиксирован, — как «Общий итог по оценённым» в Отчётах → Решения при периоде 30 дней. Остальные отчёт досчитает при открытии, тогда цифра в отчёте может отличаться. Нажмите, чтобы открыть."><span>Решения за 30 дн.</span><b>${signedRub(dec.sum)}</b><em>лучше ${dec.better}, хуже ${dec.worse} · итог есть у ${dec.ready} из ${dec.total}</em></div>` : ''}
+        </div>`;
     }
 
     function render() {
@@ -422,30 +569,38 @@ window.TodayView = (function () {
         const norm = normTile.sig === sig() ? normTile.data : null;
         const dec = decTile.data;
         const dt = parseLocalDate(today());
-        const longDate = dt ? dt.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : today();
+        const longDate = dt ? dt.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).replace(/\s*г\.$/, '') : today();
         const tabs = [
             canTab('sales') ? { id: 'advice', label: `Ждут отметки · ${hintsOn() ? pend.length : '—'}` } : null,
             typeof FlightChecks !== 'undefined' && FlightChecks.enabled() ? { id: 'errors', label: `Ошибки тарифов · ${errs.length}` } : null,
             { id: 'day', label: `Вылеты ${pickDay && pickDay !== today() ? pickDay.slice(0, 5) : 'сегодня'} · ${departuresOn(pickDay || today()).length}` }
         ].filter(Boolean);
         if (!tabs.some(t => t.id === tab)) tab = tabs[0].id;
+        if (tab !== 'advice') filter = 'all';
+        const canLoad = typeof ProfileAuth === 'undefined' || ProfileAuth.hasPermission('load_data');
+        const ahead = aheadDays();
+        const sortCur = sortBy();
         root.innerHTML = `
             <div class="td-wrap">
                 <section class="td-main">
-                    <div class="td-today-date">Сегодня · ${esc(longDate)}</div>
-                    <p class="td-lead">${esc(leadText(pend.length, errs.length, gaps))}${gaps ? ' <button type="button" class="td-link" data-td-gaps>Открыть справочник</button>' : ''}</p>
-                    ${stale ? `<p class="td-stale">Решения по данным от ${esc(stale.label)} устарели: файл продаж не обновлялся ${stale.days} ${pluralRu(stale.days, 'день', 'дня', 'дней')}. Загрузите свежие данные.</p>` : ''}
-                    <div class="td-stats${dec ? ' td-stats-4' : ''}">
-                        <div class="td-stat"><span>Загрузка вылетов, 7 дней</span><b>${k.lf != null ? k.lf + '%' : '—'}</b><em>${fmt(k.sold)} из ${fmt(k.seats)} мест · ${fmt(k.n)} ${pluralRu(k.n, 'вылет', 'вылета', 'вылетов')}</em></div>
-                        <div class="td-stat"${k.salesReady && !stale && k.todayOutside ? ` title="Из них вне загрузки (чартеры, доп. номера): ${fmt(k.todayOutside)}"` : ''}><span>Продано сегодня</span>${!k.salesReady ? '<b>—</b><em>файл продаж не загружен</em>' : stale ? `<b>—</b><em>нет свежих данных (от ${esc(stale.label)})</em>` : `<b>${fmt(k.todaySales)}</b><em>${fmt(Math.round(k.todayRevenue / 1000))} тыс. ₽</em>`}</div>
-                        <div class="td-stat" title="Продано на вылеты ближайших 7 дней минус сколько обычно продавали к этому дню (по тем же рейсам и дням недели)"><span>К обычному</span>${norm ? `<b>${signed(norm.diff)} пасс.</b><em>по ${norm.n} из ${norm.total} вылетов, 7 дней</em>` : `<b>—</b><em>${normBuilding ? 'считаю…' : 'нет нормы'}</em>`}</div>
-                        ${dec ? `<div class="td-stat td-stat-link" data-td-decisions role="button" tabindex="0" title="Общий итог решений «снизить» и «повысить» за 30 дней по тем, у кого итог уже зафиксирован, — как «Общий итог по оценённым» в Отчётах → Решения при периоде 30 дней. Остальные отчёт досчитает при открытии, тогда цифра в отчёте может отличаться. Нажмите, чтобы открыть."><span>Решения за 30 дн.</span><b>${signedRub(dec.sum)}</b><em>лучше ${dec.better}, хуже ${dec.worse} · итог есть у ${dec.ready} из ${dec.total}</em></div>` : ''}
+                    <div class="td-head">
+                        <div class="td-today-date">Сегодня · ${esc(longDate)}</div>
+                        <span class="td-head-load" title="Продано на вылеты ближайших 7 дней из мест в продаже">Загрузка вылетов на 7 дней: <b>${k.lf != null ? k.lf + '%' : '—'}</b> · ${fmt(k.sold)} из ${fmt(k.seats)} мест</span>
                     </div>
+                    ${stale ? `<div class="td-stale" role="status"><span>Данные продаж старые: последняя загрузка ${esc(stale.label)}, ${stale.days} ${pluralRu(stale.days, 'день', 'дня', 'дней')} назад. Решения ниже могут быть неверными.</span>${canLoad ? '<button type="button" class="td-stale-btn" data-td-load title="То же, что кнопка «Загрузить» вверху">Загрузить свежие данные</button>' : ''}</div>` : ''}
+                    ${bigTilesHtml(pend, errs, gaps)}
+                    ${smallTilesHtml(k, stale, norm, dec)}
                     ${dayStripHtml(pend)}
                     <div class="td-tabs" role="tablist">${tabs.map(t => `<button type="button" role="tab" class="td-tab${t.id === tab ? ' td-tab-on' : ''}" data-td-tab="${t.id}">${esc(t.label)}</button>`).join('')}
-                        ${canTab('sales') ? `<label class="td-ahead" title="Сколько дней вперёд показывать в полосе дней">Вперёд на
-                            <select data-td-ahead>${[...new Set(AHEAD_OPTIONS.concat(aheadDays()))].sort((x, y) => x - y).map(n => `<option value="${n}"${n === aheadDays() ? ' selected' : ''}>${n} дн.</option>`).join('')}</select></label>` : ''}</div>
+                        ${tab === 'advice' && filter !== 'all' ? `<button type="button" class="td-filter-chip" data-td-filter="all" title="Показать все вылеты, ждущие отметки">Только «${filter === 'up' ? 'Повысить цену' : 'Снизить цену'}» ✕</button>` : ''}
+                        <span class="td-tools">
+                        ${tab === 'advice' ? `<label class="td-ahead" title="В каком порядке показывать вылеты">Сначала:
+                            <select data-td-sort>${SORT_OPTIONS.map(o => `<option value="${o[0]}"${o[0] === sortCur ? ' selected' : ''}>${o[1]}</option>`).join('')}</select></label>` : ''}
+                        ${canTab('sales') ? `<label class="td-ahead" title="Сколько дней вперёд показывать в полосе дней и в списке">Вперёд на:
+                            <select data-td-ahead>${[...new Set(AHEAD_OPTIONS.concat(ahead))].sort((x, y) => x - y).map(n => `<option value="${n}"${n === ahead ? ' selected' : ''}>${n} ${pluralRu(n, 'день', 'дня', 'дней')}</option>`).join('')}</select></label>` : ''}
+                        </span></div>
                     ${tableHtml(pend, errs)}
+                    <p class="td-foot">Двойной клик по строке — подробности: расчёт подсказки и прогноза, деньги под вылетом.</p>
                 </section>
             </div>`;
     }
@@ -456,12 +611,38 @@ window.TodayView = (function () {
         });
     }
 
+    // Подробности под строкой: открыть у одного рейса, повторный двойной клик — закрыть.
+    function onDblClick(e) {
+        const row = e.target.closest('tr.td-row');
+        if (!row || e.target.closest('button, select, a')) return;
+        const key = row.dataset.tdCode + '|' + row.dataset.tdDate;
+        const sel = window.getSelection ? window.getSelection() : null;
+        if (sel && sel.removeAllRanges) sel.removeAllRanges();
+        document.querySelectorAll('#td-page tr.td-detail').forEach(d => d.remove());
+        if (detailKey === key) { detailKey = ''; return; }
+        detailKey = key;
+        row.insertAdjacentHTML('afterend', detailRowHtml(row.dataset.tdCode, row.dataset.tdDate, row.cells.length));
+    }
+
+    function onKey(e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        const el = e.target.closest('[role="button"], [role="link"]');
+        if (!el || !el.closest('#td-page')) return;
+        e.preventDefault();
+        el.click();
+    }
+
     function onClick(e) {
         const t = e.target;
         const tb = t.closest('[data-td-tab]');
-        if (tb) { tab = tb.dataset.tdTab; render(); return; }
+        if (tb) { tab = tb.dataset.tdTab; filter = 'all'; render(); return; }
         const day = t.closest('[data-td-day]');
-        if (day) { pickDay = day.dataset.tdDay; tab = 'day'; render(); return; }
+        if (day) { pickDay = day.dataset.tdDay; tab = 'day'; filter = 'all'; render(); return; }
+        if (t.closest('[data-td-load]')) {
+            // Тот же вызов, что у кнопки «Загрузить» в шапке (право проверяется внутри).
+            if (typeof autoLoadLatestFiles === 'function') autoLoadLatestFiles();
+            return;
+        }
         if (t.closest('[data-td-decisions]')) {
             // Тот же период, что в плитке: 30 дней, вкладка «В рублях».
             if (typeof DecisionsReport !== 'undefined') { DecisionsReport.setPeriod(30); DecisionsReport.setView('money'); }
@@ -474,6 +655,21 @@ window.TodayView = (function () {
             if (typeof ReportsView !== 'undefined') ReportsView.showSubtab('refs');
             if (typeof ReferenceView !== 'undefined') ReferenceView.openSection('check');
             switchMainTab('reports');
+            return;
+        }
+        // Плитки «ждут отметки / повысить / снизить / ошибки» отбирают строки таблицы; повторный клик по включённой — сброс.
+        const ft = t.closest('[data-td-filter]');
+        if (ft) {
+            const f = ft.dataset.tdFilter;
+            if (f === 'errors') {
+                tab = tab === 'errors' ? (canTab('sales') ? 'advice' : 'day') : 'errors';
+                filter = 'all';
+            } else {
+                const wasOn = tab === 'advice' && filter === f;
+                tab = 'advice';
+                filter = f === 'all' || wasOn ? 'all' : f;
+            }
+            render();
             return;
         }
         const row = t.closest('[data-td-code]');
@@ -489,12 +685,17 @@ window.TodayView = (function () {
         panel.innerHTML = '<div class="td-page" id="td-page"></div>';
         const page = panel.querySelector('#td-page');
         page.addEventListener('click', onClick);
+        page.addEventListener('dblclick', onDblClick);
+        page.addEventListener('keydown', onKey);
         page.addEventListener('change', (e) => {
+            const so = e.target.closest('[data-td-sort]');
+            if (so) { setSortBy(so.value); render(); return; }
             const sel = e.target.closest('[data-td-ahead]');
             if (!sel) return;
             setAheadDays(parseInt(sel.value, 10));
             tab = 'advice';
             selected = null;
+            detailKey = '';
             render();
             buildAdvice().then(() => { render(); return buildNorm(); }).then(render).catch(err => console.warn('TodayView', err));
         });

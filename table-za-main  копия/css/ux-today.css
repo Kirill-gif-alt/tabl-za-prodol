@@ -1,1 +1,342 @@
-/* Оформление вкладки «Сегодня» */
+/* Оформление вкладки «Сегодня» (ux-today)
+   Только раскладка, размеры, выравнивание и цвета новых плиток/плашек.
+   Цвета таблицы (шапка, заливка строк, цвета прогноза) остаются из styles.css и «Настроек». */
+
+.td-main {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 4px 4px 16px;
+}
+.td-main > * { margin: 0; }
+
+/* ---------- заголовок ---------- */
+.td-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 2px 16px;
+}
+.td-head .td-today-date {
+    margin: 0;
+    font-size: 1.6rem;
+    line-height: 1.2;
+}
+.td-head-load {
+    font-size: 0.92rem;
+    color: var(--text-muted);
+}
+.td-head-load b {
+    color: var(--text);
+    font-size: 1rem;
+}
+
+/* ---------- плашка про старые данные ---------- */
+.td-stale {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px 16px;
+    margin: 0;
+    padding: 7px 14px;
+    border-radius: 12px;
+    font-size: 0.92rem;
+}
+.td-stale-btn {
+    flex: none;
+    padding: 6px 14px;
+    border: 1px solid #047857;
+    border-radius: 9px;
+    background: #047857;
+    color: #fff;
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+.td-stale-btn:hover { background: #065f46; border-color: #065f46; }
+.td-stale-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; box-shadow: 0 0 0 4px #047857; }
+html[data-theme="dark"] .td-stale { background: #33250c; border-color: #7c5a10; color: #fcd34d; }
+html[data-theme="dark"] .td-stale-btn { background: #059669; border-color: #059669; }
+html[data-theme="dark"] .td-stale-btn:hover { background: #10b981; border-color: #10b981; }
+
+/* ---------- четыре крупные плитки ---------- */
+.td-bigs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 10px;
+}
+.td-big {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    min-width: 0;
+    padding: 8px 16px 9px;
+    border: 1px solid var(--border);
+    border-left: 6px solid var(--border);
+    border-radius: 14px;
+    background: var(--today-card-bg, var(--surface));
+    color: var(--text);
+}
+.td-big-red { border-left-color: #dc2626; }
+.td-big-green { border-left-color: #10b981; }
+.td-big-amber { border-left-color: #f59e0b; }
+.td-big-blue { border-left-color: #2563eb; }
+.td-big-label {
+    font-size: 0.84rem;
+    color: var(--text-muted);
+}
+.td-big-n {
+    font-size: 2.2rem;
+    font-weight: 800;
+    line-height: 1.12;
+    letter-spacing: -0.02em;
+    color: var(--text);
+}
+.td-big-note {
+    font-style: normal;
+    font-size: 0.78rem;
+    line-height: 1.3;
+    color: var(--text-muted);
+}
+.td-big-act { cursor: pointer; }
+.td-big-act:hover { box-shadow: 0 0 0 1px color-mix(in srgb, var(--text) 35%, var(--border)); }
+.td-big-act:focus-visible { outline: 2px solid var(--accent, #2563eb); outline-offset: 2px; }
+.td-big-on,
+.td-big-on:hover {
+    border-color: var(--today-active, var(--text));
+    border-left-color: inherit;
+    box-shadow: 0 0 0 2px var(--today-active, var(--text));
+}
+.td-big-red.td-big-on { border-left-color: #dc2626; }
+.td-big-green.td-big-on { border-left-color: #10b981; }
+.td-big-amber.td-big-on { border-left-color: #f59e0b; }
+.td-big-blue.td-big-on { border-left-color: #2563eb; }
+.td-big .td-link { font-size: inherit; }
+
+/* ---------- вторая строка: поменьше ---------- */
+.td-stats {
+    grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+    gap: 10px;
+    margin: 0;
+}
+.td-stat {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 10px;
+    padding: 7px 14px;
+    border-radius: 12px;
+}
+.td-stat span { font-size: 0.8rem; }
+.td-stat b { font-size: 1.15rem; }
+.td-stat em { font-size: 0.76rem; }
+
+/* ---------- полоса ближайших дней: одна строка ---------- */
+.td-days-card {
+    padding: 8px 12px 10px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface);
+}
+.td-days-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0 16px;
+    margin-bottom: 6px;
+    font-size: 0.88rem;
+}
+.td-days-head .td-muted { font-size: 0.76rem; }
+.td-days {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(62px, 1fr);
+    gap: 6px;
+    margin: 0;
+    padding-bottom: 2px;
+    overflow-x: auto;
+}
+.td-day {
+    align-items: center;
+    gap: 0;
+    padding: 5px 4px 6px;
+    border-radius: 12px;
+    text-align: center;
+}
+.td-day .td-dow { font-size: 0.7rem; }
+.td-day .td-date { font-size: 0.88rem; }
+.td-day .td-num {
+    font-size: 1.65rem;
+    font-weight: 800;
+    line-height: 1.1;
+    color: var(--text);
+}
+.td-day .td-cap {
+    font-size: 0.66rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.td-day .td-bar { height: 4px; margin: 4px 0 0; }
+.td-day.td-day-zero .td-num { color: color-mix(in srgb, var(--text-muted) 55%, transparent); }
+.td-day.td-day-lo { background: #fef3c7; }
+.td-day.td-day-hi { background: #fed7aa; }
+.td-day.td-day-lo .td-cap,
+.td-day.td-day-hi .td-cap,
+.td-day.td-day-lo .td-dow,
+.td-day.td-day-hi .td-dow { color: #78350f; }
+.td-day.td-day-wk .td-dow { color: #dc2626; }
+.td-day.td-day-lo .td-bar,
+.td-day.td-day-hi .td-bar { background: rgb(120 53 15 / 0.14); }
+.td-day.td-day-today {
+    border-color: var(--text);
+    box-shadow: 0 0 0 1px var(--text);
+}
+.td-day.td-day-on {
+    border-color: var(--today-active, #2563eb);
+    box-shadow: 0 0 0 2px var(--today-active, #2563eb);
+}
+html[data-theme="dark"] .td-day.td-day-lo { background: #3a2f12; }
+html[data-theme="dark"] .td-day.td-day-hi { background: #4d2b12; }
+html[data-theme="dark"] .td-day.td-day-lo .td-cap,
+html[data-theme="dark"] .td-day.td-day-hi .td-cap,
+html[data-theme="dark"] .td-day.td-day-lo .td-dow,
+html[data-theme="dark"] .td-day.td-day-hi .td-dow { color: #fcd34d; }
+html[data-theme="dark"] .td-day.td-day-wk .td-dow { color: #f87171; }
+html[data-theme="dark"] .td-day.td-day-lo .td-bar,
+html[data-theme="dark"] .td-day.td-day-hi .td-bar { background: rgb(255 255 255 / 0.14); }
+
+/* ---------- вкладки таблицы, сортировка ---------- */
+.td-tabs {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    border-bottom: 0;
+}
+.td-tab {
+    padding: 5px 14px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--text-muted);
+    font-size: 0.86rem;
+    font-weight: 600;
+}
+.td-tab:hover { border-color: color-mix(in srgb, var(--text) 35%, var(--border)); color: var(--text); }
+.td-tab.td-tab-on {
+    background: var(--text);
+    border-color: var(--today-active, var(--text));
+    color: var(--surface);
+    box-shadow: none;
+}
+.td-filter-chip {
+    padding: 4px 12px;
+    border: 1px dashed var(--text-muted);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent, #10b981) 12%, var(--surface));
+    color: var(--text);
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+.td-filter-chip:hover { border-style: solid; }
+.td-tools {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 16px;
+    margin-left: auto;
+}
+.td-ahead { margin-left: 0; }
+.td-ahead select {
+    padding: 5px 10px;
+    border-radius: 9px;
+}
+
+/* ---------- таблица ---------- */
+.td-table { font-size: 0.88rem; }
+.td-table th.td-th-r,
+.td-table td.td-money { text-align: right; }
+.td-table td.td-money { font-variant-numeric: tabular-nums; }
+.td-table th { padding-top: 8px; padding-bottom: 8px; }
+.td-table td { padding: 6px 10px; }
+.td-code strong { font-size: 1.02rem; font-weight: 800; }
+.td-table .td-muted { font-size: 0.76rem; }
+.td-sold { display: flex; flex-direction: column; gap: 3px; }
+.td-sold-n { white-space: nowrap; }
+.td-sold-n b { font-size: 1.05rem; font-weight: 800; }
+.td-lf-bar { width: 92px; height: 7px; border-radius: 4px; }
+.td-lf-bar i.td-lf-hi { background: #10b981; }
+.td-lf-bar i.td-lf-mid { background: #f59e0b; }
+.td-lf-bar i.td-lf-lo { background: #dc2626; }
+.td-fc-n { font-size: 1.05rem; font-weight: 800; }
+.td-usual-n { font-size: 1.02rem; font-weight: 700; }
+.td-pos { color: #047857; font-weight: 700; }
+.td-neg { color: #b91c1c; font-weight: 700; }
+html[data-theme="dark"] .td-pos { color: #34d399; }
+html[data-theme="dark"] .td-neg { color: #f87171; }
+.td-table .td-pill {
+    padding: 5px 14px;
+    border-radius: 8px;
+    font-size: 0.86rem;
+    font-weight: 700;
+}
+.td-table .td-pill-up { background: #d1fae5; color: #065f46; }
+.td-table .td-pill-down { background: #fee2e2; color: #991b1b; }
+.td-table .td-pill-attn { background: #fef3c7; color: #92400e; }
+html[data-theme="dark"] .td-table .td-pill-up { background: #0f2e22; color: #86efac; }
+html[data-theme="dark"] .td-table .td-pill-down { background: #3b1219; color: #fda4af; }
+html[data-theme="dark"] .td-table .td-pill-attn { background: #33250c; color: #fcd34d; }
+.td-err { font-size: 0.86rem; font-weight: 600; }
+html[data-theme="dark"] .td-err { color: #fca5a5; }
+.td-go { padding: 5px 14px; font-size: 0.85rem; }
+.td-foot {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+/* ---------- подробности под строкой (двойной клик) ---------- */
+.td-table tbody tr.td-detail > td,
+.td-table tbody tr.td-detail:hover > td {
+    padding: 8px 14px 10px 24px;
+    background-color: color-mix(in srgb, var(--accent, #10b981) 6%, var(--surface));
+    white-space: normal;
+}
+.td-detail-list {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    font-size: 0.84rem;
+}
+.td-detail-list > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 12px;
+}
+.td-detail-list dt {
+    flex: 0 0 110px;
+    font-weight: 700;
+    color: var(--text-muted);
+}
+.td-detail-list dd {
+    flex: 1 1 320px;
+    min-width: 0;
+    margin: 0;
+    line-height: 1.4;
+}
+
+/* ---------- узкие экраны ---------- */
+@media (max-width: 1000px) {
+    .td-bigs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .td-stats { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+    .td-bigs { grid-template-columns: 1fr; }
+    .td-head .td-today-date { font-size: 1.2rem; }
+    .td-tools { margin-left: 0; }
+}

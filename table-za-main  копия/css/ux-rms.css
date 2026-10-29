@@ -49,166 +49,218 @@
     line-height: 1.4;
 }
 
-/* ---------- «Сверху проблемные» ---------- */
-.rms-problem-strip {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 6px;
-    padding: 8px 16px;
-}
-.rms-problem-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-}
-.rms-problem-label { width: auto; }
-.rms-problem-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-}
-/* Свёрнуто — две строки чипов; остальные открывает кнопка «Показать все». */
-.rms-problem-strip:not(.is-open) .rms-problem-list {
-    max-height: calc(1.976rem + 31px);
-    overflow: hidden;
-}
-.rms-problem-chip {
-    max-width: 100%;
-    padding: 5px 10px;
-    font-size: 0.76rem;
-    line-height: 1.3;
-    text-align: left;
-}
-.rms-problem-more {
-    flex: none;
-    padding: 3px 10px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: transparent;
-    color: var(--text);
-    font: inherit;
-    font-size: 0.72rem;
-    font-weight: 600;
-    cursor: pointer;
-}
-.rms-problem-more:hover { border-color: var(--primary); }
-.rms-problem-more[hidden] { display: none; }
-
-/* ---------- Пометка над таблицей про скрытые столбцы ---------- */
+/* ---------- Пометка про скрытые продажи — в строке пояснения под шапкой ---------- */
 .rms-cols-note {
-    flex-shrink: 0;
-    padding: 6px 12px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--muted-bg, var(--bg));
-    color: var(--text-muted);
+    color: #fde68a;
     font-size: 0.76rem;
     line-height: 1.35;
 }
+.rms-cols-note::before { content: "·"; margin-right: 8px; color: rgb(255 255 255 / 0.6); }
 .rms-cols-note[hidden] { display: none; }
 
 /* ---------- Таблица: шапка ---------- */
-/* Шапка стоит на месте при прокрутке; подписи короткие и в одну строку, полное название — в подсказке (title). */
+/* Шапка стоит на месте при прокрутке; подписи короткие, полное название — в подсказке (title). */
 table.rms-table thead th {
     position: sticky;
     top: 0;
     z-index: 100;
-    padding: 9px 8px;
+    padding: 8px 8px;
+    text-align: left;
     white-space: nowrap;
     line-height: 1.2;
     letter-spacing: 0.04em;
 }
+table.rms-table thead th.rms-col-mark { text-align: center; }
 
-/* ---------- Таблица: плотность и числа ---------- */
+/* ---------- Таблица: строки одной высоты ---------- */
+/* Высота строки одна на все строки (рейс, подробности, заголовок группы): окно прокрутки считает по ней —
+   число RMS_ROW_H в js/rms-view.js должно совпадать с --rms-row-h. */
 table.rms-table {
+    --rms-row-h: 38px;
     font-variant-numeric: tabular-nums;
+    min-width: 1060px;
 }
-table.rms-table tbody td {
-    padding: 5px 8px;
+table.rms-table tbody tr.rms-row > td,
+table.rms-table tbody tr.rms-group > td,
+table.rms-table tbody tr.rms-detail > td {
+    box-sizing: border-box;
+    height: var(--rms-row-h);
+    padding: 0 8px;
+    overflow: hidden;
+    text-align: left;
     vertical-align: middle;
-}
-/* Числа — по правому краю (и подписи столбцов над ними). */
-table.rms-table :is(th, td):is(.rms-col-dtd, .rms-col-load, .rms-col-remain, .rms-col-fc, .rms-col-forecast, .rms-col-delta, .rms-col-pickup, .rms-col-today, .rms-col-fare, .rms-col-money) {
-    text-align: right;
-}
-table.rms-table :is(th, td):is(.rms-col-load, .rms-col-fc, .rms-col-forecast, .rms-col-delta, .rms-col-pickup, .rms-col-today, .rms-col-fare, .rms-col-money) {
-    padding-right: 10px;
+    line-height: 1.2;
 }
 
-/* Ширины столбцов заданы с запасом под самое длинное значение: таблица рисует только видимые строки,
-   и без этого столбцы «ездили» бы при прокрутке. Остаток ширины забирает «Причина». */
-table.rms-table .rms-col-flight { min-width: 232px; }
-table.rms-table .rms-col-date { min-width: 114px; }
-table.rms-table .rms-col-dtd { min-width: 40px; }
-table.rms-table .rms-col-load { min-width: 82px; }
-table.rms-table .rms-col-remain { min-width: 70px; }
-table.rms-table .rms-col-fc { min-width: 144px; }
-table.rms-table .rms-col-forecast { min-width: 96px; }
-table.rms-table .rms-col-delta { min-width: 73px; }
-table.rms-table .rms-col-pickup,
-table.rms-table .rms-col-today { min-width: 76px; }
-table.rms-table .rms-col-fare { min-width: 81px; }
-table.rms-table .rms-col-money { min-width: 88px; }
-table.rms-table .rms-col-mark { min-width: 72px; width: 72px; }
-/* Подписи «Продано 1–2 дн.» и «Продано сегодня» — максимум в две строки. */
-table.rms-table th.rms-col-pickup,
-table.rms-table th.rms-col-today { white-space: normal; }
+/* Ширины столбцов заданы жёстко: таблица рисует только видимые строки, и без этого столбцы «ездили» бы при прокрутке.
+   Остаток ширины забирает «Причина». */
+table.rms-table .rms-col-flight { width: 240px; min-width: 240px; max-width: 240px; }
+table.rms-table .rms-col-date { width: 118px; min-width: 118px; max-width: 118px; }
+table.rms-table .rms-col-load { width: 128px; min-width: 128px; max-width: 128px; }
+table.rms-table .rms-col-fc { width: 148px; min-width: 148px; max-width: 148px; }
+table.rms-table .rms-col-delta { width: 160px; min-width: 160px; max-width: 160px; }
+table.rms-table .rms-col-act { width: 136px; min-width: 136px; max-width: 136px; }
+table.rms-table .rms-col-mark { width: 72px; min-width: 72px; max-width: 72px; text-align: center; }
 table.rms-table .rms-col-reason {
     width: 100%;
-    min-width: 150px;
-    font-size: 0.76rem;
+    min-width: 180px;
+    font-size: 0.78rem;
+}
+table.rms-table tbody td.rms-col-reason { max-width: 0; }
+table.rms-table td.rms-col-mark { text-align: center; }
+/* Причина — одна строка, полный текст в подсказке: высота строки одинаковая. */
+.rms-reason-text {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Рейс: код с типом и направление — в две строки */
+table.rms-table .rms-flight-code {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 6px;
+    font-size: 0.9rem;
+    line-height: 1.2;
+}
+table.rms-table .rms-flight-code .grp-badge { margin-left: 0; }
+table.rms-table .rms-route-badge {
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 0.68rem;
+    padding: 1px 6px;
+    white-space: nowrap;
+}
+table.rms-table .rms-flight-name {
+    margin-top: 1px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.8rem;
+    line-height: 1.2;
+}
+table.rms-table .rms-flight-route { display: inline; margin: 0; }
+
+/* Вторые строки ячеек: «через 3 дн.», «2 из 45 пасс.», «ожидали 18» */
+table.rms-table .rms-sub {
+    margin-top: 1px;
+    font-size: 0.72rem;
+    line-height: 1.2;
+    font-weight: 500;
+    color: var(--text-muted, #64748b);
+}
+table.rms-table .rms-load-sub { display: block; margin-top: 1px; font-size: 0.72rem; }
+table.rms-table .rms-date { line-height: 1.2; }
+table.rms-table .rms-date .mode-badge { margin-left: 4px; }
+table.rms-table .rms-dtd.dtd-urgent { padding: 0 5px; font-size: 0.72rem; font-weight: 700; }
+table.rms-table .rms-col-load .occupancy-high,
+table.rms-table .rms-col-load .occupancy-med {
+    min-width: 0;
+    padding: 1px 8px;
+    font-size: 0.78rem;
     line-height: 1.3;
 }
-/* Причина — не больше двух строк, полный текст в подсказке: высота строки одинаковая. */
-.rms-reason-text {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
+table.rms-table .rms-delta { display: inline-block; padding: 0 8px; border-radius: 6px; font-size: 0.9rem; font-weight: 700; line-height: 1.2; }
+
+/* ---------- «Что сделать» ---------- */
+.rms-act {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 7px;
+    font-size: 0.76rem;
+    font-weight: 700;
+    line-height: 1.25;
+    white-space: nowrap;
+    cursor: help;
+}
+.rms-act-down { background: #fee2e2; color: #991b1b; }
+.rms-act-promo { background: #e0f2fe; color: #075985; }
+.rms-act-up { background: #d1fae5; color: #065f46; }
+.rms-act-check { background: #fef3c7; color: #92400e; }
+html[data-theme="dark"] .rms-act-down { background: rgb(248 113 113 / 0.2); color: #fca5a5; }
+html[data-theme="dark"] .rms-act-promo { background: rgb(56 189 248 / 0.18); color: #7dd3fc; }
+html[data-theme="dark"] .rms-act-up { background: rgb(52 211 153 / 0.18); color: #6ee7b7; }
+html[data-theme="dark"] .rms-act-check { background: rgb(251 191 36 / 0.18); color: #fcd34d; }
+
+/* ---------- Заголовки групп и «Показать остальные» ---------- */
+table.rms-table tbody tr.rms-group > td {
+    background: var(--muted-bg, var(--bg));
+    border-bottom: 1px solid var(--border);
+    cursor: default;
+}
+table.rms-table tbody tr.rms-group:hover:not(.closed-flight):not(.flew-flight),
+table.rms-table tbody tr.rms-detail:hover:not(.closed-flight):not(.flew-flight) { background: none !important; }
+table.rms-table tbody tr.rms-group:hover td,
+table.rms-table tbody tr.rms-detail:hover td { color: var(--text); }
+.rms-group-line {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     overflow: hidden;
+    white-space: nowrap;
 }
-table.rms-table td.rms-col-mark,
-table.rms-table th.rms-col-mark { text-align: center; }
+.rms-group-title { font-size: 0.98rem; font-weight: 800; }
+.rms-group-count { font-size: 0.84rem; font-weight: 700; }
+.rms-group-hint {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.76rem;
+    font-weight: 500;
+    color: var(--text-muted, #64748b);
+}
+.rms-group-crit .rms-group-title,
+.rms-group-crit .rms-group-count { color: #b91c1c; }
+.rms-group-warn .rms-group-title,
+.rms-group-warn .rms-group-count { color: #b45309; }
+.rms-group-rest .rms-group-title,
+.rms-group-rest .rms-group-count { color: var(--text); }
+html[data-theme="dark"] .rms-group-crit .rms-group-title,
+html[data-theme="dark"] .rms-group-crit .rms-group-count { color: #fca5a5; }
+html[data-theme="dark"] .rms-group-warn .rms-group-title,
+html[data-theme="dark"] .rms-group-warn .rms-group-count { color: #fcd34d; }
+table.rms-table tbody tr.rms-group-crit > td { box-shadow: inset 4px 0 0 #dc2626; }
+table.rms-table tbody tr.rms-group-warn > td { box-shadow: inset 4px 0 0 #f59e0b; }
+.rms-rest-toggle {
+    flex: none;
+    padding: 4px 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface, transparent);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+.rms-rest-toggle:hover { border-color: var(--primary); }
+.rms-rest-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
-/* Рейс: код и направление плотнее */
-table.rms-table .rms-flight-name { margin-top: 0; line-height: 1.2; }
-table.rms-table .rms-flight-route { margin-top: 0; }
-/* ЗПК: процент и число пассажиров — в столбик, по правому краю */
-table.rms-table .rms-load-sub {
-    margin-top: 1px;
-    line-height: 1.15;
-    font-size: 0.7rem;
+/* ---------- Подробности под строкой ---------- */
+table.rms-table tbody tr.rms-detail > td {
+    background: var(--muted-bg, var(--bg));
+    border-bottom: 1px solid var(--border);
+    box-shadow: inset 4px 0 0 var(--primary);
+    cursor: default;
 }
-
-/* ---------- Значки «КРИТ» и «!» — одного размера и формы ---------- */
-table.rms-table .rms-col-alert {
-    width: 50px;
-    min-width: 50px;
-    padding-left: 4px;
-    padding-right: 4px;
-    text-align: center;
+.rms-detail-line {
+    display: flex;
+    align-items: center;
+    gap: 6px 22px;
+    padding-left: 6px;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: 0.8rem;
+    color: var(--text-muted, #64748b);
 }
-.rms-alert-badge {
-    box-sizing: border-box;
-    width: 42px;
-    min-width: 42px;
-    height: 20px;
-    padding: 0;
-    border-radius: 6px;
-    font-size: 0.62rem;
-    font-weight: 800;
-    letter-spacing: 0.04em;
-    line-height: 1;
-}
-.rms-alert-badge-2 { font-size: 0.78rem; letter-spacing: 0; }
+.rms-detail-line b { color: var(--text); font-weight: 700; }
+.rms-detail-line .rms-today-hot { color: #15803d !important; }
+html[data-theme="dark"] .rms-detail-line .rms-today-hot { color: #4ade80 !important; }
+.rms-detail-code { font-weight: 700; color: var(--text); }
 
 /* ---------- Узкие окна ---------- */
 @media (max-width: 900px) {
-    .rms-problem-strip { padding: 8px 12px; }
-}
-/* На телефоне чип занимает две строки — свёрнуто показываем два чипа целиком. */
-@media (max-width: 600px) {
-    .rms-problem-strip:not(.is-open) .rms-problem-list { max-height: calc(3.952rem + 31px); }
+    table.rms-table { min-width: 980px; }
 }

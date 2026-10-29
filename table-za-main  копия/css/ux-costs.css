@@ -37,13 +37,47 @@ html[data-theme="dark"] .cost-calc-page {
     font-size: 0.82rem;
 }
 .cost-calc-page .cost-calc-body {
+    display: grid;
+    grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+    align-items: start;
     gap: var(--cc-gap);
     padding: 4px 4px 28px;
     margin: 0 -4px;
 }
+@media (max-width: 980px) {
+    .cost-calc-page .cost-calc-body { grid-template-columns: minmax(0, 1fr); }
+}
 .cost-calc-page .cost-calc-form {
     padding: var(--cc-pad);
     border-radius: var(--cc-r);
+}
+.cost-calc-page .cost-calc-form:empty { display: none; }
+.cost-calc-page .cost-calc-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.cost-calc-page .cost-calc-field > span { font-size: 0.82rem; }
+.cost-calc-page .cost-calc-select { font-size: 1rem; min-height: 44px; }
+.cost-calc-page .cost-calc-input-big { font-size: 1.35rem; font-weight: 700; min-height: 48px; font-variant-numeric: tabular-nums; }
+.cost-calc-page .cost-calc-field-hint { font-size: 0.78rem; line-height: 1.35; color: var(--text-muted); }
+.cost-calc-page .cost-calc-chips { display: flex; gap: 8px; }
+.cost-calc-page .cost-calc-chip {
+    min-height: 40px;
+    padding: 0 22px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+.cost-calc-page .cost-calc-chip:hover { border-color: var(--text-muted); }
+.cost-calc-page .cost-calc-chip.on {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: var(--surface);
+}
+.cost-calc-page .cost-calc-chip:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }
+@media (min-width: 981px) {
+    .cost-calc-page .cost-calc-form { position: sticky; top: 0; }
 }
 .cost-calc-page .cost-calc-result {
     display: flex;
@@ -97,8 +131,9 @@ html[data-theme="dark"] .cost-calc-page {
 .cost-calc-page .cost-calc-kpis {
     gap: var(--cc-gap);
 }
-@media (max-width: 1100px) {
-    .cost-calc-page .cost-calc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cost-calc-page .cost-calc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 1500px) {
+    .cost-calc-page .cost-calc-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 @media (max-width: 520px) {
     .cost-calc-page .cost-calc-kpis { grid-template-columns: minmax(0, 1fr); }
@@ -112,7 +147,7 @@ html[data-theme="dark"] .cost-calc-page {
     padding: var(--cc-pad);
     border-radius: var(--cc-r);
 }
-/* Цветная метка в углу — та же, что у полосы в блоке «Как складывается результат» */
+/* Цветная метка в углу: расходы — серая, субсидия — синяя, доход — зелёная */
 .cost-calc-page .cost-calc-kpi-exp::after,
 .cost-calc-page .cost-calc-kpi-sub::after,
 .cost-calc-page .cost-calc-kpi-rev::after {
@@ -180,16 +215,97 @@ html[data-theme="dark"] .cost-calc-page {
 .cost-calc-page .table-empty-title { color: var(--text-muted); }
 .cost-calc-page .table-empty-hint { color: var(--text-muted); }
 
-/* ---------- Узкий экран: подпись и сумма над полосой, пунктир не рисуем ---------- */
+
+/* ---------- Вывод словами: в плюс / в минус ---------- */
+.cost-calc-page .cost-calc-verdict {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 18px var(--cc-pad) 18px calc(var(--cc-pad) + 4px);
+    border: 1px solid var(--border);
+    border-left: 8px solid var(--cc-exp);
+    border-radius: var(--cc-r);
+    background: var(--surface);
+}
+.cost-calc-page .cost-calc-verdict.cost-calc-pos { border-left-color: var(--cc-pos); background: var(--cc-pos-bg); }
+.cost-calc-page .cost-calc-verdict.cost-calc-neg { border-left-color: var(--cc-neg); background: var(--cc-neg-bg); }
+.cost-calc-page .cost-calc-verdict-label { font-size: 0.9rem; color: var(--text-muted); }
+.cost-calc-page .cost-calc-verdict-val {
+    font-size: clamp(1.9rem, 1.3rem + 1.6vw, 2.75rem);
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    color: var(--primary);
+    overflow-wrap: anywhere;
+}
+.cost-calc-page .cost-calc-verdict.cost-calc-pos .cost-calc-verdict-val { color: var(--cc-pos); }
+.cost-calc-page .cost-calc-verdict.cost-calc-neg .cost-calc-verdict-val { color: var(--cc-neg); }
+.cost-calc-page .cost-calc-verdict-none .cost-calc-verdict-val { color: var(--text-muted); font-weight: 700; }
+.cost-calc-page .cost-calc-verdict-text { margin: 4px 0 0; font-size: 1rem; line-height: 1.45; color: var(--text); }
+
+/* ---------- Таблица «сколько мест занять» ---------- */
+.cost-calc-page .cost-calc-block {
+    padding: var(--cc-pad);
+    border-radius: var(--cc-r);
+}
+.cost-calc-page .cost-calc-block-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 4px 16px;
+    margin-bottom: 12px;
+}
+.cost-calc-page .cost-calc-block-head h3 { margin: 0; font-size: 1.02rem; font-weight: 700; color: var(--text); }
+.cost-calc-page .cost-calc-block-sub { font-size: 0.82rem; color: var(--text-muted); }
+.cost-calc-page .cost-calc-block-empty { margin: 0; line-height: 1.5; color: var(--text); }
+.cost-calc-page .cost-calc-block-note { margin: 12px 0 0; font-size: 0.8rem; line-height: 1.45; color: var(--text-muted); }
+.cost-calc-page .cost-calc-table-wrap { overflow-x: auto; border-radius: 10px; }
+.cost-calc-page .cost-calc-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.cost-calc-page .cost-calc-table th {
+    padding: 10px 12px;
+    text-align: left;
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: #fff;
+    background: var(--table-head-bg, #012A4A);
+}
+.cost-calc-page .cost-calc-table th:first-child { border-radius: 10px 0 0 0; }
+.cost-calc-page .cost-calc-table th:last-child { border-radius: 0 10px 0 0; }
+.cost-calc-page .cost-calc-table td {
+    padding: 11px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    white-space: nowrap;
+}
+.cost-calc-page .cost-calc-table th.cost-calc-num,
+.cost-calc-page .cost-calc-table td.cost-calc-num { text-align: right; }
+.cost-calc-page .cost-calc-price { font-size: 1.05rem; }
+.cost-calc-page .cost-calc-tag {
+    margin-left: 6px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: color-mix(in srgb, var(--text-muted) 14%, transparent);
+}
+.cost-calc-page .cost-calc-row-mid td { background: color-mix(in srgb, var(--cc-sub) 9%, transparent); }
+.cost-calc-page .cost-calc-row-over td { background: var(--cc-neg-bg); }
+.cost-calc-page .cost-calc-neg { color: var(--cc-neg); font-weight: 700; }
+.cost-calc-page .cost-calc-muted { color: var(--text-muted); }
+
+/* ---------- Узкий экран ---------- */
 @media (max-width: 640px) {
-    .cost-calc-page .cost-calc-row {
-        grid-template-columns: minmax(0, 1fr) auto;
-        row-gap: 6px;
-    }
-    .cost-calc-page .cost-calc-track { grid-column: 1 / -1; grid-row: 2; }
-    .cost-calc-page .cost-calc-mark { display: none; }
-    .cost-calc-page .cost-calc-legend { display: none; }
     .cost-calc-page .cost-calc-block,
     .cost-calc-page .cost-calc-form,
     .cost-calc-page .cost-calc-kpi { padding: 16px; }
+    .cost-calc-page .cost-calc-verdict { padding: 16px; }
+    .cost-calc-page .cost-calc-table td,
+    .cost-calc-page .cost-calc-table th { padding: 9px 8px; }
+    .cost-calc-page .cost-calc-table td { white-space: normal; }
 }
+.cost-calc-page .cost-calc-block-lead { margin-bottom: 12px; }
