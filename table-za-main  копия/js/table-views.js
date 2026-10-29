@@ -44,9 +44,9 @@ const PAIR_COL_GROUPS = [
 function buildPairColTogglesHtml() {
     return PAIR_COL_GROUPS.map(g => `
         <div class="ec-group" role="group" aria-label="${escAttr(g.label)}">
-            <span class="ec-group-label" title="${escAttr(g.hint)}">${escHtml(g.label)}</span>
+            <span class="ec-group-label">${escHtml(g.label)}</span>
             ${g.items.map(it => `
-            <label class="data-hide-flew-label pair-col-toggle ec-check" title="${escAttr(it.title)}">
+            <label class="data-hide-flew-label pair-col-toggle ec-check">
                 <input type="checkbox" data-pair-col="${it.key}"${pairColVisibility[it.key] ? ' checked' : ''}>
                 ${escHtml(it.label)}
             </label>`).join('')}
@@ -98,7 +98,7 @@ function buildReturnFlightBtnHtml(base) {
 }
 
 function buildSpecBookingsToggleHtml(label) {
-    return `<label class="data-hide-flew-label ec-check" title="Показать столбец «Спец. брони» — места, которые не идут в продажу">
+    return `<label class="data-hide-flew-label ec-check">
         <input type="checkbox" id="show-spec-bookings-toggle"${showSpecBookings ? ' checked' : ''}> ${escHtml(label)}
     </label>`;
 }
@@ -1004,7 +1004,6 @@ function createPairTableView(c) {
                     <div id="pair-sales-chart-result" class="table-sales-panel-body"></div>
                 </div>
             </div>
-            <p class="ec-howto"><b>Как считается.</b> Общие расходы — на пару рейсов туда и обратно. Субсидия — на одно направление (туда или обратно). Субсидия на рейсе — туда и обратно в сумме. Фин. рез = общая выручка + субсидия на рейсе − общие расходы.</p>
         </div>
     `;
     bindTableRowDelegation(document.getElementById('pair-table-container'));
