@@ -137,6 +137,11 @@ function rmsAction(f, fc) {
     return { id: 'check', label: 'Проверить', title: 'Посмотрите карточку рейса' };
 }
 
+// В строке причина короче: «вылет через N дн.» уже стоит в столбце «Вылет». Полный текст — в подсказке.
+function rmsReasonShort(reason) {
+    return String(reason).replace(/, вылет через \d+ дн\./, '');
+}
+
 function rmsRowHtml(f, ctx) {
     const showRoute = f.route && shouldShowRmsRoute(f, ctx.routeCounts);
     const fd = parseLocalDate(f.date);
@@ -173,7 +178,7 @@ function rmsRowHtml(f, ctx) {
                     <div class="rms-sub rms-load-sub">${f.free}${seatsTxt} пасс.</div>
                 </td>
                 <td class="rms-col-fc font-semibold ${fcCls}" title="${escAttr(fcTitle)}">${fcOn ? escHtml(FlightInsights.forecastShort(fc)) : '—'}</td>${deltaCell}
-                <td class="rms-col-reason"${f.alertReason ? ` title="${escAttr(f.alertReason)}"` : ''}><span class="rms-reason-text">${f.alertReason ? escHtml(f.alertReason).replace(/(\d) (дн\.|пасс\.)/g, '$1 $2') : '—'}</span></td>
+                <td class="rms-col-reason"${f.alertReason ? ` title="${escAttr(f.alertReason)}"` : ''}><span class="rms-reason-text">${f.alertReason ? escHtml(rmsReasonShort(f.alertReason)).replace(/(\d) (дн\.|пасс\.)/g, '$1 $2') : '—'}</span></td>
                 <td class="rms-col-act">${act ? `<span class="rms-act rms-act-${act.id}" title="${escAttr(act.title)}">${act.label}</span>` : ''}</td>
                 ${ctx.markOn ? `<td class="rms-col-mark">${PriceMarks.chipHtml(flightCode, f.date)}</td>` : ''}
             </tr>

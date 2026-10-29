@@ -404,8 +404,8 @@ window.TodayView = (function () {
         const adv = typeof SalesAdvice !== 'undefined' ? SalesAdvice.forDeparture(code, date, aheadDays(), 'today') : null;
         if (adv) {
             lines.push(['Подсказка', adv.text]);
-            lines.push(['Порог', `подсказка появляется, когда продажи отличаются от обычного или плана не меньше чем на ${adv.threshold} ${pluralRu(adv.threshold, 'пассажира', 'пассажиров', 'пассажиров')}`]);
-            if (adv.money) lines.push(['Выручка', SalesAdvice.moneyTitle(adv.money)]);
+            lines.push(['Порог', `подсказка появляется, когда продажи отличаются от обычного или плана не меньше чем на ${adv.threshold} ${pluralRu(adv.threshold, 'пассажира', 'пассажира', 'пассажиров')}`]);
+            if (adv.money) lines.push(['Деньги под вылетом', SalesAdvice.moneyTitle(adv.money)]);
         }
         const fc = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(code, date) : null;
         if (fc && fc.source !== 'flown') lines.push(['Прогноз', FlightInsights.forecastText(fc)]);
@@ -478,7 +478,7 @@ window.TodayView = (function () {
         if (tab === 'advice') {
             const shown = filter === 'all' ? pend : pend.filter(a => a.status === filter);
             const list = sortedAdvice(shown, sortBy());
-            head = headHead + '<th class="td-th-r" title="Сколько денег под вылетом. ▼ и ●: пустые места по прогнозу × средний тариф. ▲: места, ещё доступные в продаже × последний тариф. Без прогноза или тарифа — «—»">Выручка, ₽</th><th>Что сделать</th><th></th>';
+            head = headHead + '<th class="td-th-r" title="Сколько денег под вылетом. ▼ и ●: пустые места по прогнозу × средний тариф. ▲: места, ещё доступные в продаже × последний тариф. Без прогноза или тарифа — «—»">Деньги, ₽</th><th>Что сделать</th><th></th>';
             if (list.length > 200) more = `<p class="td-empty">Показаны первые 200 из ${list.length}.</p>`;
             rows = list.slice(0, 200).map(a => rowHtml({ code: a.code, date: a.date, adv: a, money: a.money || null, showMoney: true })).join('');
             empty = !canTab('sales') ? 'Нет доступа к «Управлению продажами».' : !hintsOn() ? 'Подсказки на этой странице выключены в «Параметрах расчётов».' : !adviceReady() ? 'Считаю подсказки по вылетам…'
