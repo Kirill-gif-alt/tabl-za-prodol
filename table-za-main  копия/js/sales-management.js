@@ -1355,8 +1355,20 @@ function placeSalesPopover(anchor) {
     pop.hidden = false;
     const height = pop.offsetHeight || 220;
     if (top + height > window.innerHeight - 8) top = Math.max(8, rect.top - height - 6);
+    // Не помещается ни снизу, ни сверху — прижимаем к краю экрана: окно не выше экрана (прокрутка внутри),
+    // кнопки «Готово» закреплены внизу окна.
+    top = Math.max(8, Math.min(top, window.innerHeight - Math.min(height, window.innerHeight - 16) - 8));
     pop.style.left = left + 'px';
     pop.style.top = top + 'px';
+    // Окно выросло (появились «Класс до / после») — снова прижимаем к экрану, чтобы «Готово» не ушла вниз.
+    if (!pop._fitObserver && typeof ResizeObserver !== 'undefined') {
+        pop._fitObserver = new ResizeObserver(() => {
+            if (pop.hidden) return;
+            const r = pop.getBoundingClientRect();
+            if (r.bottom > window.innerHeight - 8) pop.style.top = Math.max(8, window.innerHeight - r.height - 8) + 'px';
+        });
+        pop._fitObserver.observe(pop);
+    }
 }
 
 function openSalesPopover(td) {

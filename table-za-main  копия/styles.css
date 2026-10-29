@@ -8488,3 +8488,7 @@ html[data-theme="dark"] .mlw-best { color: #34d399; }
 .td-stat-link { cursor: pointer; }
 .td-stat-link:hover { box-shadow: 0 0 0 2px var(--primary, #012a4a) inset; }
 .td-stat-link:focus-visible { outline: 2px solid var(--accent, #2563eb); outline-offset: 2px; }
+
+/* Окно отметки в «Управлении продажами»: не выше экрана, «Готово» всегда видна */
+.sm-pop { max-height: calc(100vh - 16px); overflow-y: auto; overscroll-behavior: contain; }
+.sm-pop .sm-pop-actions { position: sticky; bottom: -12px; margin-bottom: -12px; padding: 8px 0 12px; background: inherit; z-index: 1; }
