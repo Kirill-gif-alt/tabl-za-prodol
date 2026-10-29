@@ -1304,28 +1304,41 @@ async function exportTableToExcel(tableElement, filename = 'КРАСАВИА_э�
     }
 }
 
-// Кнопка — строкой над таблицей, вне прокручиваемой области: внутри неё закреплённая шапка таблицы её закрывала.
+// Кнопка. В «Динамике продаж» и «Экономической таблице» она стоит на шапке страницы (место под неё — в slot),
+// в остальных таблицах — строкой над таблицей, вне прокручиваемой области: внутри неё закреплённая шапка таблицы её закрывала.
 function addExportButtonToTable(container, kind) {
     const oldBtn = container.querySelector('.export-excel-btn');
     if (oldBtn) oldBtn.remove();
     const prev = container.previousElementSibling;
     if (prev && prev.classList.contains('export-excel-bar')) prev.remove();
+    const slot = kind === 'pair' ? document.getElementById('pair-hero-actions')
+        : (kind === 'table' ? document.getElementById('dyn-head-actions') : null);
+    if (slot) slot.querySelectorAll('.export-excel-btn').forEach(el => el.remove());
     if (typeof ProfileAuth !== 'undefined' && !ProfileAuth.hasPermission('export_excel')) return;
 
     const btn = document.createElement('button');
     btn.className = 'export-excel-btn';
     btn.textContent = 'В Excel';
+    btn.title = 'Скачать таблицу в Excel';
 
     btn.onclick = () => {
         const handle = container._tvHandle;
         const live = container.querySelector('table.data-table');
-        const table = (handle && typeof handle.getExportTable === 'function' && handle.getExportTable()) || live;
+        const raw = (handle && typeof handle.getExportTable === 'function' && handle.getExportTable()) || live;
+        // На экране шапка и порядок столбцов другие; в файл они уходят прежние.
+        const table = raw && typeof prepareTableForExport === 'function' ? prepareTableForExport(container, raw, raw === live) : raw;
         if (table) {
             const isPair = table.classList.contains('pair-table');
             const day = typeof getTodayDate === 'function' ? getTodayDate() : excelExportStamp();
-            exportTableToExcel(table, excelDailyFilename(`КРАСАВИА_${currentFlight || 'рейсы'}`, day), kind || (isPair ? 'pair' : 'table'));
+            const done = exportTableToExcel(table, excelDailyFilename(`КРАСАВИА_${currentFlight || 'рейсы'}`, day), kind || (isPair ? 'pair' : 'table'));
+            // Копию живой таблицы, которую подготовили для выгрузки, убираем со страницы
+            if (table !== raw && table.parentNode) Promise.resolve(done).finally(() => table.remove());
         }
     };
+    if (slot) {
+        slot.appendChild(btn);
+        return;
+    }
     const bar = document.createElement('div');
     bar.className = 'export-excel-bar';
     bar.appendChild(btn);

@@ -16,7 +16,8 @@ let showExpectedLoadColumn = false;
 
 // Фильтры и сортировка таблицы рейса (сбрасываются при смене рейса)
 let tableSort = { by: 'date', dir: 'asc' }; // date | load | sales | avgfare
-let tableFilterStatus = 'all'; // all | open | closed | full
+let tableFilterStatus = 'open'; // open | all | closed | full | attention. По умолчанию «Открытые» (впереди); выбор пользователя запоминается в сессии.
+let tableFilterChosen = false;  // true — статус выбрал сам пользователь (кнопкой), его не подменяем значением по умолчанию
 /** @deprecated оставлено для миграции сессии; экономическая таблица использует pairColVisibility */
 let tableExtraColsExpanded = false;
 /** Видимость доп. столбцов экономической таблицы (галочки на панели) */

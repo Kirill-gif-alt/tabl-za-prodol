@@ -43,7 +43,8 @@ window.SessionStore = (function () {
                 currentFlight: typeof currentFlight !== 'undefined' ? currentFlight : null,
                 lastSelectedDate: typeof lastSelectedDate !== 'undefined' ? lastSelectedDate : null,
                 tableSort: typeof tableSort !== 'undefined' ? tableSort : { by: 'date', dir: 'asc' },
-                tableFilterStatus: typeof tableFilterStatus !== 'undefined' ? tableFilterStatus : 'all',
+                tableFilterStatus: typeof tableFilterStatus !== 'undefined' ? tableFilterStatus : 'open',
+                tableFilterChosen: typeof tableFilterChosen !== 'undefined' ? !!tableFilterChosen : false,
                 tableExtraColsExpanded: !!tableExtraColsExpanded,
                 pairColVisibility: typeof pairColVisibility !== 'undefined' ? { ...pairColVisibility } : null,
                 dataShowSpecBookings: typeof dataShowSpecBookings !== 'undefined' ? !!dataShowSpecBookings : false,
@@ -91,7 +92,12 @@ window.SessionStore = (function () {
                 }
             }
             if (s.tableSort) tableSort = s.tableSort;
-            if (s.tableFilterStatus) tableFilterStatus = s.tableFilterStatus;
+            // Выбор пользователя уважаем. Старые сессии хранили «Все» просто как значение по умолчанию —
+            // его не считаем выбором, там по умолчанию теперь «Открытые».
+            if (s.tableFilterStatus && typeof tableFilterChosen !== 'undefined') {
+                const chosen = s.tableFilterChosen === true || (s.tableFilterChosen === undefined && s.tableFilterStatus !== 'all');
+                if (chosen) { tableFilterStatus = s.tableFilterStatus; tableFilterChosen = true; }
+            }
             if (typeof s.tableExtraColsExpanded === 'boolean') tableExtraColsExpanded = s.tableExtraColsExpanded;
             if (s.pairColVisibility && typeof pairColVisibility !== 'undefined' && typeof s.pairColVisibility === 'object') {
                 Object.keys(pairColVisibility).forEach((k) => {

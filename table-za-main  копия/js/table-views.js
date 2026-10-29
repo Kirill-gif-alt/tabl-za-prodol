@@ -16,30 +16,118 @@ function countPairLegExtraCols() {
     return n;
 }
 
+// Галочки столбцов «Экономической таблицы»: две подписанные группы, как и столбцы самой таблицы.
+const PAIR_COL_GROUPS = [
+    {
+        label: 'На каждое направление',
+        hint: 'Столбцы показываются отдельно у «туда» и у «обратно»',
+        items: [
+            { key: 'avgFare', label: 'Ср. тариф', title: 'Средняя цена проданных билетов на этом направлении' },
+            { key: 'lastFare', label: 'Последний тариф', title: 'Цена и класс последнего проданного билета на этом направлении' },
+            { key: 'revenue', label: 'Выручка', title: 'Выручка на одном направлении (туда или обратно)' },
+            { key: 'legSubsidy', label: 'Субсидия', title: 'Субсидия на одно направление (туда или обратно)' },
+            { key: 'expenses', label: 'Себестоимость', title: 'Расходы на одно направление (туда или обратно): половина расходов на пару рейсов' }
+        ]
+    },
+    {
+        label: 'По паре',
+        hint: 'Один столбец на оба рейса: туда и обратно вместе',
+        items: [
+            { key: 'totalRevenue', label: 'Общая выручка', title: 'Выручка туда и обратно вместе' },
+            { key: 'subsidy', label: 'Субсидия на рейсе', title: 'Субсидия на рейсе: туда и обратно в сумме' },
+            { key: 'totalExpenses', label: 'Общие расходы', title: 'Общие расходы: расходы на пару рейсов туда и обратно' },
+            { key: 'finResult', label: 'Фин. рез', title: 'Финансовый результат = общая выручка + субсидия на рейсе − общие расходы' }
+        ]
+    }
+];
+
 function buildPairColTogglesHtml() {
-    const items = [
-        { key: 'avgFare', label: 'Ср. тариф' },
-        { key: 'lastFare', label: 'Последний тариф' },
-        { key: 'revenue', label: 'Выручка' },
-        { key: 'legSubsidy', label: 'Субсидия' },
-        { key: 'expenses', label: 'Себестоимость' },
-        { key: 'totalRevenue', label: 'Общая выручка' },
-        { key: 'subsidy', label: 'Субсидия на рейсе' },
-        { key: 'totalExpenses', label: 'Общие расходы' },
-        { key: 'finResult', label: 'Фин. рез' }
-    ];
-    return `<div class="pair-col-toggles">
-        ${items.map(it => `
-            <label class="data-hide-flew-label data-ctrl-sm pair-col-toggle"${it.title ? ` title="${escAttr(it.title)}"` : ''}>
+    return PAIR_COL_GROUPS.map(g => `
+        <div class="ec-group" role="group" aria-label="${escAttr(g.label)}">
+            <span class="ec-group-label" title="${escAttr(g.hint)}">${escHtml(g.label)}</span>
+            ${g.items.map(it => `
+            <label class="data-hide-flew-label pair-col-toggle ec-check" title="${escAttr(it.title)}">
                 <input type="checkbox" data-pair-col="${it.key}"${pairColVisibility[it.key] ? ' checked' : ''}>
                 ${escHtml(it.label)}
             </label>`).join('')}
-    </div>`;
+        </div>`).join('');
+}
+
+// ---------- общие части панелей «Динамики продаж» и «Экономической таблицы» ----------
+
+const TABLE_STATUS_ORDER = ['open', 'all', 'closed', 'full', 'attention'];
+
+// Сколько вылетов под каждым фильтром (для цифр на кнопках). Считается один раз на отрисовку.
+function countRowsByStatus(rows, todayStart) {
+    const res = {};
+    TABLE_STATUS_ORDER.forEach(st => { res[st] = (rows || []).filter(r => flightRowMatchesStatusFilter(r, todayStart, st)).length; });
+    return res;
+}
+
+function buildStatusChipsHtml(counts, defs) {
+    return `<div class="table-filter-group" role="group" aria-label="Какие вылеты показывать">${defs.map(d => {
+        const on = tableFilterStatus === d.status;
+        const n = counts && counts[d.status] != null ? ` <span class="fc-n">· ${counts[d.status]}</span>` : '';
+        return `<button type="button" data-status="${d.status}" class="filter-btn${on ? ' filter-btn-active' + (d.cls ? ' ' + d.cls : '') : ''}"${d.title ? ` title="${escAttr(d.title)}"` : ''} aria-pressed="${on}">${escHtml(d.label)}${n}</button>`;
+    }).join('')}</div>`;
+}
+
+function buildSortSelectHtml(hasExpectedLoad) {
+    const opt = (val, by, dir, text) => `<option value="${val}"${tableSort.by === by && tableSort.dir === dir ? ' selected' : ''}>${text}</option>`;
+    return `<select id="table-sort-select" class="table-sort-select" aria-label="Порядок строк">
+        ${opt('date-asc', 'date', 'asc', 'Дата: сначала ближайшие')}
+        ${opt('date-desc', 'date', 'desc', 'Дата: сначала дальние')}
+        ${opt('load-desc', 'load', 'desc', 'Занято, %: больше сверху')}
+        ${hasExpectedLoad ? opt('delta-asc', 'delta', 'asc', 'Сначала отстающие от ожидаемого') : ''}
+        ${opt('sales-desc', 'sales', 'desc', 'Продано сегодня: больше сверху')}
+        ${opt('avgfare-desc', 'avgfare', 'desc', 'Средний тариф: дороже сверху')}
+    </select>`;
+}
+
+function buildFlightSearchHtml() {
+    return `<label class="fs-field" title="Номер рейса (101, доп. 301) или город. Ctrl+K — поиск с любой вкладки">
+        <svg class="fs-field-icon" width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="8.5" cy="8.5" r="6"/><path d="M13 13l5 5"/></svg>
+        <input type="text" id="table-flight-search" class="table-flight-search fs-input" placeholder="Рейс или город" aria-label="Поиск рейса по номеру или городу">
+    </label>`;
+}
+
+function buildReturnFlightBtnHtml(base) {
+    const pair = base ? getFlightPair(base) : null;
+    const returnLabel = pair && base === pair.outbound ? (pair.inbound || '') : (pair?.outbound || '');
+    return `<button type="button" class="btn-secondary table-return-flight-btn" id="table-return-flight-btn" title="Перейти к обратному рейсу">Обратный рейс${returnLabel ? ': ' + escHtml(returnLabel) : ''}</button>`;
+}
+
+function buildSpecBookingsToggleHtml(label) {
+    return `<label class="data-hide-flew-label ec-check" title="Показать столбец «Спец. брони» — места, которые не идут в продажу">
+        <input type="checkbox" id="show-spec-bookings-toggle"${showSpecBookings ? ' checked' : ''}> ${escHtml(label)}
+    </label>`;
+}
+
+// Панель «Экономической таблицы»: ряд 1 — фильтры, порядок, поиск; ряд 2 — все галочки двумя подписанными группами.
+function buildPairPanelHtml(base, foundCount, totalCount, counts) {
+    const chips = buildStatusChipsHtml(counts, [
+        { status: 'open', label: 'Открытые', cls: 'filter-btn-open', title: 'Рейсы, которые ещё не улетели и открыты для продажи' },
+        { status: 'all', label: 'Все' },
+        { status: 'closed', label: 'Закрытые', cls: 'filter-btn-muted', title: 'Улетевшие рейсы и рейсы, закрытые для продажи' },
+        { status: 'full', label: 'Полные 100%', cls: 'filter-btn-warn', title: 'Все кресла в продаже заняты' },
+        { status: 'attention', label: 'Внимание', cls: 'filter-btn-alert', title: 'Рейсы, где продажи отстают или загрузка низкая' }
+    ]);
+    return `
+        <div class="ec-panel">
+            <div class="ec-row ec-row-1">
+                ${chips}
+                ${buildSortSelectHtml(false)}
+                ${buildFlightSearchHtml()}
+                ${buildReturnFlightBtnHtml(base)}
+                ${buildSpecBookingsToggleHtml('Спец. брони')}
+                <div class="table-found-count">Найдено: <strong>${foundCount}</strong> из ${totalCount}</div>
+            </div>
+            <div class="ec-row ec-row-2">${buildPairColTogglesHtml()}</div>
+        </div>`;
 }
 
 function buildTableFilterPanel(base, foundCount, totalCount, hasExpectedLoad = true, opts = {}) {
     const showFlightTools = opts.showFlightTools !== false;
-    const showPairCols = !!opts.showPairCols;
     const showSpecToggle = !!opts.showSpecBookingsToggle;
     const pair = base ? getFlightPair(base) : null;
     const returnLabel = pair && base === pair.outbound ? (pair.inbound || 'Обратный') : (pair?.outbound || 'Обратный');
@@ -77,11 +165,96 @@ function buildTableFilterPanel(base, foundCount, totalCount, hasExpectedLoad = t
             <label class="data-hide-flew-label data-ctrl-sm">
                 <input type="checkbox" id="show-spec-bookings-toggle"${showSpecBookings ? ' checked' : ''}> Спец. брони
             </label>` : ''}
-            ${showPairCols ? buildPairColTogglesHtml() : ''}
             <div class="table-controls-spacer"></div>
             <div class="table-found-count">Найдено: <strong>${foundCount}</strong> / ${totalCount}</div>
         </div>
     `;
+}
+
+// ---------- «Динамика продаж»: карточки сверху и одна полоса управления ----------
+
+function dynSalesStampText() {
+    if (typeof lastSalesUpdate === 'undefined' || !lastSalesUpdate) return '';
+    const d = new Date(lastSalesUpdate);
+    if (isNaN(d.getTime())) return '';
+    const p2 = (n) => String(n).padStart(2, '0');
+    return `${p2(d.getDate())}.${p2(d.getMonth() + 1)} в ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+}
+
+function dynFlightsGenitive(n) {
+    return n % 10 === 1 && n % 100 !== 11 ? 'вылета' : 'вылетов';
+}
+
+// Три простые карточки: ближайший вылет, кто отстаёт от ожидаемого, сколько продано. Считаются по рейсу целиком,
+// продажи — по показанным строкам (как строка итогов в таблице).
+function buildDynCardsHtml(base, rowsAll, sums, todayStart) {
+    const card = (label, main, sub, title) => `<div class="dyn-card"${title ? ` title="${escAttr(title)}"` : ''}>
+        <div class="dyn-card-label">${escHtml(label)}</div>
+        <div class="dyn-card-main">${main}</div>
+        <div class="dyn-card-sub">${sub}</div>
+    </div>`;
+
+    const open = rowsAll.filter(r => flightRowMatchesStatusFilter(r, todayStart, 'open'));
+    let next = null;
+    open.forEach(r => {
+        if (!next || (typeof compareRowsByDateThenDep === 'function' && compareRowsByDateThenDep(r, next, 'asc') < 0)) next = r;
+    });
+    let c1 = card('Ближайший вылет', '—', 'впереди нет открытых вылетов');
+    if (next) {
+        const m = getRowMetrics(next, base);
+        const code = cleanFlight(next[0]);
+        const parts = String(next[1]).split('.');
+        const dm = parts.length >= 2 ? `${parts[0]}.${parts[1]}` : String(next[1]);
+        const dow = String(getDayOfWeek(next[1]) || '').toLowerCase();
+        const dop = code !== base ? ` (${escHtml(code)})` : '';
+        c1 = card('Ближайший вылет',
+            `${escHtml(dm)}${dow ? ', ' + escHtml(dow) : ''}${dop} · занято ${m.free} из ${m.total}`,
+            m.evR != null ? `ждали к этой дате ${m.evR}` : 'ожидаемой загрузки по этому вылету нет',
+            'Первый открытый вылет: сколько мест продано из мест в продаже');
+    }
+
+    let behind = 0, ahead = 0, known = 0;
+    open.forEach(r => {
+        const m = getRowMetrics(r, base);
+        if (m.delta === null || m.delta === undefined) return;
+        known++;
+        if (m.delta < 0) behind++;
+        else if (m.delta > 0) ahead++;
+    });
+    const c2 = known
+        ? card('Отстают от ожидаемого', `${behind} из ${known} ${dynFlightsGenitive(known)}`, `впереди ожидаемого: ${ahead}` + (known < open.length ? ` · ожидаемая есть у ${known} из ${open.length}` : ''),
+            'Вылеты впереди, где продано меньше, чем ждали к этой дате')
+        : card('Отстают от ожидаемого', '—', 'нет файла ожидаемой загрузки', 'Нужен файл «Ожидаемая загрузка»');
+
+    const salesReady = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(typeof dataLoadStatus !== 'undefined' && dataLoadStatus.sales);
+    const stale = salesReady && typeof getStaleSalesInfo === 'function' ? getStaleSalesInfo() : null;
+    const fresh = salesReady && !stale;
+    const v = (n) => fresh ? formatNum(n || 0) : '—';
+    const stamp = dynSalesStampText();
+    const sub3 = !salesReady ? 'файл продаж не загружен'
+        : (stale ? `файл продаж от ${escHtml(stale.label)}: «сегодня» и «вчера» по нему не видны`
+            : (stamp ? `продажи обновлены ${escHtml(stamp)}` : ''));
+    const c3 = card('Продано билетов', `сегодня ${v(sums.tSum)} · вчера ${v(sums.ySum)} · за 7 дней ${v(sums.d7Sum)}`, sub3,
+        'По вылетам, показанным в таблице');
+    return `<div class="dyn-cards">${c1}${c2}${c3}</div>`;
+}
+
+function buildDynPanelHtml(foundCount, totalCount, counts, hasExpectedLoad, cardsHtml) {
+    const chips = buildStatusChipsHtml(counts, [
+        { status: 'open', label: 'Впереди', title: 'Вылеты, которые ещё не состоялись и открыты для продажи' },
+        { status: 'all', label: 'Все' },
+        { status: 'closed', label: 'Улетевшие', title: 'Улетевшие вылеты и вылеты, закрытые для продажи' },
+        { status: 'full', label: 'Полные 100%', title: 'Все кресла в продаже заняты' },
+        { status: 'attention', label: 'Внимание', title: 'Вылеты, где продажи отстают от ожидаемых или загрузка низкая' }
+    ]);
+    return `${cardsHtml}
+        <div class="dyn-strip">
+            ${chips}
+            <label class="dyn-sort"><span class="dyn-sort-label">Порядок</span>${buildSortSelectHtml(hasExpectedLoad)}</label>
+            ${buildFlightSearchHtml()}
+            ${buildSpecBookingsToggleHtml('Показывать спец. брони')}
+            <div class="table-found-count">Показано <strong>${foundCount}</strong> из ${totalCount}</div>
+        </div>`;
 }
 
 function bindTableControls(cont, base, targetDate, rerenderFn) {
@@ -90,6 +263,7 @@ function bindTableControls(cont, base, targetDate, rerenderFn) {
     cont.querySelectorAll('.filter-btn').forEach(btn => {
         btn.onclick = () => {
             tableFilterStatus = btn.dataset.status;
+            tableFilterChosen = true;   // дальше этот выбор запоминается, а не заменяется значением по умолчанию
             if (typeof SessionStore !== 'undefined') SessionStore.saveUiSession();
             render();
         };
@@ -142,6 +316,33 @@ function bindTableControls(cont, base, targetDate, rerenderFn) {
     }
 }
 
+// Для Excel: на экране у «Динамики продаж» и «Экономической таблицы» шапка переделана (общие подписи, «Занято, %»
+// рядом с «Продано мест»), а файл остаётся прежним: те же подписи, строки шапки и порядок столбцов.
+// container._xlHead — прежняя шапка, её кладёт отрисовка таблицы. Работаем с копией, экранная таблица не меняется.
+function prepareTableForExport(container, table, isLive) {
+    const legacy = container && container._xlHead;
+    if (!legacy || !table || !table.tHead) return table;
+    const t = isLive ? table.cloneNode(true) : table;
+    const tmp = document.createElement('table');
+    tmp.innerHTML = legacy;
+    if (!tmp.tHead) return table;
+    t.replaceChild(tmp.tHead, t.tHead);
+    // «Динамика продаж»: «Занято, %» на экране стоит после «Продано мест», в файле — перед «Комментарием», как раньше.
+    Array.from(t.tBodies[0] ? t.tBodies[0].rows : []).forEach((tr) => {
+        const zpk = tr.querySelector('td.col-zpk');
+        const note = tr.querySelector('td.col-comment');
+        if (zpk && note) tr.insertBefore(zpk, note);
+    });
+    if (isLive) {
+        // Выгрузка читает видимый текст (innerText), поэтому копия живой таблицы стоит там же, но за краем и невидимая.
+        // Убрать её после выгрузки: см. addExportButtonToTable.
+        t.setAttribute('aria-hidden', 'true');
+        t.style.cssText = 'position:absolute;left:-99999px;top:0;opacity:0;pointer-events:none';
+        container.appendChild(t);
+    }
+    return t;
+}
+
 function selectFlight(base,targetDate=null){
     const flight = String(base || '').trim();
     if (!isValidFlightBase(flight)) return;
@@ -179,13 +380,6 @@ function actuallyRenderTable(base,targetDate=null){
     const ttl=document.getElementById('selected-flight-title');
     if(!cont||!ttl)return;
     if (tableSort.by === 'dtd') tableSort = { by: 'date', dir: 'asc' };
-    const flightCount = groupedData[base]?.length || 0;
-    ttl.innerHTML = `
-        <span class="table-flight-code">${escHtml(base)}</span>
-        <span class="table-flight-route">${escHtml(getFlightDirection(base))}</span>
-        <span class="table-flight-badge">${flightCount} ${pluralRu(flightCount, 'вылет', 'вылета', 'вылетов')}</span>
-    `;
-
     showExpectedLoadColumn = false;
     const rb = groupedData[base] || [];
     for (let r of rb) {
@@ -219,12 +413,21 @@ function actuallyRenderTable(base,targetDate=null){
 
     const totalCount = groupedData[base]?.length || 0;
     const sums = rows.length ? sumUniqueSalesForRows(rows) : { tSum: 0, ySum: 0, d2Sum: 0, d7Sum: 0, d14Sum: 0, d30Sum: 0 };
-    const filterHTML = buildTableFilterPanel(base, rows.length, totalCount, showExpectedLoadColumn, {
-        showFlightTools: true,
-        showSpecBookingsToggle: true
-    });
+
+    // Заголовок, карточки и полоса управления. Цифры на кнопках — по всем вылетам рейса, карточки — по нему же.
+    const rowsAll = (groupedData[base] || []).filter(row => row[1] && row[0]);
+    const statusCounts = countRowsByStatus(rowsAll, todayStart);
+    ttl.innerHTML = `
+        <span class="table-flight-code">${escHtml(base)}</span>
+        <span class="table-flight-route">${escHtml(getFlightDirection(base))}</span>
+        <span class="dyn-head-count">${statusCounts.all} ${pluralRu(statusCounts.all, 'вылет', 'вылета', 'вылетов')}: впереди ${statusCounts.open}, улетело ${statusCounts.closed}</span>
+    `;
+    const headActions = document.getElementById('dyn-head-actions');
+    if (headActions) headActions.innerHTML = buildReturnFlightBtnHtml(base);
+    const filterHTML = buildDynPanelHtml(rows.length, totalCount, statusCounts, showExpectedLoadColumn,
+        buildDynCardsHtml(base, rowsAll, sums, todayStart));
     if (controls) controls.innerHTML = filterHTML;
-    bindTableControls(controls || cont, base, targetDate, () => actuallyRenderTable(base, targetDate));
+    bindTableControls((controls && controls.closest('.dyn-page')) || controls || cont, base, targetDate, () => actuallyRenderTable(base, targetDate));
 
     const showBook = !!showSpecBookings;
 
@@ -252,6 +455,7 @@ function actuallyRenderTable(base,targetDate=null){
             cont.innerHTML = tableHtmlCache.openTable + tableHtmlCache.rows.join('') + '</tbody></table>';
         }
         cont.dataset.renderSig = tableCacheSig;
+        cont._xlHead = tableHtmlCache.legacyHead;
         addExportButtonToTable(cont, 'table');
         if (typeof FlightComments !== 'undefined') FlightComments.markRows(cont);
         if (typeof SessionStore !== 'undefined') SessionStore.saveUiSession();
@@ -259,31 +463,67 @@ function actuallyRenderTable(base,targetDate=null){
         return;
     }
 
-    const segmentHead = hasSegments ? '<th>Маршрут</th>' : '';
-    // дата, день, [маршрут], тип, кресла, [спец. брони], загрузка, [ожидаемая×2]
-    const colsBeforeSales = 2 + (hasSegments ? 1 : 0) + 1 + 2 + (showBook ? 1 : 0) + (showExpectedLoadColumn ? 2 : 0);
-    // skip ЗПК + Комментарий
-    const salesSumRow = buildTableSalesSumRowHtml(colsBeforeSales, sums, 2, false);
-    const bookHead = showBook
-        ? `<th>Спец. брони</th>`
+    // дата, день, [маршрут], тип, кресла, [спец. брони], продано, занято %, [ждали, разница] — дальше шесть столбцов продаж и комментарий
+    const colsBeforeSales = 2 + (hasSegments ? 1 : 0) + 1 + 2 + (showBook ? 1 : 0) + 1 + (showExpectedLoadColumn ? 2 : 0);
+    const rs2 = ' rowspan="2"';
+    const expectedHead = showExpectedLoadColumn
+        ? `<th${rs2} title="Сколько мест должно быть продано к этой дате по файлу «Ожидаемая загрузка»">Ждали к этой дате</th><th${rs2} title="Продано минус ожидаемое: минус — продажи отстают, плюс — идут лучше">Разница</th>`
         : '';
+    const sumLabel = `Всего по показанным ${rows.length} ${pluralRu(rows.length, 'вылету', 'вылетам', 'вылетам')}`;
+    const salesReadyNow = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(typeof dataLoadStatus !== 'undefined' && dataLoadStatus.sales);
+    const staleNow = salesReadyNow && typeof getStaleSalesInfo === 'function' ? getStaleSalesInfo() : null;
+    const sn = (v) => salesReadyNow ? formatNum(v || 0) : '—';
+    const snRecent = (v) => (salesReadyNow && !staleNow) ? formatNum(v || 0) : '—';
+    // Итоговая строка в шапке: подпись слева, суммы под столбцами продаж (значения те же, что считал прежний вид).
+    const salesSumRow = `<tr class="table-sales-sum-row dyn-sum-row">
+        <th colspan="${colsBeforeSales}" class="dyn-sum-label">${escHtml(sumLabel)}</th>
+        <th class="table-head-sum-cell table-head-sum-today">${snRecent(sums.tSum)}</th>
+        <th class="table-head-sum-cell table-head-sum-yesterday">${snRecent(sums.ySum)}</th>
+        <th class="table-head-sum-cell">${sn(sums.d2Sum)}</th>
+        <th class="table-head-sum-cell">${sn(sums.d7Sum)}</th>
+        <th class="table-head-sum-cell">${sn(sums.d14Sum)}</th>
+        <th class="table-head-sum-cell">${sn(sums.d30Sum)}</th>
+        <th class="dyn-sum-end"></th>
+    </tr>`;
+    const openTable = `<table class="data-table w-full table-sales-visible dyn-table"><thead>
+    <tr class="dyn-head-1">
+        <th${rs2} class="col-date">Дата вылета</th><th${rs2}>День</th>${hasSegments ? `<th${rs2}>Маршрут</th>` : ''}<th${rs2}>Самолёт</th>
+        <th${rs2} title="Кресла в продаже: места самолёта без спец. броней">Мест в продаже</th>
+        ${showBook ? `<th${rs2}>Спец. брони</th>` : ''}
+        <th${rs2} title="Проданные места по файлу загрузки (не свободные)">Продано мест</th>
+        <th${rs2} title="Заполнение кресел в продаже: продано мест ÷ мест в продаже">Занято, %</th>
+        ${expectedHead}
+        <th colspan="6" class="dyn-grp-sales">Продано билетов</th>
+        <th${rs2} class="col-comment">Комментарий</th>
+    </tr>
+    <tr class="dyn-head-2">
+        <th class="col-sales-day" title="Продано билетов за сегодня">Сегодня</th>
+        <th class="col-sales-day">Вчера</th>
+        <th class="col-sales-day">Позавчера</th>
+        <th class="col-sales-cum" title="Продано билетов за 7 дней, считая с сегодня">За 7 дней</th>
+        <th class="col-sales-cum" title="Продано билетов за 14 дней, которые есть в файле продаж">За 14 дней</th>
+        <th class="col-sales-cum">За 30 дней</th>
+    </tr>${salesSumRow}</thead><tbody>`;
 
-    const expectedHeadHonest = showExpectedLoadColumn ? '<th title="Ожидаемая загрузка.xlsx">Ожидаемая</th><th title="Без файла — «—», не ноль">Δ к ожидаемой</th>' : '';
-    const openTable = `<table class="data-table w-full table-sales-visible"><thead><tr>
-        <th class="col-date">Дата рейса</th><th>День недели</th>${segmentHead}<th>Тип ВС</th>
+    // Вид для Excel остаётся прежним (его читает выгрузка): те же подписи и порядок столбцов, что были до переделки.
+    const legacyBefore = colsBeforeSales - 1;
+    const legacyExpected = showExpectedLoadColumn ? '<th title="Ожидаемая загрузка.xlsx">Ожидаемая</th><th title="Без файла — «—», не ноль">Δ к ожидаемой</th>' : '';
+    const legacyHead = `<thead><tr>
+        <th class="col-date">Дата рейса</th><th>День недели</th>${hasSegments ? '<th>Маршрут</th>' : ''}<th>Тип ВС</th>
         <th title="AU снимка − спец.брони">Кресел в продаже</th>
-        ${bookHead}
+        ${showBook ? '<th>Спец. брони</th>' : ''}
         <th title="Проданные места из файла, не свободные">Загрузка</th>
-        ${expectedHeadHonest}
-        <th class="col-sales-day" title="Продажи за сегодня в файле 14д"><span class="th-sales-ico th-sales-day" aria-hidden="true">①</span> Сегодня</th>
+        ${legacyExpected}
+        <th class="col-sales-day"><span class="th-sales-ico th-sales-day" aria-hidden="true">①</span> Сегодня</th>
         <th class="col-sales-day"><span class="th-sales-ico th-sales-day" aria-hidden="true">①</span> Вчера</th>
         <th class="col-sales-day"><span class="th-sales-ico th-sales-day" aria-hidden="true">①</span> Позавчера</th>
         <th class="col-sales-cum"><span class="th-sales-ico th-sales-cum" aria-hidden="true">Σ</span> 7 дн. (с сегодня)</th>
-        <th class="col-sales-cum" title="Выручка и продажи за 14 дней, которые есть в файле продаж"><span class="th-sales-ico th-sales-cum" aria-hidden="true">Σ</span> 14 дн. файла</th>
+        <th class="col-sales-cum"><span class="th-sales-ico th-sales-cum" aria-hidden="true">Σ</span> 14 дн. файла</th>
         <th class="col-sales-cum"><span class="th-sales-ico th-sales-cum" aria-hidden="true">Σ</span> 30 дн.</th>
-        <th title="ЗПК — заполнение кресел в продаже, %: загрузка / (кресла в продаже)">ЗПК %</th>
+        <th>ЗПК %</th>
         <th class="col-comment">Комментарий</th>
-    </tr>${salesSumRow}</thead><tbody>`;
+    </tr>${buildTableSalesSumRowHtml(legacyBefore, sums, 2, false)}</thead>`;
+    cont._xlHead = legacyHead;
 
     const rowHtmls = [];
     rows.forEach(row=>{ rowHtmls.push(lazyRow(() => {
@@ -338,6 +578,7 @@ function actuallyRenderTable(base,targetDate=null){
             <td class="font-semibold">${formatNum(seatsOnSale)}</td>
             ${showBook ? `<td class="font-semibold col-spec-book">${formatNum(avs)}</td>` : ''}
             <td class="font-semibold">${formatNum(free)}</td>
+            <td class="font-bold col-zpk">${status}</td>
             ${expectedCells}
             <td class="font-semibold">${sc(s.today)}</td>
             <td class="font-semibold">${sc(s.yesterday)}</td>
@@ -345,11 +586,10 @@ function actuallyRenderTable(base,targetDate=null){
             <td class="font-semibold">${sc(s.d7)}</td>
             <td class="font-semibold">${sc(s.d14)}</td>
             <td class="font-semibold">${sc(s.d30)}</td>
-            <td class="font-bold">${status}</td>
             ${commentCell}
         </tr>`;
     })); });
-    tableHtmlCache = { sig: tableCacheSig, html: '', openTable, rows: rowHtmls };
+    tableHtmlCache = { sig: tableCacheSig, html: '', openTable, rows: rowHtmls, legacyHead };
     if (typeof TableVirtual !== 'undefined') {
         TableVirtual.mount({
             container: cont,
@@ -390,7 +630,7 @@ function actuallyRenderPairTable(selectedBase, targetDate = null) {
     ttl.innerHTML = `
         <div class="pair-title-codes">
             <span class="pair-code pair-code-out">${escHtml(outbound)}</span>
-            <span class="pair-code-arrow" aria-hidden="true">⇄</span>
+            <span class="pair-code-arrow">и</span>
             <span class="pair-code pair-code-in">${escHtml(inbound)}</span>
         </div>
         <div class="pair-title-routes">
@@ -422,13 +662,17 @@ function actuallyRenderPairTable(selectedBase, targetDate = null) {
         return tableSort.dir === 'asc' ? va - vb : vb - va;
     });
 
-    const totalCount = outRowsAll.length + inRowsAll.length;
-    const filterHTML = buildTableFilterPanel(selectedBase, entries.length, totalCount, false, {
-        showPairCols: true,
-        showSpecBookingsToggle: true
+    // Цифры на кнопках фильтров — сколько строк «туда-обратно» под каждым из них (так же, как строки в таблице).
+    const statusCounts = {};
+    TABLE_STATUS_ORDER.forEach((st) => {
+        statusCounts[st] = st === tableFilterStatus
+            ? entries.length
+            : buildPairTableEntries(filterPairLegRows(outRowsAll, todayStart, st), filterPairLegRows(inRowsAll, todayStart, st)).length;
     });
+    const totalCount = statusCounts.all;
+    const filterHTML = buildPairPanelHtml(selectedBase, entries.length, totalCount, statusCounts);
     if (controls) controls.innerHTML = filterHTML;
-    bindTableControls(controls || cont, selectedBase, targetDate, () => actuallyRenderPairTable(selectedBase, targetDate));
+    bindTableControls((controls && controls.closest('.pair-page')) || controls || cont, selectedBase, targetDate, () => actuallyRenderPairTable(selectedBase, targetDate));
 
     if (!entries.length) {
         if (typeof TableVirtual !== 'undefined') TableVirtual.destroyHandle(cont);
@@ -489,8 +733,8 @@ function actuallyRenderPairTable(selectedBase, targetDate = null) {
 
     const segmentHead = hasSegments ? `<th rowspan="${headRowSpan}">Маршрут</th>` : '';
 
-    const openTable = `<table class="data-table pair-table w-full${anyExtra ? ' table-extra-expanded' : ''}">
-        <thead>
+    // Вид для Excel остаётся прежним (его читает выгрузка): строка «Пара рейсов» и подписи только на экране.
+    const legacyHead = `<thead>
             <tr class="pair-head-main">
                 <th rowspan="${headRowSpan}" class="col-date">Дата</th>
                 <th rowspan="${headRowSpan}">День</th>
@@ -512,6 +756,40 @@ function actuallyRenderPairTable(selectedBase, targetDate = null) {
                 ${bookThIn}
                 <th class="pair-sub-in">Загр.</th>
                 <th class="pair-sub-in">ЗПК</th>${extraSubIn}
+            </tr>
+        </thead>`;
+    cont._xlHead = legacyHead;
+
+    // Шапка на экране: все ячейки сплошные, без зазоров; над столбцами пары — своя общая подпись.
+    const pairColKeys = [showTotalRev && 'totalRev', showSubsidy && 'subsidy', showTotalExp && 'totalExp', showFin && 'fin'].filter(Boolean);
+    const pairGrpFirst = (k) => (pairColKeys[0] === k ? ' pair-grp-first' : '');
+    const pairColTh = (k, cls, text) => (pairColKeys.includes(k)
+        ? `<th class="col-extra pair-tot-col ${cls}${pairGrpFirst(k)}">${text}</th>` : '');
+    const dirHead = (word, code, dir) => `${word} · ${escHtml(code)}${dir ? ' · ' + escHtml(dir) : ''}`;
+    const openTable = `<table class="data-table pair-table w-full${anyExtra ? ' table-extra-expanded' : ''}">
+        <thead>
+            <tr class="pair-head-main ec-head-1">
+                <th rowspan="2" class="col-date">Дата</th>
+                <th rowspan="2">День</th>
+                ${hasSegments ? '<th rowspan="2">Маршрут</th>' : ''}
+                <th rowspan="2">Тип ВС</th>
+                <th colspan="${legSpan}" class="pair-dir-head pair-dir-out">${dirHead('Туда', outbound, outDir)}</th>
+                <th colspan="${legSpan}" class="pair-dir-head pair-dir-in">${dirHead('Обратно', inbound, inDir)}</th>
+                ${pairColKeys.length ? `<th colspan="${pairColKeys.length}" class="pair-dir-head ec-grp-pair pair-grp-first">Пара рейсов: туда и обратно вместе</th>` : ''}
+            </tr>
+            <tr class="pair-head-sub ec-head-2">
+                <th class="pair-sub-out">Места</th>
+                ${bookThOut}
+                <th class="pair-sub-out">Загр.</th>
+                <th class="pair-sub-out">ЗПК</th>${extraSubOut}
+                <th class="pair-sub-in pair-split-start">Места</th>
+                ${bookThIn}
+                <th class="pair-sub-in">Загр.</th>
+                <th class="pair-sub-in">ЗПК</th>${extraSubIn}
+                ${pairColTh('totalRev', 'pair-total-rev-head', 'Общая выручка')}
+                ${pairColTh('subsidy', 'pair-subsidy-head', 'Субсидия на рейсе')}
+                ${pairColTh('totalExp', 'pair-expenses-head', 'Общие расходы')}
+                ${pairColTh('fin', 'pair-fin-head', 'Фин. рез')}
             </tr>
         </thead><tbody>`;
 
@@ -597,17 +875,17 @@ function actuallyRenderPairTable(selectedBase, targetDate = null) {
         const pairSubsidyRub = (outM.subsidyOneWay || 0) + (inM.subsidyOneWay || 0);
         const finN = (totalRevN - totalExpN) + pairSubsidyRub;
         const totalRevCell = showTotalRev ? `
-            <td class="col-extra pair-total-rev-cell">
+            <td class="col-extra pair-total-rev-cell${pairGrpFirst('totalRev')}">
                 <div class="pair-total-rev-all">${totalRevN ? formatRub(totalRevN) : '—'}</div>
             </td>` : '';
         const subsidyCell = showSubsidy
-            ? `<td class="col-extra pair-subsidy-cell">${pairSubsidyRub ? formatRub(pairSubsidyRub) : (subLegs ? '0 ₽' : '—')}</td>`
+            ? `<td class="col-extra pair-subsidy-cell${pairGrpFirst('subsidy')}">${pairSubsidyRub ? formatRub(pairSubsidyRub) : (subLegs ? '0 ₽' : '—')}</td>`
             : '';
         const totalExpCell = showTotalExp
-            ? `<td class="col-extra pair-expenses-cell">${totalExpN ? formatRub(totalExpN) : '—'}</td>`
+            ? `<td class="col-extra pair-expenses-cell${pairGrpFirst('totalExp')}">${totalExpN ? formatRub(totalExpN) : '—'}</td>`
             : '';
         const finCell = showFin
-            ? `<td class="col-extra pair-fin-cell">${formatRubSigned(finN)}</td>`
+            ? `<td class="col-extra pair-fin-cell${pairGrpFirst('fin')}">${formatRubSigned(finN)}</td>`
             : '';
 
         const rowFlightCode = outM.flightBase || inM.flightBase || '';
@@ -705,11 +983,12 @@ function bindTableRowDelegation(cont) {
 
 function createPairTableView(c) {
     c.innerHTML = `
-        <div class="table-page pair-page">
-            <div class="table-page-hero card pair-hero">
+        <div class="table-page pair-page ec-page">
+            <div class="table-page-hero card pair-hero ec-hero">
                 <div class="table-page-hero-main">
                     <div id="pair-flight-title" class="pair-flight-title"></div>
                 </div>
+                <div id="pair-hero-actions" class="ec-hero-actions"></div>
             </div>
             <div class="table-page-body view-zoom-host">
                 <div id="pair-table-controls" class="table-controls-wrap"></div>
@@ -725,6 +1004,7 @@ function createPairTableView(c) {
                     <div id="pair-sales-chart-result" class="table-sales-panel-body"></div>
                 </div>
             </div>
+            <p class="ec-howto"><b>Как считается.</b> Общие расходы — на пару рейсов туда и обратно. Субсидия — на одно направление (туда или обратно). Субсидия на рейсе — туда и обратно в сумме. Фин. рез = общая выручка + субсидия на рейсе − общие расходы.</p>
         </div>
     `;
     bindTableRowDelegation(document.getElementById('pair-table-container'));
@@ -740,11 +1020,12 @@ function createPairTableView(c) {
 
 function createTableView(c){
     c.innerHTML = `
-        <div class="table-page">
-            <div class="table-page-hero card">
+        <div class="table-page dyn-page">
+            <div class="table-page-hero dyn-head">
                 <div class="table-page-hero-main">
                     <div id="selected-flight-title" class="selected-flight-title"></div>
                 </div>
+                <div id="dyn-head-actions" class="dyn-head-actions"></div>
             </div>
             <div class="table-page-body view-zoom-host">
                 <div id="table-controls" class="table-controls-wrap"></div>
@@ -760,6 +1041,7 @@ function createTableView(c){
                     <div id="sales-chart-result" class="table-sales-panel-body"></div>
                 </div>
             </div>
+            <p class="dyn-legend"><span class="mode-badge mode-com">К</span> коммерция (субсидии на эту дату нет) · <span class="mode-badge mode-sub">С</span> субсидия · <b>ДОП</b> — дополнительный рейс · «!» в столбце «Комментарий» — к вылету есть комментарий. Двойной щелчок по строке открывает карточку вылета.</p>
         </div>
     `;
     bindTableRowDelegation(document.getElementById('table-container'));

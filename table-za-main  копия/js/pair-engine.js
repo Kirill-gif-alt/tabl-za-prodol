@@ -70,9 +70,9 @@ function getRowsForPairLeg(flightCode) {
     });
 }
 
-function filterPairLegRows(rows, todayStart) {
-    if (tableFilterStatus === 'all') return rows;
-    return rows.filter(row => flightRowMatchesStatusFilter(row, todayStart));
+function filterPairLegRows(rows, todayStart, status = tableFilterStatus) {
+    if (status === 'all') return rows;
+    return rows.filter(row => flightRowMatchesStatusFilter(row, todayStart, status));
 }
 
 /** Дата в ячейке: одна дата или «11.08/12.08» при переходящих сутках туда/обратно */
@@ -140,7 +140,7 @@ function buildPairSegmentCell(outRow, inRow, routeCounts) {
     return `<span class="segment-cell"><span class="segment-route">${escHtml(formatRouteDisplay(route))}</span></span>`;
 }
 
-function flightRowMatchesStatusFilter(row, todayStart) {
+function flightRowMatchesStatusFilter(row, todayStart, status = tableFilterStatus) {
     if (!row) return false;
     const date = row[1];
     const total = parseInt(row[5] || 0), free = parseInt(row[6] || 0), avs = parseInt(row[8] || 0);
@@ -152,10 +152,10 @@ function flightRowMatchesStatusFilter(row, todayStart) {
     const pct = (total > 0 && denom > 0) ? Math.round(free / denom * 100) : 0;
     const rowBase = cleanFlight(row[0]);
 
-    if (tableFilterStatus === 'closed') return closed || flew;
-    if (tableFilterStatus === 'open') return !closed && !flew;
-    if (tableFilterStatus === 'full') return pct >= 100 && !closed && !flew;
-    if (tableFilterStatus === 'attention') return isFlightNeedsAttention(row, rowBase);
+    if (status === 'closed') return closed || flew;
+    if (status === 'open') return !closed && !flew;
+    if (status === 'full') return pct >= 100 && !closed && !flew;
+    if (status === 'attention') return isFlightNeedsAttention(row, rowBase);
     return true;
 }
 
