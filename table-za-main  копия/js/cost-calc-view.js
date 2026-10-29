@@ -188,12 +188,13 @@ function costCalcParamSeats(acKey) {
 function costCalcRouteData(fromKey, toKey) {
     const gd = typeof groupedData !== 'undefined' ? groupedData : null;
     const sd = typeof salesDetails !== 'undefined' ? salesDetails : null;
-    const rev = typeof FareRefs !== 'undefined' && FareRefs.revision ? FareRefs.revision() : 0;
+    const rev = (typeof FareRefs !== 'undefined' && FareRefs.revision ? FareRefs.revision() : 0)
+        + '|' + (typeof FareGrid !== 'undefined' && FareGrid.revision ? FareGrid.revision() : 0);
     const key = fromKey + '|' + toKey;
     const m = costCalcMemo;
     if (m && m.key === key && m.gd === gd && m.sd === sd && m.rev === rev) return m.data;
 
-    const data = { flights: 0, seats: {}, fareN: 0, fareSum: 0, limits: [] };
+    const data = { flights: 0, seats: {}, fareN: 0, fareSum: 0, limits: [], grid: [] };
     const codes = [];
     if (gd && typeof getCitiesFromFlight === 'function') {
         Object.keys(gd).forEach((code) => {
@@ -237,27 +238,38 @@ function costCalcRouteData(fromKey, toKey) {
         });
         data.limits.sort((x, y) => x - y);
     }
+    // Сетка тарифов: классы, которые реально есть на рейсах маршрута. Цена класса на пару рейсов — среднее «туда» и «обратно».
+    if (codes.length && typeof FareGrid !== 'undefined' && FareGrid.ladderFor) {
+        const pick = { there: null, back: null };
+        codes.forEach((code) => {
+            const k = costCalcCityKey(getCitiesFromFlight(code)[0]) === fromKey ? 'there' : 'back';
+            if (!pick[k]) pick[k] = code;
+        });
+        const byCls = Object.create(null);
+        [pick.there, pick.back].forEach((code) => {
+            if (!code) return;
+            let lad = [];
+            try { lad = FareGrid.ladderFor(code) || []; } catch { lad = []; }
+            // Меньше 500 ₽ — тариф не в рублях (международная сетка), такие не берём.
+            lad.forEach((l) => { if (l && l.price >= 500) (byCls[l.cls] = byCls[l.cls] || []).push(l.price); });
+        });
+        data.grid = Object.keys(byCls)
+            .map(cls => ({ cls, price: Math.round(byCls[cls].reduce((x, v) => x + v, 0) / byCls[cls].length) }))
+            .sort((a, b) => a.price - b.price);
+    }
     costCalcMemo = { key, gd, sd, rev, data };
     return data;
 }
 
-// Места одного рейса: { n, src } — из данных сайта, иначе из настроек; null, если неизвестно.
+// Мест в самолёте по типу.
+const COST_CALC_TYPE_SEATS = { atr42: 46, atr72: 72, yak42: 120, an24: 48, an26: 42 };
+
+// Места одного рейса: { n, src } — по типу самолёта, иначе из данных сайта, иначе из настроек; null, если неизвестно.
 function costCalcSeatsOne(data, acKey) {
+    if (COST_CALC_TYPE_SEATS[acKey]) return { n: COST_CALC_TYPE_SEATS[acKey], src: 'type' };
     if (data.seats[acKey] > 0) return { n: data.seats[acKey], src: 'site' };
     const p = costCalcParamSeats(acKey);
     return p ? { n: p, src: 'params' } : null;
-}
-
-// Круглые цены вокруг среднего билета: средняя ступень — ближайшая к среднему.
-function costCalcFareLadder(avg) {
-    const step = avg >= 6000 ? 1000 : (avg >= 2000 ? 500 : 200);
-    const mid = Math.max(step, Math.round(avg / step) * step);
-    const out = [];
-    for (let k = -2; k <= 2; k++) {
-        const v = mid + k * step;
-        if (v > 0) out.push({ price: v, mid: k === 0 });
-    }
-    return out;
 }
 
 // Вывод словами: в плюс / в минус на сумму, либо просьба ввести доход.
@@ -296,21 +308,21 @@ function costCalcNeedTable(expenses, subsidy, acKey, data) {
     const one = costCalcSeatsOne(data, acKey);
     const total = one ? one.n * 2 : null;
 
-    // Цены: справочник предельных тарифов, иначе круглые ступени вокруг среднего билета по продажам.
+    // Цены: тарифы из сетки тарифов маршрута, иначе предельные тарифы справочника. Придуманных цен не показываем.
     const avg = data.fareN ? data.fareSum / data.fareN : null;
+    const avgTxt = avg ? ` Средний проданный билет на маршруте: ${costCalcMoney(avg)} (по ${formatNum(data.fareN)} билетам).` : '';
     let rows = [], priceNote = '';
-    if (data.limits.length) {
-        rows = data.limits.slice(0, 6).map(p => ({ price: p, tag: 'предельный тариф' }));
-        priceNote = 'Цены — предельные тарифы из справочника тарифов для рейсов этого маршрута.'
-            + (avg ? ` Средний проданный билет на маршруте: ${costCalcMoney(avg)} (по ${formatNum(data.fareN)} билетам).` : '');
-    } else if (avg) {
-        rows = costCalcFareLadder(avg).map(r => ({ price: r.price, tag: r.mid ? 'около среднего' : '' }));
-        priceNote = `Цены — круглые ступени вокруг среднего проданного билета на маршруте: ${costCalcMoney(avg)} (по ${formatNum(data.fareN)} билетам).`;
+    if (data.grid.length) {
+        rows = data.grid.map(g => ({ price: g.price, tag: 'класс ' + g.cls }));
+        priceNote = 'Цены — тарифы из сетки тарифов этого маршрута (если «туда» и «обратно» цены разные — взята средняя).' + avgTxt;
+    } else if (data.limits.length) {
+        rows = data.limits.map(p => ({ price: p, tag: 'предельный тариф' }));
+        priceNote = 'Цены — предельные тарифы из справочника тарифов для рейсов этого маршрута.' + avgTxt;
     }
     const seatWord = (n) => costCalcPlural(n, 'место', 'места', 'мест');
     if (!rows.length) {
         const why = data.flights
-            ? 'в продажах по этому маршруту нет оплаченных билетов, а в справочнике тарифов нет записи для его рейсов'
+            ? 'в сетке тарифов и в справочнике тарифов нет записей для рейсов этого маршрута'
             : 'на сайте нет рейсов этого маршрута, а в справочнике тарифов для него нет записи';
         if (!total) {
             return `<section class="cost-calc-block card">${head('')}
@@ -327,20 +339,27 @@ function costCalcNeedTable(expenses, subsidy, acKey, data) {
             <div class="cost-calc-table-wrap"><table class="cost-calc-table">
                 <thead><tr><th>Загрузка самолёта</th><th class="cost-calc-num">Мест на пару рейсов</th><th class="cost-calc-num">Нужен средний билет</th></tr></thead>
                 <tbody>${back}</tbody></table></div>
-            <p class="cost-calc-block-note">${one.src === 'site' ? 'Места — по рейсам этого самолёта на сайте (в продаже), на пару рейсов — вдвое.' : 'Мест на сайте для этого самолёта пока нет, число взято из настроек сайта.'} Считаем, что каждое занятое место приносит одну цену, детские и бесплатные билеты не учтены.</p>
+            <p class="cost-calc-block-note">${one.src === 'type' ? `Места — по типу самолёта: ${formatNum(one.n)} в одном рейсе, на пару рейсов — вдвое.` : one.src === 'site' ? 'Места — по рейсам этого самолёта на сайте (в продаже), на пару рейсов — вдвое.' : 'Мест на сайте для этого самолёта пока нет, число взято из настроек сайта.'} Считаем, что каждое занятое место приносит одну цену, детские и бесплатные билеты не учтены.</p>
         </section>`;
     }
 
-    const body = rows.map((r) => {
+    // Тарифы, при которых мест в паре рейсов не хватит, не показываем.
+    const fit = total ? rows.filter(r => Math.ceil(need / r.price) <= total) : rows;
+    const hidden = rows.length - fit.length;
+    if (!fit.length) {
+        const top = rows[rows.length - 1];
+        const seatsTop = Math.ceil(need / top.price);
+        return `<section class="cost-calc-block card">${head(`пара рейсов, ${formatNum(total)} ${seatWord(total)} всего`)}
+            <p class="cost-calc-block-empty"><b>Ни по одному тарифу мест не хватит.</b> Даже по самому дорогому (${costCalcMoney(top.price)}, ${top.tag}) нужно занять ${formatNum(seatsTop)} ${seatWord(seatsTop)}, а в паре рейсов всего ${formatNum(total)}. ${subsidy > 0 ? 'Даже с субсидией' : 'Без субсидии'} такая пара рейсов на этом самолёте в плюс не выйдет.</p>
+            <p class="cost-calc-block-note">${priceNote}</p></section>`;
+    }
+    let midIdx = -1;
+    if (avg) fit.forEach((r, i) => { if (midIdx < 0 || Math.abs(r.price - avg) < Math.abs(fit[midIdx].price - avg)) midIdx = i; });
+    const body = fit.map((r, i) => {
         const seats = Math.ceil(need / r.price);
-        let load = '<span class="cost-calc-muted">нет данных</span>';
-        let over = false;
-        if (total) {
-            const pct = Math.round(seats / total * 100);
-            over = seats > total;
-            load = over ? `<span class="cost-calc-neg">${pct}% — мест не хватит</span>` : `<b>${pct}%</b>`;
-        }
-        return `<tr class="${r.tag === 'около среднего' ? 'cost-calc-row-mid' : ''}${over ? ' cost-calc-row-over' : ''}">
+        const load = total ? `<b>${Math.round(seats / total * 100)}%</b>` : '<span class="cost-calc-muted">нет данных</span>';
+        if (i === midIdx) r = { price: r.price, tag: r.tag + ', около среднего билета' };
+        return `<tr class="${i === midIdx ? 'cost-calc-row-mid' : ''}">
             <td><b class="cost-calc-price">${costCalcMoney(r.price)}</b>${r.tag ? ` <span class="cost-calc-tag">${r.tag}</span>` : ''}</td>
             <td class="cost-calc-num"><b>${formatNum(seats)}</b> ${seatWord(seats)}</td>
             <td class="cost-calc-num">${load}</td>
@@ -350,9 +369,12 @@ function costCalcNeedTable(expenses, subsidy, acKey, data) {
     let sub, seatNote = '';
     if (total) {
         sub = `пара рейсов, ${formatNum(total)} ${seatWord(total)} всего`;
-        seatNote = one.src === 'site'
+        seatNote = (one.src === 'type'
+            ? `Места — по типу самолёта: ${formatNum(one.n)} в одном рейсе, на пару рейсов — вдвое.`
+            : one.src === 'site'
             ? 'Места — по рейсам этого самолёта на сайте (в продаже), на пару рейсов — вдвое.'
-            : 'Мест на сайте для этого самолёта пока нет, число взято из настроек сайта.';
+            : 'Мест на сайте для этого самолёта пока нет, число взято из настроек сайта.')
+            + (hidden ? ` Дешёвые тарифы, при которых мест не хватит (${hidden}), не показаны.` : '');
     } else {
         sub = 'число мест в самолёте неизвестно';
         seatNote = 'Сколько мест в этом самолёте, сайт не знает: рейсов этого типа на маршруте нет, а в настройках число мест для него не задано. Поэтому загрузка в процентах не посчитана.';
