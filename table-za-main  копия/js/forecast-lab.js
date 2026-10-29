@@ -2413,7 +2413,7 @@ window.ForecastLab = (function () {
 
     const CAPS = [46, 72, 120];
 
-    let warnMemo = { sig: '', list: null };
+    let warnMemo = { sig: '', list: null, all: null };   // list — только вылеты с сигналом (по срочности), all — все вылеты горизонта (по дате)
     let warnKind = '';   // фильтр списка по плитке: under / over / pace
     let warnBusy = null;
 
@@ -2426,6 +2426,22 @@ window.ForecastLab = (function () {
     function warnings() {
         if (!evalState.ev || !loaded || !canView()) return null;
         return warnMemo.sig === warnSig() ? warnMemo.list : null;
+    }
+
+    // Все вылеты горизонта (и без сигналов) — для общей таблицы «Модели». null — ещё не посчитано под текущие данные и пороги.
+    function signalsAll() {
+        if (!evalState.ev || !loaded || !canView()) return null;
+        return warnMemo.sig === warnSig() ? warnMemo.all : null;
+    }
+    function signalsAllAsync() {
+        return warningsAsync().then(list => (list ? warnMemo.all : null));
+    }
+    function applyWarnSettings(cfg) {
+        const cl = (v, lo, hi, def) => { const n = parseInt(v, 10); return isFinite(n) ? Math.max(lo, Math.min(hi, n)) : def; };
+        const out = { under: cl(cfg.under, 10, 95, WARN_DEFAULT.under), over: cl(cfg.over, 50, 100, WARN_DEFAULT.over), days: cl(cfg.days, 3, 30, WARN_DEFAULT.days) };
+        try { localStorage.setItem(WARN_KEY, JSON.stringify(out)); } catch (e) { /* ignore */ }
+        warnCache = null;
+        return out;
     }
 
     // Посчитать в фоне: сотни вылетов, управление отдаётся браузеру каждые ~25 мс.
@@ -2444,6 +2460,7 @@ window.ForecastLab = (function () {
         const C = context();
         const now = todayTs();
         const out = [];
+        const everything = [];
         let lastYield = Date.now();
         const deps = [];
         Object.keys(C.byBase).forEach(base => C.byBase[base].forEach(dep => deps.push([base, dep])));
@@ -2471,7 +2488,8 @@ window.ForecastLab = (function () {
             if (lf * 100 < cfg.under) flags.push({ kind: 'under', sev: (cfg.under / 100 - lf) * 10 });
             if (lf * 100 >= cfg.over || (p.hiRaw != null && p.hiRaw > s && lf * 100 >= cfg.over - 5)) flags.push({ kind: 'over', sev: Math.max(lf - cfg.over / 100, 0) * 10 + (p.hiRaw != null && p.hiRaw > s ? (p.hiRaw - s) / s * 5 : 0) + 0.2 });
             if (pace && Math.abs(z) >= PV.PACE_Z && Math.abs(paceGap) >= PV.PACE_GAP) flags.push({ kind: z > 0 ? 'fast' : 'slow', sev: Math.min(Math.abs(z), 6) / 4 });
-            if (!flags.length) continue;
+            const rowBase = { base, code: dep.rowCode, date: dep.date, ts: dep.ts, dtd, dir: typeof getFlightDirection === 'function' ? getFlightDirection(base) : '', s, sold: p.sold, final: p.final, lo: p.lo, hi: p.hi, hiRaw: p.hiRaw, lf: Math.round(lf * 100), method: p.method, err: p.err, paceGap: pace ? paceGap : null };
+            if (!flags.length) { everything.push(Object.assign(rowBase, { kinds: [], why: [], act: [], urgency: 0, cal: [] })); continue; }
             // Причины — что сильнее всего тянет прогноз.
             const why = [];
             if (pace) why.push(`продано ${p.sold}, обычно к этому дню ${Math.round(pace.m * s)} (${paceGap >= 0 ? '+' : '−'}${Math.abs(paceGap)})`);
@@ -2511,10 +2529,13 @@ window.ForecastLab = (function () {
                 if (g.kind === 'slow') act.push('продажи медленнее обычного — проверить цену и продвижение');
             });
             const sev = flags.reduce((a, g) => a + g.sev, 0);
-            out.push({ base, code: dep.rowCode, date: dep.date, dtd, dir: typeof getFlightDirection === 'function' ? getFlightDirection(base) : '', s, sold: p.sold, final: p.final, lo: p.lo, hi: p.hi, hiRaw: p.hiRaw, lf: Math.round(lf * 100), method: p.method, kinds: flags.map(g => g.kind), why, act: [...new Set(act)], urgency: sev / Math.sqrt(dtd) });
+            const row = Object.assign(rowBase, { kinds: flags.map(g => g.kind), why, act: [...new Set(act)], urgency: sev / Math.sqrt(dtd), cal: ev2.slice(0, 2) });
+            out.push(row);
+            everything.push(row);
         }
         out.sort((a, b) => b.urgency - a.urgency);
-        if (sig === warnSig()) warnMemo = { sig, list: out };
+        everything.sort((a, b) => (a.ts - b.ts) || String(a.code).localeCompare(String(b.code), 'ru', { numeric: true }));
+        if (sig === warnSig()) warnMemo = { sig, list: out, all: everything };
         return out;
     }
 
@@ -2599,6 +2620,18 @@ window.ForecastLab = (function () {
             <div class="rp-scroll"><table class="rp-table"><thead><tr><th>Рейс</th><th>Вылет</th><th>Прогноз моделей</th><th>Изменение</th><th>Почему</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
     }
 
+    // Проверка сигналов на улетевших вылетах: «сбылось» и «поймали» по каждому сроку.
+    function trustRows(ev) {
+        const pr = (a, b) => (b ? `${Math.round(a / b * 100)}%` : '—');
+        return ((ev && ev.signals) || []).map(z => `<tr><td>${z.h} дн.</td>${['under', 'over'].map(k => { const c = z[k]; return `<td>${pr(c.tp, c.tp + c.fp)} <span class="rp-muted">(${c.tp} из ${c.tp + c.fp})</span></td><td>${pr(c.tp, c.tp + c.fn)} <span class="rp-muted">(${c.tp} из ${c.tp + c.fn})</span></td>`; }).join('')}</tr>`).join('');
+    }
+    function trustHtml(sigRows) {
+        if (sigRows == null) sigRows = trustRows(evalState.ev);
+        return sigRows ? `<details class="fl-math"><summary>Насколько сигналам можно верить — проверка на улетевших</summary>
+                <p class="rp-muted">Прогноз за N дней до вылета (честный, как в таблице точности) против факта, при нынешних порогах. «Сбылось» — из поданных сигналов сколько подтвердилось; «Поймали» — из случившихся недоборов/перегрузов сколько было предсказано.</p>
+                <table class="rp-table dr-sum-table"><thead><tr><th>За</th><th>Недобор: сбылось</th><th>Недобор: поймали</th><th>Перегруз: сбылось</th><th>Перегруз: поймали</th></tr></thead><tbody>${sigRows}</tbody></table></details>` : '';
+    }
+
     const WARN_LABEL = { under: 'Риск недобора', over: 'Риск перегруза', fast: 'Темп выше обычного', slow: 'Темп ниже обычного' };
 
     function warnHtml(rerender) {
@@ -2612,9 +2645,7 @@ window.ForecastLab = (function () {
         const cfg = warnSettings();
         const counts = { under: 0, over: 0, fast: 0, slow: 0 };
         list.forEach(w => w.kinds.forEach(k => { counts[k]++; }));
-        const ev = evalState.ev;
-        const pr = (a, b) => (b ? `${Math.round(a / b * 100)}%` : '—');
-        const sigRows = (ev.signals || []).map(z => `<tr><td>${z.h} дн.</td>${['under', 'over'].map(k => { const c = z[k]; return `<td>${pr(c.tp, c.tp + c.fp)} <span class="rp-muted">(${c.tp} из ${c.tp + c.fp})</span></td><td>${pr(c.tp, c.tp + c.fn)} <span class="rp-muted">(${c.tp} из ${c.tp + c.fn})</span></td>`; }).join('')}</tr>`).join('');
+        const sigRows = trustRows(evalState.ev);
         const shown = warnKind ? list.filter(w => warnKind === 'pace' ? (w.kinds.includes('fast') || w.kinds.includes('slow')) : w.kinds.includes(warnKind)) : list;
         const rows = shown.slice(0, 60).map(w => `<tr>
                 <td class="rp-left"><strong>${esc(w.code)}</strong> <span class="rp-muted">${esc(w.dir)}</span></td>
@@ -2639,9 +2670,7 @@ window.ForecastLab = (function () {
             </div>
             ${rows ? `<div class="rp-scroll"><table class="rp-table"><thead><tr><th>Рейс</th><th>Вылет</th><th>Сигнал</th><th>Продано</th><th>Прогноз · интервал</th><th>Почему</th><th>Что сделать</th></tr></thead><tbody>${rows}</tbody></table></div>
                 ${shown.length > 60 ? `<p class="rp-note">Показаны 60 самых срочных из ${shown.length} — полный список в Excel.</p>` : ''}` : '<p class="rp-ok">Сигналов нет.</p>'}
-            ${sigRows ? `<details class="fl-math"><summary>Насколько сигналам можно верить — проверка на улетевших</summary>
-                <p class="rp-muted">Прогноз за N дней до вылета (честный, как в таблице точности) против факта, при нынешних порогах. «Сбылось» — из поданных сигналов сколько подтвердилось; «Поймали» — из случившихся недоборов/перегрузов сколько было предсказано.</p>
-                <table class="rp-table dr-sum-table"><thead><tr><th>За</th><th>Недобор: сбылось</th><th>Недобор: поймали</th><th>Перегруз: сбылось</th><th>Перегруз: поймали</th></tr></thead><tbody>${sigRows}</tbody></table></details>` : ''}
+            ${trustHtml(sigRows)}
         </section>`;
     }
 
@@ -2714,22 +2743,33 @@ window.ForecastLab = (function () {
         return isAdmin() || !!(typeof ProfileAuth !== 'undefined' && ProfileAuth.hasPermission('export_excel'));
     }
 
-    async function exportWarnings() {
+    // opts: { list — строки для выгрузки (по умолчанию — вылеты с сигналом), ml: true — добавить столбцы модели 2 и разницы,
+    //         filtered — подпись «что на экране» для сообщения }.
+    async function exportWarnings(opts) {
         if (!canExport()) return;
-        const list = (await warningsAsync()) || [];
+        opts = opts || {};
+        const list = opts.list || (await warningsAsync()) || [];
         const lib = typeof loadStyledXlsx === 'function' ? await loadStyledXlsx() : (typeof XLSX !== 'undefined' ? XLSX : null);
         if (!lib) { if (typeof showToast === 'function') showToast('Библиотека Excel не загружена', 'error'); return; }
-        const head = ['Рейс', 'Направление', 'Дата вылета', 'Дней до вылета', 'Сигнал', 'Продано', 'Кресел', 'Прогноз', 'Загрузка, %', 'Интервал от', 'Интервал до', 'Спрос до (без ограничения)', 'Способ', 'Почему', 'Что сделать', 'Срочность'];
-        const rows = list.map(w => [w.code, w.dir, w.date, w.dtd, w.kinds.map(k => WARN_LABEL[k]).join(', '), w.sold, w.s, w.final, w.lf, w.lo != null ? w.lo : '', w.hi != null ? w.hi : '', w.hiRaw != null ? w.hiRaw : '', w.method, w.why.join('; '), w.act.join('; '), Math.round(w.urgency * 100) / 100]);
+        const ml = !!opts.ml;
+        const head = ['Рейс', 'Направление', 'Дата вылета', 'Дней до вылета', 'Сигнал', 'Продано', 'Кресел', ml ? 'Модель 1: прогноз' : 'Прогноз', ml ? 'Модель 1: загрузка, %' : 'Загрузка, %', 'Интервал от', 'Интервал до', 'Спрос до (без ограничения)', 'Способ', 'Почему', 'Что сделать', 'Срочность']
+            .concat(ml ? ['Модель 2: прогноз', 'Модель 2: загрузка, %', 'Разница (модель 2 − модель 1)'] : []);
+        const num = (v) => (v == null ? '' : v);
+        const rows = list.map(w => {
+            const sig = (w.kinds || []).map(k => WARN_LABEL[k]).concat(w.diverge ? ['Модели расходятся'] : []).join(', ');
+            const base = [w.code, w.dir, w.date, w.dtd, sig, w.sold, w.s, num(w.final), num(w.lf), num(w.lo), num(w.hi), num(w.hiRaw), w.method || '', (w.why || []).join('; '), (w.act || []).join('; '), w.urgency != null ? Math.round(w.urgency * 100) / 100 : ''];
+            return ml ? base.concat([num(w.m2), num(w.m2lf), num(w.diff)]) : base;
+        });
         const wb = lib.utils.book_new();
         const ws = lib.utils.aoa_to_sheet([head].concat(rows));
         ws['!cols'] = head.map((h, i) => ({ wch: i === 13 || i === 14 ? 60 : (i === 1 ? 32 : 14) }));
-        lib.utils.book_append_sheet(wb, ws, 'Предупреждения');
+        lib.utils.book_append_sheet(wb, ws, ml ? 'Ближайшие рейсы' : 'Предупреждения');
         const day = typeof getTodayDate === 'function' ? getTodayDate() : today();
-        const name = typeof excelDailyFilename === 'function' ? excelDailyFilename('КРАСАВИА_предупреждения', day) : `КРАСАВИА_предупреждения_${day}.xlsx`;
+        const name = typeof excelDailyFilename === 'function' ? excelDailyFilename(ml ? 'КРАСАВИА_модели_ближайшие_рейсы' : 'КРАСАВИА_предупреждения', day) : `КРАСАВИА_предупреждения_${day}.xlsx`;
         const saved = typeof excelSaveWorkbook === 'function' ? await excelSaveWorkbook(lib, wb, name, null) : (lib.writeFile(wb, name), null);
-        if (saved && typeof excelAnnounceSaved === 'function') excelAnnounceSaved(saved, 'Предупреждения выгружены');
-        else if (typeof showToast === 'function') showToast('Предупреждения выгружены');
+        const msg = ml ? `Выгружено рейсов: ${rows.length}` : 'Предупреждения выгружены';
+        if (saved && typeof excelAnnounceSaved === 'function') excelAnnounceSaved(saved, msg);
+        else if (typeof showToast === 'function') showToast(msg);
     }
 
     // ---------- отчёт ----------
@@ -2871,8 +2911,32 @@ window.ForecastLab = (function () {
         return `<div class="dr-kpi ${stale ? 'dr-kpi-down' : ''}"><div class="dr-kpi-label">Обучена</div><div class="dr-kpi-value">${when}</div><div class="dr-kpi-sub">${stale || `за неделю данных +${ev.fresh || 0} улетевших вылетов · доучивается при каждом обновлении данных`}</div></div>${trend}`;
     }
 
-    function html(rerender) {
+    // Сводка модели 1 для раздела «Модели»: статус, когда обучена, на скольких вылетах, ошибка в пассажирах по срокам
+    // (из её собственной проверки на прошлых неделях: «честная» ошибка, где её хватает, иначе общая) и «просто текущие продажи».
+    const SUM_KEYS = [['30', [30]], ['14', [14]], ['7', [7]], ['1_3', [3, 1]]];
+    function summary() {
+        if (!canView()) return { s: 'hidden' };
+        if (!loaded) return { s: 'training' };
+        const ev = evalState.ev;
+        if (!ev) return { s: 'training' };
+        const cell = (c) => (c && c.n > 0 ? { sum: c.sum, n: c.n } : null);
+        const join = (parts) => { const ok = parts.filter(Boolean); const n = ok.reduce((a, x) => a + x.n, 0); return n ? { v: ok.reduce((a, x) => a + x.sum, 0) / n, n } : null; };
+        const err = {};
+        const naive = {};
+        SUM_KEYS.forEach(([key, hs]) => {
+            err[key] = join(hs.map(h => { const B = ev.byH[h]; if (!B) return null; return B.honest && B.honest.n >= PV.MIN_CHOICE ? cell(B.honest) : cell(B.best); }));
+            naive[key] = join(hs.map(h => { const B = ev.byH[h]; return B && B.naive ? cell(B.naive) : null; }));
+        });
+        const lag = dataLagDays();
+        return { s: ev.anyModel ? 'ok' : 'few', at: ev.at, departures: ev.departures, err, naive, lag, salesAt: typeof lastSalesUpdate !== 'undefined' && lastSalesUpdate ? new Date(lastSalesUpdate).getTime() : 0 };
+    }
+
+    // opts.analyst — блок «Подробно для аналитика» в разделе «Модели»: всё, что было в «Прогнозе и предупреждениях»,
+    // кроме таблицы ранних предупреждений (её заменила общая таблица «Ближайшие рейсы»).
+    function html(rerender, opts) {
+        const analyst = !!(opts && opts.analyst);
         if (!canView()) {
+            if (analyst) return '';
             // Только «Ценовой советник» (своё право) — без отчёта о прогнозе.
             if (typeof PriceAdvisor !== 'undefined' && PriceAdvisor.canView()) return PriceAdvisor.reportHtml(rerender);
             return '<p class="rp-note">Раздел доступен по праву «Прогноз загрузки и предупреждения» (выдаёт администратор в «Профилях»).</p>';
@@ -2950,7 +3014,9 @@ window.ForecastLab = (function () {
         let cap = lastCapture && (lastCapture.recorded || lastCapture.backfilled || lastCapture.finals)
             ? `Последняя запись журнала: прогнозов ${lastCapture.recorded}, восстановлено вылетов ${lastCapture.backfilled}, дописан факт ${lastCapture.finals}.` : '';
         if (lastCapture && lastCapture.stale) cap += ' Данные продаж старше суток — прогнозы на сегодня не записаны (запишутся после загрузки свежих данных).';
-        return `${warnHtml(rerender)}
+        const trust = analyst ? trustHtml() : '';
+        return `${analyst ? '' : warnHtml(rerender)}
+            ${trust ? `<section class="rp-card">${trust}</section>` : ''}
             ${changesHtml(rerender)}
             ${typeof PriceAdvisor !== 'undefined' ? PriceAdvisor.reportHtml(rerender) : ''}
             <section class="rp-card">
@@ -3003,10 +3069,8 @@ window.ForecastLab = (function () {
     function handleClick(btn, rerender) {
         if (btn.dataset.flWkind) { warnKind = warnKind === btn.dataset.flWkind ? '' : btn.dataset.flWkind; rerender(); return true; }
         if (btn.id === 'fl-w-apply') {
-            const num = (id, lo, hi, def) => { const v = parseInt(document.getElementById(id) && document.getElementById(id).value, 10); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : def; };
-            const cfg = { under: num('fl-w-under', 10, 95, WARN_DEFAULT.under), over: num('fl-w-over', 50, 100, WARN_DEFAULT.over), days: num('fl-w-days', 3, 30, WARN_DEFAULT.days) };
-            try { localStorage.setItem(WARN_KEY, JSON.stringify(cfg)); } catch (e) { /* ignore */ }
-            warnCache = null;
+            const val = (id) => (document.getElementById(id) || {}).value;
+            applyWarnSettings({ under: val('fl-w-under'), over: val('fl-w-over'), days: val('fl-w-days') });
             rerender();
             return true;
         }
@@ -3021,5 +3085,5 @@ window.ForecastLab = (function () {
         return true;
     }
 
-    return { canView, html, handleClick, afterStart, afterDataLoad, afterHistoryImport, modelRevision: () => modelRev, forecastFor, ensureLoaded, capture, startEvaluation, evaluation: () => evalState.ev, predict, HORIZONS, mlHistory, mlLive };
+    return { canView, html, handleClick, summary, signalsAll, signalsAllAsync, applyWarnSettings, warnSettings, exportWarnings, WARN_LABEL, trustHtml, afterStart, afterDataLoad, afterHistoryImport, modelRevision: () => modelRev, forecastFor, ensureLoaded, capture, startEvaluation, evaluation: () => evalState.ev, predict, HORIZONS, mlHistory, mlLive };
 })();

@@ -346,9 +346,25 @@ window.SalesReconcile = (function () {
         return hasSales() ? report().divergent : 0;
     }
 
-    // «Отчёты» → «Сверка».
+    // «Отчёты» → «Проверки»: плитки уходят в общий ряд сверху (tileList), блок «Расхождения продаж и загрузки» — card().
+    function tileList() {
+        if (!hasSales()) return [];
+        const r = report();
+        const less = r.rows.filter(x => x.big && x.diff > 0).length;
+        const more = r.rows.filter(x => x.big && x.diff < 0).length;
+        return [
+            { label: 'Сверка: расхождений осталось', value: String(r.divergent), tone: r.divergent ? 'bad' : '' },
+            { label: 'Сверка: продаж меньше загрузки', value: String(less), sub: 'билеты не найдены в файле', tone: less ? 'bad' : '' },
+            { label: 'Сверка: продаж больше загрузки', value: String(more), sub: 'незакрытые возвраты или обмены', tone: more ? 'warn' : '' }
+        ];
+    }
+
     function html() {
-        if (!hasSales()) return '<p class="rp-note">Нет файла продаж — сверять не с чем.</p>';
+        return ReportsView.tiles(tileList()) + card();
+    }
+
+    function card() {
+        if (!hasSales()) return '<section class="rp-card" id="rp-reconcile"><p class="rp-note">Нет файла продаж — сверять не с чем.</p></section>';
         const r = report();
         const list = onlyDivergent ? r.rows.filter(x => x.big) : r.rows;
         const body = list.map(x => `
@@ -363,26 +379,17 @@ window.SalesReconcile = (function () {
                 <td class="${x.big ? (x.diff > 0 ? 'dr-neg' : 'rc-more') : ''}">${x.diff > 0 ? '+' : ''}${String(x.diff).replace('-', '−')}</td>
                 <td class="rp-left">${esc(x.reason)}</td>
             </tr>`).join('');
-        const less = r.rows.filter(x => x.big && x.diff > 0).length;
-        const more = r.rows.filter(x => x.big && x.diff < 0).length;
-        const tiles = ReportsView.tiles([
-            { label: 'Осталось расхождений', value: String(r.divergent), tone: r.divergent ? 'bad' : '' },
-            { label: 'Продаж меньше загрузки', value: String(less), sub: 'билеты не найдены в файле', tone: less ? 'bad' : '' },
-            { label: 'Продаж больше загрузки', value: String(more), sub: 'незакрытые возвраты или обмены', tone: more ? 'warn' : '' },
-            { label: 'Исправлено автоматически', value: String(r.fixedFlights), sub: `билетов перенесено: ${r.fixedTickets}` }
-        ]);
         const help = `Проверяем будущие вылеты. Загрузку берём из файла «загрузка таб». <strong>В файле</strong> — сколько билетов файл продаж
                     записал на этот номер и дату. Если рейс перенесли или дали доп. номер, файл оставляет билеты на старом месте.
                     Сайт переносит их сам: в один день — между основным и доп. номером, при переносе даты — на ближайший вылет рейса (±${typeof PV !== 'undefined' && PV.RECONCILE_MOVE_DAYS ? PV.RECONCILE_MOVE_DAYS : 7} дн.).
                     <strong>После сверки</strong> — с этими числами считаются нормы, подсказки и прогноз. Красным — где расхождение осталось.`;
         return `
-            ${tiles}
-            <section class="rp-card">
-                ${ReportsView.head('Сверка продаж и загрузки', help)}
+            <section class="rp-card" id="rp-reconcile">
+                ${ReportsView.head('Расхождения продаж и загрузки', help)}
                 <p class="rp-card-text">Сверяем продажи с загрузкой на будущие вылеты. Красным — где расхождение осталось.</p>
                 <div class="ref-toolbar">
                     <label class="rp-filter"><input type="checkbox" id="rc-only"${onlyDivergent ? ' checked' : ''}> только где осталось расхождение</label>
-                    <span class="rp-muted">Вылетов проверено: ${r.checked} · в таблице: ${list.length}</span>
+                    <span class="rp-muted">Вылетов проверено: ${r.checked} · в таблице: ${list.length} · исправлено автоматически: ${r.fixedFlights} (билетов перенесено: ${r.fixedTickets})</span>
                 </div>
                 ${body ? `<div class="rp-scroll"><table class="rp-table dr-table">
                     <thead><tr><th>Вылет</th><th>Рейс</th><th>Направление</th><th>Загрузка</th><th title="Сколько билетов файл продаж записал на этот номер и дату">В файле</th><th title="После переноса билетов">После сверки</th><th>Перенесено</th><th title="Загрузка − продажи после сверки">Разница</th><th>Причина</th></tr></thead>
@@ -397,5 +404,5 @@ window.SalesReconcile = (function () {
         return true;
     }
 
-    return { run, html, handleChange, canView, badge, hasSales };
+    return { run, html, card, tileList, handleChange, canView, badge, hasSales };
 })();

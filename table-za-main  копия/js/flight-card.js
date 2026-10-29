@@ -619,10 +619,10 @@ window.FlightCard = (function () {
         else if (a === 'window') setMode('window');
         else if (a === 'dock') setMode('page');
         else if (a === 'ml-window') {
-            // Окно сравнения моделей всегда в основном окне: из карточки-окна выносим основное окно вперёд и говорим об этом.
-            if (typeof MlForecast !== 'undefined' && MlForecast.openWindow('compare') !== false && hostDoc() !== document) {
+            // Сравнение моделей — раздел «Отчёты» → «Модели» в основном окне: из карточки-окна выносим основное окно вперёд и говорим об этом.
+            if (typeof MlForecast !== 'undefined' && MlForecast.openModels() !== false && hostDoc() !== document) {
                 try { window.focus(); } catch (err) { /* ignore */ }
-                flash('Сравнение моделей открыто в основном окне');
+                flash('Модели открыты в основном окне');
             }
         }
         else if (a === 'insights') {

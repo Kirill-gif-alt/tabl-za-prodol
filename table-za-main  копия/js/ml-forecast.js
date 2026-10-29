@@ -2,6 +2,7 @@
 // прямо в браузере, учится на истории сайта и ничего не требует устанавливать.
 //  • прогноз для карточки рейса считается по запросу и кэшируется;
 //  • окно «Сравнение моделей»: ближайшие рейсы, модель 1 рядом с моделью 2, качество модели 2, проверка своего рейса.
+// Сравнение моделей теперь — раздел «Отчёты» → «Модели» (js/models-view.js); окно в коде осталось, но кнопки его не открывают.
 // Включает админ в «Управлении профилями» → «Функции» («Вторая модель прогноза»).
 window.MlForecast = (function () {
     const BASE = '/__krasavia/ml/';
@@ -268,7 +269,54 @@ window.MlForecast = (function () {
         return { tile, chip: `<span class="fc-ins-chip fc-ins-ml">модель 2: ${h.pred}/${seats} · ${lf}%</span>` };
     }
 
-    // ---------- окно «Сравнение моделей» ----------
+    // ---------- пакет для раздела «Отчёты» → «Модели» ----------
+    // Ответ по одному рейсу в виде, удобном таблице: { s: 'ok'|'err'|'none', pred, conf, seats, flags, closed } (расчёт уже в кэше).
+    function resultOf(inp) {
+        const e = entry(inp);
+        if (!e || e.s === 'loading') return { s: 'loading' };
+        if (e.s === 'err') return { s: 'err', err: e.err };
+        const h = headline(e.res, inp.dtd, inp);
+        if (!h) return { s: 'none' };
+        return { s: 'ok', pred: h.pred, conf: h.conf, seats: inp.total_au, closed: !!h.closed, key: h.key,
+            flags: h.closed ? ['продажи закрыты — итог равен проданному'] : flagTexts(h.flags) };
+    }
+
+    // Прогнозы модели 2 пачками по 40 рейсов с передышкой для браузера: таблица не ждёт, строки заполняются по мере готовности.
+    // items: [{ code, date }]; onPart(список { code, date, r }) вызывается после каждой пачки; isCancelled() — прервать.
+    async function compareFlights(items, onPart, isCancelled) {
+        if (!canView() || !items.length) return;
+        await refreshHealth(false);
+        if (st.state !== 'ready') return;
+        for (let i = 0; i < items.length; i += 40) {
+            if (isCancelled && isCancelled()) return;
+            const part = items.slice(i, i + 40).map(x => ({ x, inp: inputOf(x.code, x.date) }));
+            const need = part.filter(z => z.inp && !entry(z.inp));
+            if (need.length) {
+                const r = await call('predict_batch', { items: need.map(z => z.inp) });
+                const list = r && r.ok && r.data && r.data.results;
+                need.forEach((z, k) => {
+                    const x = list && list[k];
+                    cache.set(keyOf(z.inp), x && x.ok ? { s: 'ok', res: x.result, at: Date.now() }
+                        : { s: 'err', err: x && x.error ? x.error : 'ошибка расчёта', at: Date.now() });
+                });
+            }
+            if (isCancelled && isCancelled()) return;
+            onPart(part.map(z => ({ code: z.x.code, date: z.x.date, r: z.inp ? resultOf(z.inp) : { s: 'none' } })));
+            if (need.length) await new Promise(r => setTimeout(r, 0));
+        }
+    }
+
+    // Раздел «Отчёты» → «Модели»; false — если у профиля нет вкладки «Отчёты» (тогда остаётся старое окно).
+    function openModels() {
+        if (!canView() && !(typeof ForecastLab !== 'undefined' && ForecastLab.canView())) return false;
+        const canReports = typeof ProfileAuth === 'undefined' || typeof ProfileAuth.canAccessTab !== 'function' || ProfileAuth.canAccessTab('reports');
+        if (!canReports || typeof ReportsView === 'undefined' || typeof switchMainTab !== 'function') return openWindow('compare');
+        ReportsView.showSubtab('models');
+        switchMainTab('reports');
+        return true;
+    }
+
+    // ---------- окно «Сравнение моделей» (больше не показывается кнопками) ----------
     let win = null;
     let wstate = { tab: 'compare', days: 7, minDiff: 0, rows: [], building: 0, sort: 'diff', own: null, ownRes: null };
 
@@ -579,8 +627,8 @@ window.MlForecast = (function () {
 
     document.addEventListener('click', e => {
         const b = e.target.closest && e.target.closest('#ml-window-btn');
-        if (b) openWindow('compare');
+        if (b) openModels();
     });
 
-    return { canView, status, health, forFlight, cardParts, headline, openWindow, closeWindow, onChange, refreshHealth, reset, flagTexts };
+    return { canView, status, health, forFlight, cardParts, headline, openWindow, openModels, closeWindow, onChange, refreshHealth, reset, flagTexts, compareFlights, qualityHtml: () => qualityHtml(), HZ };
 })();
