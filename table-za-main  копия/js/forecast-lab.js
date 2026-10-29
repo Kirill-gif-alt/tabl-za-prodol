@@ -2414,7 +2414,6 @@ window.ForecastLab = (function () {
     const CAPS = [46, 72, 120];
 
     let warnMemo = { sig: '', list: null, all: null };   // list — только вылеты с сигналом (по срочности), all — все вылеты горизонта (по дате)
-    let warnKind = '';   // фильтр списка по плитке: under / over / pace
     let warnBusy = null;
 
     function warnSig() {
@@ -2633,46 +2632,6 @@ window.ForecastLab = (function () {
     }
 
     const WARN_LABEL = { under: 'Риск недобора', over: 'Риск перегруза', fast: 'Темп выше обычного', slow: 'Темп ниже обычного' };
-
-    function warnHtml(rerender) {
-        if (!evalState.ev) return '';
-        const list = warnings();
-        if (!list) {
-            warningsAsync().then(() => { if (rerender) rerender(); }).catch(e => console.warn(e));
-            return `<section class="rp-card">${ReportsView.head('Ранние предупреждения')}
-                <p class="rp-note">Считаю прогноз по всем вылетам на ${warnSettings().days} дн. вперёд… Работать на сайте можно.</p></section>`;
-        }
-        const cfg = warnSettings();
-        const counts = { under: 0, over: 0, fast: 0, slow: 0 };
-        list.forEach(w => w.kinds.forEach(k => { counts[k]++; }));
-        const sigRows = trustRows(evalState.ev);
-        const shown = warnKind ? list.filter(w => warnKind === 'pace' ? (w.kinds.includes('fast') || w.kinds.includes('slow')) : w.kinds.includes(warnKind)) : list;
-        const rows = shown.slice(0, 60).map(w => `<tr>
-                <td class="rp-left"><strong>${esc(w.code)}</strong> <span class="rp-muted">${esc(w.dir)}</span></td>
-                <td>${esc(w.date)}<div class="rp-muted">через ${w.dtd} дн.</div></td>
-                <td class="rp-left">${w.kinds.map(k => `<span class="fl-warn fl-warn-${k}">${esc(WARN_LABEL[k])}</span>`).join(' ')}</td>
-                <td>${w.sold} <span class="rp-muted">из ${w.s}</span></td>
-                <td><strong>${w.final}</strong> <span class="rp-muted">· ${w.lf}%</span>${w.lo != null ? `<div class="rp-muted">${w.lo}–${w.hi}${w.hiRaw > w.s ? ` <span title="Верх прогноза, если бы кресел было больше: оценка, а не точный спрос">(без учёта кресел до ${w.hiRaw})</span>` : ''}</div>` : ''}</td>
-                <td class="rp-left fl-warn-why">${w.why.map(esc).join('; ')}</td>
-                <td class="rp-left fl-warn-why">${w.act.map(esc).join('; ')}</td></tr>`).join('');
-        return `<section class="rp-card">
-            ${ReportsView.head('Ранние предупреждения', `Все вылеты на ${cfg.days} дн. вперёд: прогноз к вылету и интервал 80% (в карточке рейса — то же). Сначала — самые срочные: сильное отклонение и близкий вылет.`,
-        canExport() ? `<button type="button" class="btn-primary rp-btn" id="fl-w-xlsx"${list.length ? '' : ' disabled'}>В Excel</button>` : '')}
-            <p class="rp-card-text">Прогноз загрузки по всем вылетам на ${cfg.days} дн. вперёд. Сверху — самые срочные.</p>
-            <div class="fl-warn-cfg">
-                <label>Недобор, если прогноз ниже <input type="number" id="fl-w-under" min="10" max="95" value="${cfg.under}">%</label>
-                <label>Перегруз, если выше <input type="number" id="fl-w-over" min="50" max="100" value="${cfg.over}">%</label>
-                <label>На <input type="number" id="fl-w-days" min="3" max="30" value="${cfg.days}"> дн. вперёд</label>
-                <button type="button" class="btn-secondary rp-btn" id="fl-w-apply">Применить</button>
-            </div>
-            <div class="dr-kpis">
-                ${[['under', 'Риск недобора', counts.under, ''], ['over', 'Риск перегруза', counts.over, ''], ['pace', 'Необычный темп продаж', counts.fast + counts.slow, `выше: ${counts.fast} · ниже: ${counts.slow}`]].map(([k, label, n, sub]) => `<button type="button" class="dr-kpi fl-w-kpi${warnKind === k ? ' fl-w-kpi-on' : ''}" data-fl-wkind="${k}" title="${warnKind === k ? 'Показать все' : 'Показать только эти'}"><div class="dr-kpi-label">${label}</div><div class="dr-kpi-value">${n}</div><div class="dr-kpi-sub">${sub || (warnKind === k ? 'показаны только эти · нажмите ещё раз — все' : 'нажмите — показать только эти')}</div></button>`).join('')}
-            </div>
-            ${rows ? `<div class="rp-scroll"><table class="rp-table"><thead><tr><th>Рейс</th><th>Вылет</th><th>Сигнал</th><th>Продано</th><th>Прогноз · интервал</th><th>Почему</th><th>Что сделать</th></tr></thead><tbody>${rows}</tbody></table></div>
-                ${shown.length > 60 ? `<p class="rp-note">Показаны 60 самых срочных из ${shown.length} — полный список в Excel.</p>` : ''}` : '<p class="rp-ok">Сигналов нет.</p>'}
-            ${trustHtml(sigRows)}
-        </section>`;
-    }
 
     // ---------- история продаж (SalesHistory.csv) ----------
 
@@ -2931,8 +2890,8 @@ window.ForecastLab = (function () {
         return { s: ev.anyModel ? 'ok' : 'few', at: ev.at, departures: ev.departures, err, naive, lag, salesAt: typeof lastSalesUpdate !== 'undefined' && lastSalesUpdate ? new Date(lastSalesUpdate).getTime() : 0 };
     }
 
-    // opts.analyst — блок «Подробно для аналитика» в разделе «Модели»: всё, что было в «Прогнозе и предупреждениях»,
-    // кроме таблицы ранних предупреждений (её заменила общая таблица «Ближайшие рейсы»).
+    // Блок «Подробно для аналитика» в разделе «Модели»: всё, что было в «Прогнозе и предупреждениях», кроме таблицы
+    // ранних предупреждений (её заменила общая таблица «Ближайшие рейсы», см. models-view.js). opts.analyst — для читаемости вызова.
     function html(rerender, opts) {
         const analyst = !!(opts && opts.analyst);
         if (!canView()) {
@@ -3014,9 +2973,8 @@ window.ForecastLab = (function () {
         let cap = lastCapture && (lastCapture.recorded || lastCapture.backfilled || lastCapture.finals)
             ? `Последняя запись журнала: прогнозов ${lastCapture.recorded}, восстановлено вылетов ${lastCapture.backfilled}, дописан факт ${lastCapture.finals}.` : '';
         if (lastCapture && lastCapture.stale) cap += ' Данные продаж старше суток — прогнозы на сегодня не записаны (запишутся после загрузки свежих данных).';
-        const trust = analyst ? trustHtml() : '';
-        return `${analyst ? '' : warnHtml(rerender)}
-            ${trust ? `<section class="rp-card">${trust}</section>` : ''}
+        const trust = trustHtml();
+        return `${trust ? `<section class="rp-card">${trust}</section>` : ''}
             ${changesHtml(rerender)}
             ${typeof PriceAdvisor !== 'undefined' ? PriceAdvisor.reportHtml(rerender) : ''}
             <section class="rp-card">
@@ -3067,14 +3025,6 @@ window.ForecastLab = (function () {
     }
 
     function handleClick(btn, rerender) {
-        if (btn.dataset.flWkind) { warnKind = warnKind === btn.dataset.flWkind ? '' : btn.dataset.flWkind; rerender(); return true; }
-        if (btn.id === 'fl-w-apply') {
-            const val = (id) => (document.getElementById(id) || {}).value;
-            applyWarnSettings({ under: val('fl-w-under'), over: val('fl-w-over'), days: val('fl-w-days') });
-            rerender();
-            return true;
-        }
-        if (btn.id === 'fl-w-xlsx') { if (canExport()) exportWarnings().catch(e => console.warn(e)); return true; }
         if (btn.id === 'fl-hist-load') { if (canWrite()) loadHistory(rerender); return true; }
         if (btn.id !== 'fl-capture') return false;
         btn.disabled = true;

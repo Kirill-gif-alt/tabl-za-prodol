@@ -226,6 +226,7 @@ html[data-theme="dark"] #rp-page .rp-subtab-on .rp-subtab-badge-zero { backgroun
 /* ---------- «Проверки»: общие плитки сверху, под ними два блока ---------- */
 #rp-page .rp-tab-checks > .rp-card[id] { scroll-margin-top: 12px; }
 #rp-page .rp-tab-checks .ref-toolbar { margin: 10px 0 4px; }
+#rp-page .rp-tab-checks > .rp-tiles { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
 
 /* ---------- «Модели» ---------- */
 #rp-page .rp-tab-models > .rp-note { margin: 0; }
@@ -344,4 +345,8 @@ html[data-theme="dark"] #rp-page .md-sg-pace { background: #1e2250; color: #c7d2
 @media (max-width: 560px) {
     #rp-page .md-hz { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     #rp-page .md-xlsx { margin-left: 0; }
+}
+@media (max-width: 1440px) {
+    #rp-page .md-dir { max-width: 150px; }
+    #rp-page .md-short span { max-width: 300px; }
 }
