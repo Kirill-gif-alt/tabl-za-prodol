@@ -276,6 +276,67 @@ html[data-theme="dark"] .td-new { background: #172554; color: #bfdbfe; }
     border-radius: 9px;
 }
 
+/* ---------- массовая отметка и подробности ---------- */
+.td-bulk {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin: 0 0 8px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--accent, #10b981) 10%, var(--surface));
+    color: var(--text);
+    font-size: 0.9rem;
+}
+.td-bulk[hidden] { display: none; }
+.td-bulk-sep { color: var(--text-muted); }
+.td-bulk-btn {
+    padding: 5px 14px;
+    border: 1px solid var(--today-active, var(--text));
+    border-radius: 8px;
+    background: var(--text);
+    color: var(--surface);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+.td-bulk-btn:hover { opacity: 0.88; }
+.td-bulk-link {
+    padding: 4px 6px;
+    border: 0;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+}
+.td-table th.td-th-chk,
+.td-table td.td-chk { width: 34px; padding-right: 0; text-align: center; cursor: pointer; }
+.td-table td.td-chk input,
+.td-table th.td-th-chk input { width: 17px; height: 17px; cursor: pointer; }
+.td-table tr.td-row-pick > td { background: color-mix(in srgb, var(--accent, #10b981) 12%, transparent); }
+.td-detail-act {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 14px;
+    margin-top: 8px;
+}
+.td-detail-act .pm-buttons { margin: 0; }
+.td-next {
+    padding: 5px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+.td-next:hover { border-color: var(--text); }
+
 /* ---------- таблица ---------- */
 .td-table { font-size: 0.88rem; }
 .td-table th.td-th-r,

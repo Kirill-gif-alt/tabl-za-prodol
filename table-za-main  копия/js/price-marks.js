@@ -355,6 +355,29 @@ window.PriceMarks = (function () {
         return ok;
     }
 
+    // Отметка сразу нескольким вылетам («Сегодня» → «Проверено без изменений»): та же запись putMark на каждый вылет,
+    // автор — текущий профиль. В журнал действий — одна строка на всю пачку (иначе каждая запись гнала бы журнал в общую папку),
+    // событие krasavia:mark — одно. items: [{ code, date }]. Возвращает, сколько отмечено.
+    function setMany(items, status) {
+        if (!canMark()) {
+            if (typeof showToast === 'function') showToast('Нет права ставить отметки «Управления продажами»', 'error');
+            return 0;
+        }
+        const today = getTodayDate();
+        const done = [];
+        (items || []).forEach(it => {
+            if (flown(it.date)) return;
+            if (SalesManagement.putMark(it.code, it.date, today, status, SalesManagement.profileName())) done.push(it);
+        });
+        if (done.length) {
+            if (typeof ActivityLog !== 'undefined') {
+                ActivityLog.log('sales_mark', `${statusLabel(status)}, ${done.length} ${typeof pluralRu === 'function' ? pluralRu(done.length, 'рейс', 'рейса', 'рейсов') : 'рейсов'}: ` + done.map(d => `${d.code} ${d.date.slice(0, 5)}`).join(', '));
+            }
+            document.dispatchEvent(new CustomEvent('krasavia:mark', { detail: { code: '', date: '', status, count: done.length } }));
+        }
+        return done.length;
+    }
+
     // Чип сегодняшней отметки: кнопка для тех, кто может отмечать, иначе просто метка.
     function chipHtml(code, flyDate) {
         if (!available()) return '';
@@ -448,5 +471,5 @@ window.PriceMarks = (function () {
         setToday(chip.dataset.pmCode, chip.dataset.pmDate, st);
     });
 
-    return { winDays, decisions, markOverlaps, todayMark, effectFor, judge, decisionsHtml, chartItems, chipHtml, buttonsHtml, setToday, canMark, GLYPH };
+    return { winDays, decisions, markOverlaps, todayMark, effectFor, judge, decisionsHtml, chartItems, chipHtml, buttonsHtml, setToday, setMany, canMark, GLYPH };
 })();

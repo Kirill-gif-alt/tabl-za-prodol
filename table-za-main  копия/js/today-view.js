@@ -9,6 +9,9 @@
 window.TodayView = (function () {
     let tab = 'advice';         // advice | errors | day
     let filter = 'all';         // отбор «Ждут отметки» плиткой: all | up | down | attn («Внимание» — общее правило, attention.js)
+    let picked = new Set();     // отмеченные галочкой рейсы «рейс|дата» (массовая отметка)
+    let visibleKeys = new Set(); // рейсы, которые можно отметить среди показанных строк
+    let stickKey = '';          // только что отмеченный рейс с открытыми подробностями: остаётся в списке, пока не нажали «Следующий рейс»
     let onlyNew = false;        // отбор «Только новые» (сигнал появился сегодня, см. signal-news.js)
     let detailKey = '';         // рейс|дата, у которого открыты подробности (двойной клик)
     let pickDay = '';           // выбранный день полосы (ДД.ММ.ГГГГ)
@@ -288,7 +291,13 @@ window.TodayView = (function () {
 
     // Что показано на вкладке «Ждут отметки» по плитке (без «Только новые»).
     function adviceShown(pend) {
-        return filter === 'attn' ? attnItems() : (filter === 'all' ? pend : pend.filter(a => a.status === filter));
+        const list = filter === 'attn' ? attnItems() : (filter === 'all' ? pend : pend.filter(a => a.status === filter));
+        // Только что отмеченный рейс с открытыми подробностями остаётся в списке (иначе «Следующий рейс» пропал бы вместе со строкой).
+        if (stickKey && stickKey === detailKey && filter !== 'attn' && !list.some(a => a.code + '|' + a.date === stickKey)) {
+            const st = advice.find(a => a.code + '|' + a.date === stickKey);
+            if (st && (filter === 'all' || st.status === filter)) return list.concat([st]);
+        }
+        return list;
     }
 
     function isNewRow(code, date) {
@@ -297,9 +306,7 @@ window.TodayView = (function () {
 
     function attnCell(it) {
         const reason = it.m && it.m.alertReason ? (typeof rmsReasonShort === 'function' ? rmsReasonShort(it.m.alertReason) : it.m.alertReason) : '';
-        const mk = typeof PriceMarks !== 'undefined' ? PriceMarks.todayMark(it.code, it.date) : null;
-        const mkText = mk && SalesManagement.STATUSES[mk.status] ? `<div class="td-muted">Сегодня отмечено: ${esc(SalesManagement.STATUSES[mk.status].short)}</div>` : '';
-        return `<span class="td-pill td-pill-attn">Внимание</span>${reason ? `<div class="td-muted">${esc(reason)}</div>` : ''}${mkText}`;
+        return `<span class="td-pill td-pill-attn">Внимание</span>${reason ? `<div class="td-muted">${esc(reason)}</div>` : ''}`;
     }
 
     function fareErrors() {
@@ -419,6 +426,12 @@ window.TodayView = (function () {
         return `<span class="td-muted" title="${esc(hintsOn() ? 'Подсказки нет: вылет сегодня или вне окна, рейс закрыт, либо нет нормы и плана' : 'Подсказки выключены в «Параметрах расчётов»')}">—</span>`;
     }
 
+    // Сегодняшняя отметка рейса (если уже стоит): видно, что рейс проверен.
+    function markNoteHtml(code, date) {
+        const mk = typeof PriceMarks !== 'undefined' ? PriceMarks.todayMark(code, date) : null;
+        return mk && SalesManagement.STATUSES[mk.status] ? `<div class="td-muted">Отмечено: ${esc(SalesManagement.STATUSES[mk.status].short)}</div>` : '';
+    }
+
     function rowHtml(item, extraCell) {
         const r = item.row || rowFor(item.code, item.date);
         const seats = r && typeof getSeatsOnSale === 'function' ? getSeatsOnSale(r) : 0;
@@ -442,8 +455,11 @@ window.TodayView = (function () {
         const fcRange = fcOk && fc.lo != null && fc.hi != null && fc.lo !== fc.hi ? ` <span class="td-muted">от ${fmt(fc.lo)} до ${fmt(fc.hi)}</span>` : '';
         const grp = typeof FlightInsights !== 'undefined' ? FlightInsights.groupSeats(item.code, item.date) : 0;
         const key = item.code + '|' + item.date;
+        const pickable = bulkOn() && canPickRow(item.code, item.date);
+        if (pickable) visibleKeys.add(key);
         return `
-            <tr class="td-row${on ? ' td-row-on' : ''}" data-td-code="${esc(item.code)}" data-td-date="${esc(item.date)}">
+            <tr class="td-row${on ? ' td-row-on' : ''}${pickable && picked.has(key) ? ' td-row-pick' : ''}" data-td-code="${esc(item.code)}" data-td-date="${esc(item.date)}">
+                ${bulkOn() ? `<td class="td-chk">${pickable ? `<input type="checkbox" data-td-pick aria-label="Выбрать рейс ${esc(item.code)}"${picked.has(key) ? ' checked' : ''}>` : ''}</td>` : ''}
                 <td class="td-code"><strong>${esc(item.code)}</strong>${isNewRow(item.code, item.date) ? '<span class="td-new">новое</span>' : ''}${grp ? `<span class="grp-badge" title="В группах ${grp} чел.">Г ${grp}</span>` : ''}</td>
                 <td>${esc(typeof getFlightDirection === 'function' ? getFlightDirection(item.code) : '')}<div class="td-muted">${esc(ac)}${item.seg ? ' · ' + esc(item.seg) : ''}</div></td>
                 <td class="td-nowrap">${esc(item.date.slice(0, 5))}<div class="td-muted">${esc(inDaysText(dtd))}</div></td>
@@ -451,9 +467,9 @@ window.TodayView = (function () {
                 <td class="td-nowrap" title="${esc(fc ? FlightInsights.forecastText(fc) : 'Мало истории для прогноза')}">${fcOk ? `<b class="td-fc-n${fcCls}">${fmt(fc.final)}</b>${fcRange}` : '—'}</td>
                 <td class="td-nowrap" title="Сколько пассажиров обычно продают к этому дню; цветом — насколько нынешние продажи выше или ниже">${refCell}</td>
                 ${item.showMoney ? `<td class="td-nowrap td-money" title="${esc(typeof SalesAdvice !== 'undefined' ? SalesAdvice.moneyTitle(item.money) : '')}">${item.money ? fmt(item.money.rub) : '—'}</td>` : ''}
-                <td>${extraCell != null ? extraCell : pillHtml(adv)}</td>
+                <td>${extraCell != null ? extraCell : pillHtml(adv)}${markNoteHtml(item.code, item.date)}</td>
                 <td class="td-go-cell">${openable(item.code, item.date) ? '<button type="button" class="td-go" data-td-go title="Открыть рейс в «Управлении продажами» (если он там есть) или в «Динамике продаж»">Открыть</button>' : ''}</td>
-            </tr>${detailKey === key ? detailRowHtml(item.code, item.date, item.showMoney ? 9 : 8) : ''}`;
+            </tr>${detailKey === key ? detailRowHtml(item.code, item.date, (item.showMoney ? 9 : 8) + (bulkOn() ? 1 : 0)) : ''}`;
     }
 
     // Подробности под строкой (двойной клик): то, что раньше пряталось в подсказках. Считается только по запросу, из готовых кэшей.
@@ -474,7 +490,9 @@ window.TodayView = (function () {
                 .forEach(i => lines.push(['Ошибка тарифа', `${i.title}: ${i.detail}`]));
         }
         if (!lines.length) lines.push(['', 'Подробностей нет: по этому вылету мало данных.']);
-        return `<tr class="td-detail" data-td-detail="${esc(code + '|' + date)}"><td colspan="${cols}"><dl class="td-detail-list">${lines.map(l => `<div><dt>${esc(l[0])}</dt><dd>${esc(l[1])}</dd></div>`).join('')}</dl></td></tr>`;
+        // Отметка и «Следующий рейс» — тем, кто может ставить отметки. Отметка — та же быстрая, что в RMS и карточке рейса (PriceMarks).
+        const act = canPickRow(code, date, true) ? `<div class="td-detail-act">${PriceMarks.buttonsHtml(code, date)}<button type="button" class="td-next" data-td-next>Следующий рейс ›</button></div>` : '';
+        return `<tr class="td-detail" data-td-detail="${esc(code + '|' + date)}"><td colspan="${cols}"><dl class="td-detail-list">${lines.map(l => `<div><dt>${esc(l[0])}</dt><dd>${esc(l[1])}</dd></div>`).join('')}</dl>${act}</td></tr>`;
     }
 
     function depMinutes(row) {
@@ -484,6 +502,19 @@ window.TodayView = (function () {
 
     function byDepTime(a, b) {
         return depMinutes(a.row) - depMinutes(b.row) || (parseInt(a.code.slice(3), 10) || 0) - (parseInt(b.code.slice(3), 10) || 0);
+    }
+
+    // Отметки на этой странице — у тех, кто может ставить их в «Управлении продажами» (право edit_sales_mgmt) и видит эту вкладку.
+    function bulkOn() {
+        return canTab('sales') && typeof PriceMarks !== 'undefined' && PriceMarks.canMark();
+    }
+
+    // Отметить можно вылет из списка «Управления продажами», который ещё не улетел и без сегодняшней отметки.
+    function canPickRow(code, date, withMark) {
+        if (!bulkOn() || !inSalesList(code, date)) return false;
+        const d = daysUntil(date);
+        if (d == null || d < 0) return false;
+        return withMark || !(typeof SalesManagement !== 'undefined' && SalesManagement.getMarks(code, date, today()).length);
     }
 
     function openable(code, date) {
@@ -527,6 +558,7 @@ window.TodayView = (function () {
     const HEAD_TIP_USUAL = 'Сколько обычно продают к этой дате; цветом — насколько нынешние продажи выше (+) или ниже (−)';
 
     function tableHtml(pend, errs) {
+        visibleKeys = new Set();
         let rows = '';
         let empty = '';
         let more = '';
@@ -555,7 +587,61 @@ window.TodayView = (function () {
             rows = departuresOn(date).sort(byDepTime).map(d => rowHtml(d)).join('');
             empty = `На ${date} вылетов нет.`;
         }
-        return `<div class="td-table-wrap">${rows ? `<table class="td-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>` : `<p class="td-empty">${esc(empty)}</p>`}${more}</div>`;
+        // Выбор живёт только среди показанных строк: что исчезло из списка (отмечено, сменился отбор), из выбора уходит.
+        picked = new Set([...picked].filter(k => visibleKeys.has(k)));
+        const chkTh = bulkOn() ? `<th class="td-th-chk"><input type="checkbox" data-td-pick-all aria-label="Выбрать все показанные"${visibleKeys.size && picked.size === visibleKeys.size ? ' checked' : ''}></th>` : '';
+        return `${bulkOn() ? `<div class="td-bulk" id="td-bulk"${picked.size ? '' : ' hidden'}>${bulkBarInner()}</div>` : ''}<div class="td-table-wrap">${rows ? `<table class="td-table"><thead><tr>${chkTh}${head}</tr></thead><tbody>${rows}</tbody></table>` : `<p class="td-empty">${esc(empty)}</p>`}${more}</div>`;
+    }
+
+    function bulkBarInner() {
+        return `<span>Выбрано <b>${picked.size}</b></span><span class="td-bulk-sep">·</span>`
+            + '<button type="button" class="td-bulk-btn" data-td-bulk-keep>Проверено без изменений</button><span class="td-bulk-sep">·</span>'
+            + '<button type="button" class="td-bulk-link" data-td-bulk-clear>Снять выбор</button>';
+    }
+
+    // Выбор поменялся: обновить строку действий, галочку в шапке и подсветку строк, не перерисовывая страницу.
+    function syncBulk() {
+        const bar = document.getElementById('td-bulk');
+        if (bar) { bar.hidden = !picked.size; bar.innerHTML = bulkBarInner(); }
+        const all = document.querySelector('#td-page [data-td-pick-all]');
+        if (all) {
+            all.checked = visibleKeys.size > 0 && picked.size === visibleKeys.size;
+            all.indeterminate = picked.size > 0 && picked.size < visibleKeys.size;
+        }
+        document.querySelectorAll('#td-page tr.td-row').forEach(tr => {
+            const k = tr.dataset.tdCode + '|' + tr.dataset.tdDate;
+            const cb = tr.querySelector('[data-td-pick]');
+            if (cb) cb.checked = picked.has(k);
+            tr.classList.toggle('td-row-pick', picked.has(k));
+        });
+    }
+
+    // «Проверено без изменений» всем выбранным: та же запись, что у ручной отметки (PriceMarks → SalesManagement.putMark).
+    function bulkKeep() {
+        const keys = [...picked].filter(k => visibleKeys.has(k));
+        if (!keys.length || !bulkOn()) return;
+        if (keys.length > 20 && !window.confirm(`Отметить ${keys.length} ${pluralRu(keys.length, 'рейс', 'рейса', 'рейсов')} «Без изменений»?`)) return;
+        picked = new Set();
+        const n = PriceMarks.setMany(keys.map(k => { const p = k.split('|'); return { code: p[0], date: p[1] }; }), 'keep');
+        if (typeof showToast === 'function') showToast(n ? `Отмечено «Без изменений»: ${n}` : 'Отметки не поставлены', n ? 'success' : 'error');
+        if (typeof updateHeaderStatus === 'function') updateHeaderStatus();   // счётчик «☀» в шапке
+        if (!n) render();      // при успехе страницу уже обновило событие отметки
+    }
+
+    // «Следующий рейс»: подробности следующей строки в текущем порядке списка.
+    function nextFlight() {
+        const cur = document.querySelector('#td-page tr.td-detail');
+        let tr = cur ? cur.previousElementSibling : null;
+        let nx = cur ? cur.nextElementSibling : null;
+        while (nx && !nx.classList.contains('td-row')) nx = nx.nextElementSibling;
+        if (!tr || !nx) { if (typeof showToast === 'function') showToast('Дальше рейсов в списке нет', 'error'); return; }
+        const nk = nx.dataset.tdCode + '|' + nx.dataset.tdDate;
+        stickKey = '';
+        detailKey = nk;
+        render();
+        const det = document.querySelector(`#td-page tr.td-detail[data-td-detail="${CSS.escape(nk)}"]`);
+        const row = det && det.previousElementSibling;
+        if (row && row.scrollIntoView) row.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }
 
     // ---------- плитки ----------
@@ -683,7 +769,7 @@ window.TodayView = (function () {
     // Подробности под строкой: открыть у одного рейса, повторный двойной клик — закрыть.
     function onDblClick(e) {
         const row = e.target.closest('tr.td-row');
-        if (!row || e.target.closest('button, select, a')) return;
+        if (!row || e.target.closest('button, select, a, input, td.td-chk')) return;
         const key = row.dataset.tdCode + '|' + row.dataset.tdDate;
         const sel = window.getSelection ? window.getSelection() : null;
         if (sel && sel.removeAllRanges) sel.removeAllRanges();
@@ -728,6 +814,25 @@ window.TodayView = (function () {
         }
         // Плитки «ждут отметки / повысить / снизить / ошибки» отбирают строки таблицы; повторный клик по включённой — сброс.
         if (t.closest('[data-td-new]')) { onlyNew = !onlyNew; render(); return; }
+        if (t.closest('[data-td-next]')) { nextFlight(); return; }
+        if (t.closest('[data-td-bulk-keep]')) { bulkKeep(); return; }
+        if (t.closest('[data-td-bulk-clear]')) { picked = new Set(); syncBulk(); return; }
+        if (t.closest('[data-td-pick-all]')) {
+            picked = t.closest('[data-td-pick-all]').checked ? new Set(visibleKeys) : new Set();
+            syncBulk();
+            return;
+        }
+        const chkCell = t.closest('td.td-chk');
+        if (chkCell) {
+            const cb = chkCell.querySelector('[data-td-pick]');
+            if (cb) {
+                if (t !== cb) cb.checked = !cb.checked;
+                const k = cb.closest('tr').dataset.tdCode + '|' + cb.closest('tr').dataset.tdDate;
+                if (cb.checked) picked.add(k); else picked.delete(k);
+                syncBulk();
+            }
+            return;
+        }
         const ft = t.closest('[data-td-filter]');
         if (ft) {
             const f = ft.dataset.tdFilter;
@@ -783,7 +888,9 @@ window.TodayView = (function () {
     }
 
     // Отметка поставлена — счётчики и подсказки на странице обновляются.
-    document.addEventListener('krasavia:mark', () => {
+    document.addEventListener('krasavia:mark', (e) => {
+        const d = (e && e.detail) || {};
+        if (detailKey && d.code && d.code + '|' + d.date === detailKey) stickKey = detailKey;
         if (typeof currentTab !== 'undefined' && currentTab === 'today') render();
     });
 
