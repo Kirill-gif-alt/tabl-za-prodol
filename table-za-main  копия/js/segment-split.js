@@ -22,7 +22,27 @@ window.SegmentSplit = (function () {
     function splitRows(grouped) {
         moved = [];
         const bases = Object.keys(grouped);
-        bases.forEach(b => grouped[b].forEach(r => { delete r.segKey; delete r.segRoute; }));
+        bases.forEach(b => grouped[b].forEach(r => { delete r.segKey; delete r.segRoute; delete r.segShare; }));
+
+        // Один самолёт — одни расходы: у вылета с посадками расходы и субсидия считаются в одной строке
+        // (сквозной участок, иначе первый), остальные участки помечены segShare.
+        const byDep = new Map();
+        bases.forEach(b => grouped[b].forEach(r => {
+            if (points(r[3]).length < 3) return;
+            const k = r[1] + '|' + cleanFlight(r[0]);
+            if (!byDep.has(k)) byDep.set(k, []);
+            byDep.get(k).push(r);
+        }));
+        byDep.forEach(list => {
+            if (list.length < 2) return;
+            const rp = points(list[0][3]);
+            const through = rp[0] + '-' + rp[rp.length - 1];
+            const segOf = r => points(typeof parseSegmentField === 'function' ? parseSegmentField(r[2]).route : '').join('-');
+            const legsOf = r => (typeof parseSegmentField === 'function' ? parseSegmentField(r[2]).legs : '') || '9';
+            const main = list.find(r => segOf(r) === through)
+                || list.slice().sort((a, c) => legsOf(a).localeCompare(legsOf(c)))[0];
+            list.forEach(r => { if (r !== main) r.segShare = true; });
+        });
 
         // Обычный маршрут рейса — тот, которым он летит в большинство дней (у дня с посадками строк больше).
         const usual = Object.create(null);

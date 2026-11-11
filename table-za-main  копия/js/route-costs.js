@@ -649,6 +649,11 @@ window.RouteCosts = (function () {
         const subsidyOneWay = (!commercial && pairFromFile)
             ? pairFromFile / 2 * 1000
             : 0;
+        // Другой участок того же вылета с посадками: расходы и субсидия — в строке основного участка.
+        if (row && row.segShare) {
+            return { unitCost: null, from: cities[0] || '', to: cities[1] || '', ac, subsidyAmt: 0, subsidyOneWay: 0,
+                subsidized: !commercial, commercial, krai, shared: true };
+        }
         return {
             unitCost,
             from: cities[0] || '',

@@ -261,6 +261,9 @@ function buildFlightLegMetrics(row, firstSalesByKey, todayStart) {
 
     const flightCode = cleanFlight(row[0]);
     const econ = typeof RouteCosts !== 'undefined' ? RouteCosts.lookup(row, flightCode, date) : null;
+    // Участок вылета с посадками, не основной: субсидия (и ручная тоже) считается в строке основного участка.
+    const segShare = !!row.segShare;
+    const manualSub = !segShare && typeof SharedOverrides !== 'undefined' && SharedOverrides.hasSubsidy(flightCode, date);
     const costNum = econ && econ.unitCost != null ? econ.unitCost : 0;
     const costText = econ && econ.unitCost != null ? formatRub(econ.unitCost) : '—';
 
@@ -280,13 +283,14 @@ function buildFlightLegMetrics(row, firstSalesByKey, todayStart) {
         costNum,
         subsidyAmt: econ ? (econ.subsidyAmt || 0) : 0,
         subsidyCalc: econ ? (econ.subsidyOneWay || 0) : 0,
-        subsidyOneWay: (typeof SharedOverrides !== 'undefined' && SharedOverrides.hasSubsidy(flightCode, date))
+        subsidyOneWay: manualSub
             ? (SharedOverrides.getSubsidy(flightCode, date) || 0)
             : (econ ? (econ.subsidyOneWay || 0) : 0),
-        subsidyOverridden: !!(typeof SharedOverrides !== 'undefined' && SharedOverrides.hasSubsidy(flightCode, date)),
-        subsidized: (typeof SharedOverrides !== 'undefined' && SharedOverrides.hasSubsidy(flightCode, date))
+        subsidyOverridden: manualSub,
+        subsidized: segShare ? false : (manualSub
             ? ((SharedOverrides.getSubsidy(flightCode, date) || 0) !== 0)
-            : !!(econ && econ.subsidized),
+            : !!(econ && econ.subsidized)),
+        segShare,
         rowCls,
         flightBase: flightCode,
         date

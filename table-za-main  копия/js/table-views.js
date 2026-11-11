@@ -834,7 +834,9 @@ function actuallyRenderPairTable(selectedBase, targetDate = null) {
             if (showAvg) extras.push({ val: m.avg, cls: '' });
             if (showLast) extras.push({ val: m.last, cls: '' });
             if (showRev) extras.push({ val: m.revenue, cls: '' });
-            if (showLegSub) {
+            if (showLegSub && m.segShare) {
+                extras.push({ val: '—', cls: ' pair-subsidy-cell' });
+            } else if (showLegSub) {
                 const canEdit = typeof ProfileAuth !== 'undefined' && ProfileAuth.hasPermission('edit_subsidy');
                 const shown = m.subsidyOneWay ? formatRub(m.subsidyOneWay) : '—';
                 extras.push({
