@@ -67,9 +67,18 @@ function parseSegmentField(seg) {
 }
 
 function getRouteFromRow(row) {
+    if (row.segRoute) return row.segRoute;   // участок доп. посадки, ушедший в другой рейс (segment-split.js)
     const route = String(row[3] || '').trim();
     if (route) return route.toUpperCase();
     return parseSegmentField(row[2]).route;
+}
+
+// Что показать в столбце «Маршрут»: у рейса с посадками — сам участок («TGP-THX»), а не весь маршрут.
+function getRouteLabel(row) {
+    const route = getRouteFromRow(row);
+    if (route.split('-').length < 3) return route;
+    const seg = parseSegmentField(row[2]).route;
+    return /^[A-Z]{3}-[A-Z]{3}$/.test(seg) ? seg : route;
 }
 
 function getFlightRowKey(row) {
@@ -82,7 +91,7 @@ function getFlightRowKey(row) {
 }
 
 function getSalesLookupKey(row) {
-    return `${row[1]}|${cleanFlight(row[0])}`;
+    return `${row[1]}|${cleanFlight(row[0])}${row.segKey ? '~' + row.segKey : ''}`;
 }
 
 function resolveSalesKey(row) {

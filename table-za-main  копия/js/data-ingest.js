@@ -600,7 +600,9 @@ function loadSalesFile(fh) {
                 basicFareStr: row[13] || '',
                 birthDate: birth || row[16] || '',
                 flyDate: fly,
-                bsonum: row[2] || ''
+                bsonum: row[2] || '',
+                city1: row[10] || '',
+                city2: row[11] || ''
             });
             if (typeof PerfCache !== 'undefined') {
                 PerfCache.recordSaleStat(k, deal, adj, nf, row[13] || '', dates.today, dates.yesterday);
@@ -677,6 +679,7 @@ function processData() {
         if (!next[b]) next[b] = [];
         next[b].push(r);
     }
+    if (typeof SegmentSplit !== 'undefined') SegmentSplit.splitRows(next);
     if (currentFlight && !isValidFlightBase(currentFlight)) currentFlight = null;
     tableHtmlCache = { sig: '', html: '' };
     if (!window.ingestQuiet) {

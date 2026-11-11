@@ -154,7 +154,9 @@ window.Security = (function () {
                 flyDate: s.flyDate,
                 grp: s.grp,
                 grpId: s.grpId,
-                moved: s.moved
+                moved: s.moved,
+                city1: s.city1,
+                city2: s.city2
             }));
         });
         return out;

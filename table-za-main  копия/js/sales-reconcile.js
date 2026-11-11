@@ -20,6 +20,7 @@ window.SalesReconcile = (function () {
         let maxTs = -Infinity;
         Object.keys(typeof groupedData !== 'undefined' && groupedData ? groupedData : {}).forEach(base => {
             (groupedData[base] || []).forEach(row => {
+                if (row.segKey) return;   // участок доп. посадки в чужом рейсе — свои билеты по «откуда / куда»
                 const code = cleanFlight(row[0]);
                 const date = row[1];
                 if (!code || !date) return;
@@ -142,7 +143,8 @@ window.SalesReconcile = (function () {
     // Пересобрать salesDetails. Возвращает > 0, если что-то поменялось (переносы или их отмена).
     function run(details) {
         if (!details) return 0;
-        const restored = restore(details);
+        const restored = restore(details)
+            + (typeof SegmentSplit !== 'undefined' ? SegmentSplit.unsplitSales(details) : 0);
         if (typeof groupedData === 'undefined' || !Object.keys(groupedData || {}).length) {
             lastRun = { moved: 0, at: Date.now() };
             return restored;
@@ -256,6 +258,8 @@ window.SalesReconcile = (function () {
             store(k, units);
         });
 
+        // Билеты участков доп. посадки — к рейсу, куда ушёл участок (segment-split.js).
+        if (typeof SegmentSplit !== 'undefined') moved += SegmentSplit.splitSales(details);
         lastRun = { moved, at: Date.now() };
         return moved + restored;
     }

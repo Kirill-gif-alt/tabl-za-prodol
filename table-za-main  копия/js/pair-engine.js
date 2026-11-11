@@ -136,7 +136,7 @@ function buildPairRowDateCell(date, outRow, inRow, outbound, inbound) {
 function buildPairSegmentCell(outRow, inRow, routeCounts) {
     const pick = [outRow, inRow].find(r => r && shouldShowRouteForRow(r, routeCounts));
     if (!pick) return '';
-    const route = getRouteFromRow(pick);
+    const route = getRouteLabel(pick);
     return `<span class="segment-cell"><span class="segment-route">${escHtml(formatRouteDisplay(route))}</span></span>`;
 }
 

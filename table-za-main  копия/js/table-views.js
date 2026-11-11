@@ -558,7 +558,7 @@ function actuallyRenderTable(base,targetDate=null){
         const checkFlag = typeof FlightChecks !== 'undefined' ? FlightChecks.flagForRow(row) : '';
         const modeMark = typeof FlightChecks !== 'undefined' && FlightChecks.modeBadge ? FlightChecks.modeBadge(orig, date, row) : '';
         const dateCell=(extra?`${escHtml(date)} <span class="font-semibold">${escHtml(orig)}</span> <span class="extra-badge ml-1">(ДОП)</span>`:escHtml(date))+modeMark+checkFlag;
-        const segmentCell=hasSegments&&showRoute?`<span class="segment-cell"><span class="segment-route">${escHtml(formatRouteDisplay(route))}</span></span>`:'';
+        const segmentCell=hasSegments&&showRoute?`<span class="segment-cell"><span class="segment-route">${escHtml(formatRouteDisplay(getRouteLabel(row)))}</span></span>`:'';
         const ac=getAircraftType(row[4]);
         let expectedCells = '';
         if (showExpectedLoadColumn) {
@@ -1355,7 +1355,7 @@ function actuallyRenderPkzTable(base, targetDate = null) {
             ? (navVal - kzKg > 0 ? ' pkz-vacancy-pos' : (navVal - kzKg < 0 ? ' pkz-vacancy-neg' : ''))
             : '';
         const segmentCell = hasSegments && showRoute
-            ? `<span class="segment-cell"><span class="segment-route">${escHtml(formatRouteDisplay(route))}</span></span>` : '';
+            ? `<span class="segment-cell"><span class="segment-route">${escHtml(formatRouteDisplay(getRouteLabel(row)))}</span></span>` : '';
         const dateCell = extra
             ? `${escHtml(date)} <span class="font-semibold">${escHtml(orig)}</span> <span class="extra-badge ml-1">(ДОП)</span>`
             : escHtml(date);
