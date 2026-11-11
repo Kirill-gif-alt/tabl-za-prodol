@@ -2445,6 +2445,14 @@ table.pair-table button {
     color: #047857;
 }
 
+/* «Загрузка рейсов»: участок рейса с посадками рядом с датой */
+.data-seg-tag {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
 .pair-dop-tag {
     font-size: 0.62rem;
     font-weight: 700;

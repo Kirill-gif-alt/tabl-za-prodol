@@ -172,7 +172,8 @@ function renderDataLegCells(row, legCls, options = {}) {
     const block = isOut ? 'data-block-out' : 'data-block-in';
     const showBook = !!dataShowSpecBookings;
     const showTimes = !!dataShowLocalTimes;
-    const emptyDash = (extra = '') => `<td class="${legCls} ${block} font-semibold${extra}">—</td>`;
+    // Рейса в этот день нет (например, доп. без обратного) — половина строки серая, как у закрытого.
+    const emptyDash = (extra = '') => `<td class="${legCls} ${block} font-semibold data-leg-closed data-leg-none${extra}">—</td>`;
     const emptyBook = (showBook ? emptyDash() : '') + (dataShowDaySales ? emptyDash() : '');
     if (!row) {
         if (isOut) {
@@ -270,7 +271,11 @@ function renderDataRouteTableRows(pair, todayStart) {
         const avgHtml = bothClosed
             ? '<span class="closed-text">ЗАКРЫТ</span>'
             : (avgPctOpen !== null ? `${avgPctOpen}%` : '—');
-        const dateCell = buildPairRowDateCell(entry.date, entry.outRow, entry.inRow, pair.outbound, pair.inbound);
+        // У рейса с посадками в один день несколько строк — подписываем участок («TGP → THX»).
+        const segOf = (r) => (r && String(r[3] || '').split('-').length >= 3 ? getRouteLabel(r) : '');
+        const segTag = segOf(entry.outRow) || segOf(entry.inRow);
+        const dateCell = buildPairRowDateCell(entry.date, entry.outRow, entry.inRow, pair.outbound, pair.inbound)
+            + (segTag ? ` <span class="data-seg-tag">${escHtml(formatRouteDisplay(segTag))}</span>` : '');
         const clickDate = (!flewOut && entry.outRow)
             ? entry.outRow[1]
             : ((!flewIn && entry.inRow) ? entry.inRow[1] : entry.date);

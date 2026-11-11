@@ -85,6 +85,11 @@ function getFlightRowKey(row) {
     const date = row[1];
     const fl = cleanFlight(row[0]);
     const route = getRouteFromRow(row);
+    // У рейса с посадками маршрут у всех участков один («KCY-TGP-THX») — различаем их по участку («1-2»).
+    if (date && fl && route && route.split('-').length >= 3) {
+        const seg = parseSegmentField(row[2]);
+        return `${date}|${fl}|${route}|${seg.legs || seg.route}`;
+    }
     if (date && fl && route) return `${date}|${fl}|${route}`;
     if (date && fl) return `${date}|${fl}`;
     return '';
