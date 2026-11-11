@@ -5,6 +5,9 @@ window.ThemeSettings = (function () {
     let formBuilt = false;
     let pendingTabOrder = null;
     let pendingTabNames = null;
+    // Цвета таблиц, выбранные пользователем вручную (не пресетом).
+    const TABLE_COLOR_KEYS = ['dataOut', 'dataIn', 'dataCardHead', 'pairOutBg', 'pairInBg'];
+    let manualKeys = new Set();
 
     // Меню настроек — по смыслу: оформление, работа, безопасность. Цвета отдельных вкладок — один пункт с выбором вкладки.
     const NAV = [
@@ -260,14 +263,12 @@ window.ThemeSettings = (function () {
             const val = t[f.key] || DEFAULTS[f.key];
             if (val) root.style.setProperty(f.css, val);
         });
-        // Пять цветов таблиц красят, только если пользователь сменил цвет (иначе вид прежний).
+        // Пять цветов таблиц красят, только если пользователь сам выставил их вручную (t.manual); пресет и значения по умолчанию их не включают.
+        const manual = Array.isArray(t.manual) ? t.manual : [];
         [
             ['dataOut', 'th-data-out'], ['dataIn', 'th-data-in'], ['dataCardHead', 'th-data-head'],
             ['pairOutBg', 'th-pair-out'], ['pairInBg', 'th-pair-in']
-        ].forEach(([key, cls]) => {
-            const v = String(t[key] || DEFAULTS[key] || '').toLowerCase();
-            root.classList.toggle(cls, !!v && v !== String(DEFAULTS[key] || '').toLowerCase());
-        });
+        ].forEach(([key, cls]) => { root.classList.toggle(cls, manual.includes(key)); });
         const headHex = t.dataCardHead || DEFAULTS.dataCardHead;
         if (headHex) root.style.setProperty('--data-card-head-text', hexLuminance(headHex) < 0.45 ? '#ffffff' : '#1c2833');
         Object.entries(MAIN_BORDER_MAP).forEach(([bgKey, cssVar]) => {
@@ -315,6 +316,7 @@ window.ThemeSettings = (function () {
     function reset() {
         try { localStorage.removeItem(getStorageKey()); } catch { /* ignore */ }
         // Порядок и названия вкладок не трогаем: сбрасываются только цвета.
+        manualKeys = new Set();
         apply(DEFAULTS, true);
         return { ...DEFAULTS };
     }
@@ -579,6 +581,7 @@ window.ThemeSettings = (function () {
         container.querySelectorAll('.theme-color-input').forEach(inp => {
             theme[inp.dataset.key] = inp.value;
         });
+        theme.manual = TABLE_COLOR_KEYS.filter(k => manualKeys.has(k));
         return theme;
     }
 
@@ -591,7 +594,8 @@ window.ThemeSettings = (function () {
             if (presetBtn) {
                 const preset = PRESETS[presetBtn.dataset.preset];
                 if (!preset) return;
-                const merged = { ...load(), ...preset };
+                TABLE_COLOR_KEYS.forEach(k => manualKeys.delete(k));
+                const merged = { ...load(), ...preset, manual: [] };
                 updateInputsFromTheme(container, merged);
                 apply(merged, false);
                 return;
@@ -652,6 +656,7 @@ window.ThemeSettings = (function () {
 
         container.addEventListener('input', (e) => {
             if (e.target.classList.contains('theme-color-input')) {
+                if (TABLE_COLOR_KEYS.includes(e.target.dataset.key)) manualKeys.add(e.target.dataset.key);
                 schedulePreview(container);
             }
         });
@@ -852,6 +857,7 @@ window.ThemeSettings = (function () {
         buildFormOnce(body);
         // Форма строится один раз — цвета в ней заполняем заново: после смены профиля там были бы чужие.
         updateInputsFromTheme(body, load());
+        manualKeys = new Set(load().manual || []);
         syncAdminSettings(body);
         if (body.querySelector('.theme-section-panel[data-section="excel"].active')) renderExcelFolders(body);
         modal.classList.add('open');

@@ -898,7 +898,15 @@ window.TodayView = (function () {
     // Фоновый расчёт сигналов без отрисовки (для снимка дня в signals-days.json): если «Сегодня» открыта, считает она сама.
     function backgroundSignals() {
         if (document.getElementById('td-page') || !hasData()) return Promise.resolve();
-        return buildAdvice().then(() => { announceSignals(); });
+        // Данные для советов (архив, параметры) подгружаются в фоне и меняют подпись — ждём, пока расчёт устоится.
+        return (async () => {
+            for (let i = 0; i < 5; i++) {
+                await buildAdvice();
+                if (adviceReady() || document.getElementById('td-page')) break;
+                await new Promise(r => setTimeout(r, 4000));
+            }
+            if (!document.getElementById('td-page')) announceSignals();
+        })();
     }
 
     return { create, refresh, aheadDays, backgroundSignals };
