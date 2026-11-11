@@ -102,10 +102,11 @@ window.DecisionsReport = (function () {
     }
 
     // Состояние денежной оценки одного решения для экрана и Excel.
-    function moneyState(r) {
+    // mm / loading — готовый итог и признак расчёта из другого источника (карточка рейса); без них — из отчёта.
+    function moneyState(r, mm, loading) {
         if (r.overlap) return { cls: 'none', text: 'перекрыто', short: 'перекрыто', reason: OVERLAP, m: null };
-        const m = moneyOf(r);
-        if (!m) return { cls: 'wait', text: money.loading ? 'считаем…' : '—', short: '', m: null };
+        const m = mm !== undefined ? mm : moneyOf(r);
+        if (!m) return { cls: 'wait', text: (loading !== undefined ? loading : money.loading) ? 'считаем…' : '—', short: '', m: null };
         if (m.stage === 'na') return { cls: 'none', text: 'мало данных', short: 'мало данных', reason: m.reason, m };
         if (m.stage === 'wait') return { cls: 'wait', text: 'ждём итога', short: 'ждём итога', reason: m.reason, m };
         if (m.stage === 'prelim') return { cls: 'wait', text: 'ждём итога, пока ' + rub(m.delta), short: 'ждём итога', reason: m.reason, m };
@@ -151,6 +152,69 @@ window.DecisionsReport = (function () {
         // Итог по всем оценённым С поправкой на шум и сдвиг — та же цифра, что «Общий итог» вверху и плитка на «Сегодня».
         t.sumAdj = t.sumAll + t.corrSum;
         return t;
+    }
+
+    // ---------- для карточки рейса: последние решения по рейсу (любая дата вылета) ----------
+    // Итоги — те же, что в отчёте: зафиксированные из общего файла или уже посчитанные отчётом; недостающие (не больше n штук) считает
+    // тот же DecisionMoney.resolveAll. Отметки раскладываются по рейсам один раз на изменение отметок.
+    let baseIdx = { rev: null, map: null };
+    function baseIndex() {
+        const rev = SalesManagement.markRevision ? SalesManagement.markRevision() : '';
+        if (baseIdx.map && baseIdx.rev === rev) return baseIdx.map;
+        const map = new Map();
+        const seen = new Map();
+        SalesManagement.allMarks().forEach(m => {
+            if (m.status !== 'down' && m.status !== 'up') return;
+            const dk = [m.flight, m.dep, m.check, m.status].join('|');
+            if (seen.has(dk)) {
+                const r0 = seen.get(dk);
+                if (String(m.updatedAt || '') > String(r0.at || '')) r0.at = m.updatedAt;
+                if (m.author && !r0.authors.includes(m.author)) { r0.authors.push(m.author); r0.authors.sort((a, b) => a.localeCompare(b, 'ru')); r0.author = r0.authors.join(' / '); }
+                return;
+            }
+            const base = typeof getBaseFlight === 'function' ? getBaseFlight(m.flight) : m.flight;
+            const r = { code: m.flight, base, dep: m.dep, check: m.check, status: m.status, author: m.author || '', authors: m.author ? [m.author] : [], at: m.updatedAt || '', clsFrom: m.clsFrom || '', clsTo: m.clsTo || '' };
+            seen.set(dk, r);
+            if (!map.has(base)) map.set(base, []);
+            map.get(base).push(r);
+        });
+        map.forEach(list => {
+            if (PriceMarks.markOverlaps) PriceMarks.markOverlaps(list);
+            list.sort((a, b) => (parseLocalDate(b.check) - parseLocalDate(a.check)) || String(b.dep).localeCompare(String(a.dep)));
+        });
+        baseIdx = { rev, map };
+        return map;
+    }
+
+    let cardMoney = { sig: '', ver: '', map: new Map(), loading: false };
+    function recentForBase(base, n, rerender) {
+        if (!available() || !moneyAvailable()) return null;
+        const list = (baseIndex().get(base) || []).slice(0, n || 3);
+        if (!list.length) return { items: [], loading: false };
+        const rev = DecisionMoney.revision();
+        const ver = (typeof dataEpoch === 'number' ? dataEpoch : 0) + '|' + (SalesManagement.markRevision ? SalesManagement.markRevision() : '') + '|' + (typeof getTodayDate === 'function' ? getTodayDate() : '');
+        if (cardMoney.ver !== ver && !cardMoney.loading) cardMoney = { sig: '', ver, map: new Map(), loading: false };   // данные или отметки сменились — прежние итоги не годятся
+        const sg = list.map(r => DecisionMoney.keyOf(r)).join(';') + '|' + (typeof dataEpoch === 'number' ? dataEpoch : 0) + '|' + rev;
+        const lookup = (r) => {
+            const k = DecisionMoney.keyOf(r);
+            if (cardMoney.map.has(k)) return cardMoney.map.get(k);
+            if (money.map && money.map.has(k)) return money.map.get(k);
+            return null;
+        };
+        const pendingList = list.filter(r => !r.overlap && !lookup(r));
+        if (pendingList.length && cardMoney.sig !== sg && !cardMoney.loading) {
+            cardMoney.loading = true;
+            DecisionMoney.resolveAll(pendingList)
+                .then(map => { map.forEach((v, k) => cardMoney.map.set(k, v)); })
+                .catch(err => { console.warn('DecisionsReport card', err); pendingList.forEach(r => cardMoney.map.set(DecisionMoney.keyOf(r), { stage: 'na', reason: 'ошибка расчёта' })); })
+                .then(() => { cardMoney.loading = false; cardMoney.sig = sg; if (typeof rerender === 'function') rerender(); });
+        }
+        const loading = cardMoney.loading;
+        const items = list.map(r => {
+            const st = moneyState(r, lookup(r), loading);
+            return { code: r.code, dep: r.dep, check: r.check, status: r.status, author: r.author, cls: st.cls, text: st.text, delta: st.m && (st.m.stage === 'final' || st.m.stage === 'prelim') ? st.m.delta : null, overlap: !!r.overlap };
+        });
+        return { items, loading };
     }
 
     // Строки журнала (решения «снижение/повышение» за период), с итогом.
@@ -264,7 +328,7 @@ window.DecisionsReport = (function () {
             </tr>`).join('');
         return `<div class="dr-sum">
             <div class="dr-sum-title">${esc(title)}</div>
-            <table class="rp-table dr-sum-table"><thead><tr><th>${esc(keyLabel)}</th><th>Решений</th><th title="Решения с твёрдым итогом «помогло / навредило» (диапазон не включает ноль и эффект выше порога)">Определено</th><th title="Сверху — сумма только по твёрдым итогам, снизу — по всем оценённым решениям с поправкой на шум и сдвиг (как «Общий итог» вверху)">Эффект</th><th title="Помогло или навредило, но данных мало (доверие низкое): в первую сумму не входят">Ориент.</th><th title="Вывода нет или решение не считается: в сумму не входит">Мало данных</th><th title="Срок после решения ещё не прошёл">Ждём итога</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+            <table class="rp-table dr-sum-table"><thead><tr><th>${esc(keyLabel)}</th><th>Решений</th><th title="Решения с твёрдым итогом «помогло / навредило» (диапазон не включает ноль и эффект выше порога)">Определено</th><th title="Сверху — сумма только по твёрдым итогам, снизу — по всем оценённым решениям с поправкой на шум и сдвиг (как «Общий итог» вверху)">Эффект</th><th title="Помогло или навредило, но данных мало (доверие низкое): в первую сумму не входят">Примерно</th><th title="Вывода нет или решение не считается: в сумму не входит">Мало данных</th><th title="Срок после решения ещё не прошёл">Ждём итога</th></tr></thead><tbody>${rowsHtml}</tbody></table>
             ${groups.length > 10 ? `<div class="rp-muted">и ещё ${groups.length - 10} — полный список в Excel</div>` : ''}
         </div>`;
     }
@@ -588,5 +652,5 @@ window.DecisionsReport = (function () {
         return handled;
     }
 
-    return { canView, html, handleClick, view: () => view, setPeriod: (n) => { if (PERIODS.includes(n)) { period = n; if (typeof DecisionsTickets !== 'undefined') DecisionsTickets.setPeriod(n); } }, setView: (v) => { if (v === 'money' || v === 'tickets') view = v; }, exportData: () => (view === 'money' ? moneyExport() : DecisionsTickets.exportData()), summarize };
+    return { canView, recentForBase, html, handleClick, view: () => view, setPeriod: (n) => { if (PERIODS.includes(n)) { period = n; if (typeof DecisionsTickets !== 'undefined') DecisionsTickets.setPeriod(n); } }, setView: (v) => { if (v === 'money' || v === 'tickets') view = v; }, exportData: () => (view === 'money' ? moneyExport() : DecisionsTickets.exportData()), summarize };
 })();

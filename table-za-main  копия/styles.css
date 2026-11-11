@@ -386,14 +386,14 @@ body, .app-body {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 2px;
-    padding: 6px 10px 8px;
+    gap: 1px;
+    padding: 6px 8px 8px;
     overflow: visible;
     border-top: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .tab-btn {
-    padding: 7px 12px;
+    padding: 7px 8px;
     border: none;
     border-radius: 8px;
     background: transparent;
@@ -411,7 +411,7 @@ body, .app-body {
 .tab-btn.tab-active {
     background: rgba(255, 255, 255, 0.94);
     color: var(--nav-bg, var(--primary));
-    font-weight: 600;
+    font-weight: 500;
     box-shadow: none;
 }
 
@@ -6214,6 +6214,7 @@ span.rp-chip {
 .fc-nav-btn:disabled { opacity: 0.35; cursor: default; }
 .fc-issues { margin-bottom: 8px; padding: 6px 8px; border-radius: 8px; background: #fef2f2; color: #991b1b; font-size: 0.78rem; }
 .fc-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-bottom: 8px; }
+.fc-tiles.fc-tiles-four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .fc-tile { padding: 7px 8px; border-radius: 10px; background: var(--muted-bg, #f1f5f9); }
 .fc-tile-label { font-size: 0.66rem; color: var(--text-muted, #64748b); text-transform: uppercase; letter-spacing: 0.03em; }
 .fc-tile-value { font-size: 1.05rem; font-weight: 800; }
@@ -6226,6 +6227,16 @@ span.rp-chip {
 .fc-comment { font-size: 0.8rem; padding: 8px; border-radius: 8px; background: #fffbeb; margin: 8px 0; }
 .fc-links { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 0.78rem; color: var(--text-muted, #64748b); margin-top: 10px; }
 .fc-empty { color: var(--text-muted, #64748b); }
+/* Карточка рейса: «Прошлые решения» */
+.fc-past { margin: 10px 0 4px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border, #e2e8f0); background: var(--surface, #fff); font-size: 0.78rem; }
+.fc-past-title { font-weight: 700; font-size: 0.82rem; margin-bottom: 4px; }
+.fc-past-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+.fc-past-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.fc-past-dep { font-weight: 700; font-variant-numeric: tabular-nums; }
+.fc-past-who { color: var(--text-muted, #64748b); }
+.fc-past-res { margin-left: auto; text-align: right; }
+.fc-past-all { margin-top: 6px; padding: 0; border: 0; background: none; color: var(--primary, #012a4a); font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
+
 .flight-card-toggle {
     position: relative;
     display: inline-flex;
@@ -7727,10 +7738,10 @@ table.cr-table thead tr.cr-totals th { background: var(--cr-totals-bg, #e2e8f0);
     pointer-events: none;
 }
 .table-flight-search.fs-input {
-    width: 230px;
+    width: 280px;
     height: 36px;
     box-sizing: border-box;
-    padding: 0 62px 0 32px;
+    padding: 0 128px 0 32px;
     border: 1px solid var(--border, #cbd5e1);
     border-radius: 10px;
     background: var(--surface);
@@ -7749,6 +7760,7 @@ table.cr-table thead tr.cr-totals th { background: var(--cr-totals-bg, #e2e8f0);
     position: absolute;
     right: 8px;
     pointer-events: none;
+    white-space: nowrap;
 }
 .fs-input:focus + .fs-field-kbd { opacity: 0; }
 .fs-field kbd, .fs-foot kbd, .fs-pal kbd {

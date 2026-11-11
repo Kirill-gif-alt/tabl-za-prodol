@@ -282,12 +282,20 @@ window.TodayView = (function () {
 
     // ---------- шапка: строка-вывод и цифры ----------
 
+    function isClosedDep(d) {
+        return typeof closedFlights !== 'undefined' && typeof getSalesLookupKey === 'function' && closedFlights.has(getSalesLookupKey(d.row));
+    }
+
     function kpis() {
         let sold = 0;
         let seats = 0;
         let n = 0;
         for (let i = 0; i < 7; i++) {
-            departuresOn(shift(today(), i)).forEach(d => { sold += d.sold; seats += d.seats; n++; });
+            // Закрытые рейсы не считаем — как в «Занято в среднем» на RMS (там их в списке нет).
+            departuresOn(shift(today(), i)).forEach(d => {
+                if (isClosedDep(d)) return;
+                sold += d.sold; seats += d.seats; n++;
+            });
         }
         const k = typeof getGlobalKPIs === 'function' ? getGlobalKPIs() : {};
         // Файл продаж не загружен — «0 продано» было бы неправдой (в шапке и в RMS там «—»).
@@ -486,7 +494,7 @@ window.TodayView = (function () {
         if (tab === 'advice') {
             const shown = filter === 'all' ? pend : pend.filter(a => a.status === filter);
             const list = sortedAdvice(shown, sortBy());
-            head = headHead + '<th class="td-th-r" title="Сколько денег под вылетом. ▼ и ●: пустые места по прогнозу × средний тариф. ▲: места, ещё доступные в продаже × последний тариф. Без прогноза или тарифа — «—»">Деньги, ₽</th><th>Что сделать</th><th></th>';
+            head = headHead + '<th class="td-th-r" title="Сколько денег под вылетом. ▼ и ●: пустые места по прогнозу × средний тариф. ▲: места, ещё доступные в продаже × последний тариф. Без прогноза или тарифа — «—»">Под вылетом, ₽</th><th>Что сделать</th><th></th>';
             if (list.length > 200) more = `<p class="td-empty">Показаны первые 200 из ${list.length}.</p>`;
             rows = list.slice(0, 200).map(a => rowHtml({ code: a.code, date: a.date, adv: a, money: a.money || null, showMoney: true })).join('');
             empty = !canTab('sales') ? 'Нет доступа к «Управлению продажами».' : !hintsOn() ? 'Подсказки на этой странице выключены в «Параметрах расчётов».' : !adviceReady() ? 'Считаю подсказки по вылетам…'

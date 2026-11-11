@@ -142,6 +142,15 @@ function rmsReasonShort(reason) {
     return String(reason).replace(/, вылет через \d+ дн\./, '');
 }
 
+// Рейс с несколькими участками в один день: участок словами. Если он начинается и кончается теми же городами, что направление, направление не повторяем.
+function rmsRouteNameHtml(flightDir, route) {
+    const cities = formatRouteCities(route);
+    const ends = cities.split(' → ');
+    const dir = String(flightDir || '');
+    const same = ends.length >= 2 && dir.indexOf(ends[0]) !== -1 && dir.indexOf(ends[ends.length - 1]) !== -1;
+    return same ? `<span class="rms-flight-route">${escHtml(cities)}</span>` : `${escHtml(dir)}<span class="rms-flight-route"> · ${escHtml(cities)}</span>`;
+}
+
 function rmsRowHtml(f, ctx) {
     const showRoute = f.route && shouldShowRmsRoute(f, ctx.routeCounts);
     const fd = parseLocalDate(f.date);
@@ -167,7 +176,7 @@ function rmsRowHtml(f, ctx) {
             <tr class="rms-row ${zebra} ${alertCls}" data-rms-base="${escAttr(f.base)}" data-rms-date="${escAttr(f.date)}" data-rms-orig="${escAttr(flightCode)}" data-rms-key="${escAttr(flightCode + '|' + f.date)}" data-pm-row="1" tabindex="0">
                 <td class="rms-col-flight">
                     <div class="rms-flight-code">${escHtml(flightCode)}${routeTypeLabel ? `<span class="rms-route-badge ${routeTypeCls}">${escHtml(routeTypeLabel)}</span>` : ''}${grp ? `<span class="grp-badge" title="В группах ${grp} чел. (заказы от ${FlightInsights.GROUP_MIN} билетов)">Г ${grp}</span>` : ''}</div>
-                    <div class="rms-flight-name">${escHtml(flightDir)}${showRoute ? `<span class="rms-flight-route"> · ${escHtml(formatRouteDisplay(f.route))}</span>` : ''}</div>
+                    <div class="rms-flight-name${showRoute ? ' rms-flight-name-wrap' : ''}">${showRoute ? rmsRouteNameHtml(flightDir, f.route) : escHtml(flightDir)}</div>
                 </td>
                 <td class="rms-col-date col-date">
                     <div class="rms-date font-semibold">${escHtml(f.date)}${typeof FlightChecks !== 'undefined' && FlightChecks.modeBadge ? FlightChecks.modeBadge(flightCode, f.date) : ''}</div>
@@ -322,7 +331,7 @@ function renderRmsWatchlist() {
         stats.innerHTML = `
             <span class="rms-hero-badge" title="${escAttr(`Вылеты на ${rmsDays} ${pluralRu(rmsDays, 'день', 'дня', 'дней')} вперёд, считая сегодня. Закрытые и улетевшие не входят. Учтены фильтры и условия.`)}">Открытых: <strong>${flights.length}</strong></span>
             ${markOn ? `<span class="rms-hero-badge" title="Рейсов в списке с отметкой «Управления продажами» за сегодня">Проверено сегодня: <strong>${checkedToday}/${flights.length}</strong></span>` : ''}
-            <span class="rms-hero-badge rms-hero-badge-warn" title="Рейсы из групп «Срочно» и «Присмотреться» в этом списке. Число ⚠ в шапке сайта считается за 30 дней и без фильтров.">Предупр.: <strong>${alertCnt}</strong></span>
+            <span class="rms-hero-badge rms-hero-badge-warn" title="Рейсы из групп «Срочно» и «Присмотреться» в этом списке. Число «Внимание» в шапке сайта считается за 30 дней и без фильтров.">Внимание: <strong>${alertCnt}</strong></span>
             <span class="rms-hero-badge" title="Все билеты, проданные сегодня, по всей сети: фильтры таблицы не учитываются">Продано сегодня: <strong>${!salesReady ? '—' : (stale ? `нет свежих данных (от ${stale.label})` : kpi.todaySales)}</strong></span>
             <span class="rms-hero-badge" title="Проданные места ÷ места в продаже по всем рейсам списка">Занято в среднем: <strong>${avgLoad === null ? '—' : avgLoad + '%'}</strong></span>
         `;

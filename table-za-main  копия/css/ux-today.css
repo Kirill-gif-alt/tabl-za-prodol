@@ -265,7 +265,7 @@ html[data-theme="dark"] .td-day.td-day-hi .td-bar { background: rgb(255 255 255 
 .td-table td.td-money { font-variant-numeric: tabular-nums; }
 .td-table th { padding-top: 8px; padding-bottom: 8px; }
 .td-table td { padding: 6px 10px; }
-.td-code strong { font-size: 1.02rem; font-weight: 800; }
+.td-code strong { font-size: 1.02rem; font-weight: 800; white-space: nowrap; }
 .td-table .td-muted { font-size: 0.76rem; }
 .td-sold { display: flex; flex-direction: column; gap: 3px; }
 .td-sold-n { white-space: nowrap; }

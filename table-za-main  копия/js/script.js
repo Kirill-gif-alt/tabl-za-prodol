@@ -231,7 +231,7 @@ function renderHeaderKpi() {
         safe(() => {
             const al = document.createElement('span');
             al.className = 'header-kpi-alert';
-            al.textContent = '⚠ ' + alerts;
+            al.textContent = 'Внимание: ' + alerts;
             al.title = `Сигналы RMS по вылетам на 30 дней: ${alerts}.${canRms ? ' Нажмите, чтобы открыть.' : ''}`;
             if (canRms) al.addEventListener('click', () => switchMainTab('rms'));
             return al;

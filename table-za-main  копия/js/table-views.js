@@ -146,7 +146,7 @@ function buildTableFilterPanel(base, foundCount, totalCount, hasExpectedLoad = t
                 <select id="table-sort-select" class="table-sort-select" aria-label="Сортировка">
                     <option value="date-asc" ${tableSort.by==='date' && tableSort.dir==='asc' ? 'selected' : ''}>Дата ↑</option>
                     <option value="date-desc" ${tableSort.by==='date' && tableSort.dir==='desc' ? 'selected' : ''}>Дата ↓</option>
-                    <option value="load-desc" ${tableSort.by==='load' && tableSort.dir==='desc' ? 'selected' : ''}>ЗПК % ↓</option>
+                    <option value="load-desc" ${tableSort.by==='load' && tableSort.dir==='desc' ? 'selected' : ''}>Занято, % ↓</option>
                     ${hasExpectedLoad ? `<option value="delta-asc" ${tableSort.by==='delta' && tableSort.dir==='asc' ? 'selected' : ''}>Δ прогноз ↑ (худшие)</option>` : ''}
                     <option value="sales-desc" ${tableSort.by==='sales' && tableSort.dir==='desc' ? 'selected' : ''}>Продажи сегодня ↓</option>
                     <option value="avgfare-desc" ${tableSort.by==='avgfare' && tableSort.dir==='desc' ? 'selected' : ''}>Средний тариф ↓</option>
@@ -157,7 +157,7 @@ function buildTableFilterPanel(base, foundCount, totalCount, hasExpectedLoad = t
                 <label class="fs-field" title="Номер рейса (101, доп. 301) или город. Ctrl+K — поиск с любой вкладки">
                     <svg class="fs-field-icon" width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="8.5" cy="8.5" r="6"/><path d="M13 13l5 5"/></svg>
                     <input type="text" id="table-flight-search" class="table-flight-search fs-input" placeholder="Рейс или город" aria-label="Поиск рейса по номеру или городу">
-                    <kbd class="fs-field-kbd">Ctrl K</kbd>
+                    <kbd class="fs-field-kbd">Ctrl+K — найти рейс</kbd>
                 </label>
                 <button type="button" class="btn-secondary table-return-flight-btn" id="table-return-flight-btn">⇄ ${escHtml(returnLabel)}</button>
             </div>` : ''}
@@ -520,7 +520,7 @@ function actuallyRenderTable(base,targetDate=null){
         <th class="col-sales-cum"><span class="th-sales-ico th-sales-cum" aria-hidden="true">Σ</span> 7 дн. (с сегодня)</th>
         <th class="col-sales-cum"><span class="th-sales-ico th-sales-cum" aria-hidden="true">Σ</span> 14 дн. файла</th>
         <th class="col-sales-cum"><span class="th-sales-ico th-sales-cum" aria-hidden="true">Σ</span> 30 дн.</th>
-        <th>ЗПК %</th>
+        <th>Занято, %</th>
         <th class="col-comment">Комментарий</th>
     </tr>${buildTableSalesSumRowHtml(legacyBefore, sums, 2, false)}</thead>`;
     cont._xlHead = legacyHead;
@@ -1042,7 +1042,7 @@ function createTableView(c){
                     <div id="sales-chart-result" class="table-sales-panel-body"></div>
                 </div>
             </div>
-            <p class="dyn-legend"><span class="mode-badge mode-com">К</span> коммерция (субсидии на эту дату нет) · <span class="mode-badge mode-sub">С</span> субсидия · <b>ДОП</b> — дополнительный рейс · «!» в столбце «Комментарий» — к вылету есть комментарий. Двойной щелчок по строке открывает карточку вылета.</p>
+            <p class="dyn-legend"><span class="mode-badge mode-com">К</span> коммерция · <span class="mode-badge mode-sub">С</span> субсидия · <b>ДОП</b> — дополнительный рейс · «!» — есть комментарий<span class="dyn-legend-card"> · двойной щелчок по строке открывает карточку вылета</span></p>
         </div>
     `;
     bindTableRowDelegation(document.getElementById('table-container'));

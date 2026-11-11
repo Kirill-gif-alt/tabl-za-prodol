@@ -137,6 +137,17 @@ function formatRouteDisplay(route) {
     return r;
 }
 
+// Участок словами: «Красноярск → Подкаменная Тунгуска → Туруханск». Код, которого нет в справочнике, остаётся кодом.
+function formatRouteCities(route) {
+    const r = String(route || '').trim().toUpperCase();
+    if (!r) return '';
+    const geo = typeof GEO_AIRPORTS !== 'undefined' && GEO_AIRPORTS.lookupCode ? GEO_AIRPORTS : null;
+    return r.split('-').map(code => {
+        const hit = geo ? geo.lookupCode(code) : null;
+        return hit && hit.city ? hit.city : code;
+    }).join(' → ');
+}
+
 function countRowsByDateFlight(rows) {
     const counts = {};
     rows.forEach(r => {
@@ -364,9 +375,10 @@ function collectSalesByDealDateForFlightDate(baseFlight, flyDateStr, flightCode)
             d.count++;
             // totalFare и paid — для среднего тарифа (платные билеты, детский пересчитан), paidSum — выручка (по факту оплаты):
             // так же, как в таблицах (getSalesAggForKey / getRevenueForRow).
+            // Только оплаченные взрослые билеты, как в таблицах.
             const adj = sale.adjustedFare || sale.fare || 0;
-            d.totalFare += adj;
-            if (adj > 0) d.paid++;
+            const adult = typeof FareGrid !== 'undefined' && FareGrid.isAdultPaid ? FareGrid.isAdultPaid(sale) : adj > 0;
+            if (adult) { d.totalFare += adj; d.paid++; }
             d.paidSum += sale.fare || 0;
         });
     };

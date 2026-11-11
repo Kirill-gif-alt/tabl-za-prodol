@@ -965,12 +965,12 @@ window.ReportsView = (function () {
             <div class="rp-preview-grid">
                 <div>
                     <h4 class="rp-preview-title">Факт: ${esc(weekLabel(rep.weeks.past))}</h4>
-                    <table class="rp-table"><thead><tr><th>Категория</th><th>Рейсов</th><th>Кресла в продаже</th><th>Загрузка</th><th>ЗПК</th></tr></thead><tbody>${factRows}</tbody></table>
+                    <table class="rp-table"><thead><tr><th>Категория</th><th>Рейсов</th><th>Кресла в продаже</th><th>Загрузка</th><th>Занято, %</th></tr></thead><tbody>${factRows}</tbody></table>
                     ${empty.length ? `<p class="rp-note rp-warn">Нет рейсов в данных за: ${esc(empty.join(', '))}</p>` : ''}
                 </div>
                 <div>
                     <h4 class="rp-preview-title">План: ${esc(weekLabel(rep.weeks.next))}</h4>
-                    <table class="rp-table"><thead><tr><th>Категория</th><th>Рейсов</th><th>Кресла в продаже</th><th>План загрузки</th><th title="Только по рейсам, у которых есть прогноз в файле ожидаемой загрузки">План ЗПК (рейсы с прогнозом)</th><th>Без прогноза</th></tr></thead><tbody>${planRows}</tbody></table>
+                    <table class="rp-table"><thead><tr><th>Категория</th><th>Рейсов</th><th>Кресла в продаже</th><th>План загрузки</th><th title="Только по рейсам, у которых есть прогноз в файле ожидаемой загрузки">План занято, % (рейсы с прогнозом)</th><th>Без прогноза</th></tr></thead><tbody>${planRows}</tbody></table>
                     ${rep.hasExpected ? '' : '<p class="rp-note rp-warn">Файл прогноза загрузки не загружен — плана нет.</p>'}
                 </div>
             </div>`;

@@ -23,7 +23,7 @@ function initSelectionStatusBar() {
         bar.className = 'selection-status-bar';
         bar.setAttribute('aria-live', 'polite');
         bar.innerHTML = `
-            <span class="sel-stat"><span class="sel-stat-label">Кол-во</span><span class="sel-stat-val" data-sel="count">0</span></span>
+            <span class="sel-stat"><span class="sel-stat-label">Количество</span><span class="sel-stat-val" data-sel="count">0</span></span>
             <span class="sel-stat"><span class="sel-stat-label">Сумма</span><span class="sel-stat-val" data-sel="sum">0</span></span>
             <span class="sel-stat"><span class="sel-stat-label">Среднее</span><span class="sel-stat-val" data-sel="avg">0</span></span>
 `;
@@ -161,7 +161,8 @@ function initSelectionStatusBar() {
     const fmt = (n) => {
         const r = Math.round(n * 100) / 100;
         const s = Number.isInteger(r) ? String(r) : r.toFixed(2);
-        return s.replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0');
+        // Пробел между тысячами, запятая вместо точки (как везде на сайте).
+        return s.replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0').replace('.', ',');
     };
 
     const isDetailPanelOpen = () => {
@@ -363,6 +364,14 @@ function initSelectionStatusBar() {
 
         e.preventDefault();
         window.getSelection()?.removeAllRanges();
+        // Двойной щелчок раскрывает подробности строки (или выделяет слово): плашку суммы не показываем, первое выделение снимаем.
+        if (e.detail >= 2) {
+            clearTable(cell.table);
+            updateBar(null);
+            if (activeTable === cell.table) activeTable = null;
+            drag = null;
+            return;
+        }
         const additive = e.ctrlKey || e.metaKey;
 
         if (isRowSelectorCell(cell.td) && !e.shiftKey) {

@@ -187,18 +187,23 @@ window.PerfCache = (function () {
             };
         }
         st.count++;
-        if ((adj || 0) > 0) st.paidCount++;
-        st.fareSum += adj || 0;   // с пересчётом детского тарифа: только для сравнения тарифов
+        // Средний и последний тариф — только по оплаченным взрослым билетам (FareGrid.isAdultPaid): младенец с местом за 300 ₽,
+        // детский и льготный билеты тариф не сдвигают. Выручка (paidSum) идёт по всем оплаченным билетам.
+        const adult = typeof FareGrid !== 'undefined' && FareGrid.isAdultPaid
+            ? FareGrid.isAdultPaid({ basicFareStr, adjustedFare: adj, fare: nf })
+            : (adj || nf || 0) > 0;
+        const v = adj || nf || 0;
+        if (adult) { st.paidCount++; st.fareSum += v; }
         st.paidSum += nf || 0;    // фактически оплачено: это идёт в выручку
         if (dealDate === today) {
             salesTodayKpi.sales++;
             salesTodayKpi.revenue += nf || 0;
         }
         const ts = dateTsMemo(dealDate) || 0;
-        // Последний тариф — последний оплаченный (0 ₽ и служебные билеты его не затирают), как без кэша.
-        if ((adj || 0) > 0 && ts >= st.lastDealTs) {
+        // Последний тариф — последний оплаченный взрослый (0 ₽, служебные, детские и младенческие билеты его не затирают), как без кэша.
+        if (adult && ts >= st.lastDealTs) {
             st.lastDealTs = ts;
-            st.lastFare = adj;
+            st.lastFare = v;
             st.lastBasicFare = basicFareStr || '';
         }
     }

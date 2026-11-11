@@ -222,7 +222,8 @@ function costCalcRouteData(fromKey, toKey) {
             const list = sd[k] || [];
             for (let j = 0; j < list.length; j++) {
                 const v = list[j].adjustedFare || list[j].fare || 0;
-                if (v > 0) { data.fareN++; data.fareSum += v; }
+                const adult = typeof FareGrid !== 'undefined' && FareGrid.isAdultPaid ? FareGrid.isAdultPaid(list[j]) : v > 0;
+                if (adult) { data.fareN++; data.fareSum += v; }
             }
         });
     }
@@ -310,7 +311,7 @@ function costCalcNeedTable(expenses, subsidy, acKey, data) {
 
     // Цены: тарифы из сетки тарифов маршрута, иначе предельные тарифы справочника. Придуманных цен не показываем.
     const avg = data.fareN ? data.fareSum / data.fareN : null;
-    const avgTxt = avg ? ` Средний проданный билет на маршруте: ${costCalcMoney(avg)} (по ${formatNum(data.fareN)} билетам).` : '';
+    const avgTxt = avg ? ` Средний проданный взрослый билет на маршруте: ${costCalcMoney(avg)} (по ${formatNum(data.fareN)} билетам).` : '';
     let rows = [], priceNote = '';
     if (data.grid.length) {
         rows = data.grid.map(g => ({ price: g.price, tag: 'класс ' + g.cls }));
@@ -404,12 +405,15 @@ function refreshCostCalc() {
     costCalcMemo = null;
 
     if (typeof RouteCosts === 'undefined' || !RouteCosts.loaded) {
+        // Кнопка — тот же обработчик, что у «Отчёты» → «Выгрузки» → «Себестоимость и субсидии»; только тем, кому открыты «Отчёты».
+        const canUploadCosts = typeof uploadCostsFile === 'function' && (typeof ProfileAuth === 'undefined' || ProfileAuth.canAccessTab('reports'));
         form.innerHTML = '';
         result.innerHTML = `
             <div class="table-empty-state">
                 <div class="table-empty-icon">📂</div>
                 <div class="table-empty-title">Нет файла расходов</div>
                 <div class="table-empty-hint">Загрузите файл с расходами в разделе «Отчёты».</div>
+                ${canUploadCosts ? '<button type="button" class="btn-primary cost-calc-upload-btn" onclick="uploadCostsFile()">Загрузить файл расходов</button>' : ''}
             </div>`;
         return;
     }

@@ -249,9 +249,10 @@ window.LowerRequest = (function () {
                         <button type="button" class="filter-btn" data-lr-xlsx ${rows.length ? '' : 'disabled'}>В Excel</button>
                         <button type="button" class="filter-btn rp-danger" data-lr-clear ${rows.length ? '' : 'disabled'}>Очистить</button>
                     </span></div>
-                <p class="rp-card-text">Рейсы сюда попадают из «Управления продажами»: отметьте галочкой слева от номера рейса. Цифры считаются сами,
-                    места и тариф впишите сами; любую ячейку можно поправить (исправленные выделены, пустая ячейка возвращает расчёт).
+                <p class="rp-card-text lr-lead">Рейсы попадают сюда из «Управления продажами»: места и тариф впишите сами.
+                    <button type="button" class="filter-btn lr-goto" data-lr-goto>Перейти к Управлению продажами</button>
                     ${hidden > 0 ? `<span class="rp-muted">Улетевших и сегодняшних вылетов в списке не показано: ${hidden}.</span>` : ''}</p>
+                <details class="lr-more"><summary>Подробнее</summary><p class="rp-card-text">Отметьте галочкой слева от номера рейса. Цифры считаются сами; любую ячейку можно поправить (исправленные выделены, пустая ячейка возвращает расчёт).</p></details>
                 ${rows.length ? `<div class="rp-scroll"><table class="rp-table lr-table"><thead><tr>${COLS.map(c => `<th>${esc(c[1])}</th>`).join('')}</tr></thead>
                     <tbody>${groupsOf(rows).map(g => `<tr class="lr-grp-head"><td colspan="${COLS.length}">${esc(g.dir)} <span class="lr-grp-n">· вылетов: ${g.rows.length}</span></td></tr>${g.rows.map(rowHtml).join('')}`).join('')}</tbody></table></div>` : '<p class="rp-note">Пока нет рейсов. Откройте «Управление продажами» и отметьте нужные вылеты галочкой у номера рейса.</p>'}
             </section>`;
@@ -371,6 +372,7 @@ window.LowerRequest = (function () {
                 return; }
             const del = e.target.closest('[data-lr-del]');
             if (del) { const [c, d] = del.dataset.lrDel.split('|'); toggle(c, d, false); return; }
+            if (e.target.closest('[data-lr-goto]')) { if (typeof switchMainTab === 'function') switchMainTab('sales'); return; }
             if (e.target.closest('[data-lr-copy]')) { copy(); return; }
             if (e.target.closest('[data-lr-xlsx]')) { exportXlsx().catch(err => { console.error(err); toast('Ошибка выгрузки', 'error'); }); return; }
             if (e.target.closest('[data-lr-clear]')) {

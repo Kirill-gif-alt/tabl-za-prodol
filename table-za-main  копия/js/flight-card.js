@@ -38,6 +38,11 @@ window.FlightCard = (function () {
         return allowed() && shownSaved();
     }
 
+    // Пометка на странице «карточка включена»: по ней легенда таблицы «Динамика продаж» показывает фразу про двойной щелчок.
+    function markOn() {
+        document.body.classList.toggle('flight-card-on', isShown());
+    }
+
     // Кнопка ▤ рядом с именем: видна тем, кому админ включил карточку; нажали — показать, ещё раз — скрыть.
     function syncToggle() {
         const chip = document.getElementById('profile-user-chip');
@@ -45,6 +50,7 @@ window.FlightCard = (function () {
         if (!allowed()) {
             if (label) label.hidden = true;
             hidePanels();
+            markOn();
             return;
         }
         if (!label && chip && chip.parentNode) {
@@ -62,6 +68,7 @@ window.FlightCard = (function () {
         }
         if (shownSaved()) show();
         else hidePanels();
+        markOn();
     }
 
     function setShown(on) {
@@ -70,6 +77,7 @@ window.FlightCard = (function () {
         if (box) box.checked = !!on;
         if (on) show();
         else hidePanels();
+        markOn();
     }
 
     // Последний выбранный рейс (currentFlight/lastSelectedDate) — чтобы карточка сразу была не пустой.
@@ -475,6 +483,8 @@ window.FlightCard = (function () {
         const staleSales = salesReady && typeof getStaleSalesInfo === 'function' ? getStaleSalesInfo() : null;
         // У улетевшего рейса ожидаемой нет — как в «Динамике продаж» и на Графплане.
         const showEv = !!m && !m.flew;
+        // Файла ожидаемой загрузки нет — плитки «Ожидаемая» и «Δ к ожидаемой» были бы пустыми, не показываем их.
+        const expReady = typeof hasExpectedFileLoaded === 'function' ? hasExpectedFileLoaded() : true;
         const dtdTxt = m && m.dtd != null ? (m.dtd < 0 ? 'улетел' : (m.dtd === 0 ? 'вылет сегодня' : `за ${m.dtd} дн.`)) : '';
         const status = m && m.closed ? 'закрыт' : '';
         const deltaCls = m && m.delta != null ? (m.delta < 0 ? 'fc-neg' : (m.delta > 0 ? 'fc-pos' : '')) : '';
@@ -500,23 +510,49 @@ window.FlightCard = (function () {
                 </div>
             </div>
             ${issues.length ? `<div class="fc-issues">${issues.map(i => `<div>! ${esc(i.title)}: ${esc(i.detail)}</div>`).join('')}</div>` : ''}
-            <div class="fc-tiles">
+            <div class="fc-tiles${expReady ? '' : ' fc-tiles-four'}">
                 ${tile('Загрузка, пасс.', m ? `${m.free} <span class="fc-tile-of">из ${m.total}</span>` : '—', m && m.pct != null ? `<span class="fc-tile-pct">${m.pct}%</span> мест занято` : '', 'fc-tile-load')}
-                ${tile('Ожидаемая', showEv && m.evR != null ? String(m.evR) : '—', '')}
-                ${tile('Δ к ожидаемой', showEv && m.delta != null ? `<span class="${deltaCls}">${m.delta > 0 ? '+' : ''}${m.delta}</span>` : '—', '')}
+                ${expReady ? tile('Ожидаемая', showEv && m.evR != null ? String(m.evR) : '—', '') : ''}
+                ${expReady ? tile('Δ к ожидаемой', showEv && m.delta != null ? `<span class="${deltaCls}">${m.delta > 0 ? '+' : ''}${m.delta}</span>` : '—', '') : ''}
                 ${tile('Остаток', m && m.remainder != null ? String(m.remainder) : '—', '')}
                 ${tile('Продано за 1–2 дн.', m && m.pickup != null && salesReady && !staleSales ? String(m.pickup) : '—', staleSales ? esc(`нет свежих данных (от ${staleSales.label})`) : '')}
-                ${tile('Ср. тариф', m && m.avg && salesReady ? esc(formatRub(m.avg)) : '—', '')}
+                ${tile('Средний тариф', m && m.avg && salesReady ? esc(formatRub(m.avg)) : '—', '')}
             </div>
             ${insightsHtml(code, date)}
             <div class="fc-verdict" data-fc-part="verdict"></div>
             <div class="fc-chart-wrap"><canvas data-fc-part="chart"></canvas></div>
             ${typeof PriceMarks !== 'undefined' ? PriceMarks.buttonsHtml(code, date) : ''}
             ${typeof PriceMarks !== 'undefined' ? PriceMarks.decisionsHtml(base, code, date) : ''}
+            ${pastDecisionsHtml(base)}
             ${comment ? `<div class="fc-comment"><strong>Комментарий:</strong> ${esc(comment)}</div>` : ''}
             ${links ? `<div class="fc-links">Открыть: ${links}</div>` : ''}
         `;
         drawChart(panel, base, code, date, row);
+    }
+
+    // «Прошлые решения»: три последние отметки «снизить / повысить» по этому рейсу (любая дата вылета), с итогом в рублях из отчёта «Решения».
+    function pastDecisionsHtml(base) {
+        if (typeof DecisionsReport === 'undefined' || !DecisionsReport.recentForBase || !DecisionsReport.canView()) return '';
+        let res = null;
+        try { res = DecisionsReport.recentForBase(base, 3, () => { if (state && isShown()) render(); }); } catch (e) { res = null; }
+        if (!res || !res.items.length) return '';
+        const rub = (n) => (n > 0 ? '+' : (n < 0 ? '−' : '')) + Math.abs(Math.round(n)).toLocaleString('ru-RU') + ' ₽';
+        const rows = res.items.map(x => {
+            const tone = x.cls === 'pos' || x.cls === 'lpos' || x.cls === 'wpos' ? 'fc-pos' : (x.cls === 'neg' || x.cls === 'lneg' || x.cls === 'wneg' ? 'fc-neg' : '');
+            const what = x.status === 'up' ? '▲ повысить' : '▼ снизить';
+            const sum = x.delta != null && x.cls !== 'wait' ? `<strong class="${tone}">${esc(rub(x.delta))}</strong> ` : '';
+            return `<li class="fc-past-item">
+                <span class="fc-past-dep">${esc(x.dep.slice(0, 5))}</span>
+                <span class="fc-past-what">${what}</span>
+                <span class="fc-past-who">${esc(x.author || '')}</span>
+                <span class="fc-past-res">${sum}<span class="${tone}">${esc(x.text)}</span></span>
+            </li>`;
+        }).join('');
+        return `<div class="fc-past">
+            <div class="fc-past-title">Прошлые решения</div>
+            <ul class="fc-past-list">${rows}</ul>
+            <button type="button" class="fc-past-all" data-fc="decisions">Все решения</button>
+        </div>`;
     }
 
     function drawChart(panel, base, code, date, row) {
@@ -616,6 +652,11 @@ window.FlightCard = (function () {
         else if (a === 'prev') step(-1);
         else if (a === 'next') step(1);
         else if (a === 'pair') swapPair();
+        else if (a === 'decisions') {
+            if (typeof ReportsView !== 'undefined') ReportsView.showSubtab('decisions');
+            switchMainTab('reports');
+            try { window.focus(); } catch (err) { /* ignore */ }
+        }
         else if (a === 'window') setMode('window');
         else if (a === 'dock') setMode('page');
         else if (a === 'ml-window') {

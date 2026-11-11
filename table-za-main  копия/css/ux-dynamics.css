@@ -277,3 +277,7 @@
 }
 .dyn-page .dyn-legend .mode-badge { margin: 0 2px 0 0; cursor: default; }
 .dyn-page .dyn-legend b { color: var(--text); }
+
+/* Фраза про двойной щелчок — только когда карточка рейса включена кнопкой ▤ */
+.dyn-page .dyn-legend .dyn-legend-card { display: none; }
+body.flight-card-on .dyn-page .dyn-legend .dyn-legend-card { display: inline; }

@@ -185,7 +185,7 @@ window.CreativeView = (function () {
         { key: 'spec', group: 'load', label: 'Спец. брони', type: 'num', agg: 'sum', get: c => (typeof getSpecBookings === 'function' ? getSpecBookings(c.row) : null) },
         { key: 'seats', group: 'load', label: 'Кресла в продаже', type: 'num', agg: 'sum', get: c => (typeof getSeatsOnSale === 'function' ? getSeatsOnSale(c.row) : null) },
         { key: 'sold', group: 'load', label: 'Загрузка, пасс.', type: 'num', agg: 'sum', get: c => (typeof getSoldFromRow === 'function' ? getSoldFromRow(c.row) : null) },
-        { key: 'zpk', group: 'load', label: 'ЗПК, %', type: 'pct', agg: 'ratio', num: 'sold', den: 'seats', scale: 100, get: c => { const m = metricsOf(c); return m ? m.pct : null; } },
+        { key: 'zpk', group: 'load', label: 'Занято, %', xl: 'ЗПК, %', type: 'pct', agg: 'ratio', num: 'sold', den: 'seats', scale: 100, get: c => { const m = metricsOf(c); return m ? m.pct : null; } },
         { key: 'remainder', group: 'load', label: 'Остаток мест', type: 'num', agg: 'sum', sumFloor0: true, get: c => (typeof getSeatRemainder === 'function' ? getSeatRemainder(c.row) : null) },
 
         { key: 'salesToday', group: 'sales', label: 'Продано сегодня', type: 'num', agg: 'sum', get: c => (salesStale() ? null : bucketValue(c, 'today')) },
@@ -203,7 +203,7 @@ window.CreativeView = (function () {
         { key: 'expected', group: 'rms', label: 'Ожидаемая загрузка (файл)', type: 'num', agg: 'sum', get: c => { const m = metricsOf(c); return m ? m.evR : null; } },
         { key: 'delta', group: 'rms', label: 'Отклонение от ожидаемой', type: 'num', agg: 'sum', get: c => { const m = metricsOf(c); return m ? m.delta : null; } },
         { key: 'fcPax', group: 'rms', label: 'Прогноз к вылету, пасс.', type: 'num', agg: 'sum', get: c => { const f = forecastOf(c); return f ? f.final : null; } },
-        { key: 'fcLf', group: 'rms', label: 'Прогноз ЗПК к вылету, %', type: 'pct', agg: 'ratio', scale: 100,
+        { key: 'fcLf', group: 'rms', label: 'Прогноз занятых мест к вылету, %', xl: 'Прогноз ЗПК к вылету, %', type: 'pct', agg: 'ratio', scale: 100,
           // Кресла — только у вылетов, где есть прогноз (он один на вылет с посадками, у улетевших его нет), иначе процент занижен.
           numFn: c => { const f = forecastOf(c); return f ? f.final : null; },
           denFn: c => { const f = forecastOf(c); return f && typeof getSeatsOnSale === 'function' ? getSeatsOnSale(c.row) : null; }, get: c => { const f = forecastOf(c); return f ? f.lf : null; } },
@@ -1380,7 +1380,8 @@ window.CreativeView = (function () {
             if (key === '__count' || (f && f.type !== 'text' && f.type !== 'date')) return v;
             return String(v);
         };
-        const aoa = [cols.map(colLabel)];
+        // В Excel подписи прежние (без замены «ЗПК» на «Занято»): состав выгрузки не меняем.
+        const aoa = [cols.map(k => (FIELD_BY_KEY[k] && FIELD_BY_KEY[k].xl) || colLabel(k))];
         if (layout.totals) aoa.push(cols.map((key, i) => { const v = result.totals[key]; return i === 0 && (v == null || v === '') ? 'Итого' : cellOut(key, v); }));
         result.rows.forEach(r => aoa.push(cols.map(key => cellOut(key, r.values[key]))));
         const safe = aoa.map(row => (typeof excelSafeRow === 'function' ? excelSafeRow(row) : row));

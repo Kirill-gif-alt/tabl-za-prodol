@@ -264,3 +264,7 @@ html[data-theme="dark"] .rms-detail-line .rms-today-hot { color: #4ade80 !import
 @media (max-width: 900px) {
     table.rms-table { min-width: 980px; }
 }
+
+/* Строка рейса с участком: города могут не влезть — переносим на вторую строку (таких строк мало) */
+table.rms-table .rms-flight-name.rms-flight-name-wrap { white-space: normal; overflow: visible; text-overflow: clip; }
+table.rms-table .rms-flight-name-wrap .rms-flight-route:first-child { font-size: inherit; color: inherit; }

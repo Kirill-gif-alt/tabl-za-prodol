@@ -309,3 +309,6 @@ html[data-theme="dark"] .cost-calc-page {
     .cost-calc-page .cost-calc-table td { white-space: normal; }
 }
 .cost-calc-page .cost-calc-block-lead { margin-bottom: 12px; }
+
+/* Кнопка загрузки файла расходов в пустом состоянии */
+.cost-calc-page .cost-calc-upload-btn { margin-top: 14px; width: auto; align-self: center; padding-left: 22px; padding-right: 22px; }

@@ -20,7 +20,7 @@ function getSalesAggForKey(key) {
         const st = PerfCache.getSalesStats(key);
         if (st && st.count) {
             return {
-                avg: st.paidCount ? Math.round(st.fareSum / st.paidCount) : 0,   // средний оплаченный: билеты за 0 ₽ не в счёт
+                avg: st.paidCount ? Math.round(st.fareSum / st.paidCount) : 0,   // средний оплаченный взрослый: 0 ₽, детские и младенческие не в счёт
                 last: st.lastFare || 0,
                 lettr: String(st.lastBasicFare || '').trim()[0] || '',
                 paid: st.paidCount, sum: st.fareSum   // для среднего тарифа по группе рейсов
@@ -30,13 +30,14 @@ function getSalesAggForKey(key) {
     const sl = salesDetails[key] || [];
     if (!sl.length) return { avg: 0, last: 0, lettr: '', paid: 0, sum: 0 };
     let sum = 0, paid = 0;
-    for (let i = 0; i < sl.length; i++) { const v = sl[i].adjustedFare || sl[i].fare || 0; sum += v; if (v > 0) paid++; }
+    const isAdult = (x) => (typeof FareGrid !== 'undefined' && FareGrid.isAdultPaid ? FareGrid.isAdultPaid(x) : (x.adjustedFare || x.fare || 0) > 0);
+    for (let i = 0; i < sl.length; i++) { if (!isAdult(sl[i])) continue; sum += sl[i].adjustedFare || sl[i].fare || 0; paid++; }
     let last = 0, lettr = '', lastTs = 0;
     for (let i = 0; i < sl.length; i++) {
         const x = sl[i];
         const ts = parseLocalDate(x.dealDate)?.getTime() || 0;
         const v = x.adjustedFare || x.fare || 0;
-        if (v > 0 && ts >= lastTs) {
+        if (isAdult(x) && ts >= lastTs) {
             lastTs = ts;
             last = v;
             lettr = String(x.basicFareStr || '').trim()[0] || '';

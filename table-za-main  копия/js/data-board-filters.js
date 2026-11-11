@@ -6,7 +6,7 @@ window.DataBoardFilters = (function () {
     const STORE_KEY_V1 = 'krasavia_data_hl_rules_v1';
     const FIELDS = {
         dtd: { label: 'Дней до вылета', step: 1 },
-        pct: { label: 'ЗПК %', step: 1 },
+        pct: { label: 'Занято, %', step: 1 },
         load: { label: 'Загрузка (пасс.)', step: 1 },
         seats: { label: 'Кресла в продаже', step: 1 }
     };

@@ -397,8 +397,8 @@ function buildDataRouteCardHtml(pair, todayStart) {
                                 <span class="data-board-dir-code">${escHtml(pair.inbound)}</span>
                             </th>
                             <th rowspan="2" class="data-board-avg-head pair-split-start">
-                                <span class="data-board-th-label">Ср.</span>
-                                <span class="data-board-th-sub">ЗПК</span>
+                                <span class="data-board-th-label">Среднее</span>
+                                <span class="data-board-th-sub">занято, %</span>
                             </th>
                         </tr>
                         <tr class="pair-head-sub data-board-head-sub">
@@ -407,13 +407,13 @@ function buildDataRouteCardHtml(pair, todayStart) {
                             ${bookThOut}
                             <th class="pair-sub-out" title="Проданные места из снимка, не свободные">Загр.</th>
                             ${dataShowDaySales ? '<th class="pair-sub-out data-col-bookings" title="Продано за прошлые сутки">За сутки</th>' : ''}
-                            <th class="pair-sub-out pair-split-end" title="Проданные / (кресла − спец. брони)">ЗПК</th>
+                            <th class="pair-sub-out pair-split-end" title="Проданные / (кресла − спец. брони)">Занято, %</th>
                             ${timeThIn}
                             <th class="pair-sub-in${seatsThInSplit}" title="AU снимка − спец.брони">Крес.</th>
                             ${bookThIn}
                             <th class="pair-sub-in" title="Проданные места из снимка, не свободные">Загр.</th>
                             ${dataShowDaySales ? '<th class="pair-sub-in data-col-bookings" title="Продано за прошлые сутки">За сутки</th>' : ''}
-                            <th class="pair-sub-in" title="Проданные / (кресла − спец. брони)">ЗПК</th>
+                            <th class="pair-sub-in" title="Проданные / (кресла − спец. брони)">Занято, %</th>
                         </tr>
                     </thead>
                     <tbody>${buildDataDaySalesSumRow(pair, todayStart)}${bodyRows}</tbody>
@@ -720,8 +720,8 @@ function createDataView(c) {
                             <option value="route-desc">Маршрут ↓</option>
                             <option value="date-asc">Дата ↑</option>
                             <option value="date-desc">Дата ↓</option>
-                            <option value="zpk-desc">ЗПК ↓</option>
-                            <option value="zpk-asc">ЗПК ↑</option>
+                            <option value="zpk-desc">Занято, % ↓</option>
+                            <option value="zpk-asc">Занято, % ↑</option>
                         </select>
                         <label class="data-hide-flew-label data-ctrl-sm">
                             <input type="checkbox" id="data-hide-flew"> Скрыть улет.

@@ -737,7 +737,7 @@ function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode)
             <div class="sd-kpis">
                 ${chip('Продано', totalTickets)}
                 ${chip('Выручка', formatRub(Math.round(totalRevenue)))}
-                ${chip('Ср. тариф', overallAvg ? formatRub(overallAvg) : '—')}
+                ${chip('Средний тариф', overallAvg ? formatRub(overallAvg) : '—')}
                 ${chip('Загрузка', `${formatNum(loadPax)}/${formatNum(seats)}`, pct != null ? ` <span class="sd-muted">${pct}%</span>` : '')}
                 ${chip('Ожидаемая', expR != null ? expR : '—', deltaNow != null ? ` <span class="${deltaNow < 0 ? 'sd-neg' : 'sd-pos'}">${deltaNow > 0 ? '+' : ''}${deltaNow}</span>` : '')}
             </div>

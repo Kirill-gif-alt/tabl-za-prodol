@@ -1136,7 +1136,7 @@ window.NetworkMap = (function () {
                         key: l.key,
                         line: l,
                         x, y,
-                        label: `${l.a.city} — ${l.b.city} · ЗПК ${avg} · туда ${tuda} / обратно ${obr}`
+                        label: `${l.a.city} — ${l.b.city} · занято ${avg} · туда ${tuda} / обратно ${obr}`
                     };
                 }
             });
@@ -1277,7 +1277,7 @@ window.NetworkMap = (function () {
             <div class="nmap-leg">
                 <div class="nmap-leg-h"><i class="nmap-pip" style="background:${pip}"></i>${esc(block.title)}</div>
                 <div class="nmap-card-grid">
-                    <div><span>ЗПК</span><strong>${zpk}</strong></div>
+                    <div><span>Занято, %</span><strong>${zpk}</strong></div>
                     <div><span>Кресел (AU)</span><strong>${empty ? '—' : formatNum(g.au)}</strong></div>
                     <div><span>Загрузка</span><strong>${empty ? '—' : formatNum(g.sold)}</strong></div>
                     <div><span>Остаток</span><strong>${remain}</strong></div>
@@ -1676,7 +1676,7 @@ window.NetworkMap = (function () {
                         <label class="nmap-check"><input type="checkbox" id="nmap-open-only" checked> Только открытые</label>
                     </div>
                     <div class="nmap-legend">
-                        <span>ЗПК направления (туда и обратно вместе)</span>
+                        <span>Занято на направлении, % (туда и обратно вместе)</span>
                         <div class="nmap-legend-bar"></div>
                         <div class="nmap-legend-scale"><span>0%</span><span>50%</span><span>100%</span></div>
                         <p class="nmap-muted">Одна дуга на пару городов. Оранжевый борт — радар, тёмно-синий — оценка по расписанию и дальности. Эфир только сегодня.</p>

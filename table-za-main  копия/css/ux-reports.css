@@ -350,3 +350,10 @@ html[data-theme="dark"] #rp-page .md-sg-pace { background: #1e2250; color: #c7d2
     #rp-page .md-dir { max-width: 150px; }
     #rp-page .md-short span { max-width: 300px; }
 }
+
+/* Запрос на понижение: короткая подпись, кнопка перехода и пояснение под «Подробнее» */
+.lr-card .lr-lead { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 6px 0; }
+.lr-card .lr-goto { border-color: var(--border); }
+.lr-card .lr-more { margin: 0 0 8px; font-size: 0.8rem; color: var(--text-muted); }
+.lr-card .lr-more summary { cursor: pointer; width: max-content; }
+.lr-card .lr-more .rp-card-text { margin: 4px 0 0; }
