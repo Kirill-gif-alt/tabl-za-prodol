@@ -8,7 +8,7 @@ window.ModelsView = (function () {
     const PAGE = 100;                      // строк в таблице за раз; дальше — «Показать ещё»
     const KEYS = [['30', 'за 30 дн.'], ['14', 'за 14 дн.'], ['7', 'за 7 дн.'], ['1_3', 'за 1–3 дня']];
     const M2KEY = { '30': '30d', '14': '14d', '7': '7d', '1_3': '1_3d' };
-    const FILTERS = [['all', 'Все'], ['alarm', 'Тревоги'], ['diff', 'Модели расходятся'], ['under', 'Недобор'], ['over', 'Перегруз'], ['pace', 'Необычный темп']];
+    const FILTERS = [['all', 'Все'], ['alarm', 'Есть сигнал модели'], ['diff', 'Модели расходятся'], ['under', 'Модель ждёт недобор'], ['over', 'Модель ждёт перегруз'], ['pace', 'Необычный темп']];
     const SIGNAL = { under: ['Недобор', 'md-sg-under'], over: ['Перегруз', 'md-sg-over'], fast: ['Темп ↑', 'md-sg-pace'], slow: ['Темп ↓', 'md-sg-pace'] };
 
     // Состояние страницы (живёт, пока вкладка открыта; при выходе из сайта не сохраняется).
@@ -140,7 +140,7 @@ window.ModelsView = (function () {
 
     function codeNum(c) { return parseInt(String(c).slice(3), 10) || 0; }
     const SORTS = {
-        // Тревоги и расхождения сверху, затем по дате; внутри даты — самые срочные.
+        // Сигналы моделей и расхождения сверху, затем по дате; внутри даты — самые срочные.
         default: (a, b) => ((b.alarm || b.diverge ? 1 : 0) - (a.alarm || a.diverge ? 1 : 0)) || (a.ts - b.ts) || ((b.w ? b.w.urgency : 0) - (a.w ? a.w.urgency : 0)) || (codeNum(a.code) - codeNum(b.code)),
         date: (a, b) => (a.ts - b.ts) || (codeNum(a.code) - codeNum(b.code)),
         diff: (a, b) => (Math.abs(b.diff == null ? -1 : b.diff) - Math.abs(a.diff == null ? -1 : a.diff)) || (a.ts - b.ts),

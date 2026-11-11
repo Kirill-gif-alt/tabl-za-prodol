@@ -110,7 +110,7 @@ function buildPairPanelHtml(base, foundCount, totalCount, counts) {
         { status: 'all', label: 'Все' },
         { status: 'closed', label: 'Закрытые', cls: 'filter-btn-muted', title: 'Улетевшие рейсы и рейсы, закрытые для продажи' },
         { status: 'full', label: 'Полные 100%', cls: 'filter-btn-warn', title: 'Все кресла в продаже заняты' },
-        { status: 'attention', label: 'Внимание', cls: 'filter-btn-alert', title: 'Рейсы, где продажи отстают или загрузка низкая' }
+        { status: 'attention', label: 'Внимание', cls: 'filter-btn-alert', title: 'Рейсы, которые требуют внимания (как в RMS)' }
     ]);
     return `
         <div class="ec-panel">
@@ -245,7 +245,7 @@ function buildDynPanelHtml(foundCount, totalCount, counts, hasExpectedLoad, card
         { status: 'all', label: 'Все' },
         { status: 'closed', label: 'Улетевшие', title: 'Улетевшие вылеты и вылеты, закрытые для продажи' },
         { status: 'full', label: 'Полные 100%', title: 'Все кресла в продаже заняты' },
-        { status: 'attention', label: 'Внимание', title: 'Вылеты, где продажи отстают от ожидаемых или загрузка низкая' }
+        { status: 'attention', label: 'Внимание', title: 'Вылеты, которые требуют внимания (как в RMS)' }
     ]);
     return `${cardsHtml}
         <div class="dyn-strip">

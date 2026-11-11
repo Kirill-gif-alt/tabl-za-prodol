@@ -155,7 +155,7 @@ function rmsRowHtml(f, ctx) {
     const showRoute = f.route && shouldShowRmsRoute(f, ctx.routeCounts);
     const fd = parseLocalDate(f.date);
     const zebra = (getWeekNumber(fd) % 2 === 0) ? 'week-even' : 'week-odd';
-    const alertCls = f.alertLevel >= 3 ? 'rms-row-crit' : (f.alertLevel >= 2 ? 'rms-row-warn' : '');
+    const alertCls = Attention.level(f) >= 3 ? 'rms-row-crit' : (Attention.level(f) >= 2 ? 'rms-row-warn' : '');
     const flightCode = f.orig || f.base;
     const flightDir = getFlightDirection(flightCode);
     const routeType = typeof getFlightRouteType === 'function' ? getFlightRouteType(flightCode) : 'unknown';
@@ -317,7 +317,7 @@ function renderRmsWatchlist() {
     const flights = getRmsFilteredFlights();
     const rmsDays = parseInt(document.getElementById('rms-days-filter')?.value || '30', 10) || 30;
     const kpi = getGlobalKPIs();
-    const alertCnt = flights.filter(f => f.alertLevel >= 2).length;
+    const alertCnt = flights.filter(f => Attention.is(f)).length;
     // Средняя загрузка — по местам: сумма проданных / сумма кресел в продаже.
     const seatSum = flights.reduce((a, f) => a + (f.total || 0), 0);
     const avgLoad = seatSum ? Math.round(flights.reduce((a, f) => a + (f.total ? f.free : 0), 0) / seatSum * 100) : null;
@@ -331,7 +331,7 @@ function renderRmsWatchlist() {
         stats.innerHTML = `
             <span class="rms-hero-badge" title="${escAttr(`Вылеты на ${rmsDays} ${pluralRu(rmsDays, 'день', 'дня', 'дней')} вперёд, считая сегодня. Закрытые и улетевшие не входят. Учтены фильтры и условия.`)}">Открытых: <strong>${flights.length}</strong></span>
             ${markOn ? `<span class="rms-hero-badge" title="Рейсов в списке с отметкой «Управления продажами» за сегодня">Проверено сегодня: <strong>${checkedToday}/${flights.length}</strong></span>` : ''}
-            <span class="rms-hero-badge rms-hero-badge-warn" title="Рейсы из групп «Срочно» и «Присмотреться» в этом списке. Число «Внимание» в шапке сайта считается за 30 дней и без фильтров.">Внимание: <strong>${alertCnt}</strong></span>
+            <span class="rms-hero-badge rms-hero-badge-warn" title="Рейсы из групп «Срочно» и «Присмотреться» в этом списке. В шапке и на «Сегодня» — те же рейсы на 30 дней и без фильтров.">Внимание: <strong>${alertCnt}</strong></span>
             <span class="rms-hero-badge" title="Все билеты, проданные сегодня, по всей сети: фильтры таблицы не учитываются">Продано сегодня: <strong>${!salesReady ? '—' : (stale ? `нет свежих данных (от ${stale.label})` : kpi.todaySales)}</strong></span>
             <span class="rms-hero-badge" title="Проданные места ÷ места в продаже по всем рейсам списка">Занято в среднем: <strong>${avgLoad === null ? '—' : avgLoad + '%'}</strong></span>
         `;
@@ -363,7 +363,7 @@ function renderRmsWatchlist() {
     }
     // Порядок внутри групп — как отдаёт расчёт (по деньгам, потом по близости вылета): он не меняется.
     const crit = [], warn = [], rest = [];
-    flights.forEach(f => { (f.alertLevel >= 3 ? crit : (f.alertLevel >= 2 ? warn : rest)).push(f); });
+    flights.forEach(f => { const lv = Attention.level(f); (lv >= 3 ? crit : (lv >= 2 ? warn : rest)).push(f); });
     const colCount = 6 + (hasExpected ? 1 : 0) + (markOn ? 1 : 0);
     rmsModel = {
         crit, warn, rest,

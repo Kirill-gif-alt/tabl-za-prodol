@@ -76,7 +76,7 @@ function buildMetricsCache() {
                 salesSeen.add(sk);
                 salesToday += m.s.today;
             }
-            if (m.alertLevel >= 2) alertCount++;
+            if (Attention.is(m)) alertCount++;
         });
         metricsCache.byBase[base] = { salesToday, alertCount };
     });
@@ -176,7 +176,7 @@ function computeRowMetrics(row, base) {
 }
 
 function isFlightNeedsAttention(row, base) {
-    return getRowMetrics(row, base).alertLevel >= 2;
+    return Attention.is(getRowMetrics(row, base));
 }
 
 function getRowDelta(row, base) {
@@ -247,7 +247,6 @@ function getGlobalKPIs() {
     const todaySales = kpi.sales;
     const todayRevenue = kpi.revenue;
     const upcoming = getAllUpcomingFlights(30);
-    const alerts = upcoming.filter(f => f.alertLevel >= 2);
     const avgFare = todaySales > 0 ? Math.round(todayRevenue / todaySales) : 0;
     // Продажи сегодня по вылетам, которых нет в файле загрузки (чартеры, доп. номера): в сумме по рейсам их не видно.
     let todayOutside = 0;
@@ -256,7 +255,7 @@ function getGlobalKPIs() {
         (allData || []).forEach(r => { if (r && r[0] && r[1]) have.add(getSalesLookupKey(r)); });
         Object.keys(salesMap || {}).forEach(sk => { const b = salesMap[sk]; if (b && b.today && !have.has(sk)) todayOutside += b.today; });
     } catch (e) { todayOutside = 0; }
-    globalKpiCache = { todaySales, todayRevenue, avgFare, todayOutside, alertCount: alerts.length, openFlights: upcoming.length };
+    globalKpiCache = { todaySales, todayRevenue, avgFare, todayOutside, alertCount: Attention.count(), openFlights: upcoming.length };
     globalKpiCacheKey = key;
     return globalKpiCache;
 }

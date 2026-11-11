@@ -154,7 +154,7 @@ window.SalesAdvice = (function () {
         return res;
     }
 
-    const LABEL = { down: '▼ снизить', up: '▲ повысить', attn: '! внимание' };
+    const LABEL = { down: '▼ снизить', up: '▲ повысить', attn: '! сигналы разные' };
 
     // Все вылеты в окне (по загруженным данным): [{ code, date, base }].
     function departuresAhead(maxDays) {

@@ -351,7 +351,7 @@ function getRmsFilteredFlights() {
     const alertOnly = document.getElementById('rms-alert-filter')?.value === 'alerts';
     let flights = getAllUpcomingFlights(days);
     if (alertOnly) {
-        flights = flights.filter(f => f.alertLevel >= 2);
+        flights = flights.filter(f => Attention.is(f));
     }
     flights = applyRmsRouteTypeFilter(flights);
     return applyRmsConditions(flights);
