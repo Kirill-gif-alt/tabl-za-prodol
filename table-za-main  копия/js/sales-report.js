@@ -422,9 +422,11 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
     if (typeof getExpectedLoad === 'function' && typeof getCapacityFromAircraft === 'function') {
         const cap = getCapacityFromAircraft(typeof getAircraftType === 'function' ? getAircraftType(aircraftCode) : aircraftCode);
         const wk = typeof getWeekForExpectedLoad === 'function' ? getWeekForExpectedLoad(flyDateStr) : 1;
+        // Файл ожидаемой считает от вместимости ВС: больше кресел в продаже ждать нельзя — как в RMS и «Динамике продаж» (metrics.js).
+        const seatsEv = ownRow && typeof getSeatsOnSale === 'function' ? getSeatsOnSale(ownRow) : 0;
         const pts = dtds.map(t => {
             const ev = getExpectedLoad(cap, baseFlight, t, wk);
-            return ev !== null ? Math.ceil(ev) : null;
+            return ev !== null ? Math.ceil(seatsEv > 0 ? Math.min(ev, seatsEv) : ev) : null;
         });
         if (pts.some(v => v !== null)) expectedData = pts;
     }
@@ -681,7 +683,7 @@ function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode)
     const dtdCurve = buildFlightDtdBookingSeries(baseFlight, flyDateStr, salesFlight, period, aircraftCode);
     const comment = typeof FlightComments !== 'undefined' ? FlightComments.get(salesFlight, flyDateStr) : '';
     const metricsRow = flightRow && typeof getRowMetrics === 'function' ? getRowMetrics(flightRow, baseFlight) : null;
-    const expR = finalExpectedLoad !== null ? Math.ceil(finalExpectedLoad) : null;
+    const expR = finalExpectedLoad !== null ? Math.ceil(seats > 0 ? Math.min(finalExpectedLoad, seats) : finalExpectedLoad) : null;   // не больше кресел в продаже, как в RMS
     const deltaNow = metricsRow && metricsRow.delta != null ? metricsRow.delta : null;
     const pct = seats > 0 ? Math.round(loadPax / seats * 100) : null;
     const chip = (label, value, extra) => `<span class="sd-kpi"><span class="sd-kpi-label">${label}</span><strong>${value}</strong>${extra || ''}</span>`;

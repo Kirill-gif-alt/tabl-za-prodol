@@ -470,7 +470,7 @@ window.DecisionMoney = (function () {
         if (dtdD0 == null) return na('нет даты решения');
         if (dtdD0 < 1) return na('решение в день вылета или позже: после него не осталось дней для оценки');
         const list = typeof getFlightSalesList === 'function' ? getFlightSalesList(dep, code) : [];
-        if (!list.length) return na('билетов этого вылета нет в данных: оценить нельзя');
+        if (!list.length) return na('билетов этого вылета нет в данных: оценить нельзя', { noTickets: true });
         const nextGap = nextDecisionGap(code, dep, m.check);
         const dtdD = dtdD0;
         const flags = [];
@@ -527,16 +527,22 @@ window.DecisionMoney = (function () {
             if (d >= dtdD + 1 && d <= dtdD + 3) nOwn3++;
         });
         const ladder = ladderIndex(code, dep);
-        // Цена и класс до решения: указанные вручную, по продажам за 3 (запасной — 7) дней до решения,
+        // Цена и класс до решения: по продажам за 3 (запасной — 7) дней до решения — тот же средний фактический тариф, что и «после»
+        // (с семействами и детскими); «Класс до» из отметки — только подпись. Своих продаж нет — «Класс до» по сетке тарифов,
         // иначе — по средней цене продаж после решения (тогда считается только объём), иначе — по самому дешёвому классу лестницы.
         let priceBefore = null; let clsBefore = null;
-        if (m.clsFrom && ladder.get(m.clsFrom)) { priceBefore = ladder.get(m.clsFrom).price; clsBefore = m.clsFrom; }
-        if (priceBefore == null) {
-            const src = before3.length ? before3 : before7;
-            if (src.length) { priceBefore = mean(src.map(price)); clsBefore = lowestClass(src, ladder); }
-        }
+        const src = before3.length ? before3 : before7;
+        if (src.length) { priceBefore = mean(src.map(price)); clsBefore = m.clsFrom || lowestClass(src, ladder); }
         if (!(priceBefore > 0)) priceBefore = null;   // нулевой или пустой тариф: делить на него нельзя
         const avgAfter = afterAdult.length ? mean(afterAdult.map(price)) : null;
+        if (priceBefore == null && m.clsFrom && ladder.get(m.clsFrom) && ladder.get(m.clsFrom).price > 0) {
+            // Сравниваем одинаковое: есть и «Класс после» — цена «без решения» = фактический тариф после × (сетка «до» / сетка «после»),
+            // то есть разница цены — как в сетке, а состав билетов (семейства, дети) — тот же, что по факту. Иначе — цена класса по сетке.
+            const pFrom = ladder.get(m.clsFrom).price;
+            const to = m.clsTo ? ladder.get(m.clsTo) : null;
+            priceBefore = to && to.price > 0 && avgAfter != null ? avgAfter * pFrom / to.price : pFrom;
+            clsBefore = m.clsFrom;
+        }
         if (priceBefore == null && avgAfter != null) { priceBefore = avgAfter; flags.push('до решения продаж не было: прежний тариф взят по продажам после (считается только объём; укажите «Класс до»)'); }
         if (priceBefore == null) {
             const cheapest = [...ladder.values()].map(x => x.price).filter(x => x > 0);
@@ -641,6 +647,10 @@ window.DecisionMoney = (function () {
     }
 
     function finish(base, est, extra) {
+        // Ни обычных, ни фактических продаж за срок: судить не о чем (иначе метку давала бы одна поправка на сдвиг).
+        if (extra.stage === 'final' && est.nExpAll < 0.5 && !(extra.factAll > 0)) {
+            return Object.assign(base, extra, { stage: 'na', reason: 'нет продаж ни обычно, ни по факту: оценивать нечего', grade: 'C', expAll: round1(est.nExpAll) });
+        }
         const pbCf = base.priceCf || base.priceBefore || 0;   // цена «без решения»
         const sampleOk = est.nExpAll + (extra.factAll || 0) >= num('MONEY_MIN_TICKETS', 4);
         const flags = base.flags || [];
@@ -714,7 +724,7 @@ window.DecisionMoney = (function () {
         // Только цена: количество билетов не трогаем (факт), меняется лишь цена против цены «без решения». Это вторая граница результата.
         const priceOnly = round1k((nFp) * (est.priceAfter - pb0));
         const volume = volPure;
-        lo -= shift; hi -= shift;   // диапазон показывается вокруг эффекта по продажам
+        // Диапазон — вокруг того же числа, по которому ставится метка: эффект с поправкой (delta + corr).
         const res = Object.assign(base, extra, {
             priceAfter: Math.round(est.priceAfter), delta, lo: round1k(lo), hi: round1k(hi), sd: round1k(sd),
             volume, volPure, corr, priceEffect, nCf: round1(nCf), priceOnly, rangeLow: Math.min(delta, priceOnly), rangeHigh: Math.max(delta, priceOnly), payback: est.priceAfter > 0 ? round1(nCf * pb0 / est.priceAfter) : null,
@@ -799,6 +809,9 @@ window.DecisionMoney = (function () {
     async function recompute(m) {
         const key = keyOf(m);
         const res = compute(m);
+        // Пересчитать нечем (билетов вылета уже нет) — прежний итог не стираем.
+        const old = get(key);
+        if (old && old.stage === 'final' && res.stage === 'na' && res.noTickets) return old;
         const entry = Object.assign({}, res, { key, check: m.check, at: new Date().toISOString(), recomputed: true });
         store.delete(key);
         if (res.stage === 'final' || res.stage === 'prelim') {
@@ -830,6 +843,8 @@ window.DecisionMoney = (function () {
             if (frozen && frozen.v === METHOD_VERSION && (frozen.stage === 'final' || (frozen.stage === 'prelim' && m.status === 'up' && !frozenUpgradable(m)))) { out.set(key, Object.assign({ frozen: true }, frozen)); continue; }
             let res;
             try { res = compute(m); } catch (e) { console.warn('DecisionMoney.compute', e); res = na('ошибка расчёта'); }
+            const kept = keepOld(frozen, res);
+            if (kept) { toSave.push(kept); out.set(key, Object.assign({ frozen: false }, kept)); continue; }
             const entry = Object.assign({}, res, { key, check: m.check, at: new Date().toISOString() });
             if (res.stage === 'final' || res.stage === 'prelim') toSave.push(entry);
             out.set(key, Object.assign({ frozen: false }, entry));
@@ -840,6 +855,14 @@ window.DecisionMoney = (function () {
             if (saved) toSave.forEach(e => { const o = out.get(e.key); if (o) o.frozen = true; });
         }
         return out;
+    }
+
+    // Метод сменился, а билетов вылета уже нет в файле продаж (в архиве — только число билетов по дням и выручка за весь вылет,
+    // без тарифа по дням сделки, поэтому рубли за окно по нему не пересчитать): оставляем прежний итог.
+    // Он записывается под текущей версией с пометкой vOld — посчитан прежним способом.
+    function keepOld(frozen, res) {
+        if (!frozen || frozen.stage !== 'final' || frozen.v === METHOD_VERSION || !res || res.stage !== 'na' || !res.noTickets) return null;
+        return Object.assign({}, frozen, { v: METHOD_VERSION, vOld: frozen.vOld || frozen.v });
     }
 
     // Ранний сигнал повышения можно заменить итогом, когда вылет состоялся.

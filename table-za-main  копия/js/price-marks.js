@@ -51,6 +51,28 @@ window.PriceMarks = (function () {
         return out;
     }
 
+    // Противоположные решения на одной ячейке (один вылет, одна дата проверки) от разных людей: в итог идёт последнее
+    // по времени отметки, остальные помечаются overlap («перекрыто») — иначе одни и те же билеты шли бы в итог дважды.
+    // list: [{ code|flight, dep, check, status, at }] — r.overlap ставится на месте.
+    function markOverlaps(list) {
+        const key = r => [r.code || r.flight, r.dep, r.check].join('|');
+        const last = new Map();
+        list.forEach(r => { const p = last.get(key(r)); if (!p || String(r.at || '') > String(p.at || '')) last.set(key(r), r); });
+        list.forEach(r => { r.overlap = last.get(key(r)) !== r; });
+        return list;
+    }
+
+    // Через сколько дней после этой отметки следующее решение «снизить/повысить» по вылету (null — его нет).
+    function nextDecisionGap(code, flyDate, check) {
+        let best = null;
+        decisions(code, flyDate).forEach(x => {
+            if (x.status !== 'up' && x.status !== 'down') return;
+            const g = dayDiff(x.check, check);
+            if (g != null && g > 0 && (best == null || g < best)) best = g;
+        });
+        return best;
+    }
+
     function todayMark(code, flyDate) {
         if (!available() || typeof getTodayDate !== 'function') return null;
         return SalesManagement.getMark(code, flyDate, getTodayDate());
@@ -120,7 +142,7 @@ window.PriceMarks = (function () {
         const effect = complete && nb && na ? (after.n - na.value) - (before.n - nb.value) : null;
         // Рубли по решениям не считаются: выручка за окно зависит от состава билетов (группы, дети, семейства тарифов)
         // сильнее, чем от самого решения. Решение судится по билетам против нормы.
-        if (mark.status === 'up') return upEffect(base, code, flyDate, d, stats, before, nb);
+        if (mark.status === 'up') return upEffect(base, code, flyDate, d, stats, before, nb, nextDecisionGap(code, flyDate, mark.check));
         return { dtd: d, before, after, normBefore: nb, normAfter: na, complete, effect };
     }
 
@@ -128,12 +150,19 @@ window.PriceMarks = (function () {
     // ближе к вылету. Плохо только если рейс в итоге недобрал. Сравнение — выручка с решения до вылета против того,
     // что было бы без повышения: обычный добор с этого дня (норма по дню недели, с поправкой на темп до решения),
     // по старому тарифу, не больше свободных на тот момент мест. Рейс заполнился (от 95%) — места не потеряны.
-    function upEffect(base, code, flyDate, d, stats, before, nb) {
-        const afterAll = stats(d, 0);
-        const naAll = normPickup(base, code, flyDate, d, 0);
+    // Есть следующее решение (gap дней спустя) — «после» только до него: его день и дальше — уже следующего решения (как в рублях).
+    function upEffect(base, code, flyDate, d, stats, before, nb, gap) {
+        const endDtd = gap != null ? Math.max(0, d - gap + 1) : 0;
+        const afterAll = stats(d, endDtd);
+        const afterDep = endDtd > 0 ? stats(d, 0) : afterAll;   // до вылета — для свободных мест на момент решения
+        const naAll = normPickup(base, code, flyDate, d, endDtd);
         const fly = parseLocalDate(flyDate);
         const cutoff = typeof salesDataCutoffTime === 'function' ? salesDataCutoffTime() : Date.now();
-        const complete = !!(fly && fly.getTime() < cutoff);   // данные уже охватывают день вылета
+        const flown = !!(fly && fly.getTime() < cutoff);   // данные уже охватывают день вылета
+        const lastDay = parseLocalDate(flyDate);
+        if (lastDay) lastDay.setDate(lastDay.getDate() - endDtd);
+        const complete = endDtd > 0 ? !!(lastDay && lastDay.getTime() < cutoff) : flown;
+        const untilNext = endDtd > 0 && typeof formatDateRu === 'function' && lastDay ? formatDateRu(new Date(lastDay.getTime() + 86400000)) : null;
         let seats = 0;
         let sold = 0;
         if (typeof getFlightRowForDate === 'function') {
@@ -147,14 +176,14 @@ window.PriceMarks = (function () {
             if (ae && ae.s > 0) { seats = ae.s; sold = ae.sold || 0; }
         }
         // Кресел не знаем — не знаем, были ли свободные места: не судим (иначе «потеряли» билеты на полном рейсе).
-        if (!(seats > 0)) return { dtd: d, before, after: afterAll, normBefore: nb, normAfter: naAll, complete, effect: null, finalLf: null, untilDeparture: true, expected: null };
-        const finalLf = complete && seats > 0 ? sold / seats : null;
-        const freeAtDecision = seats > 0 ? Math.max(0, seats - Math.max(0, sold - afterAll.n)) : null;
+        if (!(seats > 0)) return { dtd: d, before, after: afterAll, normBefore: nb, normAfter: naAll, complete, effect: null, finalLf: null, untilDeparture: true, untilNext, expected: null };
+        const finalLf = flown && seats > 0 ? sold / seats : null;
+        const freeAtDecision = seats > 0 ? Math.max(0, seats - Math.max(0, sold - afterDep.n)) : null;
         let expected = naAll && nb ? Math.max(0, naAll.value + (before.n - nb.value) / 2) : null;
         if (expected != null && freeAtDecision != null) expected = Math.min(expected, freeAtDecision);
         if (expected != null && finalLf != null && finalLf >= 0.95) expected = afterAll.n;   // заполнился — мест не потеряли
         const effect = complete && expected != null ? Math.round((afterAll.n - expected) * 10) / 10 : null;
-        return { dtd: d, before, after: afterAll, normBefore: nb, normAfter: naAll, complete, effect, finalLf, untilDeparture: true, expected };
+        return { dtd: d, before, after: afterAll, normBefore: nb, normAfter: naAll, complete, effect, finalLf, untilDeparture: true, untilNext, expected };
     }
 
     // Итог решения — один для карточки рейса и для журнала решений.
@@ -208,7 +237,7 @@ window.PriceMarks = (function () {
         if (!e) return [];
         const usual = (x) => (x ? ` (обычно ${fmtN(x.value)})` : '');
         const lines = e.untilDeparture
-            ? [`До решения: ${tickets(e.before.n)} за ${winDays()}${usual(e.normBefore)} → после решения до вылета: ${tickets(e.after.n)}${e.normAfter ? ` (обычно добирают ${fmtN(e.normAfter.value)})` : ''}${e.complete ? '' : ' — вылет ещё впереди'}`]
+            ? [`До решения: ${tickets(e.before.n)} за ${winDays()}${usual(e.normBefore)} → после решения до ${e.untilNext ? 'следующего решения (' + e.untilNext.slice(0, 5) + ')' : 'вылета'}: ${tickets(e.after.n)}${e.normAfter ? ` (обычно добирают ${fmtN(e.normAfter.value)})` : ''}${e.complete ? '' : (e.untilNext ? ' — дни ещё идут' : ' — вылет ещё впереди')}`]
             : [`До решения: ${tickets(e.before.n)} за ${winDays()}${usual(e.normBefore)} → после: ${tickets(e.after.n)}${usual(e.normAfter)}${e.complete ? '' : ' — дни ещё идут'}`];
         if (e.before.avg != null && e.after.avg != null && e.before.avg !== e.after.avg) {
             const d = e.after.avg - e.before.avg;
@@ -419,5 +448,5 @@ window.PriceMarks = (function () {
         setToday(chip.dataset.pmCode, chip.dataset.pmDate, st);
     });
 
-    return { winDays, decisions, todayMark, effectFor, judge, decisionsHtml, chartItems, chipHtml, buttonsHtml, setToday, canMark, GLYPH };
+    return { winDays, decisions, markOverlaps, todayMark, effectFor, judge, decisionsHtml, chartItems, chipHtml, buttonsHtml, setToday, canMark, GLYPH };
 })();

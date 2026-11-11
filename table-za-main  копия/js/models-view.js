@@ -69,7 +69,7 @@ window.ModelsView = (function () {
                     if (!r || !dates.has(r[1])) return;
                     const code = cleanFlight(r[0]);
                     const key = r[1] + '|' + code;
-                    if (seen.has(key)) return;
+                    if (seen.has(key) || r.segShare) return;   // вылет с посадками — по основному участку
                     const seats = typeof getSeatsOnSale === 'function' ? getSeatsOnSale(r) : 0;
                     if (!(seats > 0)) return;
                     seen.add(key);

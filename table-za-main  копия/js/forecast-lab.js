@@ -340,7 +340,8 @@ window.ForecastLab = (function () {
                 const t = parseLocalDate(date);
                 const code = cleanFlight(row[0]);
                 // Два вылета рейса в один день (основной и доп. номер) — это два разных вылета.
-                if (!t || seen.has(date + '|' + code)) return;
+                // Другие участки вылета с посадками (segShare) пропускаем: вылет считается по основному (сквозному) участку.
+                if (!t || row.segShare || seen.has(date + '|' + code)) return;
                 seen.add(date + '|' + code);
                 const sc = getFlightSalesList(date, code).length || perDate[date] > 1 ? code : base;
                 const dep = { base, date, ts: t.getTime(), row, rowCode: code, code: sc, s: getSeatsOnSale(row), sold: getSoldFromRow(row), flown: t.getTime() < now };

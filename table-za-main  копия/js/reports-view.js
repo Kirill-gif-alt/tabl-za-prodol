@@ -110,7 +110,7 @@ window.ReportsView = (function () {
     // как для продаж (buildFirstSalesRowByKey), иначе кресла и рейсы задвоятся.
     function collectWeek(week, withPlan) {
         const out = [];
-        const seen = new Set();
+        const picked = new Map();   // вылет → { row, base }: у вылета с посадками — основной (сквозной) участок
         const fromT = week.from.getTime();
         const toT = week.to.getTime();
         Object.keys(groupedData || {}).forEach(base => {
@@ -125,25 +125,30 @@ window.ReportsView = (function () {
                 // Закрытые рейсы кресел в продаже не дают (как в RMS).
                 if (typeof closedFlights !== 'undefined' && closedFlights.has(typeof getSalesLookupKey === 'function' ? getSalesLookupKey(row) : `${row[1]}|${code}`)) return;
                 const once = code + '|' + row[1];
-                if (seen.has(once)) return;
-                seen.add(once);
-                const seats = typeof getSeatsOnSale === 'function' ? getSeatsOnSale(row) : 0;
-                const sold = typeof getSoldFromRow === 'function' ? getSoldFromRow(row) : 0;
-                out.push({
-                    date: row[1],
-                    time: d.getTime(),
-                    dow: typeof DAYS_RU !== 'undefined' ? DAYS_RU[d.getDay()] : '',
-                    code,
-                    base,
-                    direction: typeof getFlightDirection === 'function' ? getFlightDirection(code) : code,
-                    aircraft: typeof getAircraftType === 'function' ? getAircraftType(row[4]) : '',
-                    line: lineOf(code),
-                    routeType: routeTypeOf(code),
-                    seats,
-                    sold,
-                    // План — не больше кресел в продаже (как в RMS и карточке рейса).
-                    plan: withPlan ? ((p) => (p != null && seats > 0 ? Math.min(p, seats) : p))(planLoad(row, base)) : null
-                });
+                const prev = picked.get(once);
+                if (prev && !(prev.row.segShare && !row.segShare)) return;
+                picked.set(once, { row, base });
+            });
+        });
+        picked.forEach(({ row, base }, once) => {
+            const d = parseLocalDate(row[1]);
+            const code = cleanFlight(row[0]);
+            const seats = typeof getSeatsOnSale === 'function' ? getSeatsOnSale(row) : 0;
+            const sold = typeof getSoldFromRow === 'function' ? getSoldFromRow(row) : 0;
+            out.push({
+                date: row[1],
+                time: d.getTime(),
+                dow: typeof DAYS_RU !== 'undefined' ? DAYS_RU[d.getDay()] : '',
+                code,
+                base,
+                direction: typeof getFlightDirection === 'function' ? getFlightDirection(code) : code,
+                aircraft: typeof getAircraftType === 'function' ? getAircraftType(row[4]) : '',
+                line: lineOf(code),
+                routeType: routeTypeOf(code),
+                seats,
+                sold,
+                // План — не больше кресел в продаже (как в RMS и карточке рейса).
+                plan: withPlan ? ((p) => (p != null && seats > 0 ? Math.min(p, seats) : p))(planLoad(row, base)) : null
             });
         });
         out.sort((a, b) => (a.time - b.time) || String(a.code).localeCompare(String(b.code), 'ru', { numeric: true }));

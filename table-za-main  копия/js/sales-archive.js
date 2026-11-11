@@ -195,6 +195,8 @@ window.SalesArchive = (function () {
                 const date = row[1];
                 const code = cleanFlight(row[0]);
                 if (!date || !code) return;
+                // Вылет с посадками — один раз, по основному (сквозному) участку: его загрузка и кресла идут в архив.
+                if (row.segShare) return;
                 const key = `${date}|${code}`;
                 if (seen.has(key)) return;
                 seen.add(key);
