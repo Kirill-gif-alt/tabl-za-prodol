@@ -84,6 +84,7 @@ html[data-theme="dark"] .td-stale-btn:hover { background: #10b981; border-color:
 .td-big-green { border-left-color: #10b981; }
 .td-big-amber { border-left-color: #f59e0b; }
 .td-big-blue { border-left-color: #2563eb; }
+.td-big-gray { border-left-color: #64748b; }
 .td-big-label {
     font-size: 0.84rem;
     color: var(--text-muted);
@@ -114,6 +115,7 @@ html[data-theme="dark"] .td-stale-btn:hover { background: #10b981; border-color:
 .td-big-green.td-big-on { border-left-color: #10b981; }
 .td-big-amber.td-big-on { border-left-color: #f59e0b; }
 .td-big-blue.td-big-on { border-left-color: #2563eb; }
+.td-big-gray.td-big-on { border-left-color: #64748b; }
 .td-big .td-link { font-size: inherit; }
 
 /* ---------- вторая строка: поменьше ---------- */
@@ -245,6 +247,22 @@ html[data-theme="dark"] .td-day.td-day-hi .td-bar { background: rgb(255 255 255 
     cursor: pointer;
 }
 .td-filter-chip:hover { border-style: solid; }
+.td-filter-chip-on { border-style: solid; border-color: var(--today-active, var(--text)); box-shadow: 0 0 0 1px var(--today-active, var(--text)); }
+/* Метка «новое»: сигнал появился сегодня (signal-news.js); та же в RMS. */
+.td-new {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 6px;
+    border-radius: 6px;
+    background: #dbeafe;
+    color: #1e3a8a;
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1.5;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+html[data-theme="dark"] .td-new { background: #172554; color: #bfdbfe; }
 .td-tools {
     display: inline-flex;
     flex-wrap: wrap;

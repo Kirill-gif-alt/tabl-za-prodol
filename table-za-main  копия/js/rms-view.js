@@ -175,7 +175,7 @@ function rmsRowHtml(f, ctx) {
     return `
             <tr class="rms-row ${zebra} ${alertCls}" data-rms-base="${escAttr(f.base)}" data-rms-date="${escAttr(f.date)}" data-rms-orig="${escAttr(flightCode)}" data-rms-key="${escAttr(flightCode + '|' + f.date)}" data-pm-row="1" tabindex="0">
                 <td class="rms-col-flight">
-                    <div class="rms-flight-code">${escHtml(flightCode)}${routeTypeLabel ? `<span class="rms-route-badge ${routeTypeCls}">${escHtml(routeTypeLabel)}</span>` : ''}${grp ? `<span class="grp-badge" title="В группах ${grp} чел. (заказы от ${FlightInsights.GROUP_MIN} билетов)">Г ${grp}</span>` : ''}</div>
+                    <div class="rms-flight-code">${escHtml(flightCode)}${routeTypeLabel ? `<span class="rms-route-badge ${routeTypeCls}">${escHtml(routeTypeLabel)}</span>` : ''}${grp ? `<span class="grp-badge" title="В группах ${grp} чел. (заказы от ${FlightInsights.GROUP_MIN} билетов)">Г ${grp}</span>` : ''}${typeof SignalNews !== 'undefined' && SignalNews.isNew(flightCode, f.date) ? '<span class="td-new">новое</span>' : ''}</div>
                     <div class="rms-flight-name${showRoute ? ' rms-flight-name-wrap' : ''}">${showRoute ? rmsRouteNameHtml(flightDir, f.route) : escHtml(flightDir)}</div>
                 </td>
                 <td class="rms-col-date col-date">
@@ -289,7 +289,7 @@ function getRmsRenderSig() {
         ? rmsActiveConditions.map(c => `${c.field}${c.op}${c.value}`).join(';')
         : '';
     const marks = typeof SalesManagement !== 'undefined' && SalesManagement.markRevision ? SalesManagement.markRevision() : 0;
-    return `${typeof getMetricsCacheSignature === 'function' ? getMetricsCacheSignature() : ''}|${days}|${route}|${alert}|${cond}|${typeof getTodayDate === 'function' ? getTodayDate() : ''}|pm${marks}|a${typeof analyticsRevision === 'function' ? analyticsRevision() : ''}`;
+    return `${typeof getMetricsCacheSignature === 'function' ? getMetricsCacheSignature() : ''}|${days}|${route}|${alert}|${cond}|${typeof getTodayDate === 'function' ? getTodayDate() : ''}|pm${marks}|a${typeof analyticsRevision === 'function' ? analyticsRevision() : ''}|n${typeof SignalNews !== 'undefined' ? SignalNews.revision() : ''}`;
 }
 
 function renderRmsWatchlist() {
