@@ -4,7 +4,10 @@
 //   { version: 1, updatedAt, flights: { 'дд.мм.гггг|KV-101': { s: кресел|0, d: { '<dtd>': {
 //       k: { V: [число, сумма], K: [...] }   — взрослые платные по классам бронирования
 //       z: нулевые (цена 0)   g: групповые (заказ от PV.GROUP_MIN билетов, любой тариф)
-//       o: прочие платные (детские, младенцы, льготные)   cut: 1 — день среза данных, мог быть неполным } } } } }
+//       o: прочие платные (детские, младенцы, льготные)   cut: 1 — день среза данных, мог быть неполным
+//       p: платных билетов всех видов (с группами и детскими)   r: выручка по ним, ₽ (по фактическому тарифу) } } } } }
+// День сделки = дата вылета минус dtd. По журналу строятся «продажи по дням» (daysFor) и средний тариф в карточке рейса,
+// а расчёт рублей по решениям (decision-money.js) берёт из него дни, которых уже нет в файле продаж.
 // Без ФИО, PNR и дат рождения — только счётчики и суммы. Пишет только публикующий (share_data), в простое, порциями,
 // не чаще раза на новые данные. Читается лениво (ensureMonths) — теми, у кого есть право.
 window.SalesDayLog = (function () {
@@ -35,9 +38,40 @@ window.SalesDayLog = (function () {
         return t ? formatDateRu(new Date(t)) : '';
     }
 
+    // Читать может любой вошедший: в журнале нет ФИО, PNR и дат рождения, только счётчики и суммы.
     function canUse() {
-        return typeof ProfileAuth !== 'undefined' && ProfileAuth.hasPermission
-            && (ProfileAuth.hasPermission('share_data') || ProfileAuth.hasPermission('view_forecast'));
+        if (typeof ProfileAuth === 'undefined' || !ProfileAuth.getCurrentProfile) return false;
+        return !!ProfileAuth.getCurrentProfile();
+    }
+
+    // Окно файла продаж: от самой ранней до самой поздней даты сделки в нём (мс). Дни внутри окна берутся из файла,
+    // за его пределами — из журнала. Считается один раз на загрузку данных.
+    let winMemo = { ref: null, epoch: -1, win: null };
+    function fileWindow() {
+        const sd = typeof salesDetails !== 'undefined' ? salesDetails : null;
+        if (!sd) return null;
+        const epoch = typeof dataEpoch === 'number' ? dataEpoch : 0;
+        if (winMemo.ref === sd && winMemo.epoch === epoch) return winMemo.win;
+        const seen = new Set();
+        const keys = Object.keys(sd);
+        for (let i = 0; i < keys.length; i++) {
+            const l = sd[keys[i]];
+            for (let j = 0; j < l.length; j++) seen.add(l[j].dealDate);
+        }
+        let lo = Infinity;
+        let hi = -Infinity;
+        seen.forEach(ds => { const t = ds ? parseLocalDate(ds) : null; if (t) { const ms = t.getTime(); if (ms < lo) lo = ms; if (ms > hi) hi = ms; } });
+        const win = lo <= hi ? { from: lo, to: hi } : null;
+        winMemo = { ref: sd, epoch, win };
+        return win;
+    }
+
+    // Окно файла в «днях до вылета» для вылета date: { lo, hi } или null.
+    function windowDtd(date, win) {
+        const fly = parseLocalDate(date);
+        if (!fly || !win) return null;
+        const f = fly.getTime();
+        return { lo: Math.round((f - win.to) / 86400000), hi: Math.round((f - win.from) / 86400000) };
     }
 
     // ---------- построение ----------
@@ -57,7 +91,9 @@ window.SalesDayLog = (function () {
             if (!deal) continue;
             const dtd = Math.round((fly.getTime() - deal.getTime()) / 86400000);
             if (dtd < 0 || dtd > MAX_DTD) continue;
-            const e = d[dtd] || (d[dtd] = { k: {}, z: 0, g: 0, o: 0, cut: cut && x.dealDate === cut ? 1 : 0 });
+            const e = d[dtd] || (d[dtd] = { k: {}, z: 0, g: 0, o: 0, p: 0, r: 0, cut: cut && x.dealDate === cut ? 1 : 0 });
+            const fp = x.fare > 0 ? x.fare : (x.adjustedFare || 0);   // как в расчёте рублей по решениям
+            if (fp > 0) { e.p++; e.r += fp; }
             const price = x.adjustedFare || x.fare || 0;
             if ((Number(x.grp) || 0) >= gmin) e.g++;
             else if (!(price > 0)) e.z++;
@@ -72,6 +108,7 @@ window.SalesDayLog = (function () {
         if (!keys.length) return null;
         keys.forEach(t => {
             const e = d[t];
+            e.r = Math.round(e.r);
             Object.keys(e.k).forEach(c => { e.k[c][1] = Math.round(e.k[c][1]); });
         });
         return { s: Math.max(0, parseInt(seats, 10) || 0), d };
@@ -83,18 +120,23 @@ window.SalesDayLog = (function () {
         return n;
     }
 
-    function flightCount(rec) {
+    // Билетов в записи; lo..hi — только дни из этого диапазона dtd (окно файла продаж).
+    function flightCount(rec, lo, hi) {
         let n = 0;
-        Object.keys((rec && rec.d) || {}).forEach(t => { n += dayCount(rec.d[t]); });
+        Object.keys((rec && rec.d) || {}).forEach(t => { if (lo == null || (+t >= lo && +t <= hi)) n += dayCount(rec.d[t]); });
         return n;
     }
 
-    // Слияние записей одного вылета. Возвращает { rec, changed }.
+    // Слияние записей одного вылета. Возвращает { rec, changed }. win — окно файла продаж в dtd этого вылета { lo, hi } (или null).
     // По каждому dtd: нового нет — старое; старое помечено cut (день был неполным) — новое; иначе новое,
-    // кроме случая, когда во всём вылете новых билетов < 80% от старых (обрезанный файл) — тогда старое.
-    function mergeFlight(prev, next) {
+    // кроме случая, когда в окне файла новых билетов < 80% от старых (обрезанный файл) — тогда старое.
+    // Дни внутри окна, которых в новом файле нет (все билеты возвращены), убираются; крайний ранний день окна не уменьшаем
+    // (файл мог начаться с середины дня).
+    function mergeFlight(prev, next, win) {
         if (!prev || !prev.d) return { rec: next, changed: true };
-        const truncated = flightCount(next) < flightCount(prev) * KEEP_RATIO;
+        const lo = win ? win.lo : null;
+        const hi = win ? win.hi : null;
+        const truncated = flightCount(next, lo, hi) < flightCount(prev, lo, hi) * KEEP_RATIO;
         const d = {};
         let changed = false;
         Object.keys(prev.d).forEach(t => { d[t] = prev.d[t]; });
@@ -102,8 +144,12 @@ window.SalesDayLog = (function () {
             const o = prev.d[t];
             const n = next.d[t];
             if (o && !o.cut && truncated) return;
+            if (o && win && +t === hi && dayCount(o) > dayCount(n)) return;
             if (!o || JSON.stringify(o) !== JSON.stringify(n)) { d[t] = n; changed = true; }
         });
+        if (win && !truncated) {
+            Object.keys(prev.d).forEach(t => { if (!next.d[t] && +t > lo && +t < hi) { delete d[t]; changed = true; } });
+        }
         const s = next.s > 0 ? next.s : (prev.s || 0);
         if (s !== (prev.s || 0)) changed = true;
         return { rec: changed ? { s, d } : prev, changed };
@@ -139,6 +185,92 @@ window.SalesDayLog = (function () {
     // Запись вылета из загруженных файлов (после ensureMonths) или null.
     function flight(date, code) {
         return store[`${date}|${code}`] || null;
+    }
+
+    function addDaysStr(date, n) {
+        const d = parseLocalDate(date);
+        if (!d) return '';
+        d.setDate(d.getDate() - n);
+        return formatDateRu(d);
+    }
+
+    // Продажи вылета по дням сделки из журнала: [{ deal, dtd, n, a, r, ra, c, g, p }], по возрастанию даты.
+    // n — билетов, a — взрослых платных, ra — их выручка, r — выручка по всем платным (null — день записан старым видом),
+    // c — { класс: билетов } у взрослых платных, g — в группах, p — платных всех видов.
+    function daysFor(date, code) {
+        const rec = flight(date, code);
+        if (!rec || !rec.d) return [];
+        return Object.keys(rec.d).map(t => {
+            const e = rec.d[t];
+            let a = 0;
+            let ra = 0;
+            const c = {};
+            Object.keys(e.k || {}).forEach(cl => { const v = e.k[cl] || [0, 0]; a += v[0] || 0; ra += v[1] || 0; c[cl] = v[0] || 0; });
+            return { deal: addDaysStr(date, +t), dtd: +t, n: dayCount(e), a, ra, r: e.p != null ? (e.r || 0) : null, c, g: e.g || 0, p: e.p != null ? e.p : null };
+        }).sort((x, y) => y.dtd - x.dtd);
+    }
+
+    // «Билеты» для расчёта рублей: дни сделок вне окна файла продаж, восстановленные из журнала. У каждого — средний тариф дня
+    // (по классу взрослых и общий для прочих платных), так что число билетов и сумма по дню сходятся с настоящими.
+    // Пусто, если журнала нет или он записан старым видом (без выручки по всем платным).
+    function syntheticTickets(date, code) {
+        const rec = flight(date, code);
+        if (!rec || !rec.d) return [];
+        const wd = windowDtd(date, fileWindow());
+        const out = [];
+        Object.keys(rec.d).forEach(ts => {
+            const t = +ts;
+            const e = rec.d[ts];
+            if (e.p == null) return;
+            if (wd && t >= wd.lo && t <= wd.hi) return;   // этот день есть в файле продаж
+            const deal = addDaysStr(date, t);
+            let kn = 0;
+            let ks = 0;
+            Object.keys(e.k || {}).forEach(cl => {
+                const v = e.k[cl];
+                if (!v || !(v[0] > 0)) return;
+                kn += v[0];
+                ks += v[1];
+                const f = v[1] / v[0];
+                for (let i = 0; i < v[0]; i++) out.push({ dealDate: deal, fare: f, adjustedFare: f, basicFareStr: cl === '?' ? '' : cl, syn: true });
+            });
+            const rest = Math.max(0, (e.p || 0) - kn);
+            const rf = rest > 0 ? Math.max(0, (e.r || 0) - ks) / rest : 0;
+            for (let i = 0; i < rest; i++) out.push({ dealDate: deal, fare: rf, adjustedFare: rf, basicFareStr: '', syn: true });
+            const zeros = Math.max(0, dayCount(e) - (e.p || 0));
+            for (let i = 0; i < zeros; i++) out.push({ dealDate: deal, fare: 0, adjustedFare: 0, basicFareStr: '', syn: true });
+        });
+        return out;
+    }
+
+    // Взрослые платные по дням сделки: свежие данные из файла продаж + более старые дни из журнала.
+    // [{ dtd, a, ra }] по убыванию dtd (от раннего дня к позднему).
+    function adultDays(date, code) {
+        const wd = windowDtd(date, fileWindow());
+        const byDtd = Object.create(null);
+        const rec = flight(date, code);
+        if (rec && rec.d) Object.keys(rec.d).forEach(ts => {
+            const t = +ts;
+            if (wd && t >= wd.lo && t <= wd.hi) return;
+            const e = rec.d[ts];
+            let a = 0;
+            let ra = 0;
+            Object.keys(e.k || {}).forEach(cl => { a += e.k[cl][0] || 0; ra += e.k[cl][1] || 0; });
+            byDtd[t] = { dtd: t, a, ra };
+        });
+        const live = build(date, code, 0);
+        if (live) Object.keys(live.d).forEach(ts => {
+            const e = live.d[ts];
+            let a = 0;
+            let ra = 0;
+            Object.keys(e.k || {}).forEach(cl => { a += e.k[cl][0] || 0; ra += e.k[cl][1] || 0; });
+            byDtd[ts] = { dtd: +ts, a, ra };
+        });
+        return Object.keys(byDtd).map(t => byDtd[t]).sort((x, y) => y.dtd - x.dtd);
+    }
+
+    function monthsLoaded(months) {
+        return (months || []).every(m => loadedMonths.has(m));
     }
 
     // ---------- запись ----------
@@ -177,8 +309,9 @@ window.SalesDayLog = (function () {
             const flights = remote && remote.flights && typeof remote.flights === 'object' ? { ...remote.flights } : {};
             let changed = false;
             let i = 0;
+            const gw = fileWindow();
             for (const k of Object.keys(additions)) {
-                const m = mergeFlight(flights[k], additions[k]);
+                const m = mergeFlight(flights[k], additions[k], windowDtd(k.slice(0, k.indexOf('|')), gw));
                 if (m.changed) { flights[k] = m.rec; changed = true; }
                 if ((++i & 31) === 0) await tick();
             }
@@ -253,5 +386,5 @@ window.SalesDayLog = (function () {
         whenIdle(() => { capture(); }, 40000);
     }
 
-    return { build, flight, ensureMonths, capture, captureSoon, mergeFlight, revision: () => rev };
+    return { build, flight, daysFor, adultDays, syntheticTickets, fileWindow, monthsLoaded, ensureMonths, capture, captureSoon, mergeFlight, revision: () => rev };
 })();

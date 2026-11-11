@@ -1,11 +1,19 @@
 // Метка «новое»: сигнал появился сегодня, а в прошлый раз (в последний прошлый день работы) его не было.
 // Сигналы: «требует внимания» (attention.js) и совет «Снизить / Повысить цену» (SalesAdvice, считает вкладка «Сегодня»).
-// Общей папки с дневным снимком сигналов на сайте нет (daylog — это продажи, не сигналы), поэтому снимок хранится в браузере:
-// localStorage, ключ KEY, по дате; держим 3 последних дня. На каждом компьютере свой; в первый день работы и без localStorage меток нет.
-// Вылет, который вчера ещё не попадал в окно подсчёта (окно сдвинулось), «новым» не считается — иначе метка была бы ложной.
+// Снимок сигналов по дням лежит в общей папке: shared/signals-days.json (последние 7 дней) — метка одинакова на всех компьютерах.
+// Пишет только тот, у кого право публиковать данные (share_data), в фоне и только когда снимок изменился; читают все после входа.
+// Если общая папка недоступна, снимок хранится в браузере (localStorage, 3 дня) — тогда на каждом компьютере свой.
+// В первый день работы меток нет. Вылет, который в прошлый раз ещё не попадал в окно подсчёта (окно сдвинулось), «новым» не считается.
 window.SignalNews = (function () {
     const KEY = 'krasavia_signal_days_v1';
-    const KEEP = 3;
+    const KEEP = 3;           // дней в запасном снимке (браузер)
+    const KEEP_SHARED = 7;    // дней в общем файле
+    const FILE = 'signals-days.json';
+    let remote = {};          // дни из общего файла
+    let remoteLoad = null;
+    let remoteLoadedDay = '';
+    let sharedText = '';
+    let sharedTimer = 0;
 
     let advice = [];        // сегодняшние советы up/down: [{ code, date, status, dtd }]
     let adviceAhead = 0;    // на сколько дней вперёд они посчитаны (0 — не считались)
@@ -31,7 +39,7 @@ window.SignalNews = (function () {
     function baseline() {
         const t = dayNum(today());
         if (t == null) return null;
-        const all = load();
+        const all = Object.assign({}, load(), remote);     // общий файл главнее запасного
         let best = null;
         Object.keys(all).forEach(d => {
             const n = dayNum(d);
@@ -80,7 +88,7 @@ window.SignalNews = (function () {
             if (typeof Attention === 'undefined' || !today()) return;
             const all = load();
             const entry = {
-                a: Attention.list().map(m => m.orig + '|' + m.date + '|attn'),
+                a: [...new Set(Attention.list().map(m => m.orig + '|' + m.date + '|attn'))],
                 s: advice.map(a => a.code + '|' + a.date + '|' + a.status),
                 h: { a: Attention.HORIZON, s: adviceAhead }
             };
@@ -89,11 +97,55 @@ window.SignalNews = (function () {
             const out = {};
             days.forEach(d => { out[d] = all[d]; });
             const str = JSON.stringify(out);
-            if (str === lastSaved) return;
-            localStorage.setItem(KEY, str);
-            lastSaved = str;
-        } catch (e) { /* localStorage недоступен — меток просто не будет */ }
+            if (str !== lastSaved) { localStorage.setItem(KEY, str); lastSaved = str; }
+        } catch (e) { /* localStorage недоступен — остаётся общий файл */ }
+        publishSoon(entryForShared());
     }
 
-    return { setAdvice, isNew, hasBaseline, revision, record };
+    function entryForShared() {
+        if (typeof Attention === 'undefined') return null;
+        return {
+            a: [...new Set(Attention.list().map(m => m.orig + '|' + m.date + '|attn'))],
+            s: advice.map(a => a.code + '|' + a.date + '|' + a.status),
+            h: { a: Attention.HORIZON, s: adviceAhead }
+        };
+    }
+
+    function canPublish() {
+        return typeof ProfileAuth !== 'undefined' && ProfileAuth.hasPermission && ProfileAuth.hasPermission('share_data') && typeof SharedStorage !== 'undefined';
+    }
+
+    // Запись в общий файл: в фоне, не чаще раза на изменение снимка; чужие дни не трогаем.
+    function publishSoon(entry) {
+        if (!entry || !canPublish()) return;
+        const day = today();
+        const text = day + JSON.stringify(entry);
+        if (text === sharedText) return;
+        clearTimeout(sharedTimer);
+        sharedTimer = setTimeout(async () => {
+            try {
+                if (!(await SharedStorage.canWrite())) return;
+                const res = await SharedStorage.updateJsonFile(FILE, (cur) => {
+                    const days = Object.assign({}, cur && cur.days);
+                    days[day] = entry;
+                    const keep = Object.keys(days).sort((x, y) => (dayNum(y) || 0) - (dayNum(x) || 0)).slice(0, KEEP_SHARED);
+                    const out = {};
+                    keep.forEach(d => { out[d] = days[d]; });
+                    return { version: 1, updatedAt: new Date().toISOString(), days: out };
+                });
+                if (res && res.ok) { sharedText = text; remote = Object.assign({}, res.data.days); rev++; }
+            } catch (e) { console.warn('SignalNews', e); }
+        }, 3000);
+    }
+
+    // Прочитать общий файл (в фоне, раз за день и после входа); onDone — перерисовать то, что показывает метки.
+    function loadShared(onDone) {
+        if (typeof SharedStorage === 'undefined' || remoteLoad || remoteLoadedDay === today()) return;
+        remoteLoad = SharedStorage.readJsonFileStrict(FILE).then(r => {
+            if (r && r.ok && r.data && r.data.days && typeof r.data.days === 'object') { remote = Object.assign({}, r.data.days); rev++; }
+            remoteLoadedDay = today();
+        }).catch(() => {}).finally(() => { remoteLoad = null; if (onDone) onDone(); });
+    }
+
+    return { setAdvice, isNew, hasBaseline, revision, record, loadShared };
 })();

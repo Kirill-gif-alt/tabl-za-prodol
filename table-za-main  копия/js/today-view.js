@@ -877,6 +877,7 @@ window.TodayView = (function () {
         render();
         buildAdvice().then(() => { announceSignals(); render(); return buildNorm(); }).then(render).catch(e => console.warn('TodayView', e));
         buildDecisions();
+        if (typeof SignalNews !== 'undefined') SignalNews.loadShared(() => { if (document.getElementById('td-page')) render(); });
     }
 
     function refresh() {

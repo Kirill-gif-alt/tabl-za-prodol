@@ -26,7 +26,7 @@ SHARED_WRITABLE = {
     "profiles.json", "fare-grid.json", "snapshot.json", "activity.json", "flight-comments.json",
     "subsidy-overrides.json", "pkz-nav.json", "sales-management.json",
     "creative-layouts.json", "subsidy-fares.json", "subsidy-ref.json", "calendar.json", "flights.json",
-    "forecast-now.json", "params.json", "lower-requests.json",
+    "forecast-now.json", "signals-days.json", "params.json", "lower-requests.json",
     "export-kk.json", "export-mr.json",
 }
 # Резервные копии перед перезаписью: shared/_history/<имя>/<имя>__ГГГГ-ММ-ДД_ЧЧ-ММ-СС.json.

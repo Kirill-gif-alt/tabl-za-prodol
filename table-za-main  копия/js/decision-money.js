@@ -458,6 +458,15 @@ window.DecisionMoney = (function () {
 
     // Оценка одного решения по данным сайта. m: { code|flight, dep, check, status, clsFrom?, clsTo? }.
     // Почти всё считается; сомнительные случаи помечаются флагами (m.flags) и получают доверие «низкое».
+    // Дни сделок, которых уже нет в файле продаж (он держит последние ~14 дней), берём из журнала продаж по дням (day-log.js):
+    // число билетов и выручка по дню те же, что были в файле. Дни, которые в файле есть, журналом не заменяются.
+    function withJournal(dep, code, fileList) {
+        if (typeof SalesDayLog === 'undefined' || !SalesDayLog.syntheticTickets) return fileList;
+        let syn = [];
+        try { syn = SalesDayLog.syntheticTickets(dep, code); } catch (e) { syn = []; }
+        return syn.length ? fileList.concat(syn) : fileList;
+    }
+
     function compute(m) {
         decMemo = new Map();
         const code = m.code || m.flight;
@@ -469,7 +478,7 @@ window.DecisionMoney = (function () {
         const dtdD0 = dayDiff(dep, m.check);
         if (dtdD0 == null) return na('нет даты решения');
         if (dtdD0 < 1) return na('решение в день вылета или позже: после него не осталось дней для оценки');
-        const list = typeof getFlightSalesList === 'function' ? getFlightSalesList(dep, code) : [];
+        const list = withJournal(dep, code, typeof getFlightSalesList === 'function' ? getFlightSalesList(dep, code) : []);
         if (!list.length) return na('билетов этого вылета нет в данных: оценить нельзя', { noTickets: true });
         const nextGap = nextDecisionGap(code, dep, m.check);
         const dtdD = dtdD0;
@@ -808,6 +817,7 @@ window.DecisionMoney = (function () {
     // Пересчитать зафиксированный итог с текущими параметрами (кнопка администратора): запись заменяется.
     async function recompute(m) {
         const key = keyOf(m);
+        if (typeof SalesDayLog !== 'undefined' && SalesDayLog.ensureMonths) { try { await SalesDayLog.ensureMonths([monthOf(m.dep)]); } catch (e) { /* ignore */ } }
         const res = compute(m);
         // Пересчитать нечем (билетов вылета уже нет) — прежний итог не стираем.
         const old = get(key);
@@ -833,6 +843,11 @@ window.DecisionMoney = (function () {
     async function resolveAll(decisions, onProgress) {
         const months = [...new Set(decisions.map(d => monthOf(d.check)).filter(Boolean))];
         await ensureMonths(months);
+        // Журнал продаж по дням: месяцы вылетов решений (в фоне чтения нет ничего тяжёлого — файл на месяц небольшой).
+        if (typeof SalesDayLog !== 'undefined' && SalesDayLog.ensureMonths) {
+            const dm = [...new Set(decisions.map(d => monthOf(d.dep)).filter(Boolean))];
+            try { await SalesDayLog.ensureMonths(dm); } catch (e) { /* без журнала считаем по файлу продаж */ }
+        }
         const out = new Map();
         const toSave = [];
         let last = performance.now();

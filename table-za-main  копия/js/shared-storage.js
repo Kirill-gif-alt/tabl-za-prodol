@@ -14,6 +14,7 @@ window.SharedStorage = (function () {
         'export-kk.json', 'export-mr.json', // вкладки выгрузки «Загрузка - КК / Межрегионалка» (js/excel-export.js)
         'lower-requests.json', // «Запрос на понижение» (js/lower-request.js)
         'params.json',        // параметры расчётов администратора (js/params.js)
+        'signals-days.json',  // сигналы по дням для метки «новое» (js/signal-news.js): последние 7 дней, пишет тот, у кого share_data
         'forecast-now.json'   // прогноз к вылету по всем рейсам — один для всех (пишет тот, у кого модель обучена)
     ]);
 
