@@ -363,48 +363,52 @@ function matchPairLegsTurnaround(outRows, inRows) {
     const tsOfDate = (d) => (typeof PerfCache !== 'undefined' ? PerfCache.dateTsMemo(d) : (parseLocalDate(d) || { getTime: () => null }).getTime());
     const insInfo = ins.map(r => ({ ac: getPairAircraftKey(r), ts: tsOfDate(r[1]), dep: typeof timeToMinutes === 'function' ? timeToMinutes(getDepTime(r)) : 0 }));
 
-    outs.forEach((out) => {
-        const outDate = out[1];
-        const outDep = typeof timeToMinutes === 'function' ? timeToMinutes(getDepTime(out)) : 0;
-        const outAc = getPairAircraftKey(out);
-        const outTs = tsOfDate(outDate);
-        let bestIdx = -1;
-        let bestScore = Infinity;
-
-        for (let i = 0; i < ins.length; i++) {
-            if (usedIn.has(i)) continue;
-            const info = insInfo[i];
-            // одинаковый тип ВС — обязателен для «туда-обратно»
-            if (info.ac !== outAc) continue;
-            if (outTs == null || info.ts == null) continue;
-            const dayDiff = Math.round((info.ts - outTs) / 86400000);
-            // только тот же день или обратный после «туда» (переходящие сутки), не «вчера»
-            if (dayDiff < 0 || dayDiff > 2) continue;
-            const inDep = info.dep;
-            // приоритет: тот же день → ближайшие сутки;
-            // внутри дня — ближайшее время к вылету «туда» (354 раньше 353 тоже допускается)
-            const timeGap = Math.abs(inDep - outDep);
-            const score = dayDiff * 100000 + timeGap;
-            if (score < bestScore) {
-                bestScore = score;
-                bestIdx = i;
+    // Сначала пары одного дня, потом «обратно» на следующие сутки — иначе ранний вылет без пары
+    // (например, второй участок рейса с посадкой) забирал обратный рейс у вылета того дня.
+    const outInfo = outs.map(out => ({
+        date: out[1],
+        dep: typeof timeToMinutes === 'function' ? timeToMinutes(getDepTime(out)) : 0,
+        ac: getPairAircraftKey(out),
+        ts: tsOfDate(out[1]),
+        day: cleanFlight(out[0]) + '|' + out[1]
+    }));
+    const match = new Array(outs.length).fill(-1);
+    const pairedDays = new Set();
+    const pass = (minDay, maxDay) => {
+        outs.forEach((out, o) => {
+            if (match[o] >= 0) return;
+            const oi = outInfo[o];
+            // Другой участок этого рейса в этот день уже в паре — на чужие сутки не тянемся.
+            if (minDay > 0 && pairedDays.has(oi.day)) return;
+            let bestIdx = -1;
+            let bestScore = Infinity;
+            for (let i = 0; i < ins.length; i++) {
+                if (usedIn.has(i)) continue;
+                const info = insInfo[i];
+                // одинаковый тип ВС — обязателен для «туда-обратно»
+                if (info.ac !== oi.ac) continue;
+                if (oi.ts == null || info.ts == null) continue;
+                const dayDiff = Math.round((info.ts - oi.ts) / 86400000);
+                // только тот же день или обратный после «туда» (переходящие сутки), не «вчера»
+                if (dayDiff < minDay || dayDiff > maxDay) continue;
+                // внутри дня — ближайшее время к вылету «туда» (354 раньше 353 тоже допускается)
+                const score = dayDiff * 100000 + Math.abs(info.dep - oi.dep);
+                if (score < bestScore) {
+                    bestScore = score;
+                    bestIdx = i;
+                }
             }
-        }
-
-        if (bestIdx >= 0) {
-            usedIn.add(bestIdx);
-            entries.push({
-                date: outDate,
-                outRow: out,
-                inRow: ins[bestIdx]
-            });
-        } else {
-            entries.push({
-                date: outDate,
-                outRow: out,
-                inRow: null
-            });
-        }
+            if (bestIdx >= 0) {
+                usedIn.add(bestIdx);
+                match[o] = bestIdx;
+                pairedDays.add(oi.day);
+            }
+        });
+    };
+    pass(0, 0);
+    pass(1, 2);
+    outs.forEach((out, o) => {
+        entries.push({ date: out[1], outRow: out, inRow: match[o] >= 0 ? ins[match[o]] : null });
     });
 
     for (let i = 0; i < ins.length; i++) {
