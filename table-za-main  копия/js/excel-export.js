@@ -1084,7 +1084,9 @@ async function dataHistLoad(key, info) {
 // заменяется своей, вкладки других людей остаются. Возвращает итоговый набор вкладок для файла Excel.
 async function dataHistSave(key, map, ownTab, info) {
     const shared = DATA_HIST_FILES[String(key).split(':').slice(1).join(':')];
-    if (shared && typeof SharedStorage !== 'undefined' && SharedStorage.updateJsonFile) {
+    // В общую папку пишет только тот, у кого есть право share_data; остальные — только локально.
+    const mayShare = typeof ProfileAuth === 'undefined' || ProfileAuth.hasPermission('share_data');
+    if (shared && mayShare && typeof SharedStorage !== 'undefined' && SharedStorage.updateJsonFile) {
         const ownPacked = ownTab && map[ownTab] ? dataHistPack(map[ownTab]) : null;
         const res = await SharedStorage.updateJsonFile(shared, (cur) => {
             const packed = (cur && cur.sheets && typeof cur.sheets === 'object') ? { ...cur.sheets } : {};

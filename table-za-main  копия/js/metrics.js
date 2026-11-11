@@ -247,7 +247,8 @@ function getGlobalKPIs() {
     const todaySales = kpi.sales;
     const todayRevenue = kpi.revenue;
     const upcoming = getAllUpcomingFlights(30);
-    const avgFare = todaySales > 0 ? Math.round(todayRevenue / todaySales) : 0;
+    // Средний тариф — оплаченные взрослые билеты дня, как в таблицах (не вся выручка на все билеты).
+    const avgFare = kpi.adultN > 0 ? Math.round(kpi.adultSum / kpi.adultN) : 0;
     // Продажи сегодня по вылетам, которых нет в файле загрузки (чартеры, доп. номера): в сумме по рейсам их не видно.
     let todayOutside = 0;
     try {

@@ -401,13 +401,16 @@ window.CreativeView = (function () {
 
     async function writeShared(mutate) {
         if (typeof SharedStorage === 'undefined' || typeof SharedStorage.writeJsonFile !== 'function') return false;
-        let remote = null;
-        try { remote = await SharedStorage.readJsonFile(SHARED_FILE); } catch (e) { remote = null; }
-        // Файл раньше читался, а сейчас нет — не записываем, иначе пропадут чужие общие шаблоны.
-        if (!remote && sharedSeen) return false;
-        const layouts = remote && remote.layouts && typeof remote.layouts === 'object' ? { ...remote.layouts } : {};
-        mutate(layouts);
-        const ok = await SharedStorage.writeJsonFile(SHARED_FILE, { version: 1, updatedAt: new Date().toISOString(), layouts });
+        if (typeof SharedStorage.updateJsonFile !== 'function') return false;
+        // Перечитать файл → применить правку → записать, только если файл не менялся (чужие шаблоны не теряются).
+        const res = await SharedStorage.updateJsonFile(SHARED_FILE, (remote) => {
+            // Файл раньше читался, а сейчас пуст — не записываем, иначе пропадут чужие общие шаблоны.
+            if (!remote && sharedSeen) return false;
+            const layouts = remote && remote.layouts && typeof remote.layouts === 'object' ? { ...remote.layouts } : {};
+            mutate(layouts);
+            return { version: 1, updatedAt: new Date().toISOString(), layouts };
+        }).catch(() => ({ ok: false }));
+        const ok = res.ok;
         if (ok) await loadShared();
         return !!ok;
     }

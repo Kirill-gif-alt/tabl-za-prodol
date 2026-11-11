@@ -52,6 +52,14 @@ function createCostCalcView(c) {
 }
 
 // Загрузка файла себестоимости и субсидий (кнопка в «Отчётах»): выбор файла → разбор → общий снимок для всех ПК.
+// Кто может загрузить файл расходов: правка справочника субсидий (запись в общий справочник) или загрузка данных (только эта сессия).
+function costsUploadAccess() {
+    if (typeof ProfileAuth === 'undefined') return { ok: true, local: false };
+    const shared = !!(typeof SubsidyRef !== 'undefined' && SubsidyRef.canEdit && SubsidyRef.canEdit());
+    const own = ProfileAuth.hasPermission('load_data');
+    return { ok: shared || own, local: !shared };
+}
+
 function uploadCostsFile() {
     return new Promise((resolve) => {
         const inp = document.createElement('input');
@@ -405,15 +413,16 @@ function refreshCostCalc() {
     costCalcMemo = null;
 
     if (typeof RouteCosts === 'undefined' || !RouteCosts.loaded) {
-        // Кнопка — тот же обработчик, что у «Отчёты» → «Выгрузки» → «Себестоимость и субсидии»; только тем, кому открыты «Отчёты».
-        const canUploadCosts = typeof uploadCostsFile === 'function' && (typeof ProfileAuth === 'undefined' || ProfileAuth.canAccessTab('reports'));
+        // Кнопка — тот же обработчик и то же правило, что у «Отчёты» → «Выгрузки» → «Себестоимость и субсидии».
+        const upAccess = costsUploadAccess();
+        const canUploadCosts = typeof uploadCostsFile === 'function' && upAccess.ok;
         form.innerHTML = '';
         result.innerHTML = `
             <div class="table-empty-state">
                 <div class="table-empty-icon">📂</div>
                 <div class="table-empty-title">Нет файла расходов</div>
                 <div class="table-empty-hint">Загрузите файл с расходами в разделе «Отчёты».</div>
-                ${canUploadCosts ? '<button type="button" class="btn-primary cost-calc-upload-btn" onclick="uploadCostsFile()">Загрузить файл расходов</button>' : ''}
+                ${canUploadCosts ? '<button type="button" class="btn-primary cost-calc-upload-btn" onclick="uploadCostsFile()">Загрузить файл расходов</button>' + (upAccess.local ? '<div class="table-empty-hint">только на этом компьютере</div>' : '') : ''}
             </div>`;
         return;
     }

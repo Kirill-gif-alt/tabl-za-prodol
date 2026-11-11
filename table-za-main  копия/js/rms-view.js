@@ -77,7 +77,7 @@ function createRmsView(c) {
                             </select>
                         </div>
                         <div class="table-controls-spacer"></div>
-                        <button type="button" onclick="exportRmsToExcel()" class="filter-btn rms-export-btn">
+                        <button type="button" onclick="exportRmsToExcel()" class="filter-btn rms-export-btn"${typeof ProfileAuth !== 'undefined' && !ProfileAuth.hasPermission('export_excel') ? ' disabled' : ''}>
                             В Excel
                         </button>
                     </div>

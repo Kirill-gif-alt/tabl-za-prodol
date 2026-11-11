@@ -8515,3 +8515,17 @@ html[data-theme="dark"] .mlw-best { color: #34d399; }
 /* Окно отметки в «Управлении продажами»: не выше экрана, «Готово» всегда видна */
 .sm-pop { max-height: calc(100vh - 16px); overflow-y: auto; overscroll-behavior: contain; }
 .sm-pop .sm-pop-actions { position: sticky; bottom: -12px; margin-bottom: -12px; padding: 8px 0 12px; background: inherit; z-index: 1; }
+
+/* Цвета из ⚙ «Цвета вкладок»: действуют, только если пользователь сам сменил цвет (классы ставит ThemeSettings.apply).
+   Пока цвет не менялся, вид таблиц прежний. */
+html.th-data-out .data-board-table tbody tr:not(.closed-flight):not(.flew-flight) td.data-block-out:not(.data-leg-closed):not(.data-leg-flew):not(.data-block-custom-hl):not(.data-block-zpk-full):not(.tbl-sel) { background: var(--data-leg-out) !important; }
+html.th-data-in .data-board-table tbody tr:not(.closed-flight):not(.flew-flight) td.data-block-in:not(.data-leg-closed):not(.data-leg-flew):not(.data-block-custom-hl):not(.data-block-zpk-full):not(.tbl-sel) { background: var(--data-leg-in) !important; }
+html.th-data-head .data-board-caption-inner { background: var(--data-card-head-bg); color: var(--data-card-head-text, #e2e8f0); }
+html.th-data-head .data-board-caption-inner .data-board-cap-out,
+html.th-data-head .data-board-caption-inner .data-board-cap-in,
+html.th-data-head .data-board-caption-inner .data-board-cap-sep { color: inherit; }
+html.th-pair-out .pair-table tbody tr:not(.closed-flight):not(.flew-flight):not(.full-loaded) td.pair-leg-out:not(.data-block-out):not(.tbl-sel) { background: var(--pair-leg-out-bg) !important; }
+html.th-pair-in .pair-table tbody tr:not(.closed-flight):not(.flew-flight):not(.full-loaded) td.pair-leg-in:not(.data-block-in):not(.tbl-sel) { background: var(--pair-leg-in-bg) !important; }
+
+/* «Последние» — только тем, у кого есть право загружать данные */
+body.no-load-data #restore-data-btn { display: none !important; }

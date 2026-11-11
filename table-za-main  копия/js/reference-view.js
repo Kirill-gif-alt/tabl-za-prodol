@@ -53,7 +53,7 @@ window.ReferenceView = (function () {
         { id: 'amounts', label: 'Суммы субсидии и себестоимость', view: () => typeof SubsidyRef !== 'undefined' && SubsidyRef.canView() },
         { id: 'nav', label: 'ПКЗ из NAV', view: () => typeof SubsidyRef !== 'undefined' && SubsidyRef.canViewPkz() },
         { id: 'flights', label: 'Рейсы', view: () => typeof FlightRegistry !== 'undefined' },
-        { id: 'grid', label: 'Сетка тарифов', view: () => typeof FareGrid !== 'undefined' },
+        { id: 'grid', label: 'Сетка тарифов', view: () => typeof FareGrid !== 'undefined' && typeof FareRefs !== 'undefined' && FareRefs.canView() },
         { id: 'calendar', label: 'Календарь событий', view: () => typeof CalendarEvents !== 'undefined' }
     ];
 
@@ -886,7 +886,10 @@ window.ReferenceView = (function () {
         return [];
     }
 
+    function canExportXl() { return typeof ProfileAuth === 'undefined' || ProfileAuth.hasPermission('export_excel'); }
+
     async function exportExcel() {
+        if (!canExportXl()) { toast('Выгрузка недоступна для вашего профиля', 'error'); return; }
         const lib = await xlsxLib();
         if (!lib) { toast('Библиотека Excel не загружена', 'error'); return; }
         const wb = lib.utils.book_new();
@@ -1101,7 +1104,7 @@ window.ReferenceView = (function () {
         const canImport = ['fares', 'periods', 'amounts', 'nav'].some(id => viewSection(id) && canEditSection(id));
         return `
             <div class="ref-excel">
-                <button type="button" class="filter-btn" data-ref-xl-export title="Все разделы справочника, которые вам видны, — отдельными листами">В Excel</button>
+                <button type="button" class="filter-btn" data-ref-xl-export ${canExportXl() ? '' : 'disabled'} title="Все разделы справочника, которые вам видны, — отдельными листами">В Excel</button>
                 ${canImport ? `<button type="button" class="filter-btn" data-ref-xl-import title="Тот же формат, что у выгрузки: можно выгрузить, поправить и загрузить обратно">⬆ Загрузить из Excel</button>
                 <input type="file" id="ref-xl-file" accept=".xlsx,.xls" hidden>` : ''}
             </div>`;

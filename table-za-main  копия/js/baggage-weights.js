@@ -384,11 +384,8 @@ function getBaggageKgForRoute(from, to, month, aircraftCode) {
 function isChildSaleRecord(sale) {
     if (!sale) return false;
     if (typeof extractDiscountPercent === 'function' && extractDiscountPercent(sale.basicFareStr) > 0) return true;
-    if (sale.birthDate && sale.flyDate && typeof calculateAgeAtFly === 'function') {
-        const age = calculateAgeAtFly(sale.birthDate, sale.flyDate);
-        return age !== null && age >= PV.CHILD_AGE_MIN && age <= PV.CHILD_AGE_MAX;
-    }
-    return false;
+    const age = typeof saleAgeAtFly === 'function' ? saleAgeAtFly(sale) : null;
+    return age !== null && age >= PV.CHILD_AGE_MIN && age <= PV.CHILD_AGE_MAX;
 }
 
 function resolvePassengerSplit(totalPax, salesList, showSales, options = {}) {

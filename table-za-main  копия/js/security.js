@@ -4,8 +4,8 @@ window.Security = (function () {
     const LOGIN_LOCK_KEY = 'krasavia_login_lock';
     const MAX_UPLOAD_FILES = 500;
     const MAX_FILE_BYTES = 50 * 1024 * 1024;
-    const MAX_SNAPSHOT_ROWS = 250_000;
-    const MAX_SNAPSHOT_SALES = 200_000;
+    const MAX_SNAPSHOT_ROWS = 1_000_000;
+    const MAX_SNAPSHOT_SALES = 1_000_000;
     const PROFILE_ID_RE = /^[a-z][a-z0-9_]{0,31}$/;
     /** Номер рейса: KV- + 1–6 цифр (защита от мусорных значений) */
     const FLIGHT_BASE_RE = /^KV-\d{1,6}$/;
@@ -125,19 +125,37 @@ window.Security = (function () {
         return String(s ?? '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '').trim().slice(0, maxLen);
     }
 
-    function validateSnapshotPayload(snap) {
-        if (!snap || typeof snap !== 'object') return false;
-        const rows = snap.allData;
-        if (Array.isArray(rows) && rows.length > MAX_SNAPSHOT_ROWS) return false;
-        let salesCount = 0;
-        const details = snap.salesDetails || snap.data?.salesDetails;
+    // Последний отказ по размеру: нужен, чтобы вход мог объяснить, почему «Последних данных» нет.
+    let snapshotRejected = false;
+
+    function countSnapshot(snap) {
+        const rows = Array.isArray(snap && snap.allData) ? snap.allData.length : 0;
+        let sales = 0;
+        const details = snap && (snap.salesDetails || (snap.data && snap.data.salesDetails));
         if (details && typeof details === 'object') {
             Object.values(details).forEach(list => {
-                if (Array.isArray(list)) salesCount += list.length;
+                if (Array.isArray(list)) sales += list.length;
             });
         }
-        if (salesCount > MAX_SNAPSHOT_SALES) return false;
+        return { rows, sales };
+    }
+
+    // Входит ли набор в лимиты снимка (то же правило и при публикации, и при чтении).
+    function snapshotFits(snap) {
+        const c = countSnapshot(snap);
+        return c.rows <= MAX_SNAPSHOT_ROWS && c.sales <= MAX_SNAPSHOT_SALES;
+    }
+
+    function validateSnapshotPayload(snap) {
+        if (!snap || typeof snap !== 'object') return false;
+        if (!snapshotFits(snap)) { snapshotRejected = true; return false; }
         return true;
+    }
+
+    function wasSnapshotRejected(reset) {
+        const v = snapshotRejected;
+        if (reset) snapshotRejected = false;
+        return v;
     }
 
     function redactSalesDetails(details) {
@@ -152,6 +170,7 @@ window.Security = (function () {
                 adjustedFare: s.adjustedFare,
                 basicFareStr: s.basicFareStr,
                 flyDate: s.flyDate,
+                ageAtFly: typeof s.ageAtFly === 'number' ? s.ageAtFly : (typeof saleAgeAtFly === 'function' ? saleAgeAtFly(s) : null),   // возраст вместо даты рождения
                 grp: s.grp,
                 grpId: s.grpId,
                 moved: s.moved,
@@ -179,6 +198,8 @@ window.Security = (function () {
         resetLoginFailures,
         validateFileList,
         validateSnapshotPayload,
+        snapshotFits,
+        wasSnapshotRejected,
         redactSalesDetails,
         stripSalesPii,
         sanitizeTextInput,

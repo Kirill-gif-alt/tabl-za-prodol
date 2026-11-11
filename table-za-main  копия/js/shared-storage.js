@@ -610,9 +610,45 @@ window.SharedStorage = (function () {
         return snap;
     }
 
+    // Лёгкая метка общего снимка без скачивания: время изменения и размер файла (сервер — HEAD, папка — свойства файла).
+    // null — узнать не удалось; 'absent' — файла нет.
+    async function snapshotStamp() {
+        try {
+            if (await detectServerWrite()) {
+                const res = await fetch(`./${SHARED_DIR}/${SNAPSHOT_FILE}`, { method: 'HEAD', cache: 'no-store' });
+                if (res.status === 404) return 'absent';
+                if (!res.ok) return null;
+                return (res.headers.get('last-modified') || '') + '|' + (res.headers.get('content-length') || '');
+            }
+            const handle = rootHandle || await restoreRootHandle();
+            if (!handle) return null;
+            const sharedDir = await getSharedDirFromHandle(handle);
+            let file;
+            try {
+                const target = await resolveSharedTarget(sharedDir, SNAPSHOT_FILE, false);
+                file = await (await target.dir.getFileHandle(target.name)).getFile();
+            } catch (e) {
+                return e && e.name === 'NotFoundError' ? 'absent' : null;
+            }
+            return file.lastModified + '|' + file.size;
+        } catch (e) {
+            return null;
+        }
+    }
+
     async function saveSnapshot(announce) {
         const payload = buildSnapshotPayload();
         if (!payload) return false;
+        // Более свежий общий снимок (по времени файла продаж) старым не перекрываем.
+        const mine = payload.data.lastSalesUpdate || '';
+        if (mine) {
+            const cur = await readJsonFileStrict(SNAPSHOT_FILE).catch(() => ({ ok: false }));
+            const theirs = cur.ok && cur.data && cur.data.data ? String(cur.data.data.lastSalesUpdate || '') : '';
+            if (theirs && theirs > mine) {
+                if (announce && typeof showToast === 'function') showToast('В общем файле уже более свежие данные — ваши, более старые, не опубликованы', 'error');
+                return false;
+            }
+        }
         const ok = await writeViaHandle(SNAPSHOT_FILE, payload);
         if (announce && ok && typeof showToast === 'function') {
             showToast('Данные опубликованы для всех пользователей');
@@ -807,6 +843,7 @@ window.SharedStorage = (function () {
         loadSnapshot,
         snapshotFromWrapper,
         saveSnapshot,
+        snapshotStamp,
         loadActivity,
         saveActivity,
         loadActivityFromDataRoot,

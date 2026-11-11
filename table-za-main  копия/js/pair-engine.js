@@ -143,30 +143,31 @@ function buildPairSegmentCell(outRow, inRow, routeCounts) {
 function flightRowMatchesStatusFilter(row, todayStart, status = tableFilterStatus) {
     if (!row) return false;
     const date = row[1];
-    const total = parseInt(row[5] || 0), free = parseInt(row[6] || 0), avs = parseInt(row[8] || 0);
+    const free = parseInt(row[6] || 0);
     const k = getSalesLookupKey(row);
     const closed = closedFlights.has(k);
     const fd = parseLocalDate(date);
     const flew = fd ? fd < todayStart : false;
-    const denom = total - avs;
-    const pct = (total > 0 && denom > 0) ? Math.round(free / denom * 100) : 0;
+    // Загрузка — как в колонке: загрузка / кресла в продаже, без кресел значения нет (null)
+    const denom = getSeatsOnSale(row);
+    const pct = denom > 0 ? Math.round(free / denom * 100) : null;
     const rowBase = cleanFlight(row[0]);
 
     if (status === 'closed') return closed || flew;
     if (status === 'open') return !closed && !flew;
-    if (status === 'full') return pct >= 100 && !closed && !flew;
+    if (status === 'full') return pct !== null && pct >= 100 && !closed && !flew;
     if (status === 'attention') return isFlightNeedsAttention(row, rowBase);
     return true;
 }
 
 function getTableSortValue(row, base) {
     const date = row[1];
-    const total = parseInt(row[5] || 0), free = parseInt(row[6] || 0), avs = parseInt(row[8] || 0);
+    const free = parseInt(row[6] || 0);
     const s = getSalesMapForRow(row);
-    const denom = total - avs;
-    const pct = (total > 0 && denom > 0) ? Math.round(free / denom * 100) : 0;
+    const denom = getSeatsOnSale(row);
+    const pct = denom > 0 ? Math.round(free / denom * 100) : null;
 
-    if (tableSort.by === 'load') return pct;
+    if (tableSort.by === 'load') return pct === null ? 0 : pct;   // без кресел в колонке «—»; в сортировке — как нулевая
     if (tableSort.by === 'sales') return s.today;
     if (tableSort.by === 'avgfare') return getSalesAggForKey(resolveSalesKey(row)).avg;
     if (tableSort.by === 'delta') return getRowDelta(row, base);
@@ -326,14 +327,6 @@ function getPairAircraftKey(row) {
     if (!row) return '';
     const ac = typeof getAircraftType === 'function' ? getAircraftType(row[4]) : String(row[4] || '');
     return String(ac || '').trim().toUpperCase() || '-';
-}
-
-/** Дней между датами DD.MM.YYYY (in − out) */
-function daysBetweenFlightDates(outDate, inDate) {
-    const a = typeof parseLocalDate === 'function' ? parseLocalDate(outDate) : null;
-    const b = typeof parseLocalDate === 'function' ? parseLocalDate(inDate) : null;
-    if (!a || !b) return NaN;
-    return Math.round((b.getTime() - a.getTime()) / 86400000);
 }
 
 /** Сортировка парных строк: дата (туда), затем время вылета */

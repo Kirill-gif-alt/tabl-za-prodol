@@ -872,6 +872,47 @@ window.DecisionMoney = (function () {
         return out;
     }
 
+    // Фоновая фиксация итогов: после входа и после публикации данных, в простое, порциями (resolveAll отдаёт управление каждые 20 мс).
+    // Нужна, чтобы плитка «Сегодня» была актуальной, даже если никто не открывал отчёт «Решения». Только у тех, кому можно фиксировать.
+    let freezeSig = '';
+    let freezing = false;
+    function freezeInBackground() {
+        if (freezing || !canFreeze() || typeof SalesManagement === 'undefined' || !SalesManagement.allMarks) return Promise.resolve(false);
+        if (typeof groupedData === 'undefined' || !groupedData || !Object.keys(groupedData).length) return Promise.resolve(false);
+        // Нет свежего файла продаж — итог по нему был бы неверным.
+        if (typeof hasSalesFileLoaded === 'function' && !hasSalesFileLoaded()) return Promise.resolve(false);
+        if (typeof getStaleSalesInfo === 'function' && getStaleSalesInfo()) return Promise.resolve(false);
+        const today = typeof getTodayDate === 'function' ? getTodayDate() : '';
+        const sg = [typeof dataEpoch === 'number' ? dataEpoch : 0, today, SalesManagement.markRevision ? SalesManagement.markRevision() : ''].join('|');
+        if (sg === freezeSig) return Promise.resolve(false);
+        const t0 = parseLocalDate(today);
+        const seen = new Set();
+        const list = [];
+        SalesManagement.allMarks().forEach(m => {
+            if (m.status !== 'down' && m.status !== 'up') return;
+            const d = parseLocalDate(m.check);
+            const ago = d && t0 ? Math.round((t0 - d) / 86400000) : null;
+            if (ago == null || ago < 0 || ago > 30) return;       // то же окно, что у плитки «Сегодня»
+            const k = keyOf(m);
+            if (seen.has(k)) return;
+            seen.add(k);
+            list.push({ flight: m.flight, code: m.flight, dep: m.dep, check: m.check, status: m.status, at: m.updatedAt || '' });
+        });
+        if (typeof PriceMarks !== 'undefined' && PriceMarks.markOverlaps) PriceMarks.markOverlaps(list);
+        const todo = list.filter(r => !r.overlap);
+        if (!todo.length) { freezeSig = sg; return Promise.resolve(true); }
+        freezing = true;
+        return resolveAll(todo).then(() => { freezeSig = sg; return true; })
+            .catch(e => { console.warn('DecisionMoney.freeze', e); return false; })
+            .finally(() => { freezing = false; });
+    }
+
+    function freezeSoon() {
+        const run = () => { freezeInBackground(); };
+        if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 60000 });
+        else setTimeout(run, 5000);
+    }
+
     // Метод сменился, а билетов вылета уже нет в файле продаж (в архиве — только число билетов по дням и выручка за весь вылет,
     // без тарифа по дням сделки, поэтому рубли за окно по нему не пересчитать): оставляем прежний итог.
     // Он записывается под текущей версией с пометкой vOld — посчитан прежним способом.
@@ -887,5 +928,5 @@ window.DecisionMoney = (function () {
         return !!(flyDt && flyDt.getTime() < cutoff);
     }
 
-    return { compute, estimateWindow, estimateRemainder, sigmaTickets, keyOf, get, ensureMonths, resolveAll, recompute, canFreeze, revision: () => rev, METHOD_VERSION, erf };
+    return { compute, estimateWindow, estimateRemainder, sigmaTickets, keyOf, get, ensureMonths, resolveAll, freezeSoon, freezeInBackground, recompute, canFreeze, revision: () => rev, METHOD_VERSION, erf };
 })();

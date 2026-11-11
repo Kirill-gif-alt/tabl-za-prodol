@@ -1466,6 +1466,11 @@ window.NetworkMap = (function () {
         const n = livePlanes.length;
         const st = window.LiveKvFlights ? LiveKvFlights.getStatus() : 'off';
         const src = window.LiveKvFlights ? LiveKvFlights.getSource() : '';
+        if (st === 'down') {
+            el.className = 'nmap-live is-err';
+            el.textContent = 'Радар недоступен';
+            return;
+        }
         if (st === 'error') {
             el.className = 'nmap-live is-err';
             el.textContent = 'Эфир: нет связи';

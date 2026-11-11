@@ -103,7 +103,9 @@ window.ReportsView = (function () {
         const wk = typeof getWeekForExpectedLoad === 'function' ? getWeekForExpectedLoad(row[1]) : null;
         if (!cap || wk == null) return null;
         const ev = getExpectedLoad(cap, base, 0, wk);
-        return ev == null || isNaN(ev) ? null : Math.ceil(ev);
+        if (ev == null || isNaN(ev)) return null;
+        const seats = typeof getSeatsOnSale === 'function' ? getSeatsOnSale(row) : 0;
+        return Math.ceil(seats > 0 ? Math.min(ev, seats) : ev);   // не больше кресел в продаже, как в RMS
     }
 
     // Один вылет (рейс + дата) считается один раз: у рейса из нескольких участков берётся первый,
@@ -430,6 +432,10 @@ window.ReportsView = (function () {
             try { await SalesManagement.load(); } catch (e) { /* выгрузка покажет, что есть */ }
         }
         if (typeof exportSalesManagementExcel === 'function') await exportSalesManagementExcel();
+    }
+
+    function costsAccess() {
+        return typeof costsUploadAccess === 'function' ? costsUploadAccess() : { ok: true, local: false };
     }
 
     function canData() {
@@ -1064,8 +1070,8 @@ window.ReportsView = (function () {
                     'Excel вкладки «Управление продажами»: лист на каждый рейс с отметками по дням.',
                     canSales(), 'Нужна вкладка «Управление продажами».'),
                 card('rp-costs-upload', 'Себестоимость и субсидии',
-                    'Файл по месяцам: себестоимость и субсидия по маршрутам.',
-                    true, '', '',
+                    'Файл по месяцам: себестоимость и субсидия по маршрутам.' + (costsAccess().local && costsAccess().ok ? ' Без права на справочник субсидий файл действует только на этом компьютере.' : ''),
+                    costsAccess().ok, 'Нужно право на загрузку данных или на правку справочника субсидий.', '',
                     'Загрузить файл по месяцам (маршрут, тип ВС, субсидия и себестоимость за каждый месяц). На сайт идут последние три месяца и среднее — вкладка «Расчёт расходов». Краевые рейсы — субсидия 0, межрегиональные — как в файле.')
             ].join('')}</div>
             ${card('rp-econ', 'Для экономистов',

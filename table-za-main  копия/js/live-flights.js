@@ -18,6 +18,9 @@ window.LiveKvFlights = (function () {
     let onChange = null;
     let wanted = false;
     let jsonpSeq = 0;
+    const MAX_FAILS = 3;     // подряд неудачных запросов, после которых опрос прекращается
+    let fails = 0;
+    let down = false;        // радар недоступен: до следующего захода на вкладку «Сеть» не опрашиваем
 
     function normReg(r) {
         return String(r || '').toUpperCase().replace(/\s+/g, '');
@@ -144,12 +147,20 @@ window.LiveKvFlights = (function () {
             planes = list;
             source = 'FR24';
             status = 'live';
+            fails = 0;
             if (onChange) onChange(planes, status);
         } catch {
             if (!wanted) return;
             planes = [];
+            fails++;
             status = 'error';
             source = '';
+            // Три неудачи подряд (нет интернета, закрытая сеть) — дальше не стучимся, пока не зайдут на вкладку снова.
+            if (fails >= MAX_FAILS) {
+                down = true;
+                status = 'down';
+                if (timer) { clearInterval(timer); timer = 0; }
+            }
             if (onChange) onChange(planes, status);
         } finally {
             inflight = false;
@@ -159,6 +170,7 @@ window.LiveKvFlights = (function () {
     function start(cb) {
         onChange = cb || onChange;
         wanted = true;
+        if (down) { status = 'down'; return; }
         if (timer) return;
         status = status === 'live' ? 'live' : 'wait';
         poll();
@@ -167,6 +179,8 @@ window.LiveKvFlights = (function () {
 
     function stop() {
         wanted = false;
+        // С вкладки «Сеть» ушли — при следующем заходе пробуем снова; пауза на этой же вкладке недоступность не снимает.
+        if (typeof currentTab === 'undefined' || currentTab !== 'home') { down = false; fails = 0; }
         if (timer) {
             clearInterval(timer);
             timer = 0;

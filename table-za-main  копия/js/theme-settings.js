@@ -260,6 +260,16 @@ window.ThemeSettings = (function () {
             const val = t[f.key] || DEFAULTS[f.key];
             if (val) root.style.setProperty(f.css, val);
         });
+        // Пять цветов таблиц красят, только если пользователь сменил цвет (иначе вид прежний).
+        [
+            ['dataOut', 'th-data-out'], ['dataIn', 'th-data-in'], ['dataCardHead', 'th-data-head'],
+            ['pairOutBg', 'th-pair-out'], ['pairInBg', 'th-pair-in']
+        ].forEach(([key, cls]) => {
+            const v = String(t[key] || DEFAULTS[key] || '').toLowerCase();
+            root.classList.toggle(cls, !!v && v !== String(DEFAULTS[key] || '').toLowerCase());
+        });
+        const headHex = t.dataCardHead || DEFAULTS.dataCardHead;
+        if (headHex) root.style.setProperty('--data-card-head-text', hexLuminance(headHex) < 0.45 ? '#ffffff' : '#1c2833');
         Object.entries(MAIN_BORDER_MAP).forEach(([bgKey, cssVar]) => {
             const bg = t[bgKey] || DEFAULTS[bgKey];
             if (bg) root.style.setProperty(cssVar, shadeColor(bg, -18));
@@ -304,9 +314,7 @@ window.ThemeSettings = (function () {
 
     function reset() {
         try { localStorage.removeItem(getStorageKey()); } catch { /* ignore */ }
-        if (typeof TabOrder !== 'undefined') TabOrder.reset();
-        pendingTabOrder = null;
-        pendingTabNames = null;
+        // Порядок и названия вкладок не трогаем: сбрасываются только цвета.
         apply(DEFAULTS, true);
         return { ...DEFAULTS };
     }
@@ -490,27 +498,48 @@ window.ThemeSettings = (function () {
                 if (!confirm('Вернуть все параметры расчётов к значениям по умолчанию? Изменится у всех.')) return;
                 wrap.querySelectorAll('[data-param]').forEach(inp => { const d = Params.defs().find(x => x.key === inp.dataset.param); if (d) inp.value = d.def; });
             }
-            // Скрытые поиском параметры не трогаем — берём их нынешние значения.
-            const vals = {};
-            Params.defs().forEach(d => { vals[d.key] = d.value; });
-            let empty = '';
-            wrap.querySelectorAll('[data-param]').forEach(inp => {
-                if (!String(inp.value).trim() || !isFinite(parseFloat(String(inp.value).replace(',', '.')))) {
-                    if (!empty) empty = (Params.defs().find(x => x.key === inp.dataset.param) || {}).label || inp.dataset.param;
-                    return;
-                }
-                vals[inp.dataset.param] = inp.value;
-            });
-            const st = wrap.querySelector('#theme-params-status');
-            // Пустое поле не сбрасываем молча к значению по умолчанию — просим заполнить.
-            if (empty) { if (typeof showToast === 'function') showToast(`Заполните: «${empty}»`, 'error'); if (st) st.textContent = ''; return; }
-            if (st) st.textContent = 'Сохраняю…';
-            const res = await Params.save(vals);
-            if (res.invalid) { if (typeof showToast === 'function') showToast(res.error, 'error'); if (st) st.textContent = ''; return; }
-            if (typeof showToast === 'function') showToast(res.ok ? 'Параметры сохранены — действуют у всех' : 'Параметры применены здесь, но не записаны в общую папку', res.ok ? 'success' : 'error');
-            if (typeof refreshCurrentView === 'function') refreshCurrentView();
-            renderParams(container);
+            await saveParamsFrom(wrap, container);
         });
+    }
+
+    // Значения полей «Параметров расчётов» из формы; скрытые поиском параметры не трогаем.
+    function collectParams(wrap) {
+        const vals = {};
+        Params.defs().forEach(d => { vals[d.key] = d.value; });
+        let empty = '';
+        wrap.querySelectorAll('[data-param]').forEach(inp => {
+            if (!String(inp.value).trim() || !isFinite(parseFloat(String(inp.value).replace(',', '.')))) {
+                if (!empty) empty = (Params.defs().find(x => x.key === inp.dataset.param) || {}).label || inp.dataset.param;
+                return;
+            }
+            vals[inp.dataset.param] = inp.value;
+        });
+        return { vals, empty };
+    }
+
+    // Есть ли в форме параметров несохранённые правки.
+    function paramsEdited(wrap) {
+        if (!wrap || typeof Params === 'undefined') return false;
+        return Array.from(wrap.querySelectorAll('[data-param]')).some(inp => {
+            const d = Params.defs().find(x => x.key === inp.dataset.param);
+            const n = parseFloat(String(inp.value).replace(',', '.'));
+            return !!d && !(isFinite(n) && n === d.value);
+        });
+    }
+
+    // Общий путь для «Сохранить параметры» и нижней «Сохранить». Возвращает false, если сохранять нельзя.
+    async function saveParamsFrom(wrap, container) {
+        const { vals, empty } = collectParams(wrap);
+        const st = wrap.querySelector('#theme-params-status');
+        // Пустое поле не сбрасываем молча к значению по умолчанию — просим заполнить.
+        if (empty) { if (typeof showToast === 'function') showToast(`Заполните: «${empty}»`, 'error'); if (st) st.textContent = ''; return false; }
+        if (st) st.textContent = 'Сохраняю…';
+        const res = await Params.save(vals);
+        if (res.invalid) { if (typeof showToast === 'function') showToast(res.error, 'error'); if (st) st.textContent = ''; return false; }
+        if (typeof showToast === 'function') showToast(res.ok ? 'Параметры сохранены — действуют у всех' : 'Параметры применены здесь, но не записаны в общую папку', res.ok ? 'success' : 'error');
+        if (typeof refreshCurrentView === 'function') refreshCurrentView();
+        renderParams(container);
+        return true;
     }
 
     function renderExcelFolders(container) {
@@ -850,9 +879,15 @@ window.ThemeSettings = (function () {
             const m = document.getElementById('profile-settings-modal');
             enhanceModalA11y(m, m?.querySelector('.profile-admin-panel'), 'open', closeModal);
         }
-        document.getElementById('profile-settings-save')?.addEventListener('click', () => {
+        document.getElementById('profile-settings-save')?.addEventListener('click', async () => {
             const bodyEl = document.getElementById('profile-settings-body');
             if (!saveSalesRanges(bodyEl)) return;
+            // Правки «Параметров расчётов» (только администратор) сохраняем тем же путём, что и «Сохранить параметры».
+            const pWrap = bodyEl && bodyEl.querySelector('#theme-params-wrap');
+            const pProf = typeof ProfileAuth !== 'undefined' ? ProfileAuth.getCurrentProfile() : null;
+            if (pWrap && pProf && pProf.isAdmin && paramsEdited(pWrap)) {
+                if (!(await saveParamsFrom(pWrap, bodyEl))) return;
+            }
             save(readForm(bodyEl));
             const homeCb = bodyEl?.querySelector('#theme-show-home-map');
             if (homeCb && typeof ProfileAuth !== 'undefined' && ProfileAuth.setShowHomeMap) {
@@ -863,6 +898,7 @@ window.ThemeSettings = (function () {
             if (typeof showToast === 'function') showToast('Настройки сохранены');
         });
         document.getElementById('profile-settings-reset')?.addEventListener('click', () => {
+            if (!confirm('Сбросить цвета к стандартным? Порядок и названия вкладок останутся.')) return;
             reset();
             const bodyEl = document.getElementById('profile-settings-body');
             if (bodyEl) {
@@ -871,7 +907,7 @@ window.ThemeSettings = (function () {
                 buildFormOnce(bodyEl);
                 syncAdminSettings(bodyEl);
             }
-            if (typeof showToast === 'function') showToast('Сброшено к стандартному шаблону');
+            if (typeof showToast === 'function') showToast('Цвета сброшены к стандартным');
         });
         document.getElementById('profile-settings-modal')?.addEventListener('click', (e) => {
             if (e.target.classList.contains('profile-admin-backdrop')) closeModal();

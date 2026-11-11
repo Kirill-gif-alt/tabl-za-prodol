@@ -10,7 +10,7 @@ window.PerfCache = (function () {
     const MEMO_CACHE_MAX = 12_000;
 
     let salesStatsByKey = Object.create(null);
-    let salesTodayKpi = { sales: 0, revenue: 0 };
+    let salesTodayKpi = { sales: 0, revenue: 0, adultN: 0, adultSum: 0 };
 
     function reset() {
         cleanFlightCache.clear();
@@ -20,7 +20,7 @@ window.PerfCache = (function () {
         daysUntilCache.clear();
         weekNumberCache.clear();
         salesStatsByKey = Object.create(null);
-        salesTodayKpi = { sales: 0, revenue: 0 };
+        salesTodayKpi = { sales: 0, revenue: 0, adultN: 0, adultSum: 0 };
     }
 
     function memoSet(map, key, value, maxSize) {
@@ -170,7 +170,7 @@ window.PerfCache = (function () {
 
     function resetSalesStats() {
         salesStatsByKey = Object.create(null);
-        salesTodayKpi = { sales: 0, revenue: 0 };
+        salesTodayKpi = { sales: 0, revenue: 0, adultN: 0, adultSum: 0 };
     }
 
     function recordSaleStat(key, dealDate, adj, nf, basicFareStr, today, yesterday) {
@@ -198,6 +198,7 @@ window.PerfCache = (function () {
         if (dealDate === today) {
             salesTodayKpi.sales++;
             salesTodayKpi.revenue += nf || 0;
+            if (adult) { salesTodayKpi.adultN++; salesTodayKpi.adultSum += v; }   // для среднего тарифа в шапке
         }
         const ts = dateTsMemo(dealDate) || 0;
         // Последний тариф — последний оплаченный взрослый (0 ₽, служебные, детские и младенческие билеты его не затирают), как без кэша.

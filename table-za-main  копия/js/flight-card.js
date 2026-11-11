@@ -606,7 +606,7 @@ window.FlightCard = (function () {
         return `<div class="fc-past">
             <div class="fc-past-title">Прошлые решения</div>
             <ul class="fc-past-list">${rows}</ul>
-            <button type="button" class="fc-past-all" data-fc="decisions">Все решения</button>
+            ${typeof ProfileAuth === 'undefined' || ProfileAuth.canAccessTab('reports') ? '<button type="button" class="fc-past-all" data-fc="decisions">Все решения</button>' : ''}
         </div>`;
     }
 

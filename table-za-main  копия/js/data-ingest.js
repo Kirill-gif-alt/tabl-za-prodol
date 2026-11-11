@@ -275,6 +275,9 @@ async function scanDirectoryHandle(dir) {
     let subsidyHandle = null;
     let subsidyName = '';
     const historyHandles = [];
+    // «Ожидаемая загрузка» и «Дети.csv» ищутся и в подпапках — как при выборе папки обычным окном.
+    const expHandles = [];
+    const childHandles = [];
 
     for await (const [name, h] of dir.entries()) {
         if (h.kind === 'directory') {
@@ -283,9 +286,11 @@ async function scanDirectoryHandle(dir) {
             for await (const [fn, fh] of h.entries()) {
                 if (fh.kind !== 'file') continue;
                 const fl = fn.toLowerCase();
+                if (fl.endsWith('.xlsx') && !fl.startsWith('~$') && (fl.includes('ожидаемая') || fl.includes('загрузка'))) expHandles.push({ name: fn, handle: fh });
+                if (fl.endsWith('.csv') && (fl.includes('дети') || fl.includes('deti') || lname.includes('дети'))) childHandles.push({ name: fn, handle: fh });
                 if (isSalesHistoryName(fn) || isSalesTicketsName(fn)) historyHandles.push({ name: fn, handle: fh });
                 else if (fl.endsWith('.csv')) csvHandles.push({ name: fn, handle: fh });
-                else if (fl.endsWith('.xlsx') && lname.includes('весов') && fl.includes('весов')) {
+                else if (fl.endsWith('.xlsx') && (lname.includes('весов') || fl.includes('весов'))) {
                     weightsHandle = fh;
                     weightsName = fn;
                 } else if ((fl.endsWith('.xlsx') || fl.endsWith('.xls')) && !fl.startsWith('~$')) {
@@ -339,11 +344,16 @@ async function scanDirectoryHandle(dir) {
     const subsidyFile = subsidyHandle
         ? await fileFromHandle(subsidyHandle, subsidyName)
         : (typeof RouteCosts !== 'undefined' ? RouteCosts.findPeriodsFile(rootReady) : null);
+    // Файлы из подпапок материализуем, только если в корне такого файла нет.
+    let expFile = findExpectedLoadFile(rootReady);
+    if (!expFile && expHandles.length) expFile = findExpectedLoadFile((await materializeCsvList(expHandles)));
+    let childFile = typeof findChildrenCsvFile === 'function' ? findChildrenCsvFile(rootReady) : null;
+    if (!childFile && childHandles.length && typeof findChildrenCsvFile === 'function') childFile = findChildrenCsvFile((await materializeCsvList(childHandles)));
     return {
         ...pickSourcesFromFolders(folderMap),
-        exp: findExpectedLoadFile(rootReady),
+        exp: expFile,
         weights: weightsFile || (typeof findBaggageWeightsFile === 'function' ? findBaggageWeightsFile(rootReady) : null),
-        children: typeof findChildrenCsvFile === 'function' ? findChildrenCsvFile(rootReady) : null,
+        children: childFile,
         costs: costsFile,
         subsidyPeriods: subsidyFile,
         ...(await (async () => {
@@ -600,6 +610,7 @@ function loadSalesFile(fh) {
                 adjustedFare: adj,
                 basicFareStr: row[13] || '',
                 birthDate: birth || row[16] || '',
+                ageAtFly: calculateAgeAtFly(birth || row[16], fly),   // в общий снимок идёт возраст, а не дата рождения
                 flyDate: fly,
                 bsonum: row[2] || '',
                 city1: row[10] || '',

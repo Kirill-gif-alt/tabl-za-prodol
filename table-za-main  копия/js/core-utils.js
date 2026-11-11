@@ -265,6 +265,9 @@ function syncGlobalZoomUi(tabKey) {
     const tab = tabKey || (typeof currentTab !== 'undefined' ? currentTab : 'main');
     const label = document.getElementById('global-zoom-val');
     if (label) label.textContent = `${Math.round((VIEW_ZOOM[tab] || 1) * 100)}%`;
+    // На вкладках, где масштаб не действует («Сегодня», «Запрос на понижение», «Журнал действий»), кнопки скрыты.
+    const wrap = document.getElementById('global-zoom-wrap');
+    if (wrap) wrap.style.display = Object.prototype.hasOwnProperty.call(VIEW_ZOOM, tab) ? '' : 'none';
 }
 
 function setViewZoom(tabKey, delta) {
@@ -327,6 +330,8 @@ const MAX_WEEK = 52;
 
 function parseDateStr(str){if(!str)return null;const c=String(str).replace(/[^0-9]/g,'');if(c.length!==8)return null;const d=parseInt(c.slice(0,2),10),m=parseInt(c.slice(2,4),10)-1,y=parseInt(c.slice(4),10);if(!isValidCalendarDate(y,m,d))return null;return new Date(y,m,d)}
 function calculateAgeAtFly(b,f){const br=parseDateStr(b),fl=parseDateStr(f);if(!br||!fl)return null;let a=fl.getFullYear()-br.getFullYear();const md=fl.getMonth()-br.getMonth();if(md<0||(md===0&&fl.getDate()<br.getDate()))a--;return a}
+// Возраст пассажира на дату вылета: готовый признак ageAtFly (он есть и в общем снимке без дат рождения) или расчёт по дате рождения.
+function saleAgeAtFly(s){if(!s)return null;if(typeof s.ageAtFly==='number')return s.ageAtFly;if(s.birthDate&&s.flyDate)return calculateAgeAtFly(s.birthDate,s.flyDate);return null}
 function extractDiscountPercent(s){if(!s)return 0;s=String(s).toUpperCase().trim();let m=s.match(/CN(\d{1,2})/);if(m)return parseInt(m[1],10);m=s.match(/\/(\d{2})$/);if(m)return parseInt(m[1],10);if((s.includes('LOW')||s.includes('CN')||s.includes('CHILD'))&&(m=s.match(/(\d{2})$/)))return parseInt(m[1],10);return 0}
 function getAdjustedFare(paid,basic,birth,fly){if(!paid||paid<=0)return paid;const d=extractDiscountPercent(basic);const age=calculateAgeAtFly(birth,fly);return(age!==null&&age<12&&d>0)?Math.round((paid*100)/(100-d)):paid}
 function getCapacityFromAircraft(t){t=String(t||'').toUpperCase();if(t.includes('ATR-72')||t.includes('AT7'))return PV.ATR72_CAPACITY;if(t.includes('ЯК-42')||t.includes('YK2'))return PV.YAK42_CAPACITY;return PV.DEFAULT_AIRCRAFT_CAPACITY}

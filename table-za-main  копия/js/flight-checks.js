@@ -45,11 +45,8 @@ window.FlightChecks = (function () {
         if (!sale) return false;
         if (childPercent(sale) != null) return true;
         if (/\/(IN|ID)\d/i.test(String(sale.basicFareStr || ''))) return false;
-        if (sale.birthDate && sale.flyDate && typeof calculateAgeAtFly === 'function') {
-            const age = calculateAgeAtFly(sale.birthDate, sale.flyDate);
-            return age !== null && age >= 2 && age < 12;
-        }
-        return false;
+        const age = typeof saleAgeAtFly === 'function' ? saleAgeAtFly(sale) : null;
+        return age !== null && age >= 2 && age < 12;
     }
 
     function isChild50(sale) {
@@ -434,7 +431,7 @@ window.FlightChecks = (function () {
         const chip = document.createElement('span');
         chip.className = 'header-kpi-error';
         chip.textContent = '! ' + flights.size;
-        chip.title = `Проверка рейсов: ${flights.size} ${pluralRu(flights.size, 'рейс', 'рейса', 'рейсов')} с ошибкой до вылета. Нажмите, чтобы открыть раздел «Проверки».`;
+        chip.title = `Проверка рейсов: ${flights.size} ${pluralRu(flights.size, 'рейс', 'рейса', 'рейсов')} с ошибкой до вылета.${canOpenReport() ? ' Нажмите, чтобы открыть раздел «Проверки».' : ''}`;
         if (canOpenReport()) chip.addEventListener('click', openReport);
         return chip;
     }

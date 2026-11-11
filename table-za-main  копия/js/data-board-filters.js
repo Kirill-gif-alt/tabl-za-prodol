@@ -83,15 +83,6 @@ window.DataBoardFilters = (function () {
         if (typeof SessionStore !== 'undefined') SessionStore.saveUiSession();
     }
 
-    function getRules() {
-        return load();
-    }
-
-    function setRules(next) {
-        rules = (next || []).map(normalizeRule).filter(Boolean);
-        save();
-    }
-
     function signature() {
         return JSON.stringify(load().filter(r => r.enabled && r.conditions.some(c => String(c.value).trim() !== '')));
     }
@@ -112,7 +103,7 @@ window.DataBoardFilters = (function () {
         const m = typeof getDataLegMetrics === 'function' ? getDataLegMetrics(row) : null;
         if (!m) return null;
         const dtd = typeof getDaysUntil === 'function' ? getDaysUntil(row[1]) : null;
-        const pct = m.zpk !== null ? m.zpk : ((m.seats > 0 && (m.load || 0) === 0) ? 0 : null);
+        const pct = m.zpk;   // getDataLegMetrics уже даёт 0 при кресл>0 и нуле продаж
         return {
             dtd,
             pct,

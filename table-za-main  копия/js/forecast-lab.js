@@ -2268,8 +2268,14 @@ window.ForecastLab = (function () {
         const body = JSON.stringify(flights);
         if (body === publishedText) return true;
         const choice = loadChoiceLocal();
-        const ok = await SharedStorage.writeJsonFile(NOW_FILE, { version: 1, token, at: new Date().toISOString(), choice, flights });
-        if (ok) { publishedText = body; published = { token, flights, choice, at: new Date().toISOString() }; }
+        // Запись слиянием: если другой ПК уже опубликовал прогноз по тем же данным, его вылеты не теряются.
+        let outFlights = flights;
+        const res = await SharedStorage.updateJsonFile(NOW_FILE, (cur) => {
+            if (cur && cur.token === token && cur.flights && typeof cur.flights === 'object') outFlights = Object.assign({}, cur.flights, flights);
+            return { version: 1, token, at: new Date().toISOString(), choice, flights: outFlights };
+        }).catch(() => ({ ok: false }));
+        const ok = !!res.ok;
+        if (ok) { publishedText = body; published = { token, flights: outFlights, choice, at: new Date().toISOString() }; }
         return ok;
     }
 

@@ -676,7 +676,7 @@ function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode)
             cumulative,
             daily,
             dtd,
-            expectedAtPoint: expAtPoint !== null ? Math.ceil(expAtPoint) : null
+            expectedAtPoint: expAtPoint !== null ? Math.ceil(seats > 0 ? Math.min(expAtPoint, seats) : expAtPoint) : null   // не больше кресел в продаже, как в RMS
         };
     });
 

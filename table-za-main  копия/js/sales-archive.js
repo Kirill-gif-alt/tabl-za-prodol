@@ -340,11 +340,19 @@ window.SalesArchive = (function () {
         whenIdle(() => {
             ensureLoaded().then(() => capture()).catch(e => console.warn('SalesArchive', e));
         });
+        backgroundSummaries();
+    }
+
+    // Фоновые сводки после входа и после публикации: метка «новое» (signals-days.json) и «деньги по решениям».
+    function backgroundSummaries() {
+        if (typeof SignalNews !== 'undefined' && SignalNews.backgroundSoon) SignalNews.backgroundSoon();
+        if (typeof DecisionMoney !== 'undefined' && DecisionMoney.freezeSoon) DecisionMoney.freezeSoon();
     }
 
     // После публикации новых данных.
     function captureSoon() {
         whenIdle(() => capture().catch(e => console.warn('SalesArchive.capture', e)), 30000);
+        backgroundSummaries();
     }
 
     // ---------- загрузка истории (SalesHistory.csv) ----------
@@ -408,13 +416,20 @@ window.SalesArchive = (function () {
         return r;
     }
 
+    // Отметка записывается слиянием: поля другой загрузки (история / билеты) в файле не теряются.
+    async function writeImportMark(fields) {
+        const res = await SharedStorage.updateJsonFile(IMPORT_FILE, (cur) => Object.assign({}, cur && typeof cur === 'object' ? cur : {}, fields, { version: 1 })).catch(() => ({ ok: false }));
+        if (res.ok && res.data) lastImport = res.data;
+        return !!res.ok;
+    }
+
     async function noteImport(file, r) {
         lastImport = {
             ...(lastImport || {}),   // отметки загрузки билетов (tickets*) не теряем
             version: 1, sig: fileSig(file), file: file ? String(file.name || '').slice(0, 80) : '', at: new Date().toISOString(),
             flights: r.flights, from: r.from ? formatDateRu(r.from) : '', to: r.to ? formatDateRu(r.to) : ''
         };
-        const ok = await SharedStorage.writeJsonFile(IMPORT_FILE, lastImport).catch(() => false);
+        const ok = await writeImportMark({ sig: lastImport.sig, file: lastImport.file, at: lastImport.at, flights: lastImport.flights, from: lastImport.from, to: lastImport.to });
         // Отметку не записали (старый локальный сервер, нет доступа) — помним хотя бы на этом компьютере,
         // иначе история перезагружалась бы при каждой загрузке данных.
         try { localStorage.setItem(IMPORT_LOCAL_KEY, lastImport.sig); } catch (e) { /* ignore */ }
@@ -561,7 +576,11 @@ window.SalesArchive = (function () {
         if (!flights) return { ok: false, error: 'в файле нет улетевших вылетов' };
         let ok = true;
         for (const m of Object.keys(byMonth).sort()) {
-            const w = await SharedStorage.writeJsonFile(`history/tickets-${m}.json`, { version: 1, updatedAt: new Date().toISOString(), flights: byMonth[m] });
+            // Месяц сливается по вылетам: ранее загруженные вылеты месяца, которых нет в этом файле, остаются.
+            const wr = await SharedStorage.updateJsonFile(`history/tickets-${m}.json`, (cur) => ({
+                version: 1, updatedAt: new Date().toISOString(), flights: Object.assign({}, cur && cur.flights, byMonth[m])
+            })).catch(() => ({ ok: false }));
+            const w = !!wr.ok;
             ok = w && ok;
             if (w) Object.assign(tickets, byMonth[m]);
         }
@@ -571,7 +590,7 @@ window.SalesArchive = (function () {
             const read = await readLastImport().catch(() => null);
             const base = (read && read.ok && lastImport) ? lastImport : {};
             lastImport = Object.assign({}, base, { ticketsSig: fileSig(file), ticketsAt: new Date().toISOString(), ticketsFlights: flights });
-            await SharedStorage.writeJsonFile(IMPORT_FILE, lastImport).catch(() => false);
+            await writeImportMark({ ticketsSig: fileSig(file), ticketsAt: lastImport.ticketsAt, ticketsFlights: flights });
             try { localStorage.setItem(IMPORT_LOCAL_KEY + '_t', fileSig(file)); } catch (e) { /* ignore */ }
         }
         return { ok, flights };

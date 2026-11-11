@@ -12,6 +12,7 @@ window.LowerRequest = (function () {
     let host = null;
 
     function esc(v) { return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+    function canExport() { return typeof ProfileAuth === 'undefined' || ProfileAuth.hasPermission('export_excel'); }
     function canUse() { return typeof ProfileAuth !== 'undefined' && !!ProfileAuth.canAccessTab('lowreq'); }
     function keyOf(code, date) { return `${code}|${date}`; }
     function toast(m, t) { if (typeof showToast === 'function') showToast(m, t); }
@@ -245,12 +246,12 @@ window.LowerRequest = (function () {
             <section class="rp-card lr-card">
                 <div class="rp-card-head"><h3 class="rp-card-title">Запрос на понижение</h3>
                     <span class="lr-actions">
-                        <button type="button" class="filter-btn" data-lr-copy ${rows.length ? '' : 'disabled'}>Скопировать для письма</button>
-                        <button type="button" class="filter-btn" data-lr-xlsx ${rows.length ? '' : 'disabled'}>В Excel</button>
+                        <button type="button" class="filter-btn" data-lr-copy ${rows.length && canExport() ? '' : 'disabled'}>Скопировать для письма</button>
+                        <button type="button" class="filter-btn" data-lr-xlsx ${rows.length && canExport() ? '' : 'disabled'}>В Excel</button>
                         <button type="button" class="filter-btn rp-danger" data-lr-clear ${rows.length ? '' : 'disabled'}>Очистить</button>
                     </span></div>
                 <p class="rp-card-text lr-lead">Рейсы попадают сюда из «Управления продажами»: места и тариф впишите сами.
-                    <button type="button" class="filter-btn lr-goto" data-lr-goto>Перейти к Управлению продажами</button>
+                    ${ProfileAuth.canAccessTab('sales') ? '<button type="button" class="filter-btn lr-goto" data-lr-goto>Перейти к Управлению продажами</button>' : ''}
                     ${hidden > 0 ? `<span class="rp-muted">Улетевших и сегодняшних вылетов в списке не показано: ${hidden}.</span>` : ''}</p>
                 <details class="lr-more"><summary>Подробнее</summary><p class="rp-card-text">Отметьте галочкой слева от номера рейса. Цифры считаются сами; любую ячейку можно поправить (исправленные выделены, пустая ячейка возвращает расчёт).</p></details>
                 ${rows.length ? `<div class="rp-scroll"><table class="rp-table lr-table"><thead><tr>${COLS.map(c => `<th>${esc(c[1])}</th>`).join('')}</tr></thead>
@@ -329,6 +330,7 @@ window.LowerRequest = (function () {
     }
 
     async function copy() {
+        if (!canExport()) { toast('Выгрузка недоступна для вашего профиля', 'error'); return; }
         const { text, html } = tablesFor(rowsOf());
         try {
             if (navigator.clipboard && window.ClipboardItem) {
@@ -344,6 +346,7 @@ window.LowerRequest = (function () {
     }
 
     async function exportXlsx() {
+        if (!canExport()) { toast('Выгрузка недоступна для вашего профиля', 'error'); return; }
         if (typeof loadPlainXlsx !== 'function' || !(await loadPlainXlsx())) { toast('Библиотека Excel не загружена', 'error'); return; }
         const aoa = [COLS.map(c => c[1])];
         groupsOf(numbered(rowsOf())).forEach(g => {

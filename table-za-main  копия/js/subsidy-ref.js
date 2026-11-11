@@ -132,7 +132,19 @@ window.SubsidyRef = (function () {
             const e = normPkz(data.pkz[k]);
             if (e) out.pkz[k] = e;
         });
+        if (data.restoredAt) out.restoredAt = String(data.restoredAt);
         return out;
+    }
+
+    // Файл восстановили из резервной копии (restoredAt): записи браузера старше этого момента не возвращаем.
+    function newerThan(st, since) {
+        if (!since) return st;
+        const keep = (m) => {
+            const o = {};
+            Object.keys(m || {}).forEach(k => { if (String(m[k].at || '') >= String(since)) o[k] = m[k]; });
+            return o;
+        };
+        return { ...st, periods: keep(st.periods), amounts: keep(st.amounts), pkz: keep(st.pkz) };
     }
 
     function mergeMaps(a, b) {
@@ -144,7 +156,9 @@ window.SubsidyRef = (function () {
     }
 
     function mergeStores(a, b) {
+        const rs = [a.restoredAt, b.restoredAt].filter(Boolean).sort().pop();
         return {
+            ...(rs ? { restoredAt: rs } : {}),
             version: 1,
             updatedAt: [a.updatedAt, b.updatedAt].filter(Boolean).sort().pop() || null,
             periods: mergeMaps(a.periods, b.periods),
@@ -177,7 +191,7 @@ window.SubsidyRef = (function () {
             if (r.ok && r.data) remote = normStore(r.data);
         }
         const before = JSON.stringify([cache.periods, cache.amounts, cache.pkz]);
-        cache = mergeStores(remote || normStore(null), readLocal());
+        cache = mergeStores(remote || normStore(null), newerThan(readLocal(), remote && remote.restoredAt));
         loaded = true;
         if (JSON.stringify([cache.periods, cache.amounts, cache.pkz]) !== before) {
             rev++;
@@ -192,7 +206,8 @@ window.SubsidyRef = (function () {
     async function apply(mutate) {
         let next = null;
         const build = (data) => {
-            next = mergeStores(data ? normStore(data) : normStore(null), cache);
+            const rem = data ? normStore(data) : normStore(null);
+            next = mergeStores(rem, newerThan(cache, rem.restoredAt));
             mutate(next);
             next.updatedAt = new Date().toISOString();
             return next;

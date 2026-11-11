@@ -80,7 +80,18 @@ window.FareRefs = (function () {
         Object.keys(raw).slice(0, 2000).forEach(id => {
             if (/^[a-z0-9]{4,24}$/i.test(id) && raw[id]) deleted[id] = String(raw[id]);
         });
-        return { version: 1, updatedAt: src && src.updatedAt ? String(src.updatedAt) : null, entries, deleted };
+        const out = { version: 1, updatedAt: src && src.updatedAt ? String(src.updatedAt) : null, entries, deleted };
+        if (src && src.restoredAt) out.restoredAt = String(src.restoredAt);
+        return out;
+    }
+
+    // Файл восстановили из резервной копии (restoredAt): записи браузера старше этого момента не возвращаем.
+    function newerThan(st, since) {
+        if (!since) return st;
+        const ok = (t) => String(t || '') >= String(since);
+        const deleted = {};
+        Object.keys(st.deleted || {}).forEach(id => { if (ok(st.deleted[id])) deleted[id] = st.deleted[id]; });
+        return { ...st, entries: st.entries.filter(e => ok(e.updatedAt)), deleted };
     }
 
     // Слияние двух копий: по каждой записи — самая свежая, удалённые (deleted: id → время) не возвращаются.
@@ -96,7 +107,10 @@ window.FareRefs = (function () {
         });
         const entries = [...byId.values()].filter(e => !(deleted[e.id] && String(deleted[e.id]) >= String(e.updatedAt || '')));
         const updatedAt = String(a.updatedAt || '') >= String(b.updatedAt || '') ? a.updatedAt : b.updatedAt;
-        return { version: 1, updatedAt: updatedAt || null, entries: entries.slice(0, MAX_ENTRIES), deleted };
+        const out = { version: 1, updatedAt: updatedAt || null, entries: entries.slice(0, MAX_ENTRIES), deleted };
+        const rs = a.restoredAt || b.restoredAt;
+        if (rs) out.restoredAt = String(a.restoredAt && b.restoredAt && b.restoredAt > a.restoredAt ? b.restoredAt : rs);
+        return out;
     }
 
     function defaultsStore() {
@@ -126,7 +140,7 @@ window.FareRefs = (function () {
     async function load() {
         const remote = await readRemote();
         if (remote && (remote.entries.length || Object.keys(remote.deleted).length)) sawRemote = true;
-        const local = readLocal();
+        const local = newerThan(readLocal(), remote && remote.restoredAt);
         const before = JSON.stringify(store().entries);
         cache = mergeStores(mergeStores(remote || normalizeStore(null), local), defaultsStore());
         // Версия растёт, только если справочник правда поменялся: иначе таблицы зря перерисуются.
@@ -141,11 +155,12 @@ window.FareRefs = (function () {
         const build = (data) => {
             const remote = data ? normalizeStore(data) : null;
             if (remote && (remote.entries.length || Object.keys(remote.deleted).length)) sawRemote = true;
-            const base = mergeStores(mergeStores(remote || normalizeStore(null), store()), defaultsStore());
+            const base = mergeStores(mergeStores(remote || normalizeStore(null), newerThan(store(), remote && remote.restoredAt)), defaultsStore());
             const entries = base.entries.map(e => ({ ...e, flights: e.flights.slice() }));
             const deleted = { ...base.deleted };
             mutate(entries, deleted);
             next = { version: 1, updatedAt: new Date().toISOString(), entries: entries.slice(0, MAX_ENTRIES), deleted };
+            if (base.restoredAt) next.restoredAt = base.restoredAt;
             return next;
         };
         let shared = false;

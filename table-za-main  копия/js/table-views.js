@@ -1156,24 +1156,8 @@ function getPkzNavValue(dateStr, flightCode, row) {
 
 function setPkzNavValue(dateStr, flightCode, value) {
     if (typeof ProfileAuth !== 'undefined' && !ProfileAuth.hasPermission('edit_pkz_nav')) return;
-    if (typeof SharedOverrides !== 'undefined') {
-        SharedOverrides.setPkzNav(dateStr, flightCode, value);
-        return;
-    }
-    const map = getPkzNavMap();
-    const key = pkzNavKey(dateStr, flightCode);
-    if (value === '' || value === null || value === undefined) {
-        delete map[key];
-    } else {
-        const n = parseFloat(String(value).replace(/\s/g, '').replace(',', '.'));
-        if (isNaN(n)) delete map[key];
-        else map[key] = n;
-    }
-    try {
-        localStorage.setItem(PKZ_NAV_STORE_KEY, JSON.stringify(map));
-    } catch (e) {
-        console.warn('setPkzNavValue', e);
-    }
+    // Запись только через SharedOverrides (общий файл pkz-nav.json); отдельной записи в localStorage здесь нет.
+    if (typeof SharedOverrides !== 'undefined') SharedOverrides.setPkzNav(dateStr, flightCode, value);
 }
 
 function bindSubsidyInputs(cont) {

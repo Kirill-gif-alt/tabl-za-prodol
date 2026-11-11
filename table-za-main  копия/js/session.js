@@ -251,6 +251,7 @@ window.SessionStore = (function () {
             // Метка времени — отдельно: снимок уже записан, переполненный localStorage не должен его «отменять».
             try { localStorage.setItem('krasavia_snapshot_at', String(payload.savedAt)); } catch (e) { /* ignore */ }
             lastSavedSignature = signature;
+            if (payload.savedAt > appliedSavedAt) appliedSavedAt = payload.savedAt;
             updateRestoreButtonVisibility(true);
             return true;
         } catch (e) {
@@ -316,7 +317,11 @@ window.SessionStore = (function () {
             }
         }
         const ok = await SharedStorage.saveSnapshot(announce);
-        if (ok) baselineStats = nextStats;
+        if (ok) {
+            baselineStats = nextStats;
+            // Своя публикация не должна выглядеть как «новые данные» от других.
+            if (SharedStorage.snapshotStamp) { const st = await SharedStorage.snapshotStamp(); if (st) stampBase = st; }
+        }
         if (ok && typeof SalesArchive !== 'undefined') SalesArchive.captureSoon();
         if (ok && typeof SalesDayLog !== 'undefined') SalesDayLog.captureSoon();
         if (ok && announce && typeof ActivityLog !== 'undefined') {
@@ -327,6 +332,11 @@ window.SessionStore = (function () {
     }
 
     async function saveSnapshot(announceShared) {
+        // Слишком большой набор потом не открыть ни здесь, ни на других ПК — не сохраняем и говорим об этом.
+        if (typeof Security !== 'undefined' && !Security.snapshotFits({ allData, salesDetails })) {
+            if (typeof showToast === 'function') showToast('Данные слишком большие, чтобы сохранить их для следующего входа и общего файла', 'error');
+            return false;
+        }
         const ok = await saveLocalSnapshot();
         if (ok) {
             publishSharedSnapshot(announceShared).catch(e => console.warn('publishSharedSnapshot', e));
@@ -475,11 +485,12 @@ window.SessionStore = (function () {
     async function restoreLastData(silent) {
         const snap = await loadSnapshot();
         if (!snap) {
-            if (!silent && typeof showToast === 'function') showToast('Нет сохранённых данных', 'error');
+            const tooBig = typeof Security !== 'undefined' && Security.wasSnapshotRejected(true);
+            if (!silent && typeof showToast === 'function') showToast(tooBig ? "Сохранённые данные слишком большие — загрузите файлы заново" : 'Нет сохранённых данных', 'error');
             return false;
         }
         if (!applySnapshot(snap)) {
-            if (!silent && typeof showToast === 'function') showToast('Снимок данных повреждён или слишком большой', 'error');
+            if (!silent && typeof showToast === 'function') showToast("Сохранённые данные слишком большие — загрузите файлы заново", 'error');
             return false;
         }
         restoreUiSession();
@@ -509,6 +520,82 @@ window.SessionStore = (function () {
         return sharedSnap?.savedAt ? sharedSnap : (localSnap || null);
     }
 
+    // ---------- «Есть новые данные»: раз в 10 минут сверяем метку общего снимка (без скачивания) ----------
+    const NEW_DATA_CHECK_MS = 10 * 60 * 1000;
+    let stampBase = null;       // метка общего снимка на момент нашей загрузки / публикации
+    let stampTimer = 0;
+    let appliedSavedAt = 0;     // savedAt снимка, который сейчас показан
+
+    function hideNewDataBar() {
+        const el = document.getElementById('new-data-bar');
+        if (el) el.remove();
+    }
+
+    function showNewDataBar() {
+        if (document.getElementById('new-data-bar')) return;
+        const bar = document.createElement('div');
+        bar.id = 'new-data-bar';
+        bar.setAttribute('role', 'status');
+        bar.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:9000;display:flex;align-items:center;gap:12px;'
+            + 'padding:10px 16px;border-radius:8px;background:var(--primary,#012A4A);color:#fff;font-size:14px;box-shadow:0 4px 16px rgba(0,0,0,.25);max-width:92vw';
+        const txt = document.createElement('span');
+        txt.textContent = 'Есть новые данные';
+        const ok = document.createElement('button');
+        ok.type = 'button';
+        ok.textContent = 'Обновить';
+        ok.style.cssText = 'border:0;border-radius:6px;padding:6px 14px;background:var(--accent,#10b981);color:#fff;font-weight:600;cursor:pointer';
+        ok.addEventListener('click', () => { ok.disabled = true; refreshFromShared().catch(e => { console.warn('refreshFromShared', e); ok.disabled = false; }); });
+        const later = document.createElement('button');
+        later.type = 'button';
+        later.textContent = 'Позже';
+        later.style.cssText = 'border:1px solid rgba(255,255,255,.5);border-radius:6px;padding:6px 12px;background:transparent;color:#fff;cursor:pointer';
+        later.addEventListener('click', hideNewDataBar);
+        bar.append(txt, ok, later);
+        document.body.appendChild(bar);
+    }
+
+    async function checkNewData() {
+        if (typeof SharedStorage === 'undefined' || !SharedStorage.snapshotStamp || document.hidden) return;
+        const now = await SharedStorage.snapshotStamp();
+        if (!now || now === 'absent' || stampBase == null || now === stampBase) return;
+        stampBase = now;      // про эту версию уже сказали: повторно не напоминаем, пока файл снова не изменится
+        showNewDataBar();
+    }
+
+    function startNewDataWatch() {
+        if (stampTimer || typeof SharedStorage === 'undefined' || !SharedStorage.snapshotStamp) return;
+        stampTimer = setInterval(() => { checkNewData().catch(() => {}); }, NEW_DATA_CHECK_MS);
+    }
+
+    // Кнопка «Обновить»: взять свежий общий снимок и показать его (автоматически данные не меняются).
+    async function refreshFromShared() {
+        const stamp = await SharedStorage.snapshotStamp();
+        const snap = await SharedStorage.loadSnapshot();
+        if (!snap) {
+            if (typeof showToast === 'function') showToast(typeof Security !== 'undefined' && Security.wasSnapshotRejected(true)
+                ? 'Сохранённые данные слишком большие — загрузите файлы заново' : 'Не удалось прочитать общие данные', 'error');
+            hideNewDataBar();
+            return false;
+        }
+        if (snap.savedAt && snap.savedAt <= appliedSavedAt) {
+            hideNewDataBar();
+            if (typeof showToast === 'function') showToast('У вас уже самые свежие данные');
+            return true;
+        }
+        if (!applySnapshot(snap)) {
+            if (typeof showToast === 'function') showToast('Сохранённые данные слишком большие — загрузите файлы заново', 'error');
+            hideNewDataBar();
+            return false;
+        }
+        appliedSavedAt = snap.savedAt || 0;
+        if (stamp) stampBase = stamp;
+        hideNewDataBar();
+        renderOpenViews();
+        saveLocalCopyWhenIdle(snap);
+        if (typeof showToast === 'function') showToast('Данные обновлены');
+        return true;
+    }
+
     async function initOnStartup(opts) {
         const startTab = opts && opts.startTab ? opts.startTab : null;
         const useSpinner = typeof showLoading === 'function' && typeof hideLoading === 'function';
@@ -520,6 +607,8 @@ window.SessionStore = (function () {
             let needsLocalCopy = false;
             if (typeof SharedStorage !== 'undefined') {
                 await SharedStorage.init();
+                // Метку берём до чтения: если файл изменится в промежутке, проверка это заметит.
+                if (SharedStorage.snapshotStamp) stampBase = await SharedStorage.snapshotStamp();
                 const sharedSnap = await SharedStorage.loadSnapshot();
                 // Локальную копию (≈8 МБ) читаем, только если она может оказаться новее общей.
                 let localAt = 0;
@@ -537,11 +626,18 @@ window.SessionStore = (function () {
             }
 
             const exists = !!snap;
+            if (snap && snap.savedAt) appliedSavedAt = snap.savedAt;
+            startNewDataWatch();
             updateRestoreButtonVisibility(exists);
+            // Снимок отвергнут по размеру — говорим об этом, а не молчим.
+            if (!exists && typeof Security !== 'undefined' && Security.wasSnapshotRejected(true) && typeof showToast === 'function') {
+                showToast("Сохранённые данные слишком большие — загрузите файлы заново", 'error');
+            }
 
             if (exists) {
                 if (!applySnapshot(snap)) {
                     updateRestoreButtonVisibility(false);
+                    if (typeof showToast === 'function') showToast("Сохранённые данные слишком большие — загрузите файлы заново", 'error');
                 } else {
                     restoreUiSession();
                     renderOpenViews(startTab);

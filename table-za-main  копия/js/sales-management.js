@@ -103,6 +103,27 @@ window.SalesManagement = (function () {
         return !!(src && (Object.prototype.hasOwnProperty.call(src, 'enabledRoutes') || src.routesUpdatedAt));
     }
 
+    // Файл восстановили из резервной копии (restoredAt): всё старше этого момента в копии браузера не возвращаем.
+    function trimRestored(local, since) {
+        if (!since || !local) return local;
+        const out = { ...local };
+        const marks = {};
+        Object.keys(local.marks || {}).forEach(key => {
+            const m = local.marks[key];
+            if (m && String(m.updatedAt || '') >= String(since)) marks[key] = m;
+        });
+        out.marks = marks;
+        if (String(local.routesUpdatedAt || '') < String(since)) {
+            delete out.enabledRoutes;
+            out.routesUpdatedAt = null;
+        }
+        if (String(local.rangesUpdatedAt || '') < String(since)) {
+            ['rowsFrom', 'historyFrom', 'rowsTo', 'colsTo', 'departures'].forEach(k => { delete out[k]; });
+            out.rangesUpdatedAt = null;
+        }
+        return out;
+    }
+
     function takeRoutes(remote, local) {
         const remoteHas = hasRouteField(remote);
         const localHas = hasRouteField(local);
@@ -461,6 +482,25 @@ window.SalesManagement = (function () {
         holdEnds = false;
         // Слияние с тем, что сейчас в общем файле; зовётся заново, если файл успели изменить до нашей записи.
         const build = (remote) => {
+            const since = remote && remote.restoredAt ? String(remote.restoredAt) : '';
+            if (since) {
+                // Файл восстановлен из копии: свои более старые отметки/маршруты/диапазоны не возвращаем.
+                Object.keys(cache.marks).forEach(key => {
+                    const m = cache.marks[key];
+                    if (!batch.has(key) && !dirty.has(key) && m && String(m.updatedAt || '') < since) delete cache.marks[key];
+                });
+                if (!saveRoutes && String(cache.routesUpdatedAt || '') < since) {
+                    cache.enabledRoutes = normalizeRouteList(remote.enabledRoutes);
+                    cache.routesUpdatedAt = remote.routesUpdatedAt || null;
+                }
+                if (!saveHistory && String(cache.rangesUpdatedAt || '') < since) {
+                    cache.rangesUpdatedAt = null;
+                    cache.rowsFrom = dateOnly(remote.rowsFrom) || '';
+                    cache.historyFrom = dateOnly(remote.historyFrom) || '';
+                    cache.rowsTo = dateOnly(remote.rowsTo) || null;
+                    cache.colsTo = dateOnly(remote.colsTo) || null;
+                }
+            }
             const marks = { ...((remote && remote.marks) || {}) };
             batch.forEach((mark, key) => {
                 if (!mark) {
@@ -520,6 +560,7 @@ window.SalesManagement = (function () {
             return {
                 version: 1,
                 updatedAt: cache.updatedAt,
+                ...(since ? { restoredAt: since } : {}),
                 marks: cache.marks,
                 enabledRoutes: Array.isArray(cache.enabledRoutes) ? cache.enabledRoutes.slice() : null,
                 routesUpdatedAt: cache.routesUpdatedAt || null,
@@ -582,6 +623,7 @@ window.SalesManagement = (function () {
         const remote = await readRemote();
         let local = null;
         try { local = JSON.parse(localStorage.getItem(LOCAL_KEY) || 'null'); } catch (e) { local = null; }
+        local = trimRestored(local, remote && remote.restoredAt);
         const keepRoutes = routesDirty;
         const keepEnabled = cache.enabledRoutes;
         const keepAt = cache.routesUpdatedAt;
@@ -1108,7 +1150,8 @@ window.SalesManagement = (function () {
             flights.push({ code: table, route, departures, checks });
         });
         flights.sort((a, b) => (parseInt(a.code.slice(3), 10) || 0) - (parseInt(b.code.slice(3), 10) || 0));
-        if (changed) {
+        // Историю вылетов в общий файл пишет только тот, кто вправе править УП.
+        if (changed && canEdit()) {
             historyDirty = true;
             schedulePersist();
         }
@@ -1979,7 +2022,7 @@ function createSalesManagementView(panel) {
                         <button type="button" id="sm-legend-btn" class="filter-btn" aria-expanded="true" title="Показать или скрыть цветные плашки">Обозначения</button>
                         <button type="button" id="sm-today" class="filter-btn filter-btn-active">Сегодня</button>
                         <button type="button" id="sm-reload" class="filter-btn">Обновить</button>
-                        <button type="button" id="sm-export" class="filter-btn">В Excel</button>
+                        <button type="button" id="sm-export" class="filter-btn"${typeof ProfileAuth !== 'undefined' && !ProfileAuth.hasPermission('export_excel') ? ' disabled' : ''}>В Excel</button>
                     </div>
                     <div class="sm-legend" id="sm-legend" aria-hidden="true">
                         <span class="sm-legend-item sm-st-keep">Проверено без изменений</span>

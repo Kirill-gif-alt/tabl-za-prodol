@@ -147,5 +147,20 @@ window.SignalNews = (function () {
         }).catch(() => {}).finally(() => { remoteLoad = null; if (onDone) onDone(); });
     }
 
-    return { setAdvice, isNew, hasBaseline, revision, record, loadShared };
+    // После входа и после публикации данных, в простое: все читают общий файл (метка «новое» одинакова),
+    // а тот, кто публикует, досчитывает советы и пишет снимок дня без отрисовки «Сегодня».
+    function backgroundSoon() {
+        const run = () => {
+            loadShared(() => {
+                if (typeof currentTab !== 'undefined' && currentTab === 'rms' && typeof refreshCurrentView === 'function') refreshCurrentView();
+            });
+            if (canPublish() && typeof TodayView !== 'undefined' && TodayView.backgroundSignals) {
+                TodayView.backgroundSignals().catch(e => console.warn('SignalNews', e));
+            }
+        };
+        if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 30000 });
+        else setTimeout(run, 4000);
+    }
+
+    return { setAdvice, isNew, hasBaseline, revision, record, loadShared, backgroundSoon };
 })();

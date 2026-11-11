@@ -456,7 +456,8 @@ window.FlightSearch = (function () {
         if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === 'k' || e.key === 'K' || e.key === 'л' || e.key === 'Л' || e.code === 'KeyK')) {
             const loggedIn = typeof ProfileAuth === 'undefined' || (ProfileAuth.getCurrentProfile && ProfileAuth.getCurrentProfile());
             const hasData = typeof groupedData !== 'undefined' && groupedData && Object.keys(groupedData).length;
-            if (!loggedIn || !hasData) return;
+            // Поиск недоступен профилю (нет таблиц) — сочетание остаётся браузеру.
+            if (!loggedIn || !hasData || (!palette && !paletteTabs().length)) return;
             e.preventDefault();
             if (palette) closePalette();
             else openPalette();

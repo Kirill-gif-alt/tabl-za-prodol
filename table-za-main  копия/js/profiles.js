@@ -36,7 +36,7 @@ window.ProfileAuth = (function () {
         edit_pkz_nav: { label: 'ПКЗ из NAV — менять', group: 'Справочник', hint: 'и в таблице ПКЗ' },
         edit_flights: { label: 'Справочник рейсов — менять', group: 'Справочник', hint: 'видят все' },
         edit_calendar: { label: 'Календарь событий — менять', group: 'Справочник', hint: 'праздники, каникулы; видят все' },
-        view_forecast: { label: 'Прогноз загрузки и предупреждения', group: 'Отчёты', hint: 'раздел «Модели» в «Отчётах» (ближайшие рейсы, точность), строка «Модель» в карточке рейса' },
+        view_forecast: { label: 'Прогноз загрузки и предупреждения', group: 'Отчёты', hint: 'в «Отчётах» → «Модели» часть первой модели (сигналы, ближайшие рейсы, точность), строка «Модель» в карточке рейса' },
         price_advisor: { label: 'Ценовой советник', group: 'Отчёты', hint: 'какой класс держать открытым: строка «Цена» в карточке рейса и блок «Подробно для аналитика» в «Отчёты → Модели»' },
         lowreq: { label: 'Запрос на понижение', group: 'Отчёты', hint: 'вкладка и галочка у рейса в «Управлении продажами»' },
         manage_profiles: { label: 'Управление профилями', group: 'Админ' }
@@ -65,7 +65,7 @@ window.ProfileAuth = (function () {
         flight_checks: { label: 'Проверка рейсов', hint: 'детский −50% и тариф выше субсидированного: «!», счётчик в шапке, раздел в «Отчётах»', def: true },
         subsidy_mode: { label: 'Метки «С» / «К» у дат вылета', hint: 'субсидия или коммерция — в «Графическом плане», в «Динамике продаж» и RMS', def: true },
         flight_card: { label: 'Карточка рейса', hint: 'клик по рейсу открывает панель с графиком, прогнозом и отметкой решения', def: 'admin' },
-        ml_forecast: { label: 'Вторая модель прогноза', hint: 'прогноз второй модели (машинное обучение) в карточке рейса и окно «Сравнение моделей»', def: 'admin' },
+        ml_forecast: { label: 'Вторая модель прогноза', hint: 'вторая модель (машинное обучение): её часть в «Отчётах» → «Модели», карточка рейса и «Сравнение моделей»; первая модель без права «Прогноз загрузки» не показывается', def: 'admin' },
         header_kpi: { label: 'Продажи за сегодня в шапке', hint: 'билеты и выручка', def: true },
         morning_summary: { label: 'Утренняя сводка', hint: 'при входе и значок «☀ N»: вылеты на 20 дней, решения, ошибки тарифов, пропуски справочника', def: 'admin' },
         rms_header_alerts: { label: 'Счётчик сигналов RMS «⚠» в шапке', def: true },
@@ -722,6 +722,8 @@ window.ProfileAuth = (function () {
         if (restoreBtn && restoreBtn.style.display !== 'none' && !hasPermission('load_data')) {
             restoreBtn.style.display = 'none';
         }
+        // Без права загрузки «Последние» не показываем и позже (когда сессия сохранит снимок); правило в styles.css.
+        document.body.classList.toggle('no-load-data', !hasPermission('load_data'));
 
         const adminBtn = document.getElementById('profile-admin-btn');
         if (adminBtn) {
@@ -1310,6 +1312,8 @@ window.ProfileAuth = (function () {
         await loadProfiles();
         const p = profilesCache.find(x => x.id === currentProfile.id);
         if (!p || !p.isAdmin) return false;
+        // Значение не изменилось — общий файл профилей не пишем.
+        if (resolveShowHomeMap(p) === !!value && p.showHomeMap === !!value) return true;
         p.showHomeMap = !!value;
         currentProfile.showHomeMap = resolveShowHomeMap(p);
         await saveProfiles(false, { update: { [p.id]: { showHomeMap: p.showHomeMap } } });

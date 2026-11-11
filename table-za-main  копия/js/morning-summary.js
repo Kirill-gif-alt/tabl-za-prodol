@@ -83,6 +83,9 @@ window.MorningSummary = (function () {
         return typeof ReferenceView !== 'undefined' && ReferenceView.completenessCount ? ReferenceView.completenessCount() : 0;
     }
 
+    // Ссылки в «Отчёты» — только профилю с этой вкладкой.
+    function canRep() { return typeof ProfileAuth === 'undefined' || ProfileAuth.canAccessTab('reports'); }
+
     function adviceAllowed() {
         return typeof PV !== 'undefined' && PV.HINT_SUMMARY === 1 && canTab('sales') && typeof SalesManagement !== 'undefined';
     }
@@ -159,8 +162,8 @@ window.MorningSummary = (function () {
         box.innerHTML = `
             <div class="ms-tiles">
                 ${adviceAllowed() ? `<div class="ms-tile"><div class="ms-tile-n">${list.length}</div><div class="ms-tile-l">${pluralRu(list.length, 'вылет ждёт', 'вылета ждут', 'вылетов ждут')} отметки<br><span class="ms-muted">▼ ${counts.down} · ! ${counts.attn} · ▲ ${counts.up}</span></div></div>` : ''}
-                ${typeof FlightChecks !== 'undefined' && FlightChecks.enabled() ? `<button type="button" class="ms-tile ms-tile-btn" data-ms-open="checks"><div class="ms-tile-n${fe ? ' ms-bad' : ''}">${fe}</div><div class="ms-tile-l">${pluralRu(fe, 'рейс', 'рейса', 'рейсов')} с ошибкой тарифа<br><span class="ms-muted">открыть проверку →</span></div></button>` : ''}
-                ${typeof SubsidyRef !== 'undefined' && SubsidyRef.canView() ? `<button type="button" class="ms-tile ms-tile-btn" data-ms-open="refs"><div class="ms-tile-n${gaps ? ' ms-warn' : ''}">${gaps}</div><div class="ms-tile-l">${pluralRu(gaps, 'пропуск', 'пропуска', 'пропусков')} в справочнике<br><span class="ms-muted">открыть проверку →</span></div></button>` : ''}
+                ${typeof FlightChecks !== 'undefined' && FlightChecks.enabled() ? `${canRep() ? '<button type="button" class="ms-tile ms-tile-btn" data-ms-open="checks">' : '<div class="ms-tile">'}<div class="ms-tile-n${fe ? ' ms-bad' : ''}">${fe}</div><div class="ms-tile-l">${pluralRu(fe, 'рейс', 'рейса', 'рейсов')} с ошибкой тарифа${canRep() ? '<br><span class="ms-muted">открыть проверку →</span>' : ''}</div>${canRep() ? '</button>' : '</div>'}` : ''}
+                ${typeof SubsidyRef !== 'undefined' && SubsidyRef.canView() ? `${canRep() ? '<button type="button" class="ms-tile ms-tile-btn" data-ms-open="refs">' : '<div class="ms-tile">'}<div class="ms-tile-n${gaps ? ' ms-warn' : ''}">${gaps}</div><div class="ms-tile-l">${pluralRu(gaps, 'пропуск', 'пропуска', 'пропусков')} в справочнике${canRep() ? '<br><span class="ms-muted">открыть проверку →</span>' : ''}</div>${canRep() ? '</button>' : '</div>'}` : ''}
             </div>
             ${adviceAllowed() ? (list.length ? `
                 <p class="ms-note">Вылеты из «Управления продажами» на ${daysWord()}, где продажи заметно расходятся с нормой и планом, а отметки за сегодня ещё нет. Нажмите строку — карточка рейса, кнопка в конце строки — поставить отметку.</p>

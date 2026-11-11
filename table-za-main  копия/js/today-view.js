@@ -691,7 +691,7 @@ window.TodayView = (function () {
                 { filter: 'down', on: tab === 'advice' && filter === 'down', title: 'Нажмите — показать только вылеты, где стоит снизить цену' }));
         }
         if (checks || gaps) {
-            const gapsNote = gaps ? `${gaps} ${pluralRu(gaps, 'пропуск', 'пропуска', 'пропусков')} в справочнике · <span class="td-link" role="link" tabindex="0" data-td-gaps>открыть справочник</span>` : 'пропусков в справочнике нет';
+            const gapsNote = gaps ? `${gaps} ${pluralRu(gaps, 'пропуск', 'пропуска', 'пропусков')} в справочнике${typeof ProfileAuth === 'undefined' || ProfileAuth.canAccessTab('reports') ? ' · <span class="td-link" role="link" tabindex="0" data-td-gaps>открыть справочник</span>' : ''}` : 'пропусков в справочнике нет';
             tiles.push(bigTile('td-big-blue', 'Ошибки в тарифах', checks ? String(errs.length) : '—',
                 checks ? gapsNote : `проверка тарифов выключена · ${gapsNote}`,
                 checks ? { filter: 'errors', on: tab === 'errors', title: 'Нажмите — показать рейсы с ошибкой тарифа' } : {}));
@@ -895,7 +895,13 @@ window.TodayView = (function () {
         if (typeof currentTab !== 'undefined' && currentTab === 'today') render();
     });
 
-    return { create, refresh, aheadDays };
+    // Фоновый расчёт сигналов без отрисовки (для снимка дня в signals-days.json): если «Сегодня» открыта, считает она сама.
+    function backgroundSignals() {
+        if (document.getElementById('td-page') || !hasData()) return Promise.resolve();
+        return buildAdvice().then(() => { announceSignals(); });
+    }
+
+    return { create, refresh, aheadDays, backgroundSignals };
 })();
 
 function createTodayView(panel) {
