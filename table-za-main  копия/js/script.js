@@ -77,15 +77,20 @@ function getDeltaFromExpected(actualLoad, expectedLoad) {
     return { delta, cls };
 }
 
+// Строка вылета: у рейса с посадками в день несколько участков — берём основной (сквозной), не помеченный segShare,
+// как в таблицах: иначе карточка, подсказки и «Сегодня» показывали бы загрузку случайного участка.
 function getFlightRowForDate(baseFlight, flyDateStr, flightCode) {
     const rows = groupedData[baseFlight] || [];
-    if (flightCode) {
-        const code = cleanFlight(flightCode);
-        return rows.find(r => r[1] === flyDateStr && cleanFlight(r[0]) === code) || null;
+    const code = flightCode ? cleanFlight(flightCode) : baseFlight;
+    let first = null;
+    for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        if (r[1] !== flyDateStr || cleanFlight(r[0]) !== code) continue;
+        if (!r.segShare) return r;
+        if (!first) first = r;
     }
-    return rows.find(r => r[1] === flyDateStr && cleanFlight(r[0]) === baseFlight)
-        || rows.find(r => r[1] === flyDateStr)
-        || null;
+    if (first || flightCode) return first;
+    return rows.find(r => r[1] === flyDateStr) || null;
 }
 
 function getPkzContextForFlight(baseFlight, flyDateStr, flightCode) {

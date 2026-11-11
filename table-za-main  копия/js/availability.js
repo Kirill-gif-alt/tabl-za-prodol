@@ -27,8 +27,9 @@ function looksLikeTime(val) {
 function normalizeTimeStr(val) {
     const s = String(val || '').trim();
     if (!s) return '';
-    // один match: «08:45», «+1 08:45», «+108:45» (движок сам отрежет +N)
-    const m = s.match(/^(?:\+\d+\s*)?(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    // один match: «08:45», «+1 08:45», «+108:45» (движок сам отрежет +N).
+    // Приставка «+N» ленивая: в «+112:45» часы — «12», а не «2» (жадная брала бы «+11» и оставляла «2:45»).
+    const m = s.match(/^(?:\+\d*?\s*)?(\d{1,2}):(\d{2})(?::\d{2})?$/);
     if (!m) return '';
     const hh = parseInt(m[1], 10);
     const mm = parseInt(m[2], 10);
@@ -158,7 +159,11 @@ function buildFirstSalesRowByKey(rows) {
     const map = new Map();
     for (const r of rows) {
         const k = getSalesLookupKey(r);
-        if (k && !map.has(k)) map.set(k, r);
+        if (!k) continue;
+        // У вылета с посадками продажи, выручка, расходы и субсидия — на основном (сквозном) участке,
+        // а не на том, что случайно стоит первым в файле или при сортировке.
+        const cur = map.get(k);
+        if (!cur || (cur.segShare && !r.segShare)) map.set(k, r);
     }
     return map;
 }
@@ -354,9 +359,15 @@ function collectSalesByDealDateForFlightDate(baseFlight, flyDateStr, flightCode)
         (salesDetails[key] || []).forEach(sale => {
             const deal = sale.dealDate;
             if (!deal) return;
-            if (!salesByDealDate[deal]) salesByDealDate[deal] = { count: 0, totalFare: 0 };
-            salesByDealDate[deal].count++;
-            salesByDealDate[deal].totalFare += (sale.adjustedFare || sale.fare || 0);
+            if (!salesByDealDate[deal]) salesByDealDate[deal] = { count: 0, totalFare: 0, paid: 0, paidSum: 0 };
+            const d = salesByDealDate[deal];
+            d.count++;
+            // totalFare и paid — для среднего тарифа (платные билеты, детский пересчитан), paidSum — выручка (по факту оплаты):
+            // так же, как в таблицах (getSalesAggForKey / getRevenueForRow).
+            const adj = sale.adjustedFare || sale.fare || 0;
+            d.totalFare += adj;
+            if (adj > 0) d.paid++;
+            d.paidSum += sale.fare || 0;
         });
     };
 

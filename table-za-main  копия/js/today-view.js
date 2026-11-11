@@ -109,14 +109,18 @@ window.TodayView = (function () {
 
     function departuresOn(date) {
         const out = [];
-        const seen = new Set();
+        const byCode = new Map();
         rowsOnDate(date).forEach(([base, r]) => {
             const code = cleanFlight(r[0]);
-            if (seen.has(code)) return;
-            seen.add(code);
-            const seats = typeof getSeatsOnSale === 'function' ? getSeatsOnSale(r) : 0;
-            const sold = typeof getSoldFromRow === 'function' ? getSoldFromRow(r) : 0;
-            out.push({ code, base, date, row: r, seats, sold });
+            // Вылет с посадками — одна строка на номер: основной (сквозной) участок, а не участок, ушедший в чужой рейс.
+            const cur = byCode.get(code);
+            if (cur && !(cur.row.segShare && !r.segShare)) return;
+            byCode.set(code, { code, base, date, row: r });
+        });
+        byCode.forEach(d => {
+            d.seats = typeof getSeatsOnSale === 'function' ? getSeatsOnSale(d.row) : 0;
+            d.sold = typeof getSoldFromRow === 'function' ? getSoldFromRow(d.row) : 0;
+            out.push(d);
         });
         return out.sort((a, b) => String(a.row[11] || '').localeCompare(String(b.row[11] || '')) || (parseInt(a.code.slice(3), 10) - parseInt(b.code.slice(3), 10)));
     }

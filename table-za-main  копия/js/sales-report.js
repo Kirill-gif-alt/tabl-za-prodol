@@ -244,7 +244,9 @@ function collectSameWeekdayCohort(baseFlight, flyDateStr, flightCode) {
     const seen = new Set();
     rows.forEach(row => {
         const dtStr = row[1];
-        if (!dtStr || dtStr === flyDateStr || seen.has(dtStr)) return;
+        // Участок доп. посадки другого рейса (KV-173 KJA-TGP в KV-171): его билеты не этого рейса — в норму не берём.
+        // Остальные участки вылета с посадками (segShare) тоже пропускаем: у вылета один основной (сквозной) участок, его загрузка и кресла.
+        if (!dtStr || dtStr === flyDateStr || seen.has(dtStr) || row.segKey || row.segShare) return;
         const dt = parseLocalDate(dtStr);
         if (!dt || dt.getDay() !== dow) return;
         const orig = cleanFlight(row[0]);
@@ -615,12 +617,14 @@ function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode)
     const seats = flightRow ? getSeatsOnSale(flightRow) : 0;
     const finalExpectedLoad = getExpectedLoadForFlightDate(baseFlight, flyDateStr, aircraftCode);
 
-    let totalTickets = 0, totalRevenue = 0;
+    let totalTickets = 0, totalRevenue = 0, fareSum = 0, paidCount = 0;
     sortedDealDates.forEach(dealDate => {
         totalTickets += salesByDealDate[dealDate].count;
-        totalRevenue += salesByDealDate[dealDate].totalFare;
+        totalRevenue += salesByDealDate[dealDate].paidSum;
+        fareSum += salesByDealDate[dealDate].totalFare;
+        paidCount += salesByDealDate[dealDate].paid;
     });
-    const overallAvg = totalTickets > 0 ? Math.round(totalRevenue / totalTickets) : 0;
+    const overallAvg = paidCount > 0 ? Math.round(fareSum / paidCount) : 0;
 
     const period = salesChartPeriodDays || 30;
     const flyParsed = parseLocalDate(flyDateStr);
@@ -765,7 +769,7 @@ function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode)
                     <tbody>
                         ${sortedDealDates.length ? sortedDealDates.slice().reverse().map(dealDate => {
                             const data = salesByDealDate[dealDate];
-                            const avg = data.count > 0 ? Math.round(data.totalFare / data.count) : 0;
+                            const avg = data.paid > 0 ? Math.round(data.totalFare / data.paid) : 0;
                             return `<tr><td class="col-date">${escHtml(dealDate)}</td><td>${escHtml(getDayOfWeek(dealDate))}</td><td><strong>${data.count}</strong></td><td>${formatRub(avg)}</td></tr>`;
                         }).join('') : '<tr><td colspan="4">Нет продаж</td></tr>'}
                     </tbody>

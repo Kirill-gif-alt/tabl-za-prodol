@@ -351,7 +351,7 @@ window.DecisionsReport = (function () {
                 const exp = m.expRev != null ? m.expRev : m.nExpPaid * m.priceBefore;
                 const fact = m.revFact != null ? m.revFact : Math.max(0, exp + m.delta);
                 lines.push(m.remainder
-                    ? `От дня после решения до вылета продали <b>${m.factAll}</b> билетов, обычно за это время — около <b>${numRu(m.expAll)}</b>.`
+                    ? `От дня после решения до ${m.remTo ? 'следующего решения (' + esc(fmtD(m.remTo)) + ')' : 'вылета'} продали <b>${m.factAll}</b> билетов, обычно за это время — около <b>${numRu(m.expAll)}</b>.`
                     : `За ${m.w} дн. после решения продали <b>${m.factAll}</b> билетов, обычно в такие дни — около <b>${numRu(m.expAll)}</b>.`);
                 lines.push(m.nCf != null
                     ? `Если бы тариф не трогали (${m.priceCf && Math.abs(m.priceCf - m.priceBefore) >= 50 ? `был ${rubPlain(m.priceBefore)}, с естественным ростом ${rubPlain(m.priceCf)}` : `был ${rubPlain(m.priceBefore)}`}), продали бы ${up ? 'не меньше' : 'не больше'} <b>${numRu(m.nCf)}</b> билетов — около <b>${rubPlain(exp)}</b>. По факту — около <b>${rubPlain(fact)}</b>.`

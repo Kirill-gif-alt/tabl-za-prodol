@@ -156,6 +156,20 @@ function getDataLegMetrics(row) {
     return { seats, load: sold, zpk, bookings: avs };
 }
 
+// Продажи у вылета с посадками записаны на общий ключ рейса: в «За сутки» их показываем один раз, на основном участке.
+function getDataEntriesFirstSales(entries) {
+    const rows = [];
+    (entries || []).forEach(e => { if (e.outRow) rows.push(e.outRow); if (e.inRow) rows.push(e.inRow); });
+    return buildFirstSalesRowByKey(rows);
+}
+
+function getDataLegYesterday(row, firstByKey) {
+    if (!row || typeof getSalesMapForRow !== 'function') return 0;
+    if (firstByKey && !shouldAttachSalesToRowCached(row, firstByKey)) return 0;
+    const s = getSalesMapForRow(row);
+    return (s && s.yesterday) || 0;
+}
+
 function isDataLegClosed(row) {
     if (!row) return false;
     return closedFlights.has(getSalesLookupKey(row));
@@ -213,9 +227,9 @@ function renderDataLegCells(row, legCls, options = {}) {
         ? `<td class="${cellBase} data-col-bookings${fullCls}${hlCls}"${hlStyle}>${m.bookings != null ? formatNum(m.bookings) : '—'}</td>`
         : '';
     // Продажи за прошлые сутки (DEALDATE = вчера), как столбец «Вчера» в «Динамике продаж».
-    const ds = dataShowDaySales && typeof getSalesMapForRow === 'function' ? getSalesMapForRow(row) : null;
+    const dsYest = dataShowDaySales ? getDataLegYesterday(row, options.salesFirst) : 0;
     const daySalesCell = dataShowDaySales
-        ? `<td class="${cellBase} data-col-bookings${fullCls}${hlCls}"${hlStyle}>${ds && ds.yesterday ? formatNum(ds.yesterday) : '—'}</td>`
+        ? `<td class="${cellBase} data-col-bookings${fullCls}${hlCls}"${hlStyle}>${dsYest ? formatNum(dsYest) : '—'}</td>`
         : '';
     return `
         ${timesCells}
@@ -232,6 +246,7 @@ function renderDataRouteTableRows(pair, todayStart) {
     const entries = getDataPairEntries(pair, todayStart);
     if (!entries.length) return '';
     _dataBoardRowAcc += entries.length;
+    const salesFirst = dataShowDaySales ? getDataEntriesFirstSales(entries) : null;
 
     return entries.map(entry => {
         const outM = getDataLegMetrics(entry.outRow);
@@ -287,8 +302,8 @@ function renderDataRouteTableRows(pair, todayStart) {
         return `<tr class="${rowCls}${checkCls}" data-outbound="${escAttr(pair.outbound)}" data-date="${escAttr(clickDate)}"${legAttrs} tabindex="0">
             <td class="col-date data-block-info font-semibold">${dateCell}</td>
             <td class="font-medium data-block-info">${escHtml(formatPairDayOfWeek(entry.outRow, entry.inRow, entry.date))}</td>
-            ${renderDataLegCells(entry.outRow, 'pair-leg-out', { allowYellow: yellowOut, customColor: customOut, flew: flewOut })}
-            ${renderDataLegCells(entry.inRow, 'pair-leg-in', { allowYellow: yellowIn, customColor: customIn, flew: flewIn })}
+            ${renderDataLegCells(entry.outRow, 'pair-leg-out', { allowYellow: yellowOut, customColor: customOut, flew: flewOut, salesFirst })}
+            ${renderDataLegCells(entry.inRow, 'pair-leg-in', { allowYellow: yellowIn, customColor: customIn, flew: flewIn, salesFirst })}
             <td class="font-bold data-board-avg-cell data-block-avg pair-split-start${yellowAvg ? ' data-block-zpk-full' : ''}">${avgHtml}</td>
         </tr>`;
     }).join('');
@@ -298,10 +313,10 @@ function renderDataRouteTableRows(pair, todayStart) {
 function buildDataDaySalesSumRow(pair, todayStart) {
     if (!dataShowDaySales) return '';
     const entries = getDataPairEntries(pair, todayStart);
-    const ys = (row) => { if (!row || typeof getSalesMapForRow !== 'function') return 0; const s = getSalesMapForRow(row); return (s && s.yesterday) || 0; };
+    const first = getDataEntriesFirstSales(entries);
     let out = 0;
     let inn = 0;
-    entries.forEach(e => { out += ys(e.outRow); inn += ys(e.inRow); });
+    entries.forEach(e => { out += getDataLegYesterday(e.outRow, first); inn += getDataLegYesterday(e.inRow, first); });
     const leg = (isOut, sum) => {
         const cls = isOut ? 'pair-leg-out data-block-out' : 'pair-leg-in data-block-in';
         const cells = [];

@@ -92,6 +92,8 @@ window.CreativeView = (function () {
     // на первом участке, как и выручку. Иначе у рейса из двух участков суммы удваиваются.
     function subsidyOf(c) {
         if (!c.attach) return null;
+        // Участок вылета с посадками, не основной: субсидия (и ручная) — в строке основного участка, как в «Экономической таблице».
+        if (c.row && c.row.segShare) return null;
         if (typeof SharedOverrides !== 'undefined' && SharedOverrides.hasSubsidy(c.code, c.date)) {
             return SharedOverrides.getSubsidy(c.code, c.date) || 0;
         }
@@ -201,7 +203,10 @@ window.CreativeView = (function () {
         { key: 'expected', group: 'rms', label: 'Ожидаемая загрузка (файл)', type: 'num', agg: 'sum', get: c => { const m = metricsOf(c); return m ? m.evR : null; } },
         { key: 'delta', group: 'rms', label: 'Отклонение от ожидаемой', type: 'num', agg: 'sum', get: c => { const m = metricsOf(c); return m ? m.delta : null; } },
         { key: 'fcPax', group: 'rms', label: 'Прогноз к вылету, пасс.', type: 'num', agg: 'sum', get: c => { const f = forecastOf(c); return f ? f.final : null; } },
-        { key: 'fcLf', group: 'rms', label: 'Прогноз ЗПК к вылету, %', type: 'pct', agg: 'ratio', num: 'fcPax', den: 'seats', scale: 100, get: c => { const f = forecastOf(c); return f ? f.lf : null; } },
+        { key: 'fcLf', group: 'rms', label: 'Прогноз ЗПК к вылету, %', type: 'pct', agg: 'ratio', scale: 100,
+          // Кресла — только у вылетов, где есть прогноз (он один на вылет с посадками, у улетевших его нет), иначе процент занижен.
+          numFn: c => { const f = forecastOf(c); return f ? f.final : null; },
+          denFn: c => { const f = forecastOf(c); return f && typeof getSeatsOnSale === 'function' ? getSeatsOnSale(c.row) : null; }, get: c => { const f = forecastOf(c); return f ? f.lf : null; } },
         { key: 'groups', group: 'sales', label: 'Групповые брони, бил.', type: 'num', agg: 'sum', get: c => (c.attach && typeof FlightInsights !== 'undefined' ? FlightInsights.groupSeats(c.code, c.date) || null : null) },
         { key: 'alert', group: 'rms', label: 'Сигнал RMS', type: 'text', agg: 'text', get: c => { const m = metricsOf(c); return m ? (ALERT_LABELS[m.alertLevel] || '') : ''; } },
         { key: 'alertReason', group: 'rms', label: 'Причина сигнала', type: 'text', agg: 'text', get: c => { const m = metricsOf(c); return m ? (m.alertReason || '') : ''; } },

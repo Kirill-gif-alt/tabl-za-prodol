@@ -570,6 +570,12 @@ function buildTimelineHtml() {
             if (window.networkMapFilter && typeof NetworkMap !== 'undefined' && NetworkMap.flightMatchesFilter
                 && !NetworkMap.flightMatchesFilter(fl, row)) return;
             const dk = `${date}\x1f${fl}`;
+            // У вылета с посадками плашка показывает основной (сквозной) участок: его загрузка — та же, что в таблицах.
+            if (metaByDateFlight[dk] && metaByDateFlight[dk].row.segShare && !row.segShare) {
+                delete metaByDateFlight[dk];
+                flightSeen[date].delete(fl);
+                flightDates[date] = flightDates[date].filter(x => x !== fl);
+            }
             if (!metaByDateFlight[dk]) {
                 const m = metricsByKey[getMetricsStorageKey(row)];
                 const depStr = typeof getDepTime === 'function' ? getDepTime(row) : '';

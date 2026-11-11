@@ -18,10 +18,11 @@
 // Диапазон несимметричный (MONEY_RANGE_LOW / MONEY_RANGE_HIGH): на вылетах без решений случайные плюсы чаще случайных минусов.
 //
 // Понижение: окно от 4 до 10 дней (так, чтобы ожидалось не меньше ~6 билетов), без дня решения (время сделки неизвестно);
-// результат фиксируется через день после окна. Повышение: через окно — только ранний сигнал, итог после вылета по остатку продаж.
+// результат фиксируется через день после окна. Повышение: через окно — только ранний сигнал, итог после вылета по остатку продаж
+// (до вылета или до следующего решения по этому вылету: одни и те же дни двум решениям не засчитываются).
 // Зафиксированный итог лежит в shared/decision-money/ГГГГ-ММ.json и дальше не меняется (при смене данных и параметров тоже).
 window.DecisionMoney = (function () {
-    const METHOD_VERSION = 10;
+    const METHOD_VERSION = 11;
     const DAY = 86400000;
     const REGULAR = /^KV-\d{3}$/;      // допы и чартеры (KV-9xxx и т. п.) не оцениваем: покупки блоками, нормы нет
     const GAPS = [56, 84, 182, 100000]; // расширение окна поиска аналогов, дней
@@ -198,7 +199,7 @@ window.DecisionMoney = (function () {
         const rows = (typeof groupedData !== 'undefined' && groupedData[base]) || [];
         rows.forEach(row => {
             const dtStr = row[1];
-            if (!dtStr || seen.has(dtStr)) return;
+            if (!dtStr || seen.has(dtStr) || row.segKey) return;   // участок доп. посадки другого рейса — не вылет этого рейса
             const dt = parseLocalDate(dtStr);
             if (!dt) return;
             const orig = cleanFlight(row[0]);
@@ -383,7 +384,7 @@ window.DecisionMoney = (function () {
             const cand = [];
             rows.forEach(r => {
                 const dt = parseLocalDate(r[1]);
-                if (!dt || !depDt || r[1] === dep || dt.getTime() >= depDt.getTime()) return;
+                if (!dt || !depDt || r[1] === dep || r.segKey || dt.getTime() >= depDt.getTime()) return;
                 cand.push({ date: r[1], code: r[0], gap: depDt.getTime() - dt.getTime() });
             });
             cand.sort((x, y) => x.gap - y.gap);
@@ -442,8 +443,9 @@ window.DecisionMoney = (function () {
     function na(reason, extra) { return Object.assign({ stage: 'na', reason, grade: 'C', v: METHOD_VERSION }, extra || {}); }
 
     // Следующее ценовое решение по этому вылету не дальше окна: до него и считаем эффект этой отметки (окна соседних отметок не пересекаются).
-    function nextDecisionGap(code, dep, check) {
-        const maxW = num('MONEY_WINDOW_MAX', 10);
+    // maxDays — искать дальше окна (итог повышения до вылета не должен заходить в дни следующего решения).
+    function nextDecisionGap(code, dep, check, maxDays) {
+        const maxW = maxDays != null ? maxDays : num('MONEY_WINDOW_MAX', 10);
         const marks = typeof SalesManagement !== 'undefined' && SalesManagement.marksFor ? SalesManagement.marksFor(code, dep) : [];
         let best = null;
         marks.forEach(x => {
@@ -562,23 +564,29 @@ window.DecisionMoney = (function () {
             const an0 = findAnalogs(base, code, dep, 0, seats);
             if (an0.list.length < 2) return na('нет улетевших похожих вылетов для итога', out);
             if (an0.withDecisions && !flags.includes('у похожих вылетов тоже были ценовые решения')) flags.push('у похожих вылетов тоже были ценовые решения');
-            const Erem = analogMean(an0, 0, dtdD - 1) * lvK;
+            // Следующее решение дальше окна: остаток — только до него (включая его день, как у окна), дни после — уже его.
+            // Иначе одни и те же билеты шли и в это повышение, и в следующее решение.
+            const nextFar = nextDecisionGap(code, dep, m.check, Infinity);
+            const remLo = nextFar != null ? Math.max(0, dtdD - nextFar) : 0;
+            if (nextFar != null) flags.push(`серия решений: итог только до следующего решения (${nextFar} дн.)`);
+            const Erem = analogMean(an0, remLo, dtdD - 1) * lvK;
             const rem = { all: 0, paid: 0, rev: 0 };
             let soldAtD = 0;
             list.forEach(s => {
                 const d = dayDiff(dep, s.dealDate);
                 if (d == null) return;
-                if (d <= dtdD - 1) { rem.all++; if (isPaid(s)) { rem.paid++; rem.rev += price(s); } }
+                if (d <= dtdD - 1 && d >= remLo) { rem.all++; if (isPaid(s)) { rem.paid++; rem.rev += price(s); } }
                 if (d >= dtdD) soldAtD++;
             });
             const free = seats > 0 ? Math.max(0, seats - soldAtD) : null;
             const totalNow = list.length;
             const filled = seats > 0 && totalNow / seats >= num('RMS_FULL_PCT', 95) / 100;
-            const dr = priceDriftOf(an0, dtdD, 0, dtdD - 1, base, dep, code);
+            const dr = priceDriftOf(an0, dtdD, remLo, dtdD - 1, base, dep, code);
             const pCf = priceBefore * dr.drift;   // цена «без решения»: прежняя с естественным ростом тарифа
             Object.assign(out, { priceCf: Math.round(pCf), drift: Math.round(dr.drift * 1000) / 1000, driftN: dr.n });
             const est = estimateRemainder({ E: Erem, k: an0.keff, free, filled, nFactAll: rem.all, nFactPaid: rem.paid, rFact: rem.rev, priceBefore: pCf, share });
-            return finish(out, est, { stage: 'final', k: an0.list.length, ke: round1(an0.keff), kNb: an0.nNb || 0, tierDays: an0.tier, remainder: true, filled, expAll: round1(est.nExpAll), factAll: rem.all });
+            return finish(out, est, { stage: 'final', k: an0.list.length, ke: round1(an0.keff), kNb: an0.nNb || 0, tierDays: an0.tier, remainder: true, filled, expAll: round1(est.nExpAll), factAll: rem.all,
+                remDays: dtdD - remLo, remTo: nextFar != null ? addDays(m.check, nextFar) : null });
         }
 
         const dr = priceDriftOf(an, dtdD, dtdD - w, dtdD - 1, base, dep, code);
@@ -624,7 +632,8 @@ window.DecisionMoney = (function () {
         const ticketRub = (base.share != null ? base.share : 1) * pb;   // рублей на «один ожидаемый билет»
         if (extra.remainder) {
             if (filled) return 0;
-            return num('MONEY_BIAS_REMAINDER', -0.32) * est.nExpPaid * pb + num('MONEY_BIAS_ADD_REMAINDER', 0.58) * ticketRub * Math.min(12, Math.max(0, base.dtd || 0));
+            const days = extra.remDays != null ? extra.remDays : (base.dtd || 0);   // дней в остатке (до вылета или до следующего решения)
+            return num('MONEY_BIAS_REMAINDER', -0.32) * est.nExpPaid * pb + num('MONEY_BIAS_ADD_REMAINDER', 0.58) * ticketRub * Math.min(12, Math.max(0, days));
         }
         const t = base.dtd > 0 ? Math.min(1, Math.max(0, (base.dtd - 2) / 7)) : 1;
         const rate = num('MONEY_BIAS_WINDOW_NEAR', -0.36) + (num('MONEY_BIAS_WINDOW', -0.06) - num('MONEY_BIAS_WINDOW_NEAR', -0.36)) * t;

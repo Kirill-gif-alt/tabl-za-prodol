@@ -200,10 +200,10 @@ function getSeatsOnSale(row) {
     return Math.max(0, getAuFromRow(row) - getSpecBookings(row));
 }
 
-/** Остаток = AU − sold − avs */
+/** Остаток = AU − sold − avs (не меньше нуля: свободных мест «минус 11» не бывает) */
 function getSeatRemainder(row) {
     if (!row) return 0;
-    return getAuFromRow(row) - getSoldFromRow(row) - getSpecBookings(row);
+    return Math.max(0, getAuFromRow(row) - getSoldFromRow(row) - getSpecBookings(row));
 }
 
 function hasSalesFileLoaded() {

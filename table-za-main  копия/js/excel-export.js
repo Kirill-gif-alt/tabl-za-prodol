@@ -787,7 +787,7 @@ function dataBoardExcelBodyLook(part, state) {
     return { fill: state.weekEven ? 'DBEAFE' : 'FFFFFF', color: '1C2833', bold: part === 'avg' };
 }
 
-function dataBoardExcelLegValues(row, closed) {
+function dataBoardExcelLegValues(row, closed, salesFirst) {
     const showTimes = dataBoardExcelShowTimes();
     const showBooks = dataBoardExcelShowBooks();
     if (!row) {
@@ -813,8 +813,8 @@ function dataBoardExcelLegValues(row, closed) {
     if (showBooks) vals.push(m.bookings != null ? m.bookings : '—');
     vals.push(m.load != null ? m.load : '—');
     if (dataBoardExcelShowDaySales()) {
-        const ds = typeof getSalesMapForRow === 'function' ? getSalesMapForRow(row) : null;
-        vals.push(ds && ds.yesterday ? ds.yesterday : '—');
+        const ys = typeof getDataLegYesterday === 'function' ? getDataLegYesterday(row, salesFirst) : 0;   // как на экране: у вылета с посадками один раз
+        vals.push(ys || '—');
     }
     vals.push(closed ? 'ЗАКРЫТ' : (m.zpk != null ? `${m.zpk}%` : '—'));
     return vals;
@@ -856,11 +856,11 @@ function dataBoardPaintCard(lib, ws, merges, origin, card, spec, todayStart, max
     });
     // «Продажа за сутки»: строка «Итого за сутки» сразу под шапкой карточки — как на экране.
     const off = dataBoardExcelShowDaySales() ? 1 : 0;
+    const salesFirst = off ? getDataEntriesFirstSales(card.entries) : null;
     if (off) {
-        const ys = (row) => { if (!row || typeof getSalesMapForRow !== 'function') return 0; const s0 = getSalesMapForRow(row); return (s0 && s0.yesterday) || 0; };
         let so = 0;
         let si = 0;
-        card.entries.forEach(e => { so += ys(e.outRow); si += ys(e.inRow); });
+        card.entries.forEach(e => { so += getDataLegYesterday(e.outRow, salesFirst); si += getDataLegYesterday(e.inRow, salesFirst); });
         const k = labels.indexOf('ЗА СУТКИ');
         const look = { fill: 'E2E8F0', color: '012A4A' };
         dataBoardPaint(lib, ws, merges, 4, origin, 4, origin + 1, 'Итого за сутки', look.fill, look.color, true, 'left', false, { border: true });
@@ -884,8 +884,8 @@ function dataBoardPaintCard(lib, ws, merges, origin, card, spec, todayStart, max
         dataBoardPaint(lib, ws, merges, r, origin + 1, r, origin + 1, day || '—', info.fill, info.color, info.bold, 'center', false, { border: true });
         const closedOut = !!(entry.outRow && typeof isDataLegClosed === 'function' && isDataLegClosed(entry.outRow));
         const closedIn = !!(entry.inRow && typeof isDataLegClosed === 'function' && isDataLegClosed(entry.inRow));
-        const outVals = dataBoardExcelLegValues(entry.outRow, closedOut);
-        const inVals = dataBoardExcelLegValues(entry.inRow, closedIn);
+        const outVals = dataBoardExcelLegValues(entry.outRow, closedOut, salesFirst);
+        const inVals = dataBoardExcelLegValues(entry.inRow, closedIn, salesFirst);
         outVals.forEach((val, i) => {
             dataBoardPaint(lib, ws, merges, r, outStart + i, r, outStart + i, val, outLook.fill, outLook.color, outLook.bold, 'center', false, {
                 border: true,
