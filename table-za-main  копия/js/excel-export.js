@@ -1199,7 +1199,7 @@ function exportRmsToExcel() {
             f.free,
             f.remainder != null ? f.remainder : ''
         ];
-        const fc = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(f.orig || f.base, f.date) : null;
+        const fc = typeof FlightInsights !== 'undefined' && !f.segShare ? FlightInsights.forecast(f.orig || f.base, f.date) : null;   // как на экране: у участка вылета с посадками прогноза нет
         row.push(fc && fc.source !== 'flown' ? fc.final : '', fc && fc.source !== 'flown' ? fc.lf : '');
         if (hasExpected) {
             row.push(f.evR !== null ? f.evR : '');

@@ -157,7 +157,8 @@ function computeRowMetrics(row, base) {
                 // В день вылета цену менять поздно: только отметка, без предупреждения.
                 alertLevel = 1;
                 alertReason += '; вылет сегодня';
-            } else if (typeof FlightInsights !== 'undefined') {
+            } else if (typeof FlightInsights !== 'undefined' && !row.segShare) {
+                // (прогноз — на весь вылет, не на другой участок вылета с посадками)
                 // Прогноз к вылету высокий — отставание от темпа не так страшно: уровень ниже на единицу.
                 let fc = null;
                 try { fc = FlightInsights.forecast(orig, date); } catch { fc = null; }
@@ -171,7 +172,7 @@ function computeRowMetrics(row, base) {
 
     const route = typeof getRouteFromRow === 'function' ? getRouteFromRow(row) : '';
     const rowKey = getMetricsStorageKey(row);
-    return { date, orig, base, total, free, au, remainder, pct, dtd, closed, flew, evR, delta, deltaCls, s, pickup, avg, ac, alertLevel, alertReason, k, rowKey, route };
+    return { date, orig, base, total, free, au, remainder, pct, dtd, closed, flew, evR, delta, deltaCls, s, pickup, avg, ac, alertLevel, alertReason, k, rowKey, route, segShare: !!row.segShare };
 }
 
 function isFlightNeedsAttention(row, base) {

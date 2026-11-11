@@ -69,7 +69,7 @@ window.DecisionsReport = (function () {
         if (money.sig === s || money.loading) return;
         money.loading = true;
         money.done = 0;
-        DecisionMoney.resolveAll(list, (d) => { money.done = d; })
+        DecisionMoney.resolveAll(list.filter(r => !r.overlap), (d) => { money.done = d; })
             .then(map => { money = { sig: s, map, loading: false, done: list.length }; })
             .catch(err => { console.warn('DecisionsReport money', err); money = { sig: s, map: new Map(), loading: false, done: 0 }; })
             .then(() => { if (typeof rerender === 'function') rerender(); });
@@ -103,6 +103,7 @@ window.DecisionsReport = (function () {
 
     // Состояние денежной оценки одного решения для экрана и Excel.
     function moneyState(r) {
+        if (r.overlap) return { cls: 'none', text: 'перекрыто', short: 'перекрыто', reason: OVERLAP, m: null };
         const m = moneyOf(r);
         if (!m) return { cls: 'wait', text: money.loading ? 'считаем…' : '—', short: '', m: null };
         if (m.stage === 'na') return { cls: 'none', text: 'мало данных', short: 'мало данных', reason: m.reason, m };
@@ -118,12 +119,15 @@ window.DecisionsReport = (function () {
         return { cls: 'none', text: 'мало данных', short: 'мало данных', reason: m.reason || 'диапазон включает ноль или эффект ниже порога', m };
     }
 
+    const OVERLAP = 'перекрыто противоположным решением: на ту же дату позже отмечено другое, в итог идёт оно';
+
     // Итоги пулом: «по определённым» — только твёрдые «помогло / навредило»; «по всем оценённым» (sumAll) — все решения с оценкой.
     function moneyTotals(list) {
         const t = { n: list.length, finalN: 0, worked: 0, failed: 0, unclear: 0, na: 0, wait: 0, sum: 0, lo: 0, hi: 0, definite: 0, sumAll: 0, corrSum: 0, approx: 0, approxSum: 0, weakPos: 0, weakNeg: 0, flat: 0, varSum: 0, lean: 0, leanSum: 0, leanPos: 0, leanNeg: 0, series: 0, reasons: {} };
         list.forEach(r => {
             const st = moneyState(r);
             const m = st.m;
+            if (r.overlap) { t.na++; const k = OVERLAP.split(':')[0]; t.reasons[k] = (t.reasons[k] || 0) + 1; return; }
             if (!m || m.stage === 'wait' || m.stage === 'prelim') { t.wait++; return; }
             if (m.stage === 'na') { t.na++; const k = String(m.reason || 'без причины').split(':')[0]; t.reasons[k] = (t.reasons[k] || 0) + 1; return; }
             t.finalN++;
@@ -161,6 +165,7 @@ window.DecisionsReport = (function () {
             const dk = [m.flight, m.dep, m.check, m.status].join('|');
             if (seen.has(dk)) {
                 const r0 = seen.get(dk);
+                if (String(m.updatedAt || '') > String(r0.at || '')) r0.at = m.updatedAt;
                 if (!r0.clsFrom && m.clsFrom) r0.clsFrom = m.clsFrom;
                 if (!r0.clsTo && m.clsTo) r0.clsTo = m.clsTo;
                 if (m.author && !r0.authors.includes(m.author)) { r0.authors.push(m.author); r0.authors.sort((a, b) => a.localeCompare(b, 'ru')); r0.author = r0.authors.join(' / '); }
@@ -173,7 +178,7 @@ window.DecisionsReport = (function () {
             let e = null;
             try { e = PriceMarks.effectFor(base, code, m.dep, { check: m.check, status: m.status }); } catch (err) { e = null; }
             out.push({
-                code, base, dep: m.dep, check: m.check, status: m.status, author: m.author || '', authors: m.author ? [m.author] : [],
+                code, base, dep: m.dep, check: m.check, status: m.status, author: m.author || '', authors: m.author ? [m.author] : [], at: m.updatedAt || '',
                 clsFrom: m.clsFrom || '', clsTo: m.clsTo || '',
                 direction: typeof getFlightDirection === 'function' ? getFlightDirection(code) : '',
                 e,
@@ -181,6 +186,8 @@ window.DecisionsReport = (function () {
             });
             seen.set(dk, out[out.length - 1]);
         });
+        // Противоположные решения на одной ячейке от разных людей — в итог только последнее, остальные «перекрыто».
+        if (PriceMarks.markOverlaps) PriceMarks.markOverlaps(out).forEach(r => { if (r.overlap) r.done = false; });
         out.sort((a, b) => (parseLocalDate(b.check) - parseLocalDate(a.check)) || String(a.code).localeCompare(String(b.code), 'ru', { numeric: true }));
         memo = { sig: s, rows: out };
         return out;
@@ -310,7 +317,7 @@ window.DecisionsReport = (function () {
                 ? `${Math.round(fr.before).toLocaleString('ru-RU')} → ${Math.round(fr.after).toLocaleString('ru-RU')} ₽` : '—';
             const cls = m && (m.clsBefore || m.clsAfter) ? `${esc(m.clsBefore || '?')} → ${esc(m.clsAfter || '?')}` : (r.clsFrom || r.clsTo ? `${esc(r.clsFrom || '?')} → ${esc(r.clsTo || '?')}` : '—');
             const hasNum = m && (m.stage === 'final' || m.stage === 'prelim') && m.delta != null;
-            const effect = hasNum ? `<strong class="${m.delta >= 0 ? 'dr-pos' : 'dr-neg'}">${rub(m.delta)}</strong><div class="dr-usual">${rub(m.lo)} … ${rub(m.hi)}</div>` : '—';
+            const effect = hasNum ? `<strong class="${m.delta >= 0 ? 'dr-pos' : 'dr-neg'}">${rub(m.delta)}</strong><div class="dr-usual">${m.vOld ? '' : 'с поправкой ' + rub(m.delta + (m.corr || 0)) + ': '}${rub(m.lo)} … ${rub(m.hi)}</div>` : '—';
             const split = hasNum ? `<span class="dr-usual">объём ${rub(m.volume)}</span><span class="dr-usual">цена ${rub(m.priceEffect)}</span>` : '';
             const tix = m && m.expAll != null ? `<strong>${m.factAll}</strong><span class="dr-usual">ожидали ${String(m.expAll).replace('.', ',')}</span>` : '—';
             const reliab = m && m.grade && (m.stage === 'final' || m.stage === 'prelim') ? `<span class="dr-usual">надёжность ${m.grade}${m.frozen ? '' : ' · не зафиксировано'}</span>` : '';
@@ -343,6 +350,7 @@ window.DecisionsReport = (function () {
             else if (st.cls === 'lpos' || st.cls === 'lneg' || st.cls === 'wpos' || st.cls === 'wneg' || st.cls === 'flat') { tone = st.cls; big = '≈ ' + rub(m.delta); }
             else if (m && m.stage === 'final') { tone = 'unk'; big = 'примерно ' + rub(m.delta); }
             else if (m && (m.stage === 'prelim' || m.stage === 'wait')) { tone = 'wait'; big = hasNum ? 'пока ' + rub(m.delta) : '—'; }
+            else if (r.overlap) { tone = 'na'; big = 'перекрыто'; }
             else if (!m) { tone = money.loading ? 'wait' : 'na'; big = money.loading ? 'считаем…' : 'мало данных'; }
             const lines = [];
             let say = ''; let range = ''; const tags = [];
@@ -363,7 +371,7 @@ window.DecisionsReport = (function () {
                 if (m.priceOnly != null && Math.abs(m.delta - m.priceOnly) >= 1000) lines.push(up
                     ? `Результат от <b>${rub(m.rangeLow)}</b> (вся нехватка билетов из-за повышения) до <b>${rub(m.rangeHigh)}</b> (нехватка из-за слабого спроса, покупатели не ушли; считаем только цену).`
                     : `Результат от <b>${rub(m.rangeLow)}</b> (прибавка билетов — просто спрос выше обычного; считаем только цену) до <b>${rub(m.rangeHigh)}</b> (вся прибавка из-за снижения).`);
-                range = DecisionsViz.rangeBar(m.lo, m.delta, m.hi, rub) + `<div class="dp-exp">Диапазон — где настоящий результат с вероятностью около ${confPct(pv('MONEY_NOISE_Z', 1.9))}%.</div>`;
+                range = DecisionsViz.rangeBar(m.lo, m.vOld ? m.delta : m.delta + (m.corr || 0), m.hi, rub) + `<div class="dp-exp">Диапазон — где настоящий результат с вероятностью около ${confPct(pv('MONEY_NOISE_Z', 1.9))}%.</div>`;
                 if (tone === 'pos') say = approx ? 'Ориентировочно помогло: даже в худшем случае плюс, но данных мало (доверие низкое).' : 'Помогло: даже в худшем случае заработали больше, чем без решения.';
                 else if (tone === 'neg') say = approx ? 'Ориентировочно навредило: даже в лучшем случае минус, но данных мало (доверие низкое).' : 'Навредило: даже в лучшем случае заработали меньше, чем без решения.';
                 else if (tone === 'unk') say = 'Мало данных: результат мог быть и плюсом, и минусом. В твёрдую сумму такое решение не входит.';
@@ -375,11 +383,12 @@ window.DecisionsReport = (function () {
                 else say = 'Ждём итога: зафиксируем, когда пройдёт окно или вылет.';
                 tags.push(`Доверие: ${m.grade === 'A' ? 'высокое' : (m.grade === 'B' ? 'среднее' : 'низкое')} (${m.k} ${pluralRu(m.k, 'похожий вылет', 'похожих вылета', 'похожих вылетов')})`);
                 if (!m.frozen) tags.push('не зафиксировано');
+                if (m.vOld) tags.push('посчитано прежним способом');
             }
             if (m && m.flags && m.flags.length) lines.push('<span class="dp-flags">Почему доверие низкое: ' + m.flags.map(esc).join('; ') + '.</span>');
             if (tone === 'wait' && st.reason && hasNum) lines.push(esc(st.reason) + '.');
             if (tone === 'na' && st.reason) say = 'Не считаем: ' + esc(st.reason) + '.';
-            if (m && Math.abs(m.corr || 0) >= 500) lines.push(`Для метки учтена поправка на шум и сдвиг метода: ${rub(m.corr)} (в разницу выше она не входит).`);
+            if (m && Math.abs(m.corr || 0) >= 500) lines.push(`Для метки и диапазона учтена поправка на шум и сдвиг метода: ${rub(m.corr)} (в разницу выше она не входит).`);
             if (m && m.cfAdj > 0) lines.push(up
                 ? `Билеты сверх обычного (${numRu(m.cfAdj)}) повышению не засчитаны: повышение цены не приводит новых покупателей, они купили бы и по старой цене.`
                 : `Нехватку билетов (${numRu(m.cfAdj)}) снижению в вину не ставим: снижение цены не могло уменьшить число покупателей.`);

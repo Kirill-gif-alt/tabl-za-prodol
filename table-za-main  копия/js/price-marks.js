@@ -190,7 +190,7 @@ window.PriceMarks = (function () {
     // worked: true / false, null — вывод делать рано (мало продаж) или не с чем сравнить.
     function judge(e, status) {
         if (!e || !e.complete) return e && e.untilDeparture
-            ? { cls: 'wait', text: 'итог повышения — после вылета', short: 'ждём вылета', worked: null }
+            ? (e.untilNext ? { cls: 'wait', text: 'итог — когда пройдут дни до следующего решения', short: 'ждём', worked: null } : { cls: 'wait', text: 'итог повышения — после вылета', short: 'ждём вылета', worked: null })
             : { cls: 'wait', text: `ещё идут ${winDays()}`, short: 'ждём', worked: null };
         if (e.effect == null) return { cls: 'none', text: 'не с чем сравнить', short: '—', worked: null };
         if (e.untilDeparture) {

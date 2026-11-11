@@ -213,7 +213,7 @@ window.TodayView = (function () {
         const s = decSig();
         if (decTile.sig === s || decTile.loading) return;
         const t0 = parseLocalDate(today());
-        const seen = new Set();
+        const seen = new Map();
         const list = [];
         SalesManagement.allMarks().forEach(m => {
             if (m.status !== 'down' && m.status !== 'up') return;
@@ -221,10 +221,13 @@ window.TodayView = (function () {
             const ago = d && t0 ? Math.round((t0 - d) / 86400000) : null;
             if (ago == null || ago < 0 || ago > 30) return;
             const k = DecisionMoney.keyOf(m);
-            if (seen.has(k)) return;
-            seen.add(k);
-            list.push({ key: k, month: monthOfDate(m.check) });
+            if (seen.has(k)) { const x0 = seen.get(k); if (String(m.updatedAt || '') > String(x0.at || '')) x0.at = m.updatedAt; return; }
+            const x = { key: k, month: monthOfDate(m.check), flight: m.flight, dep: m.dep, check: m.check, status: m.status, at: m.updatedAt || '' };
+            seen.set(k, x);
+            list.push(x);
         });
+        // Противоположные решения на одной ячейке от разных людей — в итог только последнее (как в отчёте).
+        if (typeof PriceMarks !== 'undefined' && PriceMarks.markOverlaps) PriceMarks.markOverlaps(list);
         decTile.loading = true;
         DecisionMoney.ensureMonths([...new Set(list.map(x => x.month).filter(Boolean))]).catch(() => {}).then(() => {
             const pos = ['worked', 'lean_pos', 'weak_pos'];
@@ -234,6 +237,7 @@ window.TodayView = (function () {
             let sum = 0;
             let ready = 0;
             list.forEach(x => {
+                if (x.overlap) return;
                 const e = DecisionMoney.get(x.key);
                 if (!e || e.v !== DecisionMoney.METHOD_VERSION || e.stage !== 'final') return;
                 ready++;

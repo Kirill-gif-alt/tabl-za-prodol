@@ -152,7 +152,7 @@ function rmsRowHtml(f, ctx) {
     const routeType = typeof getFlightRouteType === 'function' ? getFlightRouteType(flightCode) : 'unknown';
     const routeTypeLabel = typeof getFlightRouteTypeLabel === 'function' ? getFlightRouteTypeLabel(flightCode) : '';
     const routeTypeCls = routeType === 'krai' ? 'rms-route-krai' : (routeType === 'interregional' ? 'rms-route-inter' : 'rms-route-unknown');
-    const fc = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(flightCode, f.date) : null;
+    const fc = typeof FlightInsights !== 'undefined' && !f.segShare ? FlightInsights.forecast(flightCode, f.date) : null;   // у остальных участков вылета с посадками прогноза нет: он на сквозной участок
     const fcOn = !!(fc && fc.source !== 'flown');
     const fcCls = fcOn ? (fc.soldOutDtd != null && fc.load < fc.seats ? 'rms-fc-up' : (fc.lf < 60 ? 'rms-fc-down' : '')) : '';
     const fcTitle = fc ? FlightInsights.forecastText(fc) : 'Мало истории для прогноза';

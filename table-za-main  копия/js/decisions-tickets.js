@@ -54,6 +54,7 @@ window.DecisionsTickets = (function () {
             const dk = [m.flight, m.dep, m.check, m.status].join('|');
             if (seen.has(dk)) {
                 const r0 = seen.get(dk);
+                if (String(m.updatedAt || '') > String(r0.at || '')) r0.at = m.updatedAt;
                 if (m.author && !r0.authors.includes(m.author)) { r0.authors.push(m.author); r0.authors.sort((a, b) => a.localeCompare(b, 'ru')); r0.author = r0.authors.join(' / '); }
                 return;
             }
@@ -64,13 +65,15 @@ window.DecisionsTickets = (function () {
             let e = null;
             try { e = PriceMarks.effectFor(base, code, m.dep, { check: m.check, status: m.status }); } catch (err) { e = null; }
             out.push({
-                code, base, dep: m.dep, check: m.check, status: m.status, author: m.author || '', authors: m.author ? [m.author] : [],
+                code, base, dep: m.dep, check: m.check, status: m.status, author: m.author || '', authors: m.author ? [m.author] : [], at: m.updatedAt || '',
                 direction: typeof getFlightDirection === 'function' ? getFlightDirection(code) : '',
                 e,
                 done: !!(e && e.complete && e.effect != null)
             });
             seen.set(dk, out[out.length - 1]);
         });
+        // Противоположные решения на одной ячейке от разных людей — в итог только последнее, остальные «перекрыто».
+        if (PriceMarks.markOverlaps) PriceMarks.markOverlaps(out).forEach(r => { if (r.overlap) r.done = false; });
         out.sort((a, b) => (parseLocalDate(b.check) - parseLocalDate(a.check)) || String(a.code).localeCompare(String(b.code), 'ru', { numeric: true }));
         memo = { sig: s, rows: out };
         return out;
@@ -103,7 +106,7 @@ window.DecisionsTickets = (function () {
         const judged = done.filter(r => worked(r) != null);
         const good = judged.filter(r => worked(r) === true).length;
         const avg = done.length ? done.reduce((a, r) => a + r.e.effect, 0) / done.length : null;
-        const waiting = list.filter(r => !(r.e && r.e.complete)).length;
+        const waiting = list.filter(r => !r.overlap && !(r.e && r.e.complete)).length;
         return { n: list.length, done: done.length, waiting, noNorm: list.length - done.length - waiting, judged: judged.length, good, share: judged.length ? Math.round(good / judged.length * 100) : null, avg: avg == null ? null : Math.round(avg * 10) / 10 };
     }
 
@@ -131,6 +134,7 @@ window.DecisionsTickets = (function () {
 
     // Итог одной строки: вердикт для экрана и для Excel.
     function verdictOf(r) {
+        if (r.overlap) return { cls: 'none', text: 'перекрыто: позже на эту дату отмечено противоположное решение', short: 'перекрыто', worked: null };
         return PriceMarks.judge(r.e, r.status);
     }
 
@@ -218,7 +222,7 @@ window.DecisionsTickets = (function () {
             const lines = [];
             if (e) {
                 lines.push(`За ${wd()} ДО решения продали <b>${e.before.n}</b> ${plural(e.before.n)}${e.normBefore ? ` (обычно ${numRu(e.normBefore.value)})` : ''}.`);
-                lines.push(up ? `ПОСЛЕ решения до вылета продали <b>${e.after.n}</b> ${plural(e.after.n)}${e.normAfter ? ` (обычно ${numRu(e.normAfter.value)})` : ''}.`
+                lines.push(up ? `ПОСЛЕ решения до ${e.untilNext ? 'следующего решения (' + esc(fmtD(e.untilNext)) + ')' : 'вылета'} продали <b>${e.after.n}</b> ${plural(e.after.n)}${e.normAfter ? ` (обычно ${numRu(e.normAfter.value)})` : ''}.`
                     : `За ${wd()} ПОСЛЕ решения продали <b>${e.after.n}</b> ${plural(e.after.n)}${e.normAfter ? ` (обычно ${numRu(e.normAfter.value)})` : ''}.`);
                 if (e.before.avg != null && e.after.avg != null) lines.push(`Средний тариф был ${Math.round(e.before.avg).toLocaleString('ru-RU')} ₽, стал ${Math.round(e.after.avg).toLocaleString('ru-RU')} ₽.`);
             }

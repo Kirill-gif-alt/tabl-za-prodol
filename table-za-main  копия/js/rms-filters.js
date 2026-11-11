@@ -72,7 +72,9 @@ function getRmsFlightFieldValue(f, field) {
             if (typeof hasSalesFileLoaded === 'function' && !hasSalesFileLoaded()) return null;
             if (rmsSalesStale()) return null;
             return f.s?.today ?? 0;
-        case 'avg': return f.avg;
+        case 'avg':
+            // На экране без тарифа «—» (нет продаж или файл не загружен): в отборе это «нет данных», а не 0 ₽.
+            return f.avg > 0 && (typeof hasSalesFileLoaded !== 'function' || hasSalesFileLoaded()) ? f.avg : null;
         default: return null;
     }
 }
