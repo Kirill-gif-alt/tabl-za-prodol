@@ -555,6 +555,15 @@ window.FlightCard = (function () {
         try { days = SalesDayLog.adultDays(date, code).filter(x => x.a > 0 && x.ra > 0); } catch (e) { days = []; }
         if (days.length < 3) { wrap.hidden = true; return; }
         wrap.hidden = false;
+        // Решения «снизить / повысить» — на ближайший день продаж к дню решения (в день решения продаж могло не быть).
+        const marks = typeof PriceMarks !== 'undefined' && fly ? PriceMarks.chartItems(code, date, mk => {
+            const d = parseLocalDate(mk.check);
+            if (!d) return -1;
+            const dtd = Math.round((fly - d) / 86400000);
+            let best = -1;
+            days.forEach((x, i) => { if (best < 0 || Math.abs(x.dtd - dtd) < Math.abs(days[best].dtd - dtd)) best = i; });
+            return best >= 0 && Math.abs(days[best].dtd - dtd) <= 3 ? best : -1;
+        }) : [];
         fareChart = new Chart(canvas, {
             type: 'line',
             data: {
@@ -566,7 +575,8 @@ window.FlightCard = (function () {
                 maintainAspectRatio: false,
                 animation: false,
                 events: [],
-                plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                layout: { padding: { top: marks.length ? 14 : 0 } },
+                plugins: { legend: { display: false }, tooltip: { enabled: false }, priceMarks: { items: marks } },
                 scales: {
                     y: { ticks: { font: { size: 9 }, callback: (v) => Number(v).toLocaleString('ru-RU') } },
                     x: { ticks: { font: { size: 9 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 10 }, grid: { display: false } }
