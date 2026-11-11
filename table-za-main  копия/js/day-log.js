@@ -5,6 +5,7 @@
 //       k: { V: [число, сумма], K: [...] }   — взрослые платные по классам бронирования
 //       z: нулевые (цена 0)   g: групповые (заказ от PV.GROUP_MIN билетов, любой тариф)
 //       o: прочие платные (детские, младенцы, льготные)   cut: 1 — день среза данных, мог быть неполным
+//       (z, g, o, cut — только если не ноль)
 //       p: платных билетов всех видов (с группами и детскими)   r: выручка по ним, ₽ (по фактическому тарифу) } } } } }
 // День сделки = дата вылета минус dtd. По журналу строятся «продажи по дням» (daysFor) и средний тариф в карточке рейса,
 // а расчёт рублей по решениям (decision-money.js) берёт из него дни, которых уже нет в файле продаж.
@@ -109,6 +110,7 @@ window.SalesDayLog = (function () {
         keys.forEach(t => {
             const e = d[t];
             e.r = Math.round(e.r);
+            ['z', 'g', 'o', 'cut'].forEach(f => { if (!e[f]) delete e[f]; });   // нули не пишем: файл короче
             Object.keys(e.k).forEach(c => { e.k[c][1] = Math.round(e.k[c][1]); });
         });
         return { s: Math.max(0, parseInt(seats, 10) || 0), d };
@@ -179,7 +181,11 @@ window.SalesDayLog = (function () {
         if (!canUse()) return Promise.resolve(false);
         const need = (months || []).filter(m => /^\d{4}-\d{2}$/.test(m) && !loadedMonths.has(m));
         if (!need.length) return Promise.resolve(false);
-        return Promise.all(need.map(m => readMonth(m).catch(() => null))).then(() => { rev++; return true; });
+        return Promise.all(need.map(m => readMonth(m).catch(() => null))).then(() => {
+            const got = need.some(m => loadedMonths.has(m));
+            if (got) rev++;
+            return got;   // true — что-то прочиталось (не прочиталось — повторять сразу нечего)
+        });
     }
 
     // Запись вылета из загруженных файлов (после ensureMonths) или null.

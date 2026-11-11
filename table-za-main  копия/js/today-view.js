@@ -479,7 +479,7 @@ window.TodayView = (function () {
         if (adv) {
             lines.push(['Подсказка', adv.text]);
             lines.push(['Порог', `подсказка появляется, когда продажи отличаются от обычного или плана не меньше чем на ${adv.threshold} ${pluralRu(adv.threshold, 'пассажира', 'пассажира', 'пассажиров')}`]);
-            if (adv.money) lines.push(['Деньги под вылетом', SalesAdvice.moneyTitle(adv.money)]);
+            if (adv.money) lines.push(['Стоимость пустых мест', SalesAdvice.moneyTitle(adv.money)]);
         }
         const fc = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(code, date) : null;
         if (fc && fc.source !== 'flown') lines.push(['Прогноз', FlightInsights.forecastText(fc)]);
@@ -570,7 +570,7 @@ window.TodayView = (function () {
             const shown0 = adviceShown(pend);
             const shown = onlyNew ? shown0.filter(a => isNewRow(a.code, a.date)) : shown0;
             const list = sortedAdvice(shown, sortBy());
-            head = headHead + '<th class="td-th-r" title="Сколько денег под вылетом. ▼ и ●: пустые места по прогнозу × средний тариф. ▲: места, ещё доступные в продаже × последний тариф. Без прогноза или тарифа — «—»">Под вылетом, ₽</th><th>Что сделать</th><th></th>';
+            head = headHead + '<th class="td-th-r" title="Сколько стоят места, которые пока не проданы. ▼ и ●: пустые места по прогнозу × средний тариф. ▲: места, ещё доступные в продаже × последний тариф. Без прогноза или тарифа — «—»">Стоимость пустых мест, ₽</th><th>Что сделать</th><th></th>';
             if (list.length > 200) more = `<p class="td-empty">Показаны первые 200 из ${list.length}.</p>`;
             rows = list.slice(0, 200).map(a => attnMode
                 ? rowHtml({ code: a.code, date: a.date, row: a.row, seg: a.seg, money: a.money || null, showMoney: true }, attnCell(a))
@@ -755,7 +755,7 @@ window.TodayView = (function () {
                             <select data-td-ahead>${[...new Set(AHEAD_OPTIONS.concat(ahead))].sort((x, y) => x - y).map(n => `<option value="${n}"${n === ahead ? ' selected' : ''}>${n} ${pluralRu(n, 'день', 'дня', 'дней')}</option>`).join('')}</select></label>` : ''}
                         </span></div>
                     ${tableHtml(pend, errs)}
-                    <p class="td-foot">Двойной клик по строке — подробности: расчёт подсказки и прогноза, деньги под вылетом.</p>
+                    <p class="td-foot">Двойной клик по строке — подробности: расчёт подсказки и прогноза, стоимость пустых мест.</p>
                 </section>
             </div>`;
     }

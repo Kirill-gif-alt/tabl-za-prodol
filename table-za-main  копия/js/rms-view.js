@@ -201,7 +201,7 @@ function rmsDetailHtml(f, ctx) {
     const item = (label, value, cls, title) => `<span class="rms-detail-item"${title ? ` title="${escAttr(title)}"` : ''}>${label} <b${cls ? ` class="${cls}"` : ''}>${value}</b></span>`;
     const parts = [
         item('Средний тариф', ctx.salesReady && f.avg ? formatRub(f.avg) : '—', '', 'Средний тариф по всем билетам вылета в файле продаж'),
-        item('Деньги под вылетом', mny ? `${Math.round(mny.rub).toLocaleString('ru-RU')} ₽` : '—', '', typeof SalesAdvice !== 'undefined' ? SalesAdvice.moneyTitle(mny) : ''),
+        item('Стоимость пустых мест', mny ? `${Math.round(mny.rub).toLocaleString('ru-RU')} ₽` : '—', '', typeof SalesAdvice !== 'undefined' ? SalesAdvice.moneyTitle(mny) : ''),
         item('Остаток мест', f.remainder != null ? f.remainder : '—', '', 'Места по снимку − проданные − специальные брони')
     ];
     if (ctx.hasExpected && f.evR !== null) parts.push(item('Ожидаемая загрузка', f.evR, '', 'Из файла «Ожидаемая загрузка.xlsx»'));

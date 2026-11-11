@@ -9,6 +9,7 @@ window.FlightCard = (function () {
     const MODE_KEY = 'krasavia_card_mode';
     let state = null; // { code, date } — код рейса, как он летит в эту дату (например, KV-301)
     let chart = null;
+    let fareChart = null;   // маленький график «Средний тариф по дням продаж»
     let mode = readMode(); // 'page' | 'window'
     let popup = null;
 
@@ -106,6 +107,7 @@ window.FlightCard = (function () {
             try { p.close(); } catch (e) { /* ignore */ }
         }
         if (chart) { try { chart.destroy(); } catch (e) { /* ignore */ } chart = null; }
+        if (fareChart) { try { fareChart.destroy(); } catch (e) { /* ignore */ } fareChart = null; }
         const panel = panelIn(document, false);
         if (panel) panel.hidden = true;
         document.body.classList.remove('flight-card-pinned', 'flight-card-open');
@@ -226,6 +228,7 @@ window.FlightCard = (function () {
         popup = w;
         if (fresh || !doc.getElementById('flight-card')) {
             if (chart && chart.canvas && chart.canvas.ownerDocument === doc) chart = null;
+            if (fareChart && fareChart.canvas && fareChart.canvas.ownerDocument === doc) fareChart = null;
             const rootStyle = document.documentElement.getAttribute('style') || '';
             const rootCls = document.documentElement.className || '';
             const theme = document.documentElement.getAttribute('data-theme') || '';
@@ -270,6 +273,7 @@ window.FlightCard = (function () {
                 const byUser = popup === w;
                 if (byUser) popup = null;
                 if (chart && chart.canvas && chart.canvas.ownerDocument === doc) chart = null;
+                if (fareChart && fareChart.canvas && fareChart.canvas.ownerDocument === doc) fareChart = null;
                 if (byUser && mode === 'window') saveMode('page');
                 setTimeout(() => { if (isShown()) show(); }, 0);
             };
@@ -521,6 +525,7 @@ window.FlightCard = (function () {
             ${insightsHtml(code, date)}
             <div class="fc-verdict" data-fc-part="verdict"></div>
             <div class="fc-chart-wrap"><canvas data-fc-part="chart"></canvas></div>
+            <div class="fc-fare" data-fc-part="fare-wrap" hidden><div class="fc-fare-title">Средний тариф по дням продаж</div><div class="fc-fare-box"><canvas data-fc-part="fare"></canvas></div></div>
             ${typeof PriceMarks !== 'undefined' ? PriceMarks.buttonsHtml(code, date) : ''}
             ${typeof PriceMarks !== 'undefined' ? PriceMarks.decisionsHtml(base, code, date) : ''}
             ${pastDecisionsHtml(base)}
@@ -528,6 +533,46 @@ window.FlightCard = (function () {
             ${links ? `<div class="fc-links">Открыть: ${links}</div>` : ''}
         `;
         drawChart(panel, base, code, date, row);
+        drawFare(panel, code, date);
+    }
+
+    // «Средний тариф по дням продаж»: взрослые платные, по дням сделки — свежие данные из файла продаж и более ранние дни
+    // из журнала (js/day-log.js). Меньше трёх дней — график не показываем. Без подсказок и второй оси.
+    function drawFare(panel, code, date) {
+        if (fareChart) { try { fareChart.destroy(); } catch (e) { /* ignore */ } fareChart = null; }
+        const wrap = panel.querySelector('[data-fc-part="fare-wrap"]');
+        const canvas = panel.querySelector('[data-fc-part="fare"]');
+        if (!wrap || !canvas || typeof Chart === 'undefined' || typeof SalesDayLog === 'undefined') return;
+        const fly = parseLocalDate(date);
+        const month = fly ? `${fly.getFullYear()}-${String(fly.getMonth() + 1).padStart(2, '0')}` : '';
+        if (month && !SalesDayLog.monthsLoaded([month])) {
+            // Журнал месяца ещё не прочитан (фон после входа): дорисуем график, когда придёт, — карточку целиком не перерисовываем.
+            SalesDayLog.ensureMonths([month]).then(got => {
+                if (got && state && state.code === code && state.date === date && panel.isConnected) drawFare(panel, code, date);
+            });
+        }
+        let days = [];
+        try { days = SalesDayLog.adultDays(date, code).filter(x => x.a > 0 && x.ra > 0); } catch (e) { days = []; }
+        if (days.length < 3) { wrap.hidden = true; return; }
+        wrap.hidden = false;
+        fareChart = new Chart(canvas, {
+            type: 'line',
+            data: {
+                labels: days.map(x => x.dtd + 'д'),
+                datasets: [{ label: 'Средний тариф, ₽', data: days.map(x => Math.round(x.ra / x.a)), borderColor: '#0f766e', backgroundColor: 'rgba(15,118,110,0.08)', fill: true, tension: 0.15, pointRadius: 1.5, borderWidth: 2, spanGaps: true }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                events: [],
+                plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                scales: {
+                    y: { ticks: { font: { size: 9 }, callback: (v) => Number(v).toLocaleString('ru-RU') } },
+                    x: { ticks: { font: { size: 9 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 10 }, grid: { display: false } }
+                }
+            }
+        });
     }
 
     // «Прошлые решения»: три последние отметки «снизить / повысить» по этому рейсу (любая дата вылета), с итогом в рублях из отчёта «Решения».
