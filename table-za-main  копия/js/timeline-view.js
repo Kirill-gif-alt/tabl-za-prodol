@@ -542,6 +542,7 @@ function renderTimelineChipHtml(flight, date, meta, opts = {}) {
             <span class="timeline-chip-flight">${escHtml(flight)}</span>
             ${pctLabel ? `<span class="timeline-chip-pct">${pctLabel}</span>` : ''}
             ${opts.plus1 ? '<span class="timeline-plus1">+1</span>' : ''}
+            ${!opts.gantt && typeof DelayedFlights !== 'undefined' ? DelayedFlights.tag(flight, date) : ''}
             ${!opts.gantt && typeof FlightChecks !== 'undefined' && FlightChecks.modeBadge ? FlightChecks.modeBadge(flight, date, meta.row) : ''}
         </div>
         ${line2 ? `<span class="timeline-chip-dir">${escHtml(line2)}</span>` : ''}

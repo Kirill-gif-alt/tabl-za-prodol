@@ -179,7 +179,7 @@ function rmsRowHtml(f, ctx) {
                     <div class="rms-flight-name${showRoute ? ' rms-flight-name-wrap' : ''}">${showRoute ? rmsRouteNameHtml(flightDir, f.route) : escHtml(flightDir)}</div>
                 </td>
                 <td class="rms-col-date col-date">
-                    <div class="rms-date font-semibold">${escHtml(f.date)}${typeof FlightChecks !== 'undefined' && FlightChecks.modeBadge ? FlightChecks.modeBadge(flightCode, f.date) : ''}</div>
+                    <div class="rms-date font-semibold">${escHtml(f.date)}${typeof FlightChecks !== 'undefined' && FlightChecks.modeBadge ? FlightChecks.modeBadge(flightCode, f.date) : ''}${typeof DelayedFlights !== 'undefined' ? DelayedFlights.tag(flightCode, f.date) : ''}</div>
                     <div class="rms-sub"><span class="${f.dtd <= 3 ? 'dtd-urgent rms-dtd' : 'rms-dtd'}">${dtdTxt}</span></div>
                 </td>
                 <td class="rms-col-load">

@@ -789,7 +789,7 @@ window.CreativeView = (function () {
             const cls = r.state === 'flew' ? 'cr-row-flew' : (r.state === 'closed' ? 'cr-row-closed' : '');
             const cells = cols.map(key => {
                 const v = r.values[key];
-                return `<td class="${cellClass(key, v)}">${esc(formatValue(key, v))}</td>`;
+                return `<td class="${cellClass(key, v)}">${esc(formatValue(key, v))}${key === 'date' && r.ctx && typeof DelayedFlights !== 'undefined' ? DelayedFlights.tag(r.ctx.code, r.ctx.date) : ''}</td>`;
             }).join('');
             const card = r.ctx ? ` data-cr-code="${attr(r.ctx.code)}" data-cr-date="${attr(r.ctx.date)}"` : '';
             return `<tr class="${cls}"${card}>${cells}</tr>`;
@@ -1386,7 +1386,7 @@ window.CreativeView = (function () {
         // В Excel подписи прежние (без замены «ЗПК» на «Занято»): состав выгрузки не меняем.
         const aoa = [cols.map(k => (FIELD_BY_KEY[k] && FIELD_BY_KEY[k].xl) || colLabel(k))];
         if (layout.totals) aoa.push(cols.map((key, i) => { const v = result.totals[key]; return i === 0 && (v == null || v === '') ? 'Итого' : cellOut(key, v); }));
-        result.rows.forEach(r => aoa.push(cols.map(key => cellOut(key, r.values[key]))));
+        result.rows.forEach(r => aoa.push(cols.map(key => cellOut(key, r.values[key]) + (key === 'date' && r.ctx && typeof DelayedFlights !== 'undefined' ? DelayedFlights.xlSuffix(r.ctx.code, r.ctx.date) : ''))));
         const safe = aoa.map(row => (typeof excelSafeRow === 'function' ? excelSafeRow(row) : row));
         const ws = lib.utils.aoa_to_sheet(safe);
         ws['!cols'] = cols.map(key => ({ wch: Math.max(10, Math.min(40, colLabel(key).length + 2)) }));

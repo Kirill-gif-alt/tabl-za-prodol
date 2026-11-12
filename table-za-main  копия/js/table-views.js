@@ -557,7 +557,7 @@ function actuallyRenderTable(base,targetDate=null){
         const status=(closed||flew)?(closed?'<span class="closed-text">ЗАКРЫТ</span>':'<span class="flew-text">УЛЕТЕЛ</span>'):(pct==null?'—':`<span class="${pct>=75?'occupancy-high':'occupancy-med'}">${pct}%</span>`);
         const checkFlag = typeof FlightChecks !== 'undefined' ? FlightChecks.flagForRow(row) : '';
         const modeMark = typeof FlightChecks !== 'undefined' && FlightChecks.modeBadge ? FlightChecks.modeBadge(orig, date, row) : '';
-        const dateCell=(extra?`${escHtml(date)} <span class="font-semibold">${escHtml(orig)}</span> <span class="extra-badge ml-1">(ДОП)</span>`:escHtml(date))+modeMark+checkFlag;
+        const dateCell=(extra?`${escHtml(date)} <span class="font-semibold">${escHtml(orig)}</span> <span class="extra-badge ml-1">(ДОП)</span>`:escHtml(date))+modeMark+(typeof DelayedFlights!=='undefined'?DelayedFlights.tag(row):'')+checkFlag;
         const segmentCell=hasSegments&&showRoute?`<span class="segment-cell"><span class="segment-route">${escHtml(formatRouteDisplay(getRouteLabel(row)))}</span></span>`:'';
         const ac=getAircraftType(row[4]);
         let expectedCells = '';
@@ -1345,9 +1345,10 @@ function actuallyRenderPkzTable(base, targetDate = null) {
         const dateCell = extra
             ? `${escHtml(date)} <span class="font-semibold">${escHtml(orig)}</span> <span class="extra-badge ml-1">(ДОП)</span>`
             : escHtml(date);
+        const dateCellFull = dateCell + (typeof DelayedFlights !== 'undefined' ? DelayedFlights.tag(row) : '');
 
         return `<tr class="${cls}${showRoute ? ' segment-row' : ''}" data-date="${escAttr(date)}" data-flight-base="${escAttr(base)}" data-flight-code="${escAttr(orig)}" tabindex="0" style="cursor:pointer;">
-            <td class="col-date">${dateCell}</td>
+            <td class="col-date">${dateCellFull}</td>
             <td class="font-medium">${escHtml(getDayOfWeek(date))}</td>
             ${hasSegments ? `<td>${segmentCell}</td>` : ''}
             <td class="font-semibold">${escHtml(ac)}</td>

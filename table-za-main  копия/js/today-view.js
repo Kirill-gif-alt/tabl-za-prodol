@@ -462,7 +462,7 @@ window.TodayView = (function () {
                 ${bulkOn() ? `<td class="td-chk">${pickable ? `<input type="checkbox" data-td-pick aria-label="Выбрать рейс ${esc(item.code)}"${picked.has(key) ? ' checked' : ''}>` : ''}</td>` : ''}
                 <td class="td-code"><strong>${esc(item.code)}</strong>${isNewRow(item.code, item.date) ? '<span class="td-new">новое</span>' : ''}${grp ? `<span class="grp-badge" title="В группах ${grp} чел.">Г ${grp}</span>` : ''}</td>
                 <td>${esc(typeof getFlightDirection === 'function' ? getFlightDirection(item.code) : '')}<div class="td-muted">${esc(ac)}${item.seg ? ' · ' + esc(item.seg) : ''}</div></td>
-                <td class="td-nowrap">${esc(item.date.slice(0, 5))}<div class="td-muted">${esc(inDaysText(dtd))}</div></td>
+                <td class="td-nowrap">${esc(item.date.slice(0, 5))}${typeof DelayedFlights !== 'undefined' ? DelayedFlights.tag(item.code, item.date) : ''}<div class="td-muted">${esc(inDaysText(dtd))}</div></td>
                 <td>${loadCell(sold, seats)}</td>
                 <td class="td-nowrap" title="${esc(fc ? FlightInsights.forecastText(fc) : 'Мало истории для прогноза')}">${fcOk ? `<b class="td-fc-n${fcCls}">${fmt(fc.final)}</b>${fcRange}` : '—'}</td>
                 <td class="td-nowrap" title="Сколько пассажиров обычно продают к этому дню; цветом — насколько нынешние продажи выше или ниже">${refCell}</td>

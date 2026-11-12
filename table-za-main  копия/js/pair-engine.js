@@ -124,7 +124,8 @@ function buildPairRowDateCell(date, outRow, inRow, outbound, inbound) {
     const flags = typeof FlightChecks !== 'undefined'
         ? [outRow, inRow].map(r => FlightChecks.flagForRow(r)).join('')
         : '';
-    const dateHtml = `<span class="pair-date-val${overnight ? ' pair-date-overnight' : ''}">${escHtml(label)}</span>${flags}`;
+    const late = typeof DelayedFlights !== 'undefined' ? (DelayedFlights.tag(outRow) || DelayedFlights.tag(inRow)) : '';
+    const dateHtml = `<span class="pair-date-val${overnight ? ' pair-date-overnight' : ''}">${escHtml(label)}</span>${late}${flags}`;
     const nums = [
         pairFlightNumHtml(outRow, outbound, 'pair-flight-out'),
         pairFlightNumHtml(inRow, inbound, 'pair-flight-in')

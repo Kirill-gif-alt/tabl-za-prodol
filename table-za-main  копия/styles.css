@@ -8546,3 +8546,4 @@ html.th-pair-in .pair-table tbody tr:not(.closed-flight):not(.flew-flight):not(.
 
 /* «Последние» — только тем, у кого есть право загружать данные */
 body.no-load-data #restore-data-btn { display: none !important; }
+.timeline-chip .delay-badge { margin-left: 4px; padding: 0 4px; font-size: 9px; color: inherit; border-color: currentColor; opacity: 0.75; }

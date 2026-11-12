@@ -145,7 +145,7 @@ function readHtmlTableForExcel(table) {
             const input = cell.querySelector('input, textarea');
             const text = input
                 ? String(input.value || '').trim()
-                : String(cell.innerText || '').replace(/\s+/g, ' ').trim();
+                : String(cell.innerText || '').replace(/\s+/g, ' ').trim().replace(cell.querySelector('.delay-badge') ? /\s*задержан/ : /^$\b/, ' (задержан)');
             let tag = rowTag;
             const cls = cell.className || '';
             if (/pair-leg-out|pair-sub-out|pair-dir-out/.test(cls)) tag = 'out';
@@ -725,7 +725,8 @@ function dataBoardExcelDateLabel(entry, pair) {
         const orig = cleanFlight(row[0]);
         if (orig && orig !== code) extras.push(String(orig).replace(/^KV-/, ''));
     });
-    return extras.length ? `${label} ${extras.join('/')}` : label;
+    const late = typeof DelayedFlights !== 'undefined' && [entry.outRow, entry.inRow].some(r => r && DelayedFlights.isDelayed(r)) ? ' (задержан)' : '';
+    return (extras.length ? `${label} ${extras.join('/')}` : label) + late;
 }
 
 function dataBoardExcelEntryState(entry, todayStart) {
@@ -1196,7 +1197,9 @@ function exportRmsToExcel() {
             f.orig || f.base,
             typeof getFlightRouteTypeLabel === 'function' ? getFlightRouteTypeLabel(f.orig || f.base) : '',
             getFlightDirection(f.orig || f.base),
-            excelTypedCell(String(f.date || '')) || f.date,
+            (typeof DelayedFlights !== 'undefined' && DelayedFlights.isDelayed(f.orig || f.base, f.date))
+                ? f.date + DelayedFlights.xlSuffix(f.orig || f.base, f.date)
+                : (excelTypedCell(String(f.date || '')) || f.date),
             f.dtd,
             f.pct,
             f.free,

@@ -503,7 +503,7 @@ window.FlightCard = (function () {
             <div class="fc-head">
                 <div class="fc-title-wrap">
                     <div class="fc-title">${esc(code)}${altNumber} <span class="fc-dir">${esc(getFlightDirection(code))}</span></div>
-                    <div class="fc-sub">${esc(getDayOfWeek(date))} ${esc(date)} · ${esc(getAircraftType(row[4]))}${dtdTxt ? ' · ' + esc(dtdTxt) : ''}${status ? ' · ' + esc(status) : ''}${calName ? ` · <span class="fc-cal">${esc(calName)}</span>` : ''} ${modeMark}</div>
+                    <div class="fc-sub">${esc(getDayOfWeek(date))} ${esc(date)} · ${esc(getAircraftType(row[4]))}${dtdTxt ? ' · ' + esc(dtdTxt) : ''}${status ? ' · ' + esc(status) : ''}${calName ? ` · <span class="fc-cal">${esc(calName)}</span>` : ''} ${modeMark}${typeof DelayedFlights !== 'undefined' ? DelayedFlights.tag(code, date) : ''}</div>
                 </div>
                 <div class="fc-nav">
                     <button type="button" class="fc-nav-btn" data-fc="prev" ${idx > 0 ? '' : 'disabled'} title="Предыдущая дата (←)">←</button>
