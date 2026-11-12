@@ -83,8 +83,9 @@ window.TodayView = (function () {
         return signed(n) + ' ₽';
     }
 
+    const NUM_RU = new Intl.NumberFormat('ru-RU');   // то же, что toLocaleString('ru-RU'), но без создания форматтера на каждое число
     function fmt(n) {
-        return Math.round(Number(n) || 0).toLocaleString('ru-RU');
+        return NUM_RU.format(Math.round(Number(n) || 0));
     }
 
     // Все вылеты (по строкам «загрузки таб») на дату.
@@ -129,16 +130,22 @@ window.TodayView = (function () {
     }
 
     // Список УП кэшируется в SalesManagement: набор вылетов пересобираем, только когда сменился сам список.
+    // Внутри одной отрисовки (зовётся на каждую строку, сотни раз) список не меняется — берём готовый набор до её конца.
     let depCache = { list: null, set: new Set() };
+    let depNow = null;
     function salesDepartures() {
+        if (depNow) return depNow;
         if (typeof SalesManagement === 'undefined' || !SalesManagement.listFlights) return new Set();
         try {
             const list = SalesManagement.listFlights();
-            if (depCache.list === list) return depCache.set;
-            const set = new Set();
-            list.forEach(f => (f.departures || []).forEach(d => set.add(d.code + '|' + d.date)));
-            depCache = { list, set };
-            return set;
+            if (depCache.list !== list) {
+                const set = new Set();
+                list.forEach(f => (f.departures || []).forEach(d => set.add(d.code + '|' + d.date)));
+                depCache = { list, set };
+            }
+            depNow = depCache.set;
+            Promise.resolve().then(() => { depNow = null; });
+            return depNow;
         } catch (e) { return new Set(); }
     }
 
