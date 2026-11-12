@@ -3,7 +3,7 @@ window.TabOrder = (function () {
     const STORAGE_PREFIX = 'krasavia_tab_order_';
     const NAMES_PREFIX = 'krasavia_tab_names_';
     const NAME_MAX = 40;
-    const DEFAULT_ORDER = ['today', 'home', 'main', 'table', 'pkz', 'pair', 'costs', 'data', 'rms', 'sales', 'creative', 'reports', 'lowreq', 'stats'];
+    const DEFAULT_ORDER = ['today', 'home', 'main', 'table', 'pkz', 'pair', 'costs', 'data', 'rms', 'sales', 'creative', 'reports', 'lowreq', 'stats', 'heli'];
 
     // как на верхней панели (index.html)
     const LABELS = {
@@ -20,7 +20,8 @@ window.TabOrder = (function () {
         creative: 'Творческая',
         reports: 'Отчёты',
         lowreq: 'Запрос на понижение',
-        stats: 'Журнал действий'
+        stats: 'Журнал действий',
+        heli: 'Вертолёты'
     };
 
     function profileId() {
@@ -115,7 +116,7 @@ window.TabOrder = (function () {
     }
 
     function canShowTab(id) {
-        if (id === 'home' || id === 'stats' || id === 'lowreq') {
+        if (id === 'home' || id === 'stats' || id === 'lowreq' || id === 'heli') {
             return typeof ProfileAuth !== 'undefined' && !!ProfileAuth.canAccessTab(id);
         }
         return typeof ProfileAuth === 'undefined' || ProfileAuth.canAccessTab(id);

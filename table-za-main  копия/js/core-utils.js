@@ -243,7 +243,7 @@ function parseDealDateTime(str) {
     return { date: normalizeDate(s), hour: null };
 }
 
-const VIEW_ZOOM = { main: 1, table: 1, pkz: 1, pair: 1, costs: 1, data: 1, rms: 1, home: 1, sales: 1, creative: 1, reports: 1 };
+const VIEW_ZOOM = { main: 1, table: 1, pkz: 1, pair: 1, costs: 1, data: 1, rms: 1, home: 1, sales: 1, creative: 1, reports: 1, heli: 1 };
 // Масштаб общий для всех вкладок и запоминается в браузере.
 const VIEW_ZOOM_KEY = 'krasavia_view_zoom';
 (function restoreViewZoom() {

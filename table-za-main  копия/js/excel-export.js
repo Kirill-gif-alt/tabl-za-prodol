@@ -319,6 +319,7 @@ function excelFolderKinds() {
         { id: 'pkz', label: 'ПКЗ' },
         { id: 'pair', label: 'Экономическая таблица' },
         { id: 'creative', label: 'Творческая' },
+        { id: 'heli', label: 'Вертолёты' },
         { id: 'econ', label: 'Отчёт для экономистов' }
     ];
 }

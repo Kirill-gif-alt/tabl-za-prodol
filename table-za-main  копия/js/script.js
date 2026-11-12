@@ -57,7 +57,8 @@ const TAB_HOST_CLASSES = {
     reports: 'content-area content-reports',
     home: 'content-area content-home',
     lowreq: 'content-area content-reports',
-    stats: 'content-area content-stats'
+    stats: 'content-area content-stats',
+    heli: 'content-area content-heli'
 };
 const tabPanels = {};
 const tabPanelsBuilt = {};
@@ -476,6 +477,10 @@ function refreshTabPanel(tab) {
         if (typeof LowerRequest !== 'undefined') LowerRequest.refresh();
         return;
     }
+    if (tab === 'heli') {
+        if (typeof HeliView !== 'undefined') HeliView.refresh();
+        return;
+    }
     if (tab === 'sales') {
         if (typeof refreshSalesManagement === 'function') refreshSalesManagement(false, true);
         return;
@@ -544,7 +549,7 @@ function switchMainTab(tab){
     Object.values(tabPanels).forEach(p => { if (p !== panel && !p.hidden) p.hidden = true; });
     panel.hidden = false;
 
-    ['tab-today','tab-home','tab-main','tab-table','tab-pkz','tab-pair','tab-costs','tab-rms','tab-sales','tab-creative','tab-reports','tab-data','tab-lowreq','tab-stats'].forEach(id=>{
+    ['tab-today','tab-home','tab-main','tab-table','tab-pkz','tab-pair','tab-costs','tab-rms','tab-sales','tab-creative','tab-reports','tab-data','tab-lowreq','tab-stats','tab-heli'].forEach(id=>{
         const b = document.getElementById(id);
         if (!b) return;
         b.classList.remove('tab-active');
@@ -570,6 +575,7 @@ function switchMainTab(tab){
         else if (tab === 'home' && typeof NetworkMap !== 'undefined') NetworkMap.createView(panel);
         else if (tab === 'lowreq' && typeof LowerRequest !== 'undefined') LowerRequest.createView(panel);
         else if (tab === 'stats') createStatsView(panel);
+        else if (tab === 'heli' && typeof HeliView !== 'undefined') HeliView.createView(panel);
         else if (tab === 'today' && typeof createTodayView === 'function') createTodayView(panel);
         else createMainTimelineView(panel);
         tabPanelsBuilt[tab] = true;
@@ -630,7 +636,8 @@ function initKeyboardShortcuts() {
         if (e.key === '/') {
             // Поле поиска на открытой вкладке (id повторяется во вкладках — берём видимое).
             const el = document.querySelector('#main-content-inner > .tab-panel:not([hidden]) .table-flight-search')
-                || document.querySelector('#main-content-inner > .tab-panel:not([hidden]) #data-search-input');
+                || document.querySelector('#main-content-inner > .tab-panel:not([hidden]) #data-search-input')
+                || document.querySelector('#main-content-inner > .tab-panel:not([hidden]) #heli-search');
             if (el && el.offsetParent) { e.preventDefault(); el.focus(); }
         }
         if (e.key === 'Escape' && document.getElementById('profile-admin-modal')?.classList.contains('open')) {

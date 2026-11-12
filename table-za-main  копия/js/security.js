@@ -137,6 +137,14 @@ window.Security = (function () {
                 if (Array.isArray(list)) sales += list.length;
             });
         }
+        // Вертолёты: строки файла загрузки и билеты (дата, откуда, куда) — в те же лимиты.
+        const heli = snap && (snap.heli || (snap.data && snap.data.heli));
+        if (heli && typeof heli === 'object') {
+            if (Array.isArray(heli.rows)) rows += heli.rows.length;
+            if (heli.sales && typeof heli.sales === 'object') {
+                Object.values(heli.sales).forEach(list => { if (Array.isArray(list)) sales += list.length; });
+            }
+        }
         return { rows, sales };
     }
 

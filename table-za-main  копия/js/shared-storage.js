@@ -15,7 +15,8 @@ window.SharedStorage = (function () {
         'lower-requests.json', // «Запрос на понижение» (js/lower-request.js)
         'params.json',        // параметры расчётов администратора (js/params.js)
         'signals-days.json',  // сигналы по дням для метки «новое» (js/signal-news.js): последние 7 дней, пишет тот, у кого share_data
-        'forecast-now.json'   // прогноз к вылету по всем рейсам — один для всех (пишет тот, у кого модель обучена)
+        'forecast-now.json',  // прогноз к вылету по всем рейсам — один для всех (пишет тот, у кого модель обучена)
+        'heli-points.json'    // справочник пунктов вертолётов: код → название (js/heli-data.js), правят админ и share_data
     ]);
 
     // Резервные копии перед перезаписью — та же политика, что в scripts/local-server.py.
@@ -35,7 +36,8 @@ window.SharedStorage = (function () {
         'creative-layouts.json': { every: 3600, keep: 20 },
         'params.json': { every: 600, keep: 30 },
         'fare-grid.json': { every: 600, keep: 30 },
-        'lower-requests.json': { every: 600, keep: 30 }
+        'lower-requests.json': { every: 600, keep: 30 },
+        'heli-points.json': { every: 600, keep: 30 }
     };
     const lastBackupAt = {};
     let serverHistory = false;
@@ -567,7 +569,7 @@ window.SharedStorage = (function () {
     }
 
     function buildSnapshotPayload() {
-        if (!Object.keys(groupedData || {}).length) return null;
+        if (!Object.keys(groupedData || {}).length && !(typeof HeliData !== 'undefined' && HeliData.hasData())) return null;
         // В общий файл ПДн не попадают никогда.
         const salesDetailsOut = typeof Security !== 'undefined' ? Security.stripSalesPii(salesDetails) : {};
         return {
@@ -582,6 +584,7 @@ window.SharedStorage = (function () {
                 baggageWeightsData: typeof baggageWeightsData !== 'undefined' ? baggageWeightsData : {},
                 childrenByFlightDate: typeof childrenByFlightDate !== 'undefined' ? childrenByFlightDate : {},
                 routeCosts: typeof RouteCosts !== 'undefined' ? RouteCosts.toSnapshot() : null,
+                heli: typeof HeliData !== 'undefined' ? HeliData.toSnapshot() : null,   // вертолёты: строки файла загрузки и билеты (без ПДн)
                 dataLoadStatus,
                 lastSalesUpdate: lastSalesUpdate ? lastSalesUpdate.toISOString() : null
             }

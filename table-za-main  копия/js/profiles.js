@@ -21,6 +21,7 @@ window.ProfileAuth = (function () {
         tab_creative: { label: 'Творческая', group: 'Вкладки' },
         tab_reports: { label: 'Отчёты', group: 'Вкладки' },
         tab_stats: { label: 'Журнал действий', group: 'Вкладки', hint: 'кто и что делал на сайте' },
+        tab_heli: { label: 'Вкладка Вертолёты', group: 'Вкладки', hint: 'загрузка вертолётных рейсов по отрезкам маршрута (файл с конфигурацией MIH в папке «загрузка таб»)' },
         load_data: { label: 'Загрузка данных', group: 'Данные', hint: 'кнопка «Загрузить»: файлы загрузки рейсов и продаж' },
         share_data: { label: 'Публикация данных для всех', group: 'Данные', hint: 'загруженные данные видят все; архив продаж, журнал прогноза, история продаж' },
         export_excel: { label: 'Выгрузки в Excel', group: 'Данные' },
@@ -581,6 +582,7 @@ window.ProfileAuth = (function () {
     function canAccessTab(tab) {
         if (tab === 'home') return resolveShowHomeMap(currentProfile);
         if (tab === 'stats') return hasPermission('tab_stats');
+        if (tab === 'heli') return hasPermission('tab_heli');
         if (tab === 'lowreq') return hasPermission('lowreq');   // «Запрос на понижение» — по праву, по умолчанию только у администратора
         const perm = TAB_PERM[tab];
         if (!perm) return false;
@@ -590,7 +592,7 @@ window.ProfileAuth = (function () {
     }
 
     function getFirstAllowedTab() {
-        const order = ['home', 'main', 'table', 'pkz', 'pair', 'costs', 'data', 'rms', 'sales', 'creative', 'reports', 'today', 'stats'];
+        const order = ['home', 'main', 'table', 'pkz', 'pair', 'costs', 'data', 'rms', 'sales', 'creative', 'reports', 'today', 'stats', 'heli'];
         return order.find(t => canAccessTab(t)) || null;
     }
 
@@ -735,6 +737,8 @@ window.ProfileAuth = (function () {
         if (statsTab) {
             statsTab.style.display = canAccessTab('stats') ? '' : 'none';
         }
+        const heliTab = document.getElementById('tab-heli');
+        if (heliTab) heliTab.style.display = canAccessTab('heli') ? '' : 'none';
         const homeTab = document.getElementById('tab-home');
         if (homeTab) {
             homeTab.style.display = canAccessTab('home') ? '' : 'none';

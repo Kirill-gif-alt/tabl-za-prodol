@@ -227,6 +227,7 @@ window.ThemeSettings = (function () {
             const full = TabOrder.load();
             const merged = [...pendingTabOrder];
             if (full.includes('stats') && !merged.includes('stats')) merged.push('stats');
+            if (full.includes('heli') && !merged.includes('heli')) merged.push('heli');
             TabOrder.save(merged);
             pendingTabOrder = null;
         }

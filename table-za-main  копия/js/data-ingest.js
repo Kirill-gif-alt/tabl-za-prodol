@@ -95,13 +95,44 @@ function findSalesCsvFile(files) {
     return getLatestFilesFromList(csvs, 1)[0] || null;
 }
 
-function pickSourcesFromFolders(folderMap) {
+// Вид файла «загрузка таб» по содержимому: 'heli' — вертолётный (конфигурация MIH-…), 'mixed' — и те и другие строки, 'air' — самолётный.
+// Читаем только начало файла; ответ запоминается по самому файлу.
+const availKindCache = new WeakMap();
+async function classifyAvailFile(file) {
+    if (!file) return 'air';
+    if (availKindCache.has(file)) return availKindCache.get(file);
+    let kind = 'air';
+    try {
+        const buf = await file.slice(0, 262144).arrayBuffer();
+        const txt = new TextDecoder('windows-1252').decode(buf);   // нужна только латиница: MIH-, KV-
+        if (typeof HeliData !== 'undefined') kind = HeliData.classifyText(txt);
+    } catch (e) { kind = 'air'; }
+    availKindCache.set(file, kind);
+    return kind;
+}
+
+// Из папки «загрузка таб»: два последних самолётных файла и один последний вертолётный (вертолётный не вытесняет самолётные).
+async function pickAvailFromList(csvFiles) {
+    const sorted = getLatestFilesFromList(csvFiles || [], (csvFiles || []).length);
+    const air = [];
+    let heli = null;
+    let looked = 0;
+    for (const f of sorted) {
+        if (air.length >= 2 && heli) break;
+        if (looked++ >= 16) break;
+        const kind = await classifyAvailFile(f);
+        if (kind === 'heli') { if (!heli) heli = f; } else if (air.length < 2) air.push(f);
+    }
+    return heli ? air.concat([heli]) : air;
+}
+
+async function pickSourcesFromFolders(folderMap) {
     let avail = [], closed = [], sales = null;
     for (const [name, files] of Object.entries(folderMap)) {
         const l = name.toLowerCase();
         if (isLoadTabDirName(name)) {
             const csvFiles = files.filter(f => f.name.toLowerCase().endsWith('.csv'));
-            avail = getLatestFilesFromList(csvFiles, 2);
+            avail = await pickAvailFromList(csvFiles);
         }
         if (l.includes('база закрытие') || l.includes('базазакрытие')) closed = getLatestFilesFromList(files, 2);
         if (l.includes('csv') || l.includes('продажи')) {
@@ -120,7 +151,7 @@ function findExpectedLoadFile(files) {
     return null;
 }
 
-function classifyFilesFromInput(fileList) {
+async function classifyFilesFromInput(fileList) {
     const dirs = {};
     const all = Array.from(fileList || []);
     const rootCsv = [];
@@ -137,7 +168,7 @@ function classifyFilesFromInput(fileList) {
         if (f.name.toLowerCase().endsWith('.csv')) dirs[dirKey].push(f);
     }
 
-    const picked = pickSourcesFromFolders(dirs);
+    const picked = await pickSourcesFromFolders(dirs);
     const xlsxAll = all.filter(f => /\.xlsx?$/i.test(f.name || '') && !String(f.name).startsWith('~$'));
     return {
         ...picked,
@@ -168,6 +199,7 @@ function resetDataBeforeLoad() {
     if (typeof childrenFileCount !== 'undefined') childrenFileCount = 0;
     CACHED_TODAY = null;
     CACHED_YESTERDAY = null;
+    if (typeof HeliData !== 'undefined') HeliData.reset();
     if (typeof PerfCache !== 'undefined') PerfCache.reset();
     tableHtmlCache = { sig: '', html: '' };
     invalidateMetricsCache();
@@ -321,7 +353,10 @@ async function scanDirectoryHandle(dir) {
 
     const folderMap = {};
     for (const [lname, handles] of Object.entries(folderEntries)) {
-        if (isLoadTabDirName(lname) || lname.includes('база закрытие') || lname.includes('базазакрытие')) {
+        if (isLoadTabDirName(lname)) {
+            // Берём все файлы папки: сколько из них самолётных, а какой вертолётный, видно только по содержимому (pickAvailFromList).
+            folderMap[lname] = await materializeCsvList(handles, 0);
+        } else if (lname.includes('база закрытие') || lname.includes('базазакрытие')) {
             folderMap[lname] = await materializeCsvList(handles, 2);
         } else if (lname.includes('csv') || lname.includes('продаж')) {
             const preferred = handles.find(item => item.name.toLowerCase().includes('tickets_sale_last14days'))
@@ -350,7 +385,7 @@ async function scanDirectoryHandle(dir) {
     let childFile = typeof findChildrenCsvFile === 'function' ? findChildrenCsvFile(rootReady) : null;
     if (!childFile && childHandles.length && typeof findChildrenCsvFile === 'function') childFile = findChildrenCsvFile((await materializeCsvList(childHandles)));
     return {
-        ...pickSourcesFromFolders(folderMap),
+        ...(await pickSourcesFromFolders(folderMap)),
         exp: expFile,
         weights: weightsFile || (typeof findBaggageWeightsFile === 'function' ? findBaggageWeightsFile(rootReady) : null),
         children: childFile,
@@ -405,7 +440,7 @@ async function processDataFromFileList(fileList) {
             }
         }
         showLoading('Сканирование папки...');
-        const sources = classifyFilesFromInput(fileList);
+        const sources = await classifyFilesFromInput(fileList);
         if (!sources.avail.length && !sources.closed.length && !sources.sales && !sources.exp && !sources.weights) {
             showToast('В папке не найдены нужные файлы (загрузка таб, закрытие, продажи)', 'error');
             return;
@@ -470,14 +505,24 @@ async function autoLoadLatestFiles() {
 async function loadAvailabilityFiles(files){
     allData=[];
     availabilityKeepClosed = true;
+    const heliRows = [];
     try {
     for(const fh of files){
         const file = await toFile(fh);
         const txt = await readCsvText(file);
+        // Вертолётные строки (конфигурация MIH-…) — в отдельное хранилище, в allData они не попадают.
+        let pureHeli = false;
+        if (typeof HeliData !== 'undefined' && txt.indexOf('MIH-') >= 0) {
+            const h = HeliData.parseText(txt);
+            heliRows.push(...h.rows);
+            pureHeli = h.rows.length > 0 && h.other === 0;
+        }
+        if (pureHeli) continue;
         const parsed = await parseAvailabilityTextAsync(txt, (p) => setLoadingMessage(`Загрузка таб… ${p}%`));
-        if (parsed.length) allData.push(...parsed);
+        if (parsed.length) allData.push(...parsed.filter(r => !/^MIH-/i.test(String(r[4] || ''))));
     }
     } finally { availabilityKeepClosed = false; }
+    if (typeof HeliData !== 'undefined') HeliData.setRows(heliRows);
     // Файлы — от нового к старому: первая строка рейса (в том числе закрытая) — актуальная; закрытые потом убираем.
     allData = dedupeAvailabilityRows(allData.filter(r => r.length >= 7 && r[0] && r[1])).filter(r => !r.closedRow);
     dataLoadStatus.availability = true;
@@ -554,6 +599,8 @@ function loadSalesFile(fh) {
         salesMap = {};
         salesDetails = {};
         if (typeof PerfCache !== 'undefined') PerfCache.resetSalesStats();
+        const heli = typeof HeliData !== 'undefined' ? HeliData : null;
+        if (heli) heli.beginSales();
 
         const nextSalesMap = salesMap;
         const nextSalesDetails = salesDetails;
@@ -582,11 +629,18 @@ function loadSalesFile(fh) {
             const fl = cleanFlight(row[12]);
             if (!fly || !fl) continue;
 
+            const deal = parseSalesDateField(row[5]);
+            // Билеты вертолётных рейсов — отдельно (самолётные итоги, шапка и расчёты их не видят).
+            if (heli && heli.isHeliFlight(fl)) {
+                heli.addTicket(fly, fl, deal, row[10], row[11]);
+                loaded++;
+                continue;
+            }
+
             const k = fly + '|' + fl;
             let bucket = nextSalesMap[k];
             if (!bucket) bucket = nextSalesMap[k] = emptySalesBucket();
 
-            const deal = parseSalesDateField(row[5]);
             if (deal === dates.today) bucket.today++;
             else if (deal === dates.yesterday) bucket.yesterday++;
             else if (deal === dates.day2) bucket.day2++;
@@ -627,6 +681,7 @@ function loadSalesFile(fh) {
             }
         }
 
+        if (heli) heli.endSales();
         // Размер заказа (PNR) у каждого билета — для «групповых броней»; сам PNR дальше не нужен.
         if (typeof FlightInsights !== 'undefined') FlightInsights.annotateGroups(salesDetails);
         dataLoadStatus.sales = loaded > 0;

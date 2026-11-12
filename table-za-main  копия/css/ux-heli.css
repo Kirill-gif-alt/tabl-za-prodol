@@ -1,0 +1,391 @@
+/* Оформление вкладки: «Вертолёты» (js/heli-view.js).
+   Таблица рисуется классами «Загрузки рейсов» (data-board-table), поэтому светлая и тёмная темы, серые «ЗАКРЫТ» и улетевшие даты
+   берутся оттуда. Здесь — раскладка карточек, плашки по отрезкам, маршрутный лист и справочник пунктов. */
+
+.content-heli { overflow: hidden; }
+
+.heli-page {
+    --heli-lo: #e2ecf8;
+    --heli-hi: #1d5fa8;
+    --heli-pl-ink: #16406b;
+    --heli-zero: #94a3b8;
+    --heli-line: #cbd5e1;
+    --heli-track: #e8eef5;
+    --heli-muted: #7b8aa0;
+    --heli-out: #1e40af;
+    --heli-in: #047857;
+    --heli-plus: #047857;
+    --heli-minus: #b45353;
+    --heli-sheet-bg: #fbfdff;
+}
+html[data-theme="dark"] .heli-page {
+    --heli-lo: #2a3b52;
+    --heli-hi: #2f7cc4;
+    --heli-pl-ink: #cfe0f3;
+    --heli-zero: #6b7a8d;
+    --heli-line: #3d4a5c;
+    --heli-track: #2a3442;
+    --heli-muted: #8b98aa;
+    --heli-out: #8bb4ff;
+    --heli-in: #4fd1a0;
+    --heli-plus: #4fd1a0;
+    --heli-minus: #f0a0a0;
+    --heli-sheet-bg: #1b222c;
+}
+
+.heli-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+}
+
+/* Карточки по две в ряд */
+.heli-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 16px;
+    align-items: start;
+    padding: 16px;
+}
+@media (max-width: 1180px) {
+    .heli-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.heli-empty {
+    grid-column: 1 / -1;
+    padding: 48px 24px;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+.heli-card {
+    min-width: 0;
+    contain-intrinsic-size: auto 420px;
+}
+.heli-wrap { overflow-x: auto; }
+
+.heli-table.data-board-table {
+    min-width: 0;
+    width: 100%;
+}
+.heli-table th,
+.heli-table td {
+    padding-left: 3px !important;
+    padding-right: 3px !important;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+.heli-table td { font-size: 0.8rem; }
+.heli-table td.col-date,
+.heli-table th.col-date { padding-left: 8px !important; white-space: nowrap; }
+.heli-table td.data-block-info { white-space: nowrap; }
+.heli-table th.data-board-th-date,
+.heli-table th.data-board-avg-head,
+.heli-table td.data-board-avg-cell { min-width: 0 !important; }
+.heli-table th.data-board-th-dow { padding-left: 2px !important; padding-right: 2px !important; }
+.heli-table td.data-block-info + td.data-block-info { padding-left: 2px !important; padding-right: 2px !important; }
+.heli-zag { font-weight: 800; }
+.heli-table thead tr.pair-head-sub th { font-size: 0.62rem; letter-spacing: 0; white-space: nowrap; }
+.heli-table .data-board-th-label { font-size: 0.68rem; }
+
+/* Плашки по отрезкам: одна синяя шкала по % занятости */
+.heli-pl-cell { padding-top: 3px !important; padding-bottom: 3px !important; }
+.heli-pl-row,
+.heli-pll {
+    display: flex;
+    justify-content: center;
+    gap: 2px;
+}
+.heli-pl {
+    position: relative;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 23px;
+    border-radius: 7px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--heli-pl-ink);
+    background: var(--heli-lo);
+    background: color-mix(in srgb, var(--heli-hi) calc(var(--t, 0) * 100%), var(--heli-lo));
+}
+.heli-pl-hi { color: #fff; }
+.heli-pl-z,
+.heli-pl-na {
+    background: transparent;
+    color: var(--heli-zero);
+    font-weight: 400;
+}
+.heli-pl-full { background: #facc15; color: #0f172a; }
+.heli-pl-closed { background: #94a3b8; color: #0f172a; }
+.heli-pl-off { background: transparent; color: inherit; }
+.heli-pl-mx { font-weight: 800; }
+.heli-pl-mx::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: 3px;
+    width: 14px;
+    height: 2px;
+    border-radius: 2px;
+    background: currentColor;
+    transform: translateX(-50%);
+}
+.heli-table tbody td.data-leg-closed .heli-pl,
+.heli-table tbody td.data-leg-flew .heli-pl,
+.heli-table tbody tr.flew-flight .heli-pl,
+.heli-table tbody tr.closed-flight .heli-pl {
+    background: transparent;
+    color: #0f172a;
+}
+
+/* Подписи отрезков над плашками: коды из файла в две строки */
+.heli-pll-th { padding: 4px 3px !important; text-transform: none !important; }
+.heli-pll span {
+    flex: 0 0 auto;
+    width: 36px;
+    line-height: 1.15;
+    text-align: center;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0;
+    white-space: nowrap;
+}
+
+.heli-legend {
+    padding: 8px 4px 0;
+    font-size: 0.76rem;
+    color: var(--text-muted);
+}
+
+.heli-table tbody tr.heli-row-open td { border-bottom-color: transparent; }
+.heli-table tbody td.heli-exp {
+    padding: 14px 16px 16px !important;
+    text-align: left;
+    white-space: normal;
+    cursor: default;
+    background: var(--heli-sheet-bg) !important;
+    color: var(--text) !important;
+    border-bottom: 2px solid var(--heli-line);
+    user-select: text;
+    -webkit-user-select: text;
+}
+.heli-sheet-wrap { container-type: inline-size; }
+.heli-sheet {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 24px;
+}
+@container (max-width: 560px) {
+    .heli-sheet { grid-template-columns: minmax(0, 1fr); }
+}
+.heli-col {
+    --c: var(--heli-out);
+    border-top: 3px solid var(--c);
+    padding-top: 8px;
+    min-width: 0;
+}
+.heli-col-in { --c: var(--heli-in); }
+.heli-col-title {
+    margin-bottom: 6px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--c);
+}
+.heli-col-none { padding: 12px 0; color: var(--text-muted); font-size: 0.85rem; }
+
+/* Пункт: название, под ним «+N / −M» и разбивка; справа «на борту». Для широкой карточки — всё в одну строку. */
+.heli-stop {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr) 64px;
+    align-items: center;
+    column-gap: 8px;
+    min-height: 30px;
+    font-size: 0.84rem;
+    text-align: left;
+}
+.heli-stop > .heli-line { grid-column: 1; grid-row: 1 / span 2; }
+.heli-stop > .heli-pn { grid-column: 2; grid-row: 1; padding-top: 3px; }
+.heli-stop > .heli-mv { grid-column: 2; grid-row: 2; padding-bottom: 3px; }
+.heli-stop > .heli-ab { grid-column: 3; grid-row: 1 / span 2; }
+.heli-mv:has(> .heli-nil:only-child) { display: none; }
+.heli-line {
+    position: relative;
+    align-self: stretch;
+}
+.heli-line::before {
+    content: '';
+    position: absolute;
+    left: 10px;
+    width: 2px;
+    top: 0;
+    bottom: 0;
+    background: var(--heli-line);
+}
+.heli-first .heli-line::before { top: 50%; }
+.heli-last .heli-line::before { bottom: 50%; }
+.heli-dot {
+    position: absolute;
+    left: 5px;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    margin-top: -6px;
+    box-sizing: border-box;
+    border-radius: 50%;
+    border: 2px solid var(--c);
+    background: var(--heli-sheet-bg);
+}
+.heli-pn b { font-weight: 700; }
+.heli-g { color: var(--heli-muted); font-size: 0.74rem; font-weight: 500; }
+.heli-mv .heli-plus { margin-right: 10px; color: var(--heli-plus); font-weight: 700; }
+.heli-mv .heli-minus { color: var(--heli-minus); font-weight: 700; }
+.heli-mv .heli-nil { color: var(--heli-zero); }
+.heli-mv-sub { display: block; margin-top: 1px; }
+.heli-ab { text-align: right; white-space: nowrap; }
+.heli-ab b { margin-left: 4px; font-size: 1.05rem; font-weight: 800; }
+.heli-ab span { color: var(--heli-muted); font-size: 0.74rem; }
+.heli-seg { min-height: 32px; }
+.heli-sb {
+    grid-column: 2 / 4;
+    display: grid;
+    grid-template-columns: 70px minmax(0, 1fr) 100px;
+    align-items: center;
+    column-gap: 10px;
+}
+.heli-cd { color: var(--heli-muted); font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
+.heli-trk {
+    height: 7px;
+    border-radius: 5px;
+    background: var(--heli-track);
+    overflow: hidden;
+}
+.heli-trk i {
+    display: block;
+    height: 100%;
+    border-radius: 5px;
+    background: var(--heli-lo);
+    background: color-mix(in srgb, var(--heli-hi) calc(var(--t, 0) * 100%), var(--heli-lo));
+}
+html[data-theme="dark"] .heli-trk i:not(.heli-fill-full) { background: color-mix(in srgb, var(--heli-hi) calc(30% + var(--t, 0) * 70%), var(--heli-lo)); }
+.heli-trk i.heli-fill-full { background: #facc15; }
+.heli-sn { text-align: right; white-space: nowrap; font-size: 0.82rem; }
+.heli-sn-mx { font-weight: 800; }
+.heli-sold {
+    margin-top: 8px;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+.heli-sold b { color: var(--text); }
+.heli-sold-pairs { margin-top: 2px; }
+
+/* Широкая раскрытая строка (карточка во всю ширину или мелкий масштаб): пункт в одну строку, как на наброске */
+@container (min-width: 1000px) {
+    .heli-stop { grid-template-columns: 24px minmax(0, 1.05fr) minmax(0, 1.5fr) 86px; }
+    .heli-stop > .heli-line { grid-row: 1; }
+    .heli-stop > .heli-pn { grid-column: 2; grid-row: 1; padding: 0; }
+    .heli-stop > .heli-mv { grid-column: 3; grid-row: 1; padding: 0; }
+    .heli-stop > .heli-ab { grid-column: 4; grid-row: 1; }
+    .heli-mv:has(> .heli-nil:only-child) { display: block; }
+    .heli-sb { grid-column: 2 / 5; grid-template-columns: 74px minmax(0, 1fr) 104px; }
+}
+
+/* Справочник пунктов */
+.heli-points-panel {
+    width: min(1000px, 100%);
+    max-height: min(88vh, 780px);
+}
+.heli-points-sub {
+    margin: 0;
+    font-size: 0.84rem;
+    color: var(--text-muted);
+}
+.heli-points-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+.heli-points-search {
+    width: 220px;
+    padding: 7px 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font: inherit;
+    font-size: 0.86rem;
+    color: var(--text);
+    background: var(--surface);
+}
+.heli-points-count { color: var(--text-muted); font-size: 0.86rem; }
+.heli-points-cols {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+}
+@media (max-width: 760px) {
+    .heli-points-cols { grid-template-columns: minmax(0, 1fr); }
+}
+.heli-points-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.86rem;
+    color: var(--text);
+}
+.heli-points-table th {
+    padding: 7px 10px;
+    text-align: left;
+    font-size: 0.72rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #fff;
+    background: var(--table-head-bg, #012A4A);
+}
+.heli-points-table td {
+    padding: 3px 10px;
+    height: 30px;
+    border-bottom: 1px solid var(--border);
+}
+.heli-points-table tbody tr:nth-child(even) td { background: var(--table-row-even, #dbeafe); }
+.heli-points-table tbody tr:nth-child(odd) td { background: var(--table-row-odd, #fff); }
+.heli-pt-code { width: 78px; font-weight: 800; }
+.heli-pt-del { width: 64px; text-align: right; }
+.heli-pt-in {
+    width: 100%;
+    padding: 3px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font: inherit;
+    color: var(--text);
+    background: var(--surface);
+}
+.heli-pt-code .heli-pt-in { font-weight: 700; }
+.heli-pt-del-btn {
+    border: 0;
+    background: transparent;
+    color: var(--heli-minus);
+    font: inherit;
+    font-size: 0.78rem;
+    cursor: pointer;
+}
+.heli-points-none { padding: 24px; text-align: center; color: var(--text-muted); grid-column: 1 / -1; }
+.heli-points-note { margin: 12px 0 0; font-size: 0.8rem; color: var(--text-muted); }
+.heli-points-save { min-width: 170px; }
+
+/* Панель управления: кнопки и списки по ширине текста (в «Загрузке рейсов» они короче) */
+.heli-page .data-hero-toolbar .filter-btn,
+.heli-page .data-hero-toolbar .data-ctrl-sm {
+    width: auto !important;
+    min-width: max-content !important;
+    max-width: none;
+    white-space: nowrap;
+    flex: none;
+}
+.heli-page .data-hero-toolbar .data-search-input.data-ctrl-sm { min-width: 110px !important; width: 140px !important; }

@@ -55,7 +55,8 @@ window.ActivityLog = (function () {
         creative: 'Творческая',
         reports: 'Отчёты',
         lowreq: 'Запрос на понижение',
-        stats: 'Журнал действий'
+        stats: 'Журнал действий',
+        heli: 'Вертолёты'
     };
 
     let cache = null;

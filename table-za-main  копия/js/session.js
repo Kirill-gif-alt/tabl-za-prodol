@@ -194,7 +194,7 @@ window.SessionStore = (function () {
     let sigMemo = null;
     function getSnapshotSignature() {
         const refs = [allData, salesMap, salesDetails, closedFlights, expectedLoadData, typeof baggageWeightsData !== 'undefined' ? baggageWeightsData : null];
-        const key = [allData?.length || 0, closedFlights?.size || 0, typeof RouteCosts !== 'undefined' && RouteCosts.loaded ? 1 : 0, lastSalesUpdate ? lastSalesUpdate.getTime() : 0, window.krasaviaIngestSeq || 0, typeof dataEpoch === 'number' ? dataEpoch : 0].join('|');
+        const key = [allData?.length || 0, closedFlights?.size || 0, typeof RouteCosts !== 'undefined' && RouteCosts.loaded ? 1 : 0, lastSalesUpdate ? lastSalesUpdate.getTime() : 0, window.krasaviaIngestSeq || 0, typeof dataEpoch === 'number' ? dataEpoch : 0, typeof HeliData !== 'undefined' ? HeliData.getEpoch() : ''].join('|');
         if (sigMemo && sigMemo.key === key && sigMemo.refs.every((r, i) => r === refs[i])) return sigMemo.sig;
         const sig = computeSnapshotSignature();
         sigMemo = { key, refs, sig };
@@ -211,12 +211,13 @@ window.SessionStore = (function () {
             Object.keys(typeof baggageWeightsData !== 'undefined' ? baggageWeightsData : {}).length,
             typeof RouteCosts !== 'undefined' && RouteCosts.loaded ? 1 : 0,
             lastSalesUpdate ? lastSalesUpdate.getTime() : 0,
-            window.krasaviaIngestSeq || 0
+            window.krasaviaIngestSeq || 0,
+            typeof HeliData !== 'undefined' ? HeliData.rowCount() + ':' + HeliData.ticketCount() : ''
         ].join('|');
     }
 
     function buildSnapshotPayload() {
-        if (!Object.keys(groupedData || {}).length) return null;
+        if (!Object.keys(groupedData || {}).length && !(typeof HeliData !== 'undefined' && HeliData.hasData())) return null;
         return {
             version: 1,
             savedAt: Date.now(),
@@ -228,6 +229,7 @@ window.SessionStore = (function () {
             baggageWeightsData: typeof baggageWeightsData !== 'undefined' ? baggageWeightsData : {},
             childrenByFlightDate: typeof childrenByFlightDate !== 'undefined' ? childrenByFlightDate : {},
             routeCosts: typeof RouteCosts !== 'undefined' ? RouteCosts.toSnapshot() : null,
+            heli: typeof HeliData !== 'undefined' ? HeliData.toSnapshot() : null,
             dataLoadStatus,
             lastSalesUpdate: lastSalesUpdate ? lastSalesUpdate.toISOString() : null
         };
@@ -274,11 +276,11 @@ window.SessionStore = (function () {
             flights: Object.keys(groupedData || {}).length,
             rows: allData?.length || 0,
             tickets,
-            sources: ['availability', 'sales', 'closed', 'expected', 'costs'].filter(k => st[k])
+            sources: ['availability', 'sales', 'closed', 'expected', 'costs'].filter(k => st[k]).concat(typeof HeliData !== 'undefined' && HeliData.hasData() ? ['heli'] : [])
         };
     }
 
-    const SOURCE_NAMES = { availability: 'загрузка таб', sales: 'продажи', closed: 'закрытые рейсы', expected: 'ожидаемая загрузка', costs: 'расходы' };
+    const SOURCE_NAMES = { availability: 'загрузка таб', sales: 'продажи', closed: 'закрытые рейсы', expected: 'ожидаемая загрузка', costs: 'расходы', heli: 'вертолёты' };
 
     // Что подозрительно в новых данных по сравнению с прошлыми: пропал источник или резко меньше строк.
     function suspiciousChanges(prev, next) {
@@ -333,7 +335,7 @@ window.SessionStore = (function () {
 
     async function saveSnapshot(announceShared) {
         // Слишком большой набор потом не открыть ни здесь, ни на других ПК — не сохраняем и говорим об этом.
-        if (typeof Security !== 'undefined' && !Security.snapshotFits({ allData, salesDetails })) {
+        if (typeof Security !== 'undefined' && !Security.snapshotFits({ allData, salesDetails, heli: typeof HeliData !== 'undefined' ? HeliData.toSnapshot() : null })) {
             if (typeof showToast === 'function') showToast('Данные слишком большие, чтобы сохранить их для следующего входа и общего файла', 'error');
             return false;
         }
@@ -428,6 +430,7 @@ window.SessionStore = (function () {
         if (typeof RouteCosts !== 'undefined') {
             RouteCosts.applySnapshot(snap.routeCosts || null);
         }
+        if (typeof HeliData !== 'undefined') HeliData.applySnapshot(snap.heli || null);
         dataLoadStatus = snap.dataLoadStatus || { availability: false, closed: false, sales: false, expected: false, weights: false, children: false, costs: false, subsidy: false };
         lastSalesUpdate = snap.lastSalesUpdate ? new Date(snap.lastSalesUpdate) : null;
         CACHED_TODAY = null;
