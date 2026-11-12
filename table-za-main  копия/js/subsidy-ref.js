@@ -423,7 +423,8 @@ window.SubsidyRef = (function () {
     function navFileInfo(fileName) {
         let stem = String(fileName || '').replace(/^.*[\\/]/, '').replace(/\.(xlsx?|xlsm)$/i, '')
             .replace(/\s*[-–]?\s*копия(\s*\(\d+\))?\s*$/i, '').replace(/\s*\(\d+\)\s*$/, '').trim().toUpperCase().replace(/Ё/g, 'Е');
-        const winter = /[\s_-]*[ЗZ]$/.test(stem) && !/^[ЗZ]$/.test(stem);
+        // «З» в конце имени — зимний период; но если имя кончается самим словом «ПКЗ» («АН24 ПКЗ.xls») — это не зима.
+        const winter = /[ЗZ]$/.test(stem) && !/^[ЗZ]$/.test(stem) && !/(^|[\s_-])(ПКЗ|PKZ)$/.test(stem);
         const body = winter ? stem.replace(/[\s_-]*[ЗZ]$/, '') : stem;
         let key = '';
         if (/(АТР|ATR)[\s_-]*72/.test(body)) key = 'atr72';

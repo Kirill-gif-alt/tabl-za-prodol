@@ -476,10 +476,15 @@ window.HeliData = (function () {
     function mapCells(F, cardPts) {
         const nCols = cardPts.length - 1;
         const cells = new Array(nCols).fill(null);
-        const idx = new Map(cardPts.map((c, i) => [canon(c), i]));
-        const rowIdx = F.pts.map(c => (idx.has(canon(c)) ? idx.get(canon(c)) : -1));
-        let aligned = rowIdx.every(i => i >= 0);
-        for (let j = 1; aligned && j < rowIdx.length; j++) if (rowIdx[j] <= rowIdx[j - 1]) aligned = false;
+        // Пункт может повторяться в маршруте (А-Б-А): ищем каждый пункт рейса по порядку, правее предыдущего.
+        const cardCanon = cardPts.map(canon);
+        let prevIdx = -1;
+        const rowIdx = F.pts.map(c => {
+            const k = cardCanon.indexOf(canon(c), prevIdx + 1);
+            if (k >= 0) prevIdx = k;
+            return k;
+        });
+        const aligned = rowIdx.every(i => i >= 0);
         if (!aligned) {
             if (F.pts.length === cardPts.length) F.segs.forEach((v, j) => { cells[j] = { v, closed: F.segClosed[j], seg: j, first: true }; });
             return cells;
