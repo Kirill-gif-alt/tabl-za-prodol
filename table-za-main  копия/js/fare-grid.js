@@ -53,16 +53,23 @@ window.FareGrid = (function () {
     }
 
     // Все направления с продажами: { dir: Set(рейсов) }.
+    // Считается один раз на данные: раньше весь список рейсов перебирался заново для каждого направления.
     function directions() {
+        if (memo.sig !== sig()) memo = { sig: sig(), grids: new Map() };
+        if (memo.dirs) return memo.dirs;
         const out = new Map();
+        const seen = new Set();
         Object.keys(typeof groupedData !== 'undefined' && groupedData ? groupedData : {}).forEach(b => {
             (groupedData[b] || []).forEach(r => {
                 const fl = cleanFlight(r[0]);
+                if (seen.has(fl)) return;
+                seen.add(fl);
                 const d = direction(fl);
                 if (!out.has(d)) out.set(d, new Set());
                 out.get(d).add(fl);
             });
         });
+        memo.dirs = out;
         return out;
     }
 
