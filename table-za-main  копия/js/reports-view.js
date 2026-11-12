@@ -881,7 +881,7 @@ window.ReportsView = (function () {
         for (let c = 5; c < 8; c++) put(H, c, '', group);
         merges.push({ s: { r: H, c: 4 }, e: { r: H, c: 7 } });
         ['за 14 дн.', 'за 7 дн.', 'за 3 дн.', 'на вылете'].forEach((h, i) => put(H + 1, 4 + i, h, group));
-        ['Ожидаемая выручка на вылете, ₽', 'Текущая выручка, ₽', 'Согласовали', 'Что согласовали'].forEach((h, i) => { const c = 8 + i; put(H, c, h, head); put(H + 1, c, '', head); merges.push({ s: { r: H, c }, e: { r: H + 1, c } }); });
+        ['Ожидаемая выручка на вылете, ₽', 'Текущая выручка, ₽', 'Согласовали', 'Что просили / что согласовали'].forEach((h, i) => { const c = 8 + i; put(H, c, h, head); put(H + 1, c, '', head); merges.push({ s: { r: H, c }, e: { r: H + 1, c } }); });
         const PLATE = { yes: ['D1FAE5', '065F46'], no: ['E2E8F0', '475569'], wait: ['FEF3C7', '92400E'] };
         const FACT = { up: '047857', dn: 'B45309', eq: NAVY };
         const num = (n) => (n == null ? '' : Math.round(n));
@@ -889,30 +889,38 @@ window.ReportsView = (function () {
             const row = H + 2 + i;
             const fill = i % 2 ? ZEBRA : 'FFFFFF';
             const cell = (c, v, s) => put(row, c, v, s);
-            cell(0, r.check, style(fill, '1C2833', false, 'center'));
+            const AP = r.approx ? '≈ ' : '';
+            cell(0, r.approx ? `${r.check}\nпримерно` : r.check, style(fill, '1C2833', false, 'center'));
             cell(1, r.route ? `${r.code}\n${r.route}` : r.code, style(fill, '1C2833', true, 'left'));
             cell(2, r.dep, style(fill, '1C2833', false, 'center'));
-            cell(3, r.sold != null ? `${r.sold}${r.seats ? ' из ' + r.seats + ' (' + Math.round(r.sold / r.seats * 100) + '%)' : ''}` : '—', style(fill, '1C2833', false, 'center'));
+            cell(3, r.sold != null ? `${AP}${r.sold}${r.seats ? ' из ' + r.seats + ' (' + Math.round(r.sold / r.seats * 100) + '%)' : ''}` : '—', style(fill, '1C2833', false, 'center'));
             r.terms.forEach((tm, k) => {
                 let text;
                 let color = '1C2833';
                 if (tm.passed && tm.fact != null) {
-                    text = tm.exp != null ? `ожидали ${tm.exp}\nстало ${tm.fact}` : `стало ${tm.fact}`;
+                    text = tm.exp != null ? `ожидали ${AP}${tm.exp}\nстало ${tm.fact}` : `стало ${tm.fact}`;
                     if (tm.exp != null) color = FACT[tm.fact > tm.exp ? 'up' : (tm.fact < tm.exp - 2 ? 'dn' : 'eq')];
-                } else text = tm.exp != null ? `${tm.exp}${r.seats ? ' (' + Math.round(tm.exp / r.seats * 100) + '%)' : ''}` : '—';
+                } else text = tm.exp != null ? `${AP}${tm.exp}${r.seats ? ' (' + Math.round(tm.exp / r.seats * 100) + '%)' : ''}` : '—';
                 cell(4 + k, text, style(fill, color, tm.passed && tm.fact != null && tm.exp != null, 'center'));
             });
-            cell(8, num(r.expRev) === '' ? '—' : num(r.expRev), style(fill, '1C2833', true, 'right', '#,##0'));
+            cell(8, num(r.expRev) === '' ? '—' : (r.approx ? '≈ ' + num(r.expRev).toLocaleString('ru-RU') : num(r.expRev)), style(fill, '1C2833', true, 'right', '#,##0'));
             cell(9, num(r.curRev) === '' ? '—' : num(r.curRev), style(fill, '1C2833', true, 'right', '#,##0'));
             const pl = PLATE[r.res];
             cell(10, r.edited ? `${r.resText}\nисправлено вручную` : r.resText, style(pl[0], pl[1], true, 'center'));
             cell(11, r.what ? (r.est ? `${r.what}\nоценка` : r.what) : '—', style(fill, '1C2833', false, 'left'));
         });
-        const lastRow = H + 1 + d.rows.length;
+        let lastRow = H + 1 + d.rows.length;
+        if (d.rows.some(r => r.approx)) {
+            lastRow++;
+            const fs = style('FFFFFF', '475569', false, 'left');
+            put(lastRow, 0, 'примерно — запрос найден позже, цифры восстановлены по истории продаж', fs);
+            for (let c = 1; c < W; c++) put(lastRow, c, '', fs);
+            merges.push({ s: { r: lastRow, c: 0 }, e: { r: lastRow, c: W - 1 } });
+        }
         ws['!ref'] = lib.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: lastRow, c: W - 1 } });
         ws['!merges'] = merges;
         ws['!cols'] = [12, 26, 12, 18, 13, 13, 13, 13, 16, 14, 16, 30].map(w => ({ wch: w }));
-        ws['!rows'] = [{ hpt: 20 }, { hpt: 18 }, { hpt: 22 }, { hpt: 18 }].concat(d.rows.map(() => ({ hpt: 32 })));
+        ws['!rows'] = [{ hpt: 20 }, { hpt: 18 }, { hpt: 22 }, { hpt: 18 }].concat(d.rows.map(r => ({ hpt: r.approx || (r.what && r.what.indexOf('\n') >= 0) ? 44 : 32 })));
         ws['!views'] = [{ state: 'frozen', ySplit: H + 2, xSplit: 3, topLeftCell: 'D' + (H + 3), activePane: 'bottomRight' }];
         const wb = lib.utils.book_new();
         lib.utils.book_append_sheet(wb, ws, 'Запросы на снижение');
@@ -948,7 +956,7 @@ window.ReportsView = (function () {
             return;
         }
         const stamp = typeof excelExportStamp === 'function' ? excelExportStamp() : ru(new Date());
-        const head = `Журнал решений · ${d.period} дн. · решения: ${d.kind} · выгрузка ${stamp}`;
+        const head = `Журнал решений · ${typeof d.period === 'number' ? d.period + ' дн.' : d.period} · решения: ${d.kind} · выгрузка ${stamp}`;
         const j = sheetWriter(lib);
         j.title(0, head, 14, style('FFFFFF', NAVY, true, 'left'));
         j.table(1, ['Решение от', 'Кто', 'Рейс', 'Направление', 'Вылет', 'Решение', 'До, бил.', 'Обычно до', 'После, бил.', 'Обычно после', 'Ср. тариф до, ₽', 'Ср. тариф после, ₽', 'Итог, бил.', 'Результат'],
@@ -1009,7 +1017,7 @@ window.ReportsView = (function () {
             return;
         }
         const stamp = typeof excelExportStamp === 'function' ? excelExportStamp() : ru(new Date());
-        const head = `Журнал решений · ${d.period} дн. · решения: ${d.kind} · выгрузка ${stamp}`;
+        const head = `Журнал решений · ${typeof d.period === 'number' ? d.period + ' дн.' : d.period} · решения: ${d.kind} · выгрузка ${stamp}`;
         const j = sheetWriter(lib);
         j.title(0, head, 26, style('FFFFFF', NAVY, true, 'left'));
         j.table(1, ['Решение от', 'Кто', 'Рейс', 'Направление', 'Вылет', 'Решение', 'До, бил.', 'Обычно до', 'После, бил.', 'Обычно после', 'Ср. тариф до, ₽', 'Ср. тариф после, ₽', 'Эффект по продажам, ₽', 'От, ₽', 'До, ₽', 'Объём, ₽', 'Цена, ₽', 'Поправка на шум и сдвиг, ₽', 'Надёжность', 'Класс до', 'Класс после', 'Билетов ожид.', 'Билетов факт', 'Аналогов', 'Версия метода', 'Результат'],
@@ -1241,6 +1249,7 @@ window.ReportsView = (function () {
         // «toggle» у <details> не всплывает — ловим на стадии перехвата (блок «Подробно для аналитика»).
         page.addEventListener('toggle', (event) => { if (typeof ModelsView !== 'undefined') ModelsView.handleToggle(event.target, renderBody); }, true);
         page.addEventListener('change', (event) => {
+            if (CustomPeriod.handleChange(event.target)) { renderBody(); return; }
             if (typeof ReferenceView !== 'undefined' && ReferenceView.handleChange(event.target, renderBody)) return;
             if (typeof SalesReconcile !== 'undefined' && SalesReconcile.handleChange(event.target, renderBody)) return;
             if (typeof PriceAdvisor !== 'undefined' && PriceAdvisor.handleChange(event.target, renderBody)) return;
@@ -1260,6 +1269,7 @@ window.ReportsView = (function () {
             if (!btn || btn.disabled) return;
             if (typeof ReferenceView !== 'undefined' && ReferenceView.handleClick(btn, renderBody)) return;
             if (typeof DecisionsReport !== 'undefined' && DecisionsReport.handleClick(btn, renderBody)) return;
+            if (btn.dataset.cpToggle) { CustomPeriod.toggle(btn.dataset.cpToggle); renderBody(); return; }
             if (typeof LowReqReport !== 'undefined' && LowReqReport.handleClick(btn, renderBody)) return;
             if (typeof ForecastLab !== 'undefined' && ForecastLab.handleClick(btn, renderBody)) return;
             if (typeof PriceAdvisor !== 'undefined' && PriceAdvisor.handleClick(btn, renderBody)) return;

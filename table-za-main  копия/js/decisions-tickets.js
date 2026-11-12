@@ -30,7 +30,7 @@ window.DecisionsTickets = (function () {
     function sig() {
         return [typeof dataEpoch === 'number' ? dataEpoch : 0, typeof getTodayDate === 'function' ? getTodayDate() : '',
             SalesManagement.markRevision ? SalesManagement.markRevision() : '',
-            typeof SalesArchive !== 'undefined' && SalesArchive.revision ? SalesArchive.revision() : 0, period,
+            typeof SalesArchive !== 'undefined' && SalesArchive.revision ? SalesArchive.revision() : 0, period, CustomPeriod.sig('dec'),
             typeof Params !== 'undefined' ? Params.revision() : 0].join('|');
     }
 
@@ -59,7 +59,7 @@ window.DecisionsTickets = (function () {
                 return;
             }
             const ago = daysAgo(m.check);
-            if (ago == null || ago < 0 || ago > period) return;
+            if (ago == null || !(CustomPeriod.on('dec') ? CustomPeriod.contains('dec', m.check) : (ago >= 0 && ago <= period))) return;
             const code = m.flight;
             const base = typeof getBaseFlight === 'function' ? getBaseFlight(code) : code;
             let e = null;
@@ -180,7 +180,7 @@ window.DecisionsTickets = (function () {
         const seg = (attr, val, cur, text) => `<button type="button" class="filter-btn${String(val) === String(cur) ? ' filter-btn-active' : ''}" data-${attr}="${val}">${text}</button>`;
         const toolbar = `
             <div class="dr-toolbar">
-                <div class="dr-seg"><span class="dr-seg-label">Период</span>${PERIODS.map(p => seg('dr-period', p, period, p + ' дн.')).join('')}</div>
+                <div class="dr-seg"><span class="dr-seg-label">Период</span>${PERIODS.map(p => seg('dr-period', CustomPeriod.on('dec') ? 'x' + p : p, CustomPeriod.on('dec') ? '' : period, p + ' дн.').replace('data-dr-period="x', 'data-dr-period="')).join('')}${CustomPeriod.buttonHtml('dec')}${CustomPeriod.inputsHtml('dec')}</div>
                 <div class="dr-seg"><span class="dr-seg-label">Решения</span>${seg('dr-kind', '', kindFilter, 'все')}${seg('dr-kind', 'down', kindFilter, '▼ снижение')}${seg('dr-kind', 'up', kindFilter, '▲ повышение')}</div>
             </div>`;
         const avgTxt = (t) => (t.avg == null ? '—' : `<span class="${t.avg > 0 ? 'dr-pos' : (t.avg < 0 ? 'dr-neg' : '')}">${signed(t.avg)}</span>`);
@@ -278,7 +278,7 @@ window.DecisionsTickets = (function () {
         const list = filtered();
         const g = (fn) => groupBy(list, fn);
         return {
-            period,
+            period: CustomPeriod.on('dec') ? CustomPeriod.label('dec') : period,
             kind: kindFilter ? KIND[kindFilter] : 'все',
             total: summarize(list),
             byKind: g(r => KIND[r.status] || r.status),
@@ -303,7 +303,7 @@ window.DecisionsTickets = (function () {
 
     function handleClick(btn, rerender) {
         if (btn.dataset.dpTone != null) { toneFilter = btn.dataset.dpTone; rerender(); return true; }
-        if (btn.dataset.drPeriod != null) { period = parseInt(btn.dataset.drPeriod, 10) || 60; rerender(); return true; }
+        if (btn.dataset.drPeriod != null) { CustomPeriod.set('dec', { on: false }); period = parseInt(btn.dataset.drPeriod, 10) || 60; rerender(); return true; }
         if (btn.dataset.drKind != null) { kindFilter = btn.dataset.drKind || ''; rerender(); return true; }
         return false;
     }

@@ -32,6 +32,7 @@ window.TodayView = (function () {
         return AHEAD_KEY + (p ? p.id : 'guest');
     }
     function aheadDays() {
+        if (CustomPeriod.on('today')) return CustomPeriod.aheadDays('today');   // «Свой период»: до выбранной даты
         let v = 0;
         try { v = parseInt(localStorage.getItem(aheadKey()), 10); } catch (e) { /* ignore */ }
         return AHEAD_OPTIONS.includes(v) ? v : (typeof SalesAdvice !== 'undefined' ? SalesAdvice.DAYS_AHEAD : 15);
@@ -752,7 +753,7 @@ window.TodayView = (function () {
                         ${tab === 'advice' ? `<label class="td-ahead" title="В каком порядке показывать вылеты">Сначала:
                             <select data-td-sort>${SORT_OPTIONS.map(o => `<option value="${o[0]}"${o[0] === sortCur ? ' selected' : ''}>${o[1]}</option>`).join('')}</select></label>` : ''}
                         ${canTab('sales') ? `<label class="td-ahead" title="Сколько дней вперёд показывать в полосе дней и в списке">Вперёд на:
-                            <select data-td-ahead>${[...new Set(AHEAD_OPTIONS.concat(ahead))].sort((x, y) => x - y).map(n => `<option value="${n}"${n === ahead ? ' selected' : ''}>${n} ${pluralRu(n, 'день', 'дня', 'дней')}</option>`).join('')}</select></label>` : ''}
+                            <select data-td-ahead>${[...new Set(AHEAD_OPTIONS.concat(CustomPeriod.on('today') ? [] : ahead))].sort((x, y) => x - y).map(n => `<option value="${n}"${n === ahead && !CustomPeriod.on('today') ? ' selected' : ''}>${n} ${pluralRu(n, 'день', 'дня', 'дней')}</option>`).join('')}<option value="custom"${CustomPeriod.on('today') ? ' selected' : ''}>Свой период</option></select></label>${CustomPeriod.inputsHtml('today', true)}` : ''}
                         </span></div>
                     ${tableHtml(pend, errs)}
                     <p class="td-foot">Двойной клик по строке — подробности: расчёт подсказки и прогноза, стоимость пустых мест.</p>
@@ -866,8 +867,11 @@ window.TodayView = (function () {
             const so = e.target.closest('[data-td-sort]');
             if (so) { setSortBy(so.value); render(); return; }
             const sel = e.target.closest('[data-td-ahead]');
-            if (!sel) return;
-            setAheadDays(parseInt(sel.value, 10));
+            const cpIn = e.target.closest('[data-cp-id]');
+            if (!sel && !cpIn) return;
+            if (cpIn) CustomPeriod.handleChange(cpIn);
+            else if (sel.value === 'custom') { if (!CustomPeriod.on('today')) CustomPeriod.toggle('today', true); }
+            else { CustomPeriod.set('today', { on: false }); setAheadDays(parseInt(sel.value, 10)); }
             tab = 'advice';
             selected = null;
             detailKey = '';

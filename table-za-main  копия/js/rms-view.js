@@ -8,8 +8,27 @@ let rmsUiFilters = { days: '30', route: 'all', alert: 'all' };
 function rmsFilterChanged(el) {
     const key = { 'rms-days-filter': 'days', 'rms-route-type-filter': 'route', 'rms-alert-filter': 'alert' }[el.id];
     if (key) rmsUiFilters[key] = el.value;
+    if (el.id === 'rms-days-filter') {
+        // «Свой период»: окно вперёд до выбранной даты «по».
+        if (el.value === 'custom' && !CustomPeriod.on('rms')) CustomPeriod.toggle('rms', true);
+        else if (el.value !== 'custom') CustomPeriod.set('rms', { on: false });
+        const box = document.getElementById('rms-custom-to');
+        if (box) { box.hidden = el.value !== 'custom'; box.value = CustomPeriod.state('rms').to; }
+    }
     if (typeof SessionStore !== 'undefined') SessionStore.saveUiSession();
     renderRmsWatchlist();
+}
+
+function rmsCustomChanged(el) {
+    CustomPeriod.set('rms', { to: el.value });
+    if (typeof SessionStore !== 'undefined') SessionStore.saveUiSession();
+    renderRmsWatchlist();
+}
+
+// Сколько дней вперёд показывает RMS: выбранное число или до даты «по» своего периода.
+function rmsDaysValue() {
+    const v = document.getElementById('rms-days-filter')?.value || '30';
+    return v === 'custom' ? CustomPeriod.aheadDays('rms') : (parseInt(v, 10) || 30);
 }
 
 function rmsSel(key, v) { return rmsUiFilters[key] === v ? ' selected' : ''; }
@@ -59,7 +78,9 @@ function createRmsView(c) {
                                 <option value="7"${rmsSel('days', '7')}>7 дней</option>
                                 <option value="14"${rmsSel('days', '14')}>14 дней</option>
                                 <option value="30"${rmsSel('days', '30')}>30 дней</option>
+                                <option value="custom"${rmsSel('days', 'custom')}>Свой период</option>
                             </select>
+                            <label class="cp-lab" id="rms-custom-wrap">по <input type="date" class="cp-in" id="rms-custom-to" onchange="rmsCustomChanged(this)" value="${CustomPeriod.state('rms').to}"${rmsUiFilters.days === 'custom' ? '' : ' hidden'}></label>
                         </div>
                         <div class="table-sort-wrap">
                             <span class="table-sort-label">Тип рейса</span>
@@ -282,7 +303,7 @@ function rmsToggleRest() {
 }
 
 function getRmsRenderSig() {
-    const days = document.getElementById('rms-days-filter')?.value || '30';
+    const days = (document.getElementById('rms-days-filter')?.value || '30') + CustomPeriod.sig('rms');
     const route = document.getElementById('rms-route-type-filter')?.value || 'all';
     const alert = document.getElementById('rms-alert-filter')?.value || 'all';
     const cond = (typeof rmsActiveConditions !== 'undefined' && Array.isArray(rmsActiveConditions))
@@ -315,7 +336,7 @@ function renderRmsWatchlist() {
     }
 
     const flights = getRmsFilteredFlights();
-    const rmsDays = parseInt(document.getElementById('rms-days-filter')?.value || '30', 10) || 30;
+    const rmsDays = rmsDaysValue();
     const kpi = getGlobalKPIs();
     const alertCnt = flights.filter(f => Attention.is(f)).length;
     // Средняя загрузка — по местам: сумма проданных / сумма кресел в продаже.

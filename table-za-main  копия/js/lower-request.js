@@ -34,7 +34,9 @@ window.LowerRequest = (function () {
         if (r.ok && r.data && typeof r.data === 'object' && r.data.items && typeof r.data.items === 'object') store = { version: 1, items: { ...r.data.items, ...unsynced } };
         loaded = true;
         rowsMemo = null;
-        return JSON.stringify(store.items) !== before;
+        const changedNow = JSON.stringify(store.items) !== before;
+        if (changedNow) bump();
+        return changedNow;
     }
 
     // Отметки, которые не удалось записать в общий файл: остаются в списке, пока запись не пройдёт.
@@ -43,7 +45,10 @@ window.LowerRequest = (function () {
     // Записи идут строго по очереди: иначе две быстрые правки читают один и тот же файл и затирают друг друга.
     let saveChain = Promise.resolve();
     let pending = 0;
+    let lrRev = 0;
+    function bump() { lrRev++; try { document.dispatchEvent(new CustomEvent('krasavia:lowreq')); } catch (e) { /* ignore */ } }
     function save(mutate) {
+        bump();
         pending++;
         const run = saveChain.then(() => saveNow(mutate), () => saveNow(mutate)).finally(() => { pending--; });
         saveChain = run.catch(() => {});
@@ -414,5 +419,5 @@ window.LowerRequest = (function () {
         return { places, fare: priced ? Math.round(sum / priced) : null, parts };
     }
 
-    return { createView, refresh, toggle, has, ensureLoaded, canUse, askFor };
+    return { createView, refresh, toggle, has, ensureLoaded, canUse, askFor, revision: () => lrRev };
 })();

@@ -399,10 +399,12 @@ window.LowReqReport = (function () {
     let memo = { sig: '', rows: [] };
     const liveSnaps = new Map();
 
+    function lrRev() { return typeof LowerRequest !== 'undefined' && LowerRequest.revision ? LowerRequest.revision() : 0; }
+
     function sigNow() {
         return [typeof dataEpoch === 'number' ? dataEpoch : 0, today(), SalesManagement.markRevision ? SalesManagement.markRevision() : '', rev, lrReady ? 1 : 0,
             typeof SalesArchive !== 'undefined' && SalesArchive.revision ? SalesArchive.revision() : 0,
-            typeof SalesDayLog !== 'undefined' && SalesDayLog.revision ? SalesDayLog.revision() : 0, deriveMemo.sig].join('|');
+            typeof SalesDayLog !== 'undefined' && SalesDayLog.revision ? SalesDayLog.revision() : 0, deriveMemo.sig, lrRev(), CustomPeriod.sig('low')].join('|');
     }
 
     function routeOf(code) {
@@ -448,8 +450,8 @@ window.LowReqReport = (function () {
         if (curRev == null) { lazy(); curRev = curve ? curve.rev : null; }
         // Что согласовали: вписанное в «Запрос на понижение», иначе оценка по продажам после снижения.
         let autoWhat = null;
+        const ask = askOf(c.code, c.dep) || (it && it.ask) || null;   // вживую из «Запроса на понижение», иначе записанное
         if (auto.res === 'yes') {
-            const ask = askOf(c.code, c.dep) || (it && it.ask) || null;
             if (ask && ask.places > 0) autoWhat = { places: ask.places, fare: ask.fare != null ? ask.fare : null, est: false };
             else {
                 let e = auto.down ? estimateAfter(c.dep, c.code, auto.down.check, snap ? snap.avg : null) : null;
@@ -471,7 +473,7 @@ window.LowReqReport = (function () {
             key: c.key, code: c.code, dep: c.dep, check: c.check, author: c.author, route: routeOf(c.code),
             snap, sold: snap ? snap.sold : null, seats: snap ? snap.seats : null,
             terms, expRev: snap ? snap.expRev : null, curRev, dtdNow, flown: dtdNow < 0,
-            res, autoRes: auto.res, autoText, down: auto.down, edited: !!over, over, what, saved: !!it
+            ask: ask && ask.places > 0 ? { places: ask.places, fare: ask.fare != null ? ask.fare : null } : null, approx: !!(snap && snap.late), res, autoRes: auto.res, autoText, down: auto.down, edited: !!over, over, what, saved: !!it
         };
     }
 
@@ -489,12 +491,13 @@ window.LowReqReport = (function () {
             if (!it || !it.code || !it.dep || !it.check) return;
             out.push(buildRow({ key: k, code: it.code, dep: it.dep, check: it.check, author: it.author || '', markAt: it.markAt || '' }, it, d));
         });
-        out.sort((a, b) => (dayNum(b.check) - dayNum(a.check)) || String(a.code).localeCompare(String(b.code), 'ru', { numeric: true }));
+        out.sort((a, b) => (dayNum(a.check) - dayNum(b.check)) || String(a.code).localeCompare(String(b.code), 'ru', { numeric: true }));
         memo = { sig: sg, rows: out };
         return out;
     }
 
     function inPeriod(list) {
+        if (CustomPeriod.on('low')) return list.filter(r => CustomPeriod.contains('low', r.check));
         if (!period) return list;
         const t = dayNum(today());
         return list.filter(r => t - dayNum(r.check) <= period);
@@ -657,14 +660,15 @@ window.LowReqReport = (function () {
 
     function factClass(fact, exp) { return fact > exp ? 'up' : (fact < exp - 2 ? 'dn' : 'eq'); }
 
-    function termHtml(t, seats) {
+    function termHtml(t, seats, approx) {
+        const A = approx ? '≈ ' : '';
         if (t.passed && t.fact != null) {
             if (t.exp == null) return `<td class="lrr-hz"><span class="lrr-fa eq">стало ${fmt(t.fact)}</span></td>`;
-            return `<td class="lrr-hz"><span class="lrr-wa">ожидали ${fmt(t.exp)}</span><span class="lrr-fa ${factClass(t.fact, t.exp)}">стало ${fmt(t.fact)}</span></td>`;
+            return `<td class="lrr-hz"><span class="lrr-wa">ожидали ${A}${fmt(t.exp)}</span><span class="lrr-fa ${factClass(t.fact, t.exp)}">стало ${fmt(t.fact)}</span></td>`;
         }
         if (t.exp == null) return '<td class="lrr-hz"><span class="lrr-mut">—</span></td>';
         const pc = seats > 0 ? `<span class="lrr-pc">${Math.round(t.exp / seats * 100)}%</span>` : '';
-        return `<td class="lrr-hz"><b>${fmt(t.exp)}</b>${pc}</td>`;
+        return `<td class="lrr-hz"><b>${A}${fmt(t.exp)}</b>${pc}</td>`;
     }
 
     function whatText(w) {
@@ -685,21 +689,37 @@ window.LowReqReport = (function () {
         </div></td></tr>`;
     }
 
+    // «Что просили / что согласовали»: просили — из «Запроса на понижение»; согласовано — пометка (или значения, если их правили / считали по продажам).
+    function askParts(r) {
+        const asked = r.ask ? 'просили: ' + whatText({ places: r.ask.places, fare: r.ask.fare, est: false }) : '';
+        let agreed = '';
+        let est = false;
+        if (r.res === 'yes') {
+            if (r.edited && r.what) agreed = 'согласовано: ' + whatText(r.what);
+            else if (r.ask) agreed = 'согласовано';
+            else if (r.what) { agreed = 'согласовано: ' + whatText(r.what); est = !!r.what.est; }
+            else agreed = 'согласовано';
+        }
+        return { asked, agreed, est };
+    }
+
     function rowHtml(r) {
         const st = stateOf(r.res);
         const pct = r.sold != null && r.seats > 0 ? `<span class="lrr-pc">${Math.round(r.sold / r.seats * 100)}%</span>` : '';
-        const load = r.sold != null ? `<b>${fmt(r.sold)}</b>${r.seats ? ' из ' + fmt(r.seats) : ''}${pct}` : '<span class="lrr-mut">—</span>';
-        const what = r.res === 'yes' && r.what
-            ? `<span class="lrr-wh">${esc(whatText(r.what))}</span>${r.what.est ? '<span class="lrr-es">оценка</span>' : ''}`
+        const load = r.sold != null ? `<b>${r.approx ? '≈ ' : ''}${fmt(r.sold)}</b>${r.seats ? ' из ' + fmt(r.seats) : ''}${pct}` : '<span class="lrr-mut">—</span>';
+        const ap = askParts(r);
+        const what = ap.asked || ap.agreed
+            ? (ap.asked ? `<span class="lrr-wh">${esc(ap.asked)}</span>` : '') + (ap.agreed ? `<span class="lrr-agr">${esc(ap.agreed)}</span>` : '') + (ap.est ? '<span class="lrr-es">оценка</span>' : '')
             : '<span class="lrr-mut">—</span>';
+        const A = r.approx ? '≈ ' : '';
         const open = editKey === r.key;
         const tr = `<tr data-lrr-row="${esc(r.key)}" class="${open ? 'lrr-open' : ''}${r.edited ? ' lrr-ed-row' : ''}">
-            <td class="lrr-dt">${esc(r.check)}</td>
+            <td class="lrr-dt">${esc(r.check)}${r.approx ? '<span class="lrr-apx">примерно</span>' : ''}</td>
             <td class="lrr-fl"><b class="lrr-code" data-lrr-code="${esc(r.code)}" data-lrr-dep="${esc(r.dep)}">${esc(r.code)}</b>${r.route ? `<span class="lrr-rt">${esc(r.route)}</span>` : ''}</td>
             <td class="lrr-dt">${esc(r.dep)}</td>
             <td class="lrr-ld">${load}</td>
-            ${r.terms.map(t => termHtml(t, r.seats)).join('')}
-            <td class="lrr-rub">${fmt(r.expRev)}</td>
+            ${r.terms.map(t => termHtml(t, r.seats, r.approx)).join('')}
+            <td class="lrr-rub">${r.expRev != null && r.approx ? '≈ ' : ''}${fmt(r.expRev)}</td>
             <td class="lrr-rub">${fmt(r.curRev)}</td>
             <td class="lrr-ag"><span class="lrr-pl lrr-pl-${st.cls}">${st.text}</span>${r.edited ? '<span class="lrr-ed">исправлено вручную</span>' : ''}</td>
             <td class="lrr-wt"><div class="lrr-wtin"><div>${what}</div>${canEditRows() ? `<button type="button" class="lrr-edit-btn" data-lrr-open="${esc(r.key)}">править</button>` : ''}</div></td></tr>`;
@@ -735,10 +755,20 @@ window.LowReqReport = (function () {
         if (canWriteShared() && Date.now() - lastTry > 60000) { lastTry = Date.now(); capture(); }
     }
 
+    // При открытии раздела таблица прокручена к низу — к свежим запросам; старые листаются вверх.
+    function scrollDown() {
+        if (editKey) return;
+        const rowsEl = document.querySelectorAll('#lrr-body tr[data-lrr-row]');
+        const last = rowsEl[rowsEl.length - 1];
+        if (last && last.scrollIntoView) last.scrollIntoView({ block: 'end' });
+    }
+
     function html(rerender) {
         if (typeof rerender === 'function') lastRerender = rerender;
         if (!available()) return '<p class="rp-note">Отчёт недоступен.</p>';
         prepare(rerender);
+        const fresh = !document.querySelector('.lrr-card');
+        if (fresh) setTimeout(scrollDown, 60);
         const d = derive();
         const inP = inPeriod(rows());
         const t = totals(inP);
@@ -762,16 +792,17 @@ window.LowReqReport = (function () {
             <section class="rp-card lrr-card">
                 <div class="lrr-ctl">
                     <h3 class="lrr-title">Запросы на снижение</h3>
-                    <div class="dr-seg"><span class="dr-seg-label">Период</span>${PERIODS.map(p => seg('period', p, period, p ? p + ' дн.' : 'всё время')).join('')}</div>
+                    <div class="dr-seg"><span class="dr-seg-label">Период</span>${PERIODS.map(p => seg('period', CustomPeriod.on('low') ? 'x' + p : p, CustomPeriod.on('low') ? '' : period, p ? p + ' дн.' : 'всё время').replace('data-lrr-period="x', 'data-lrr-period="')).join('')}${CustomPeriod.buttonHtml('low')}${CustomPeriod.inputsHtml('low')}</div>
                     <div class="dr-seg"><span class="dr-seg-label">Показать</span>${[['', 'все'], ['yes', 'согласовано'], ['no', 'не согласовано'], ['wait', 'ждём']].map(([v, tx]) => seg('show', v, show, tx)).join('')}</div>
                     <input type="text" class="lrr-q" id="lrr-q" placeholder="Рейс, например KV-101" value="${esc(query)}" autocomplete="off">
                     <span class="lrr-sp"></span>
                     ${exp ? `<button type="button" class="btn-primary rp-btn" id="lrr-export"${list.length ? '' : ' disabled'}>В Excel</button>` : ''}
                 </div>
                 <div class="rp-scroll"><table class="lrr-table"><thead>
-                    <tr><th rowspan="2" class="lrr-w-dt">Дата запроса</th><th rowspan="2" class="lrr-w-fl">Рейс</th><th rowspan="2" class="lrr-w-dt">Дата рейса</th><th rowspan="2" class="lrr-w-ld">Загрузка на момент запроса</th><th colspan="4" class="lrr-grp">Ожидаемая загрузка, мест</th><th rowspan="2" class="lrr-w-rub">Ожидаемая выручка на вылете, ₽</th><th rowspan="2" class="lrr-w-rub">Текущая выручка, ₽</th><th rowspan="2" class="lrr-w-ag">Согласовали</th><th rowspan="2">Что согласовали</th></tr>
+                    <tr><th rowspan="2" class="lrr-w-dt">Дата запроса</th><th rowspan="2" class="lrr-w-fl">Рейс</th><th rowspan="2" class="lrr-w-dt">Дата рейса</th><th rowspan="2" class="lrr-w-ld">Загрузка на момент запроса</th><th colspan="4" class="lrr-grp">Ожидаемая загрузка, мест</th><th rowspan="2" class="lrr-w-rub">Ожидаемая выручка на вылете, ₽</th><th rowspan="2" class="lrr-w-rub">Текущая выручка, ₽</th><th rowspan="2" class="lrr-w-ag">Согласовали</th><th rowspan="2" class="lrr-w-wt">Что просили / что согласовали</th></tr>
                     <tr><th>за 14 дн.</th><th>за 7 дн.</th><th>за 3 дн.</th><th>на вылете</th></tr></thead>
                     <tbody id="lrr-body">${tableBodyHtml(list)}</tbody></table></div>
+                ${list.some(r => r.approx) ? '<p class="lrr-foot"><span class="lrr-apx">примерно</span> — запрос найден позже, цифры восстановлены по истории продаж</p>' : ''}
             </section></div>`;
     }
 
@@ -795,7 +826,7 @@ window.LowReqReport = (function () {
 
     function handleClick(btn, rerender) {
         const ds = btn.dataset;
-        if (ds.lrrPeriod != null) { period = parseInt(ds.lrrPeriod, 10) || 0; saveView(); rerender(); return true; }
+        if (ds.lrrPeriod != null) { CustomPeriod.set('low', { on: false }); period = parseInt(ds.lrrPeriod, 10) || 0; saveView(); rerender(); return true; }
         if (ds.lrrShow != null) { show = ds.lrrShow; saveView(); rerender(); return true; }
         if (ds.lrrOpen) { editKey = editKey === ds.lrrOpen ? '' : ds.lrrOpen; draft = null; rerender(); return true; }
         if (ds.lrrCancel) { editKey = ''; draft = null; rerender(); return true; }
@@ -859,6 +890,10 @@ window.LowReqReport = (function () {
         if (lastRerender && document.querySelector('.lrr-card') && !editKey) lastRerender();
     });
     let markTimer = null;
+    document.addEventListener('krasavia:lowreq', () => {
+        if (typeof currentTab !== 'undefined' && currentTab !== 'reports') return;
+        if (lastRerender && document.querySelector('.lrr-card') && !editKey) lastRerender();
+    });
     document.addEventListener('krasavia:mark', () => {
         if (!lastRerender) return;
         clearTimeout(markTimer);
@@ -873,7 +908,7 @@ window.LowReqReport = (function () {
     function exportData() {
         const list = filtered();
         return {
-            period: period ? period + ' дн.' : 'всё время',
+            period: CustomPeriod.on('low') ? CustomPeriod.label('low') : (period ? period + ' дн.' : 'всё время'),
             show: { '': 'все', yes: 'согласовано', no: 'не согласовано', wait: 'ждём' }[show],
             query: query.trim(),
             totals: totals(inPeriod(rows())),
@@ -883,10 +918,10 @@ window.LowReqReport = (function () {
                 terms: r.terms, seatsForPct: r.seats,
                 expRev: r.expRev, curRev: r.curRev,
                 res: r.res, resText: stateOf(r.res).text, edited: r.edited,
-                what: r.res === 'yes' && r.what ? whatText(r.what) : '', est: !!(r.what && r.what.est && r.res === 'yes')
+                what: (() => { const ap = askParts(r); return [ap.asked, ap.agreed].filter(Boolean).join('\n'); })(), est: askParts(r).est, approx: r.approx
             }))
         };
     }
 
-    return { canView, html, handleClick, handleInput, handleDblClick, captureSoon, capture, exportData, revision: () => rev, canExport };
+    return { canView, html, handleClick, handleInput, handleDblClick, captureSoon, capture, exportData, revision: () => rev + ':' + lrRev() + ':' + CustomPeriod.sig('low'), canExport };
 })();

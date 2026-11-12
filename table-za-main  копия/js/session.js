@@ -123,7 +123,7 @@ window.SessionStore = (function () {
             }
             if (typeof rmsUiFilters !== 'undefined') {
                 const f = s.rmsUiFilters && typeof s.rmsUiFilters === 'object' ? s.rmsUiFilters : {};
-                if (['7', '14', '30'].includes(f.days)) rmsUiFilters.days = f.days;
+                if (['7', '14', '30', 'custom'].includes(f.days)) rmsUiFilters.days = f.days;
                 const route = f.route || s.rmsRouteTypeFilter;   // старый формат сессии — только тип рейса
                 if (['all', 'krai', 'interregional'].includes(route)) rmsUiFilters.route = route;
                 if (['all', 'alerts'].includes(f.alert)) rmsUiFilters.alert = f.alert;

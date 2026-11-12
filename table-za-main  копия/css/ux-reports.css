@@ -411,15 +411,21 @@ html[data-theme="dark"] #rp-page .lrr-fa.dn { color: #fcd34d; }
 #rp-page .lrr-pl-no { background: #e2e8f0; color: #475569; }
 #rp-page .lrr-pl-wait { background: #fef3c7; color: #92400e; }
 #rp-page .lrr-ed { display: block; font-size: 0.64rem; color: var(--text-muted); margin-top: 2px; }
-#rp-page .lrr-wt { min-width: 130px; }
-#rp-page .lrr-wh { display: block; white-space: nowrap; }
+#rp-page .lrr-wt { width: 150px; max-width: 160px; }
+#rp-page .lrr-w-wt { width: 150px; }
+#rp-page .lrr-wh { display: block; }
+#rp-page .lrr-agr { display: block; font-size: 0.72rem; font-weight: 700; color: #047857; }
+html[data-theme="dark"] #rp-page .lrr-agr { color: #6ee7b7; }
+#rp-page .lrr-apx { display: block; font-size: 0.64rem; font-style: italic; color: #b45309; }
+#rp-page .lrr-foot { margin: 8px 0 0; font-size: 0.74rem; color: var(--text-muted); }
+#rp-page .lrr-foot .lrr-apx { display: inline; }
 #rp-page .lrr-es { display: block; font-size: 0.68rem; color: var(--text-muted); }
 #rp-page .lrr-mut { color: #94a3b8; }
 #rp-page .lrr-empty { text-align: center; color: var(--text-muted); height: 60px; }
 #rp-page .lrr-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 #rp-page .lrr-tpct { font-size: 1rem; font-weight: 700; color: var(--text-muted); }
 @media (max-width: 900px) { #rp-page .lrr-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-#rp-page .lrr-wtin { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#rp-page .lrr-wtin { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 #rp-page .lrr-edit-btn {
     flex: none; padding: 0; border: 0; background: none; cursor: pointer;
     font: inherit; font-size: 0.72rem; color: var(--accent-hover, #059669); text-decoration: underline;
@@ -445,4 +451,12 @@ html[data-theme="dark"] #rp-page .lrr-open td,
 html[data-theme="dark"] #rp-page .lrr-edit-tr td { background: #1e2a3a !important; }
 @media (max-width: 900px) {
     #rp-page .lrr-q { width: 100%; }
+}
+
+/* «Свой период»: два поля даты рядом с кнопками периода */
+.cp-box { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; }
+.cp-lab { display: inline-flex; align-items: center; gap: 4px; font-size: 0.78rem; color: var(--text-muted); }
+.cp-in {
+    height: 28px; padding: 0 6px; box-sizing: border-box; font: inherit; font-size: 0.8rem;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text);
 }

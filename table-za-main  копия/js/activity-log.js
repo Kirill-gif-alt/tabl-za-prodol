@@ -338,7 +338,10 @@ window.ActivityLog = (function () {
     //   byUser/noUser — числа у имён: период, действие и поиск, но без выбора человека (чтобы остальные не обнулялись).
     function analyze(events, filters) {
         const { profileId, action, days, query } = filters;
-        const from = periodStart(days);
+        const custom = days === -1;
+        const cs = custom ? CustomPeriod.state('journal') : null;
+        const from = custom ? (cs.from ? new Date(cs.from + 'T00:00:00').getTime() : 0) : periodStart(days);
+        const until = custom && cs.to ? new Date(cs.to + 'T23:59:59.999').getTime() : 0;
         const q = (query || '').toLowerCase();
         const filtered = [];
         const times = [];
@@ -348,6 +351,7 @@ window.ActivityLog = (function () {
         for (const e of events) {
             const t = new Date(e.ts).getTime();
             if (from && t < from) continue;
+            if (until && t > until) continue;
             inPeriod++;
             if (action === '!tab' ? e.action === 'tab' : (action && e.action !== action)) continue;
             if (q && !hayOf(e).includes(q)) continue;
@@ -457,7 +461,7 @@ window.ActivityLog = (function () {
     }
 
     function shellHtml() {
-        const periodOpts = [[1, 'Сегодня'], [7, '7 дней'], [30, '30 дней'], [0, 'Всё время']]
+        const periodOpts = [[1, 'Сегодня'], [7, '7 дней'], [30, '30 дней'], [0, 'Всё время'], [-1, 'Свой период']]
             .map(([d, l]) => `<option value="${d}">${l}</option>`).join('');
         const actionOpts = Object.entries(ACTION_LABELS)
             .map(([k, l]) => `<option value="${escHtml(k)}">${escHtml(l)}</option>`).join('');
@@ -477,7 +481,7 @@ window.ActivityLog = (function () {
                         <div class="jr-filters">
                             <label class="jr-field">
                                 <span class="jr-field-label">Период</span>
-                                <select id="stats-filter-days" class="jr-select">${periodOpts}</select>
+                                <select id="stats-filter-days" class="jr-select">${periodOpts}</select><span id="jr-cp"></span>
                             </label>
                             <label class="jr-field">
                                 <span class="jr-field-label">Действие</span>
@@ -530,7 +534,7 @@ window.ActivityLog = (function () {
     function updateBadge(container, v) {
         const badge = container.querySelector('#stats-total-badge');
         if (!badge) return;
-        const period = PERIOD_TEXT[v.filters.days] || PERIOD_TEXT[0];
+        const period = v.filters.days === -1 ? CustomPeriod.label('journal') : (PERIOD_TEXT[v.filters.days] || PERIOD_TEXT[0]);
         // «Из» — сколько записей подходит под условия (их число совпадает с чипом «Все»), а не всё за период:
         // иначе при скрытых переходах по вкладкам выходит «показано 40 из 120», хотя скрывать больше нечего.
         const n = v.list.length;
@@ -610,6 +614,8 @@ window.ActivityLog = (function () {
         const dSel = container.querySelector('#stats-filter-days');
         const aSel = container.querySelector('#stats-filter-action');
         if (dSel && dSel.value !== String(f.days)) dSel.value = String(f.days);
+        const cpBox = container.querySelector('#jr-cp');
+        if (cpBox && !cpBox.contains(document.activeElement)) cpBox.innerHTML = f.days === -1 ? CustomPeriod.inputsHtml('journal') : '';
         if (aSel && aSel.value !== f.action) aSel.value = f.action;
         if (q && document.activeElement !== q && q.value.trim() !== f.query) q.value = f.query;
 
@@ -716,7 +722,13 @@ window.ActivityLog = (function () {
 
         container.addEventListener('change', ev => {
             const t = ev.target;
-            if (t.id === 'stats-filter-days') setFilters(container, { days: parseInt(t.value, 10) || 0 });
+            if (t.dataset && t.dataset.cpId) { CustomPeriod.handleChange(t); setFilters(container, {}); }
+            else if (t.id === 'stats-filter-days') {
+                const dv = parseInt(t.value, 10) || 0;
+                if (dv === -1 && !CustomPeriod.on('journal')) CustomPeriod.toggle('journal');
+                else if (dv !== -1) CustomPeriod.set('journal', { on: false });
+                setFilters(container, { days: dv });
+            }
             else if (t.id === 'stats-filter-action') setFilters(container, { action: t.value });
         });
 

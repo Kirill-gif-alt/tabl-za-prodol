@@ -347,7 +347,7 @@ function applyRmsRouteTypeFilter(flights) {
 }
 
 function getRmsFilteredFlights() {
-    const days = parseInt(document.getElementById('rms-days-filter')?.value || '30', 10);
+    const days = typeof rmsDaysValue === 'function' ? rmsDaysValue() : parseInt(document.getElementById('rms-days-filter')?.value || '30', 10);
     const alertOnly = document.getElementById('rms-alert-filter')?.value === 'alerts';
     let flights = getAllUpcomingFlights(days);
     if (alertOnly) {
