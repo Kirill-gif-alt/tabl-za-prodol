@@ -110,7 +110,46 @@ window.SubsidyRef = (function () {
         const value = num(e.value);
         if (!from || !to || !dirKey(direction) || value == null) return null;
         const swap = typeof compareDateStr === 'function' && compareDateStr(from, to) > 0;
-        return { from: swap ? to : from, to: swap ? from : to, direction, ac, value, at, by: cleanText(e.by, 60) };
+        // Аэропорт Красноярска (KJA — Емельяново, KCY — Черемшанка); только для направлений с Красноярском.
+        const apt = krasSide(direction) ? aptCode(e.apt) : '';
+        return { from: swap ? to : from, to: swap ? from : to, direction, ac, apt, value, at, by: cleanText(e.by, 60) };
+    }
+
+    function aptCode(v) {
+        const t = String(v || '').trim().toUpperCase();
+        if (t === 'KCY' || t === 'UNKM' || t === 'ЧЕРЕМШАНКА') return 'KCY';
+        if (t === 'KJA' || t === 'UNKL' || t === 'ЕМЕЛЬЯНОВО') return 'KJA';
+        return '';
+    }
+
+    // Красноярск в начале направления ('from'), в конце ('to') или его нет ('').
+    function krasSide(direction) {
+        const parts = dirKey(direction).split('>');
+        if (parts.length < 2) return '';
+        if (parts[0] === 'красноярск') return 'from';
+        if (parts[parts.length - 1] === 'красноярск') return 'to';
+        return '';
+    }
+
+    // Аэропорт Красноярска, из/в который летит вылет: по маршруту строки загрузки («KCY-TGP-THX» → KCY).
+    function aptOfRoute(direction, route) {
+        const side = krasSide(direction);
+        if (!side || !route) return '';
+        const pts = String(route).toUpperCase().split('-').map(x => x.trim()).filter(Boolean);
+        if (pts.length < 2) return '';
+        const c = pts[side === 'from' ? 0 : pts.length - 1];
+        if (c === 'KCY') return 'KCY';
+        if (c === 'KJA' || c === 'КЯА' || c === 'КЯС') return 'KJA';
+        return '';
+    }
+
+    const APT_NAME = { KJA: 'Емельяново', KCY: 'Черемшанка' };
+
+    // «Красноярск — Абакан» + KCY → «Красноярск (Черемшанка) — Абакан».
+    function dirLabel(direction, apt) {
+        const a = aptCode(apt);
+        if (!a || !krasSide(direction)) return direction;
+        return String(direction).replace(/Красноярск/i, `Красноярск (${APT_NAME[a]})`);
     }
 
     function normStore(data) {
@@ -288,7 +327,7 @@ window.SubsidyRef = (function () {
                 const same = Object.keys(s.pkz).find(id => {
                     const r = s.pkz[id];
                     return !r.deleted && r.from === e.from && r.to === e.to && dirKey(r.direction) === dirKey(e.direction)
-                        && (r.ac ? acKey(r.ac) : '') === (e.ac ? acKey(e.ac) : '');
+                        && (r.ac ? acKey(r.ac) : '') === (e.ac ? acKey(e.ac) : '') && (r.apt || '') === (e.apt || '');
                 });
                 s.pkz[same || newId()] = e;
                 counts.pkz++;
@@ -310,16 +349,21 @@ window.SubsidyRef = (function () {
     }
 
     // ПКЗ из NAV для вылета: правило, где дата в периоде, направление рейса совпадает (в эту сторону),
-    // тип ВС совпадает (или в правиле «любой»). Несколько подходят — точнее по типу ВС, потом более позднее начало.
+    // тип ВС совпадает (или в правиле «любой»), аэропорт Красноярска совпадает (или в правиле не указан).
+    // Аэропорт берётся из маршрута строки загрузки (route, например «KCY-TGP»); маршрута нет — подходит правило без
+    // аэропорта, иначе наименьшее из KJA/KCY. Несколько подходят — точнее по типу ВС и аэропорту, потом более позднее начало.
     let pkzMemo = new Map();
-    function pkzFor(date, flightCode, acRaw) {
+    function pkzFor(date, flightCode, acRaw, route) {
         const rules = activePkz();
         const ids = Object.keys(rules);
         if (!ids.length || !date || !flightCode) return null;
-        const memoKey = date + '|' + flightCode + '|' + (acRaw || '');
+        const routeText = typeof route === 'string' ? route : '';
+        const memoKey = date + '|' + flightCode + '|' + (acRaw || '') + '|' + routeText;
         if (pkzMemo.has(memoKey)) return pkzMemo.get(memoKey);
         const base = typeof getBaseFlight === 'function' ? getBaseFlight(flightCode) : flightCode;
-        const dir = dirKey(typeof getFlightDirection === 'function' ? getFlightDirection(base) : '');
+        const dirLabelText = typeof getFlightDirection === 'function' ? getFlightDirection(base) : '';
+        const dir = dirKey(dirLabelText);
+        const apt = aptOfRoute(dirLabelText, routeText);
         const ak = acRaw ? acKey(typeof getAircraftType === 'function' ? getAircraftType(acRaw) : acRaw) : '';
         let best = null;
         ids.forEach(id => {
@@ -328,17 +372,153 @@ window.SubsidyRef = (function () {
             if (typeof compareDateStr === 'function' && (compareDateStr(date, r.from) < 0 || compareDateStr(date, r.to) > 0)) return;
             const rk = r.ac ? acKey(r.ac) : '';
             if (rk && rk !== ak) return;
-            const score = (rk ? 2 : 1);
-            if (!best || score > best.score
-                || (score === best.score && typeof compareDateStr === 'function' && compareDateStr(r.from, best.r.from) > 0)
-                || (score === best.score && r.from === best.r.from && String(r.at) > String(best.r.at))) {
-                best = { r, score };
+            const ra = r.apt || '';
+            if (ra && apt && ra !== apt) return;
+            // Аэропорт известен: точное совпадение лучше правила без аэропорта; неизвестен: наоборот.
+            const aptScore = apt ? (ra ? 2 : 1) : (ra ? 1 : 2);
+            const score = (rk ? 10 : 0) + aptScore;
+            let better = !best || score > best.score;
+            if (!better && score === best.score && typeof compareDateStr === 'function') {
+                const c = compareDateStr(r.from, best.r.from);
+                if (c > 0) better = true;
+                else if (c === 0) {
+                    if (ra && best.r.apt && ra !== best.r.apt) better = !apt && r.value < best.r.value;   // запасной вариант: меньшее
+                    else better = String(r.at) > String(best.r.at);
+                }
             }
+            if (better) best = { r, score };
         });
         const v = best ? best.r.value : null;
         if (pkzMemo.size > 20000) pkzMemo.clear();
         pkzMemo.set(memoKey, v);
         return v;
+    }
+
+    // ---------- загрузка ПКЗ из выгрузок NAV (Excel) ----------
+    // ICAO аэропорта → город сайта (как в FLIGHT_DIRECTIONS). Красноярск — два аэропорта.
+    const NAV_CITY = {
+        UNAA: 'Абакан', UNIB: 'Байкит', UNKB: 'Богучаны', UNIW: 'Ванавара', UNBG: 'Горно-Алтайск', UODD: 'Диксон',
+        UOII: 'Игарка', UNEE: 'Кемерово', UNKI: 'Кодинск', UNKL: 'Красноярск', UNKM: 'Красноярск', UNKY: 'Кызыл',
+        UERL: 'Ленск', UNIM: 'Мотыгино', UIUN: 'Нижнеангарск', USNN: 'Нижневартовск', UNWW: 'Новокузнецк',
+        UOOO: 'Норильск', UEMO: 'Олекминск', UNIP: 'П.Тунгуска', UERP: 'Полярный', UOIG: 'Светлогорск',
+        UNIS: 'Северо-Енисейск', UNSS: 'Стрежевой', UIKG: 'Таксимо', UECT: 'Талакан', UNTT: 'Томск',
+        UOTT: 'Туруханск', UOHH: 'Хатанга', UIAR: 'Чара', UIUU: 'Улан-Удэ', UNBB: 'Барнаул', UNIT: 'Тура'
+    };
+    const NAV_APT = { UNKL: 'KJA', UNKM: 'KCY' };
+    const NAV_AC = { an24: 'Ан-24', an26: 'Ан-26', atr42: 'ATR-42', atr72: 'ATR-72', yak42: 'Як-42' };
+
+    // Тип ВС и сезон по имени файла: «ПКЗ АН24З.xls» → Ан-24, зима. Не узнали тип — known: false.
+    function navFileInfo(fileName) {
+        let stem = String(fileName || '').replace(/^.*[\\/]/, '').replace(/\.(xlsx?|xlsm)$/i, '')
+            .replace(/\s*[-–]?\s*копия(\s*\(\d+\))?\s*$/i, '').replace(/\s*\(\d+\)\s*$/, '').trim().toUpperCase().replace(/Ё/g, 'Е');
+        const winter = /[\s_-]*[ЗZ]$/.test(stem) && !/^[ЗZ]$/.test(stem);
+        const body = winter ? stem.replace(/[\s_-]*[ЗZ]$/, '') : stem;
+        let key = '';
+        if (/(АТР|ATR)[\s_-]*72/.test(body)) key = 'atr72';
+        else if (/(АТР|ATR)[\s_-]*42/.test(body)) key = 'atr42';
+        else if (/(АН|AN)[\s_-]*26/.test(body)) key = 'an26';
+        else if (/(АН|AN)[\s_-]*24/.test(body)) key = 'an24';
+        else if (/(ЯК|YAK|YK)[\s_-]*42/.test(body)) key = 'yak42';
+        return { ac: key ? NAV_AC[key] : '', known: !!key, winter };
+    }
+
+    function lastSunday(year, month0) {
+        const d = new Date(year, month0 + 1, 0);
+        d.setDate(d.getDate() - d.getDay());
+        return d;
+    }
+
+    function ruDate(d) {
+        return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
+    }
+
+    // Авиационный сезон: зима — с последнего воскресенья октября до дня перед последним воскресеньем марта,
+    // лето — с последнего воскресенья марта до дня перед последним воскресеньем октября. Берётся текущий сезон
+    // (сегодня внутри него) или ближайший следующий.
+    function navSeasonRange(winter, today) {
+        const t = today instanceof Date ? new Date(today.getFullYear(), today.getMonth(), today.getDate()) : (() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); })();
+        const y = t.getFullYear();
+        const cands = [];
+        for (let k = y - 1; k <= y + 1; k++) {
+            const mar = lastSunday(k, 2);
+            const oct = lastSunday(k, 9);
+            const day = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+            if (winter) cands.push({ a: oct, b: day(lastSunday(k + 1, 2), -1), label: `зима ${k}/${String(k + 1).slice(2)}` });
+            else cands.push({ a: mar, b: day(oct, -1), label: `лето ${k}` });
+        }
+        const c = cands.filter(x => x.b >= t).sort((p, q) => p.a - q.a)[0];
+        return { from: ruDate(c.a), to: ruDate(c.b), label: c.label };
+    }
+
+    // Направления сайта в одну сторону: ключ → подпись «Город — Город».
+    function siteDirections() {
+        const out = {};
+        Object.values(window.FLIGHT_DIRECTIONS || {}).forEach(label => {
+            const k = dirKey(label);
+            if (!k || out[k]) return;
+            out[k] = String(label).split(/\s*[—–→]\s*|\s+-\s+/).map(x => x.trim()).filter(Boolean).join(' — ');
+        });
+        return out;
+    }
+
+    function navDateNum(v) {
+        const m = /^(\d{1,2})\.(\d{1,2})\.(\d{4})/.exec(String(v == null ? '' : v).trim());
+        return m ? (+m[3]) * 10000 + (+m[2]) * 100 + (+m[1]) : 0;
+    }
+
+    // Лист «Report» выгрузки NAV → правила (без периода и типа ВС). skipped — строки не наших направлений.
+    function navParseSheet(lib, wb) {
+        const ws = wb.Sheets.Report || wb.Sheets[wb.SheetNames[0]];
+        const res = { rules: [], skipped: 0, bad: 0, error: '' };
+        if (!ws) { res.error = 'Нет листа с данными'; return res; }
+        const rows = lib.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+        let hi = -1;
+        for (let i = 0; i < Math.min(rows.length, 20); i++) {
+            const up = rows[i].map(c => String(c).trim().toUpperCase());
+            if (up.includes('ICAO_OR') && up.includes('ICAO_DS') && up.includes('PYLD')) { hi = i; break; }
+        }
+        if (hi < 0) { res.error = 'Не найдены столбцы ICAO_OR, ICAO_DS, PYLD'; return res; }
+        const head = rows[hi].map(c => String(c).trim().toUpperCase());
+        const cOr = head.indexOf('ICAO_OR');
+        const cDs = head.indexOf('ICAO_DS');
+        const cPy = head.indexOf('PYLD');
+        const cDt = head.findIndex(h => h === 'ДАТА КОРР');
+        const dirs = siteDirections();
+        const found = {};
+        rows.slice(hi + 1).forEach(r => {
+            const o = String(r[cOr] || '').trim().toUpperCase();
+            const d = String(r[cDs] || '').trim().toUpperCase();
+            if (!o && !d) return;
+            const a = NAV_CITY[o];
+            const b = NAV_CITY[d];
+            const label = a && b && a !== b ? dirs[dirKey(a + ' — ' + b)] : '';
+            if (!label) { res.skipped++; return; }
+            const value = num(r[cPy]);
+            if (value == null || value <= 0) { res.bad++; return; }
+            const apt = NAV_APT[o] || NAV_APT[d] || '';
+            const k = dirKey(label) + '|' + apt;
+            const when = cDt >= 0 ? navDateNum(r[cDt]) : 0;
+            if (!found[k] || when >= found[k].when) found[k] = { direction: label, apt, value: Math.round(value), when };
+        });
+        res.rules = Object.values(found).map(x => ({ direction: x.direction, apt: x.apt, value: x.value }));
+        return res;
+    }
+
+    // Сколько из правил заменят уже внесённые (тот же период, направление, тип ВС и аэропорт) и у скольких значение другое.
+    function navCount(rules, from, to, ac) {
+        const cur = activePkz();
+        const ids = Object.keys(cur);
+        let replace = 0;
+        let changed = 0;
+        rules.forEach(e => {
+            const id = ids.find(i => {
+                const r = cur[i];
+                return r.from === from && r.to === to && dirKey(r.direction) === dirKey(e.direction)
+                    && (r.ac ? acKey(r.ac) : '') === (ac ? acKey(ac) : '') && (r.apt || '') === (e.apt || '');
+            });
+            if (id) { replace++; if (cur[id].value !== e.value) changed++; }
+        });
+        return { replace, changed };
     }
 
     // Периоды коммерции для рейсов (номера или коды). ranges: [{from,to}] в ДД.ММ.ГГГГ.
@@ -449,7 +629,7 @@ window.SubsidyRef = (function () {
             return { title: t, text: parts.join('; ') + ' тыс. ₽' };
         }
         const e = gone(b) ? a : b;
-        const t = `ПКЗ ${(e || {}).direction || ''}${e && e.ac ? ', ' + e.ac : ''}`;
+        const t = `ПКЗ ${e ? dirLabel(e.direction, e.apt) : ''}${e && e.ac ? ', ' + e.ac : ''}`;
         if (gone(a)) return { title: t, text: `добавлено: ${b.from}–${b.to}, ${b.value} кг` };
         if (gone(b)) return { title: t, text: 'правило убрано' };
         return { title: t, text: `${a.value} → ${b.value} кг (${b.from}–${b.to})` };
@@ -528,6 +708,14 @@ window.SubsidyRef = (function () {
         pkzRules: activePkz,
         pkzFor,
         dirKey,
+        dirLabel,
+        aptOf: aptOfRoute,
+        krasSide,
+        aptName: (a) => APT_NAME[aptCode(a)] || '',
+        navSeasonRange,
+        navFileInfo,
+        navParseSheet,
+        navCount,
         canViewPkz,
         canEditPkz,
         periods: activePeriods,

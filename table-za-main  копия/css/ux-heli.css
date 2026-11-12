@@ -394,3 +394,5 @@ html[data-theme="dark"] .heli-trk i:not(.heli-fill-full) { background: color-mix
     flex: none;
 }
 .heli-page .data-hero-toolbar .data-search-input.data-ctrl-sm { min-width: 110px !important; width: 140px !important; }
+
+.heli-table tr.data-day-sum-row td.data-block-info { text-align: left; padding-left: 8px !important; }

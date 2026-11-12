@@ -241,7 +241,7 @@ window.HeliData = (function () {
         const lines = String(text || '').split(/\r?\n/);
         for (let i = 0; i < lines.length; i++) {
             const t = lines[i];
-            if (!/^\s*KV-\d/i.test(t)) continue;
+            if (!/^\s*KV-\d+\s*;/i.test(t)) continue;   // строка рейса («KV-781;…»), а не заголовок вида «KV-555-999, дата»
             if (!/;\s*MIH-/i.test(t)) { other++; continue; }
             const c = t.split(';').map(x => x.trim());
             const ci = c.findIndex(x => /^MIH-/i.test(x));
@@ -267,7 +267,7 @@ window.HeliData = (function () {
         const lines = String(text || '').split(/\r?\n/);
         for (let i = 0; i < lines.length && heli + other < 400; i++) {
             const t = lines[i];
-            if (!/^\s*KV-\d/i.test(t)) continue;
+            if (!/^\s*KV-\d+\s*;/i.test(t)) continue;   // строка рейса («KV-781;…»), а не заголовок вида «KV-555-999, дата»
             if (/;\s*MIH-/i.test(t)) heli++; else other++;
         }
         if (heli && !other) return 'heli';

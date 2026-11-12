@@ -1148,7 +1148,7 @@ function getPkzNavValue(dateStr, flightCode, row) {
     if (v !== null && v !== undefined && v !== '' && !isNaN(Number(v))) return Number(v);
     if (typeof SubsidyRef !== 'undefined' && SubsidyRef.pkzFor) {
         const r = row || findFlightRowForPkz(dateStr, flightCode);
-        const rv = SubsidyRef.pkzFor(dateStr, cleanFlight(flightCode || ''), r ? r[4] : '');
+        const rv = SubsidyRef.pkzFor(dateStr, cleanFlight(flightCode || ''), r ? r[4] : '', r ? (r.segRoute || r[3] || '') : '');
         if (rv != null) return rv;
     }
     return null;

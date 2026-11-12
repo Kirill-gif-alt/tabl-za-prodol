@@ -10,6 +10,7 @@ window.ReferenceView = (function () {
     let navEdit = null;      // правило ПКЗ в форме ({ id, from, to, direction, ac, value })
     let amountFilter = '';
     let navFlight = '';      // фильтр по направлению
+    let navImp = null;       // загрузка из NAV: { files: [{ name, ac, known, winter, parsed, error }], busy } — окно предпросмотра
     let calEdit = null;      // событие в форме ({ id, from, to, type, name, norm })
     let flEdit = null;       // рейс в форме ({ id, code, from, to, back, extras, backExtras, type })
     let flFilter = '';
@@ -432,9 +433,134 @@ window.ReferenceView = (function () {
             const rule = SubsidyRef.pkzRules()[id];
             if (!rule || typeof compareDateStr !== 'function') return;
             if (compareDateStr(r[1], rule.from) < 0 || compareDateStr(r[1], rule.to) > 0) return;
-            if (SubsidyRef.pkzFor(r[1], code, r[4]) === rule.value) n++;
+            const route = r.segRoute || r[3] || '';
+            if (rule.apt && SubsidyRef.aptOf(rule.direction, route) !== rule.apt) return;
+            if (SubsidyRef.pkzFor(r[1], code, r[4], route) === rule.value) n++;
         });
         return n;
+    }
+
+    // ---------- загрузка ПКЗ из выгрузок NAV ----------
+
+    const NAV_ACS = ['Ан-24', 'Ан-26', 'ATR-42', 'ATR-72', 'Як-42'];
+
+    function navFileState(f) {
+        const range = SubsidyRef.navSeasonRange(f.winter);
+        const cnt = f.parsed && f.ac ? SubsidyRef.navCount(f.parsed.rules, range.from, range.to, f.ac) : { replace: 0, changed: 0 };
+        return { range, cnt };
+    }
+
+    function navImportHtml() {
+        if (!navImp) return '';
+        const files = navImp.files;
+        const keys = {};
+        let dup = false;
+        files.forEach(f => {
+            if (!f.ac || f.error) return;
+            const k = f.ac + '|' + f.winter;
+            if (keys[k]) dup = true;
+            keys[k] = true;
+        });
+        const rows = files.map((f, i) => {
+            const st = navFileState(f);
+            const acCell = f.known ? esc(f.ac)
+                : `<select class="cr-input" data-refn-iac="${i}"><option value="">выберите</option>${NAV_ACS.map(a => `<option${a === f.ac ? ' selected' : ''}>${esc(a)}</option>`).join('')}</select>`;
+            const seasonCell = f.known ? (f.winter ? 'зима' : 'лето')
+                : `<select class="cr-input" data-refn-iseason="${i}"><option value="summer"${f.winter ? '' : ' selected'}>лето</option><option value="winter"${f.winter ? ' selected' : ''}>зима</option></select>`;
+            if (f.error) return `<tr><td class="rp-left">${esc(f.name)}</td><td colspan="6" class="rp-left rp-warn">${esc(f.error)}</td></tr>`;
+            return `<tr>
+                <td class="rp-left">${esc(f.name)}</td>
+                <td>${acCell}</td>
+                <td>${seasonCell}</td>
+                <td class="rp-nowrap">${esc(st.range.from)} – ${esc(st.range.to)}<div class="rp-sub-line">${esc(st.range.label)}</div></td>
+                <td><strong>${f.parsed.rules.length}</strong></td>
+                <td>${f.parsed.skipped}</td>
+                <td>${st.cnt.replace}${st.cnt.replace ? ` <span class="rp-muted">(значение другое: ${st.cnt.changed})</span>` : ''}</td>
+            </tr>`;
+        }).join('');
+        const ready = files.filter(f => !f.error && f.ac && f.parsed.rules.length);
+        const total = ready.reduce((a, f) => a + f.parsed.rules.length, 0);
+        const replaced = ready.reduce((a, f) => a + navFileState(f).cnt.replace, 0);
+        const skipped = files.reduce((a, f) => a + (f.parsed ? f.parsed.skipped : 0), 0);
+        const noType = files.some(f => !f.error && !f.ac);
+        const canGo = ready.length && !noType && !dup && !navImp.busy;
+        return `
+            <div class="rp-ref-form" id="ref-nav-import">
+                <div class="rp-ref-form-title">Загрузка ПКЗ из NAV</div>
+                <div class="rp-scroll"><table class="rp-table rp-refs-table">
+                    <thead><tr><th>Файл</th><th>Тип ВС</th><th>Сезон</th><th>Период</th><th>Занесётся</th><th>Пропущено</th><th>Заменит</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                    <tfoot><tr><td class="rp-left"><strong>Всего</strong></td><td></td><td></td><td></td><td><strong>${total}</strong></td><td>${skipped}</td><td>${replaced}</td></tr></tfoot>
+                </table></div>
+                <p class="rp-note">Пропущено — направления, которых нет на сайте. Аэропорты Красноярска (Емельяново и Черемшанка) заносятся отдельно.</p>
+                ${noType ? '<p class="rp-note rp-warn">Не удалось определить тип ВС по имени файла: выберите его в списке.</p>' : ''}
+                ${dup ? '<p class="rp-note rp-warn">Два файла с одним типом ВС и сезоном: оставьте один.</p>' : ''}
+                <div class="rp-ref-actions">
+                    <button type="button" class="btn-primary rp-btn" data-refn-import-go ${canGo ? '' : 'disabled'}>Занести</button>
+                    <button type="button" class="filter-btn" data-refn-import-cancel>Отмена</button>
+                    <span class="rp-ref-error" id="ref-ni-error" role="alert"></span>
+                </div>
+            </div>`;
+    }
+
+    async function navReadFiles(fileList, rerender) {
+        const lib = await xlsxLib();
+        if (!lib) { toast('Библиотека Excel не загружена', 'error'); return; }
+        const files = [];
+        for (const file of Array.from(fileList)) {
+            const info = SubsidyRef.navFileInfo(file.name);
+            const f = { name: file.name, ac: info.ac, known: info.known, winter: info.winter, parsed: null, error: '' };
+            try {
+                const wb = lib.read(await file.arrayBuffer(), { type: 'array', cellDates: false });
+                const parsed = SubsidyRef.navParseSheet(lib, wb);
+                if (parsed.error) f.error = parsed.error;
+                else f.parsed = parsed;
+            } catch (e) {
+                f.error = 'Не удалось прочитать файл';
+            }
+            files.push(f);
+        }
+        navImp = { files, busy: false };
+        rerender();
+        document.getElementById('ref-nav-import')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    async function navImportGo(btn, rerender) {
+        if (!navImp) return;
+        const pkz = [];
+        const parts = [];
+        navImp.files.forEach(f => {
+            if (f.error || !f.ac || !f.parsed) return;
+            const range = SubsidyRef.navSeasonRange(f.winter);
+            f.parsed.rules.forEach(r => pkz.push({ from: range.from, to: range.to, direction: r.direction, ac: f.ac, apt: r.apt, value: r.value }));
+            parts.push(`${f.ac} ${f.winter ? 'зима' : 'лето'}: ${f.parsed.rules.length}`);
+        });
+        if (!pkz.length) return;
+        navImp.busy = true;
+        btn.disabled = true;
+        try {
+            const res = await SubsidyRef.applyImport({ pkz });
+            if (!res.ok) { showError('ref-ni-error', res.error || 'Не удалось сохранить'); return; }
+            toast(`ПКЗ из NAV занесён: ${res.counts.pkz} ${pluralRu(res.counts.pkz, 'правило', 'правила', 'правил')}`);
+            if (typeof ActivityLog !== 'undefined') ActivityLog.log('fare_refs', 'ПКЗ из NAV: ' + parts.join(', '));
+            navImp = null;
+            refreshAll();
+            rerender();
+        } catch (e) {
+            console.error(e);
+            showError('ref-ni-error', 'Не удалось сохранить');
+        } finally {
+            if (navImp) navImp.busy = false;
+            btn.disabled = false;
+        }
+    }
+
+    // Форма правила: запомнить введённое перед перерисовкой (смена направления показывает или прячет аэропорт).
+    function syncNavEdit() {
+        if (!navEdit) return;
+        const val = (id) => document.getElementById(id)?.value;
+        navEdit = { ...navEdit, from: ruOf(val('ref-n-from')) || '', to: ruOf(val('ref-n-to')) || '', direction: val('ref-n-dir') ?? navEdit.direction,
+            ac: val('ref-n-ac') ?? navEdit.ac, apt: val('ref-n-apt') ?? navEdit.apt, value: val('ref-n-value') === '' ? null : val('ref-n-value') };
     }
 
     function navHtml() {
@@ -453,6 +579,7 @@ window.ReferenceView = (function () {
                     <label>Период с<input id="ref-n-from" class="cr-input" type="date" value="${esc(isoOf(ne.from))}"></label>
                     <label>по<input id="ref-n-to" class="cr-input" type="date" value="${esc(isoOf(ne.to))}"></label>
                     <label>Направление (в одну сторону)<select id="ref-n-dir" class="cr-input">${dirs.map(d => `<option${d === ne.direction ? ' selected' : ''}>${esc(d)}</option>`).join('')}</select></label>
+                    ${SubsidyRef.krasSide(ne.direction || dirs[0] || "") ? `<label>Аэропорт Красноярска<select id="ref-n-apt" class="cr-input"><option value="">любой</option><option value="KJA"${ne.apt === 'KJA' ? ' selected' : ''}>Емельяново</option><option value="KCY"${ne.apt === 'KCY' ? ' selected' : ''}>Черемшанка</option></select></label>` : ''}
                     <label>Тип ВС<select id="ref-n-ac" class="cr-input"><option value="">любой</option>${acs.map(a => `<option${a === ne.ac ? ' selected' : ''}>${esc(a)}</option>`).join('')}</select></label>
                     <label>ПКЗ из NAV, кг<input id="ref-n-value" class="cr-input" type="number" min="0" step="1" value="${esc(ne.value != null ? ne.value : '')}"></label>
                 </div>
@@ -465,7 +592,7 @@ window.ReferenceView = (function () {
         const rows = list.map(r => `
             <tr>
                 <td class="rp-nowrap">${esc(r.from)} – ${esc(r.to)}</td>
-                <td class="rp-left"><strong>${esc(r.direction)}</strong></td>
+                <td class="rp-left"><strong>${esc(SubsidyRef.dirLabel(r.direction, r.apt))}</strong></td>
                 <td>${r.ac ? esc(r.ac) : '<span class="rp-muted">любой</span>'}</td>
                 <td><strong>${esc(Number(r.value).toLocaleString('ru-RU'))}</strong> кг</td>
                 <td>${pkzMatches(r.id)}</td>
@@ -481,8 +608,9 @@ window.ReferenceView = (function () {
                 ${ReportsView.head('ПКЗ из NAV', `Правило: <strong>период + направление в одну сторону + тип ВС → ПКЗ, кг</strong>. Значение само подставляется во все
                     вылеты, которые подходят (вкладка «ПКЗ», «Творческая», карточки). Обратное направление — отдельное правило.
                     Если подходят несколько — берётся правило с конкретным типом ВС, затем с более поздним началом периода.
-                    Ручное значение, введённое в таблице «ПКЗ» для конкретного вылета, важнее правила.`, can && !ne ? '<button type="button" class="btn-primary rp-btn" data-refn-new>Добавить правило</button>' : '')}
+                    Ручное значение, введённое в таблице «ПКЗ» для конкретного вылета, важнее правила.`, can && !ne ? '<button type="button" class="filter-btn rp-btn" data-refn-load>Загрузить из NAV</button> <button type="button" class="btn-primary rp-btn" data-refn-new>Добавить правило</button>' : '')}
                 <p class="rp-card-text">Правило: период, направление и тип ВС дают ПКЗ в кг. Оно подставляется во все подходящие вылеты.</p>
+                ${can ? navImportHtml() : ''}
                 ${form}
                 <div class="ref-toolbar">
                     <label>Направление <select class="cr-input" id="ref-n-filter"><option value="">все</option>${dirs.map(d => `<option${d === navFlight ? ' selected' : ''}>${esc(d)}</option>`).join('')}</select></label>
@@ -828,7 +956,7 @@ window.ReferenceView = (function () {
         fares: { name: 'Тарифы', head: ['Рейсы', 'Код тарифа', 'Предел, ₽', 'Детский предел, ₽', 'Комментарий'] },
         periods: { name: 'Периоды', head: ['Рейс', 'Коммерция с', 'Коммерция по'] },
         amounts: { name: 'Суммы', head: ['Город 1', 'Город 2', 'Тип ВС', 'Субсидия, тыс. ₽ (пара), среднее', 'Себестоимость, тыс. ₽ (пара), среднее'] },
-        nav: { name: 'ПКЗ', head: ['Период с', 'Период по', 'Направление (в одну сторону)', 'Тип ВС (пусто — любой)', 'ПКЗ, кг'] }
+        nav: { name: 'ПКЗ', head: ['Период с', 'Период по', 'Направление (в одну сторону)', 'Тип ВС (пусто — любой)', 'ПКЗ, кг', 'Аэропорт Красноярска (KJA или KCY, пусто — любой)'] }
     };
 
     function canEditSection(id) {
@@ -881,7 +1009,7 @@ window.ReferenceView = (function () {
                 .concat(...months.map(m => { const v = e.byMonth && e.byMonth[m]; return v ? [v.sub, v.cost, v.n != null ? v.n : ''] : ['', '', '']; })));
         }
         if (id === 'nav') {
-            return Object.values(SubsidyRef.pkzRules()).map(r => [r.from, r.to, r.direction, r.ac || '', r.value]);
+            return Object.values(SubsidyRef.pkzRules()).map(r => [r.from, r.to, r.direction, r.ac || '', r.value, r.apt || '']);
         }
         return [];
     }
@@ -1008,7 +1136,7 @@ window.ReferenceView = (function () {
         if (nav) {
             plan.sheets.push('ПКЗ');
             nav.forEach((r, i) => {
-                const e = { from: cellDate(r[0]), to: cellDate(r[1]), direction: String(r[2] || '').trim(), ac: String(r[3] || '').trim(), value: cellNum(r[4]) };
+                const e = { from: cellDate(r[0]), to: cellDate(r[1]), direction: String(r[2] || '').trim(), ac: String(r[3] || '').trim(), value: cellNum(r[4]), apt: String(r[5] || '').trim() };
                 if (!e.from || !e.to || !SubsidyRef.dirKey(e.direction) || e.value == null) {
                     plan.errors.push(`ПКЗ, строка ${i + 2}: нужны обе даты, направление «Город — Город» и ПКЗ`);
                     return;
@@ -1396,7 +1524,25 @@ window.ReferenceView = (function () {
             return true;
         }
         // ПКЗ из NAV
-        if (d.refnNew != null) { navEdit = { from: '', to: '', direction: navFlight || '', ac: '', value: null }; rerender(); return true; }
+        if (d.refnLoad != null) {
+            // Поле выбора файлов создаётся здесь же: таблица перерисовывается, пока открыто окно выбора.
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.xls,.xlsx';
+            input.multiple = true;
+            input.hidden = true;
+            document.body.appendChild(input);
+            input.onchange = () => {
+                const list = input.files ? Array.from(input.files) : [];
+                input.remove();
+                if (list.length) navReadFiles(list, rerender).catch(e => { console.error(e); toast('Ошибка загрузки', 'error'); });
+            };
+            input.click();
+            return true;
+        }
+        if (d.refnImportCancel != null) { navImp = null; rerender(); return true; }
+        if (d.refnImportGo != null) { navImportGo(btn, rerender); return true; }
+        if (d.refnNew != null) { navEdit = { from: '', to: '', direction: navFlight || '', ac: '', apt: '', value: null }; rerender(); return true; }
         if (d.refnEdit || d.refnCopy) {
             const id = d.refnEdit || d.refnCopy;
             const r = SubsidyRef.pkzRules()[id];
@@ -1409,7 +1555,7 @@ window.ReferenceView = (function () {
         if (d.refnCancel != null) { navEdit = null; rerender(); return true; }
         if (d.refnSave != null) {
             const val = (id) => document.getElementById(id)?.value ?? '';
-            const entry = { from: ruOf(val('ref-n-from')), to: ruOf(val('ref-n-to')), direction: val('ref-n-dir'), ac: val('ref-n-ac'), value: val('ref-n-value') };
+            const entry = { from: ruOf(val('ref-n-from')), to: ruOf(val('ref-n-to')), direction: val('ref-n-dir'), ac: val('ref-n-ac'), apt: val('ref-n-apt'), value: val('ref-n-value') };
             if (!entry.from || !entry.to) { showError('ref-n-error', 'Укажите период: обе даты'); return true; }
             if (entry.value === '' || !(Number(entry.value) >= 0)) { showError('ref-n-error', 'Укажите ПКЗ в кг'); return true; }
             run(btn, () => SubsidyRef.setPkzRule(entry, navEdit && navEdit.id), 'ref-n-error', () => {
@@ -1440,6 +1586,17 @@ window.ReferenceView = (function () {
             rerender();
             return true;
         }
+        if (target.dataset && target.dataset.refnIac != null && navImp) {
+            navImp.files[Number(target.dataset.refnIac)].ac = target.value;
+            rerender();
+            return true;
+        }
+        if (target.dataset && target.dataset.refnIseason != null && navImp) {
+            navImp.files[Number(target.dataset.refnIseason)].winter = target.value === 'winter';
+            rerender();
+            return true;
+        }
+        if (target.id === 'ref-n-dir' && navEdit) { syncNavEdit(); rerender(); return true; }
         if (target.id === 'ref-n-filter') { navFlight = target.value || ''; rerender(); return true; }
         if (target.id === 'ref-c-year') { calYear = target.value || calYear; rerender(); return true; }
         if ((target.id === 'ref-f-extras-new' || target.id === 'ref-f-bextras-new') && flEdit) {
