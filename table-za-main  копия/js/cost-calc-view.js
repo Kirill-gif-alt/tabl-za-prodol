@@ -422,7 +422,7 @@ function refreshCostCalc() {
                 <div class="table-empty-icon">📂</div>
                 <div class="table-empty-title">Нет файла расходов</div>
                 <div class="table-empty-hint">Загрузите файл с расходами в разделе «Отчёты».</div>
-                ${canUploadCosts ? '<button type="button" class="btn-primary cost-calc-upload-btn" onclick="uploadCostsFile()">Загрузить файл расходов</button>' + (upAccess.local ? '<div class="table-empty-hint">только на этом компьютере</div>' : '') : ''}
+                ${canUploadCosts ? '<button type="button" class="btn-primary cost-calc-upload-btn" data-act="uploadCostsFile">Загрузить файл расходов</button>' + (upAccess.local ? '<div class="table-empty-hint">только на этом компьютере</div>' : '') : ''}
             </div>`;
         return;
     }

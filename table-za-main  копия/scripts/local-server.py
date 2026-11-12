@@ -164,6 +164,19 @@ def release_file_lock(lock):
 
 ALLOWED_HOSTS = {"127.0.0.1:%d" % PORT, "localhost:%d" % PORT}
 
+# Правила для браузера (те же, что в index.html, плюс запрет открывать сайт внутри чужой страницы).
+# Страница выполняет только свои файлы js/ и обращается только к этому серверу: вставленный в данные чужой текст
+# ничего не выполнит, а данные сайта некуда отправить.
+PAGE_CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+            "connect-src 'self' blob:; font-src 'self'; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; "
+            "base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
+# live-frame.html — изолированная рамка для запроса к Flightradar (см. комментарий в самом файле): чужая программа
+# выполняется только в ней, открыть её можно только внутри нашей же страницы.
+RADAR_FRAME = "/live-frame.html"
+SERVED_TYPES = (".html", ".js", ".css", ".json", ".geojson", ".svg", ".png", ".ico", ".woff", ".woff2")
+RADAR_CSP = ("default-src 'none'; script-src 'unsafe-inline' https://data-cloud.flightradar24.com; "
+             "base-uri 'none'; form-action 'none'; frame-ancestors 'self'")
+
 
 def _history_base(name):
     # forecast-log/2026-10.json → forecast-log_2026-10 (одна папка копий на файл, без подпапок).
@@ -231,6 +244,8 @@ def backup_if_due(name, force=False):
 class Handler(SimpleHTTPRequestHandler):
     timeout = SOCKET_TIMEOUT
     protocol_version = "HTTP/1.1"
+    server_version = "Krasavia"   # без версий Python и сервера в ответах
+    sys_version = ""
     # Без задержки отправки мелких пакетов: иначе каждый из ~80 файлов страницы ждёт ~40 мс.
     disable_nagle_algorithm = True
     # Типы заданы явно: на Windows Python берёт их из реестра, и .js там бывает text/plain.
@@ -271,16 +286,28 @@ class Handler(SimpleHTTPRequestHandler):
         return None
 
     def _static_blocked(self):
-        # Служебное не отдаём: .git и скрытые пути, scripts/, tools/, *.cmd/*.py/*.bat/*.md в корне.
+        # Служебное не отдаём: .git и скрытые пути, scripts/, tools/, ml-forecast/, secrets/.
+        # Отдаём только те виды файлов, из которых состоит сайт: скрипты запуска, ключи, настройки, журналы и любые
+        # случайно положенные в папку документы через сервер не прочитать.
         parts = [p for p in unquote(urlparse(self.path).path).replace("\\", "/").split("/") if p]
         if any(p.startswith(".") for p in parts):
             return True
-        if parts and parts[0] in ("scripts", "tools", "ml-forecast"):
+        if parts and parts[0].lower() in ("scripts", "tools", "ml-forecast", "secrets"):
             return True
-        return len(parts) == 1 and parts[0].lower().endswith((".cmd", ".py", ".bat", ".md"))
+        return bool(parts) and not parts[-1].lower().endswith(SERVED_TYPES)
+
+    def _foreign_request(self):
+        # Запрос пришёл со страницы другого сайта (браузер сам сообщает это в Sec-Fetch-Site). Чужой странице можно
+        # только открыть сам сайт по ссылке; файлы данных, общую папку и служебные адреса она не получит.
+        site = self.headers.get("Sec-Fetch-Site")
+        if site is None or site in ("same-origin", "none"):
+            return False
+        path = urlparse(self.path).path
+        is_page = path in ("/", "/index.html")
+        return not (is_page and self.headers.get("Sec-Fetch-Mode") == "navigate" and self.headers.get("Sec-Fetch-Dest") == "document")
 
     def do_HEAD(self):
-        if self.headers.get("Host", "") not in ALLOWED_HOSTS:
+        if self.headers.get("Host", "") not in ALLOWED_HOSTS or self._foreign_request():
             return self._send_json(403, {"error": "forbidden"})
         if self._static_blocked():
             return self._send_json(404, {"error": "not found"})
@@ -288,7 +315,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         # Чужой сайт, подменивший свой адрес на 127.0.0.1 (DNS rebinding), не прочитает файлы.
-        if self.headers.get("Host", "") not in ALLOWED_HOSTS:
+        if self.headers.get("Host", "") not in ALLOWED_HOSTS or self._foreign_request():
             return self._send_json(403, {"error": "forbidden"})
         if self.path.split("?")[0] == "/__krasavia/caps":
             if not self._same_origin():
@@ -407,11 +434,18 @@ class Handler(SimpleHTTPRequestHandler):
         return self._send_json(200, {"ok": True})
 
     def end_headers(self):
+        radar = urlparse(self.path).path == RADAR_FRAME
         self.send_header("Cache-Control", "no-cache")
         # Защита: не угадывать тип файла, не открывать страницу внутри чужого сайта, не отдавать адрес.
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("X-Frame-Options", "SAMEORIGIN" if radar else "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Content-Security-Policy", RADAR_CSP if radar else PAGE_CSP)
+        # Файлы сайта и общей папки нельзя подключить на чужой странице (картинкой, скриптом, рамкой).
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+        self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+        # Сайту не нужны камера, микрофон, место на карте и подобное — запрещаем их вместе со всем остальным.
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()")
         super().end_headers()
 
 

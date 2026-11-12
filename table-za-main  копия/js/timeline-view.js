@@ -83,16 +83,16 @@ function createMainTimelineView(c){
                     <div id="timeline-map-filter-banner" class="nmap-work-banner" hidden></div>
                     <div class="timeline-section-head-actions">
                         <label class="timeline-slot-label">2 ч
-                            <select id="timeline-slot-px" class="timeline-slot-select" onchange="onTimelineSlotPxChange(this)" title="Ширина слота 2 часа">
+                            <select id="timeline-slot-px" class="timeline-slot-select" data-act-change="onTimelineSlotPxChange" title="Ширина слота 2 часа">
                                 <option value="64">узко</option>
                                 <option value="80" selected>средне</option>
                                 <option value="96">широко</option>
                                 <option value="112">ещё шире</option>
                             </select>
                         </label>
-                        <button type="button" class="btn-secondary timeline-collapse-all-btn" id="timeline-collapse-all-btn" onclick="collapseAllTimelineDates()" disabled>Свернуть все</button>
-                        <button type="button" class="btn-secondary timeline-order-btn" onclick="openTimelineAcSettingsModal()">Порядок ВС</button>
-                        <button type="button" class="btn-secondary timeline-today-btn" onclick="scrollTimelineToToday()">К сегодня</button>
+                        <button type="button" class="btn-secondary timeline-collapse-all-btn" id="timeline-collapse-all-btn" data-act="collapseAllTimelineDates" disabled>Свернуть все</button>
+                        <button type="button" class="btn-secondary timeline-order-btn" data-act="openTimelineAcSettingsModal">Порядок ВС</button>
+                        <button type="button" class="btn-secondary timeline-today-btn" data-act="scrollTimelineToToday">К сегодня</button>
                     </div>
                 </div>
                 <div class="view-zoom-host">
@@ -818,17 +818,17 @@ function ensureTimelineOrderModal() {
     modal.id = 'timeline-order-modal';
     modal.className = 'timeline-order-modal';
     modal.innerHTML = `
-        <div class="timeline-order-backdrop" onclick="closeTimelineOrderModal()"></div>
+        <div class="timeline-order-backdrop" data-act="closeTimelineOrderModal"></div>
         <div class="timeline-order-panel">
             <div class="timeline-order-head">
                 <h3 id="timeline-order-title">Порядок типов ВС</h3>
-                <button type="button" class="timeline-order-close" onclick="closeTimelineOrderModal()">✕</button>
+                <button type="button" class="timeline-order-close" data-act="closeTimelineOrderModal">✕</button>
             </div>
             <p id="timeline-order-hint" class="timeline-order-hint"></p>
             <div id="timeline-order-list" class="timeline-order-list"></div>
             <div class="timeline-order-foot">
-                <button type="button" class="btn-secondary" onclick="resetTimelineAcOrder()">По умолчанию</button>
-                <button type="button" class="btn-primary" onclick="applyTimelineOrderModal()">Сохранить</button>
+                <button type="button" class="btn-secondary" data-act="resetTimelineAcOrder">По умолчанию</button>
+                <button type="button" class="btn-primary" data-act="applyTimelineOrderModal">Сохранить</button>
             </div>
         </div>
     `;

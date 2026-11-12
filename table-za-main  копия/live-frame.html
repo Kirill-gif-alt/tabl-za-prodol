@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="referrer" content="no-referrer">
+<!-- Эта страница — «песочница» для запроса положения самолётов у Flightradar (вкладка «Сеть»).
+     Flightradar отдаёт данные только в виде программы (JSONP), а чужую программу нельзя запускать рядом с данными сайта.
+     Поэтому она выполняется здесь: страница открывается внутри сайта в изолированной рамке (sandbox), у которой нет доступа
+     ни к данным сайта, ни к общей папке, ни к паролям. Наружу рамка передаёт только полученный ответ — как обычные данные.
+     Подключает её js/live-flights.js. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://data-cloud.flightradar24.com; base-uri 'none'; form-action 'none'">
+<title>Радар</title>
+</head>
+<body>
+<script>
+(function () {
+    'use strict';
+    var FEED = 'https://data-cloud.flightradar24.com/zones/fcgi/feed.js';
+    var QUERY = 'faa=1&satellite=1&mlat=1&flarm=0&adsb=1&gnd=1&air=1&vehicles=0&estimated=1&maxage=14400&gliders=0&stats=0&bounds=76.2%2C46.2%2C70%2C132';
+    var seq = 0;
+
+    function answer(id, ok, data) {
+        try { window.parent.postMessage({ type: 'kv-radar', id: id, ok: ok, data: ok ? data : null }, '*'); } catch (e) { /* ответ не передать */ }
+    }
+
+    function load(id) {
+        var cb = 'kvRadar' + (++seq);
+        var done = false;
+        var script = document.createElement('script');
+        var finish = function (ok, data) {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            try { delete window[cb]; } catch (e) { window[cb] = undefined; }
+            if (script.parentNode) script.parentNode.removeChild(script);
+            answer(id, ok, data);
+        };
+        window[cb] = function (data) { finish(!!data && typeof data === 'object' && !Array.isArray(data), data); };
+        script.async = true;
+        script.referrerPolicy = 'no-referrer';
+        script.src = FEED + '?' + QUERY + '&callback=' + cb;
+        script.onerror = function () { finish(false); };
+        var timer = setTimeout(function () { finish(false); }, 12000);
+        document.head.appendChild(script);
+    }
+
+    // Запрос приходит только от страницы сайта, в которую вставлена рамка; адрес и параметры запроса заданы здесь, а не в сообщении.
+    window.addEventListener('message', function (e) {
+        if (e.source !== window.parent) return;
+        var m = e.data;
+        if (!m || m.type !== 'kv-radar-get' || typeof m.id !== 'number') return;
+        load(m.id);
+    });
+    answer(0, true, { ready: true });
+})();
+</script>
+</body>
+</html>

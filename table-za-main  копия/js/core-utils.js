@@ -17,6 +17,60 @@ function escAttr(s) {
     return typeof Security !== 'undefined' ? Security.escapeAttr(s) : String(s || '');
 }
 
+// ── Действия из разметки ──
+// Страница запрещает браузеру выполнять код, записанный внутри разметки (onclick="…"): тогда текст, попавший в таблицы
+// вместе с данными (из файла, из общей папки, из внешней системы), не сможет ничего выполнить и никуда отправить.
+// Поэтому кнопка только называет действие: data-act="имя" (нажатие) или data-act-change="имя" (смена значения),
+// параметры — в data-arg и data-arg2. Вызываются только функции из этих двух списков.
+const UI_CLICK_ACTIONS = {
+    switchMainTab: (el) => switchMainTab(el.dataset.arg),
+    restoreLastData: () => restoreLastData(),
+    autoLoadLatestFiles: () => autoLoadLatestFiles(),
+    closeChartExpandModal: () => closeChartExpandModal(),
+    expandReportChart: (el) => expandReportChart(el.dataset.arg, el.dataset.arg2),
+    uploadCostsFile: () => uploadCostsFile(),
+    openRmsConditionsModal: () => openRmsConditionsModal(),
+    closeRmsConditionsModal: () => closeRmsConditionsModal(),
+    applyRmsConditionsAndClose: () => applyRmsConditionsAndClose(),
+    addRmsCondition: () => addRmsCondition(),
+    removeRmsCondition: (el) => removeRmsCondition(el.dataset.arg),
+    clearRmsConditions: () => clearRmsConditions(),
+    saveRmsPreset: () => saveRmsPreset(),
+    loadRmsPresetFromSelect: () => loadRmsPresetFromSelect(),
+    deleteRmsPresetFromSelect: () => deleteRmsPresetFromSelect(),
+    toggleRmsHelp: () => toggleRmsHelp(),
+    exportRmsToExcel: () => exportRmsToExcel(),
+    closeTableSalesPanel: () => closeTableSalesPanel(),
+    collapseAllTimelineDates: () => collapseAllTimelineDates(),
+    openTimelineAcSettingsModal: () => openTimelineAcSettingsModal(),
+    scrollTimelineToToday: () => scrollTimelineToToday(),
+    closeTimelineOrderModal: () => closeTimelineOrderModal(),
+    resetTimelineAcOrder: () => resetTimelineAcOrder(),
+    applyTimelineOrderModal: () => applyTimelineOrderModal()
+};
+const UI_CHANGE_ACTIONS = {
+    updateRmsCondition: (el) => updateRmsCondition(el.dataset.arg, el.dataset.arg2, el.value),
+    rmsFilterChanged: (el) => rmsFilterChanged(el),
+    rmsCustomChanged: (el) => rmsCustomChanged(el),
+    onTimelineSlotPxChange: (el) => onTimelineSlotPxChange(el)
+};
+
+// Срабатывает раньше обработчиков, навешанных на таблицы и панели, — как срабатывал код в самой кнопке.
+function runUiActions(event, attr, actions) {
+    for (let el = event.target; el && el.nodeType === 1; el = el.parentElement) {
+        const name = el.getAttribute(attr);
+        if (!name || el.disabled) continue;
+        const fn = Object.prototype.hasOwnProperty.call(actions, name) ? actions[name] : null;
+        if (fn) fn(el, event);
+    }
+}
+document.addEventListener('click', (e) => {
+    runUiActions(e, 'data-act', UI_CLICK_ACTIONS);
+    // Поле ПКЗ в таблице: нажатие по нему не должно доходить до строки (она открывает рейс).
+    if (e.target.closest && e.target.closest('.pkz-nav-cell')) e.stopPropagation();
+}, true);
+document.addEventListener('change', (e) => runUiActions(e, 'data-act-change', UI_CHANGE_ACTIONS), true);
+
 function formatNum(n) {
     if (n === null || n === undefined || n === '' || n === '—' || n === '-') return n;
     if (typeof n === 'string' && /₽|\/|ЗАКРЫТ|УЛЕТЕЛ|%/.test(n)) return n;
@@ -117,11 +171,11 @@ function expandReportChart(chartId, title) {
         modal.id = 'chart-expand-modal';
         modal.className = 'chart-expand-modal';
         modal.innerHTML = `
-            <div class="chart-expand-backdrop" onclick="closeChartExpandModal()"></div>
+            <div class="chart-expand-backdrop" data-act="closeChartExpandModal"></div>
             <div class="chart-expand-panel">
                 <div class="chart-expand-header">
                     <h3 id="chart-expand-title"></h3>
-                    <button type="button" onclick="closeChartExpandModal()" class="chart-expand-close">✕</button>
+                    <button type="button" data-act="closeChartExpandModal" class="chart-expand-close">✕</button>
                 </div>
                 <div class="chart-expand-body">
                     <canvas id="chart-expand-canvas"></canvas>

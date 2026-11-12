@@ -776,7 +776,7 @@ function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode)
             <div class="sd-block-head">
                 <h5>Продажи по дням и накоплено</h5>
                 <span class="sd-muted">столбики — билеты за день · синяя — накоплено · серая — ${escHtml(dtdCurve.refLabel || 'норма')} · оранжевая — ожидаемая</span>
-                <button type="button" onclick="expandReportChart('report-combined', 'Продажи по дням и накоплено')" class="chart-expand-btn" title="Развернуть">⛶</button>
+                <button type="button" data-act="expandReportChart" data-arg="report-combined" data-arg2="Продажи по дням и накоплено" class="chart-expand-btn" title="Развернуть">⛶</button>
             </div>
             <div class="chart-scroll-x"><div class="chart-container sd-chart" style="min-width:${Math.max(280, allDates.length * 16)}px"><canvas id="report-combined"></canvas></div></div>
             <details class="sd-howto"><summary>ⓘ Как читать и из чего норма</summary><p class="sales-chart-sub">${escHtml(dtdCurve.caption)}</p>${buildWeekdayNormTableHtml(dtdCurve)}</details>

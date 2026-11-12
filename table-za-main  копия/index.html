@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#012A4A">
     <meta name="color-scheme" content="light">
     <meta name="referrer" content="no-referrer">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://data-cloud.flightradar24.com 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' blob:; font-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' blob:; font-src 'self'; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
     <title>КРАСАВИА · Аналитика</title>
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="styles.css">
@@ -138,31 +138,31 @@
                             <button type="button" id="profile-logout-btn" class="profile-logout-btn" title="Выйти">Выйти</button>
                         </div>
                         <div class="top-nav-load-group">
-                            <button id="restore-data-btn" type="button" onclick="restoreLastData()" class="btn-restore top-nav-load-btn" style="display:none" title="Открыть последние сохранённые данные без выбора файлов">
+                            <button id="restore-data-btn" type="button" data-act="restoreLastData" class="btn-restore top-nav-load-btn" style="display:none" title="Открыть последние сохранённые данные без выбора файлов">
                                 Последние
                             </button>
-                            <button id="load-data-btn" type="button" onclick="autoLoadLatestFiles()" class="btn-primary top-nav-load-btn" title="Загрузить свежие файлы из папки">
+                            <button id="load-data-btn" type="button" data-act="autoLoadLatestFiles" class="btn-primary top-nav-load-btn" title="Загрузить свежие файлы из папки">
                                 Загрузить
                             </button>
                         </div>
                     </div>
                 </div>
                 <nav class="tab-nav" aria-label="Разделы">
-                    <button onclick="switchMainTab('today')" id="tab-today" class="tab-btn">Сегодня</button>
-                    <button onclick="switchMainTab('home')" id="tab-home" class="tab-btn" style="display:none">Сеть</button>
-                    <button onclick="switchMainTab('main')" id="tab-main" class="tab-btn tab-active">Графический план</button>
-                    <button onclick="switchMainTab('table')" id="tab-table" class="tab-btn">Динамика продаж</button>
-                    <button onclick="switchMainTab('pkz')" id="tab-pkz" class="tab-btn" title="ПКЗ — предельная коммерческая загрузка, кг">ПКЗ</button>
-                    <button onclick="switchMainTab('pair')" id="tab-pair" class="tab-btn">Экономическая таблица</button>
-                    <button onclick="switchMainTab('costs')" id="tab-costs" class="tab-btn">Расчёт расходов</button>
-                    <button onclick="switchMainTab('data')" id="tab-data" class="tab-btn">Загрузка рейсов</button>
-                    <button onclick="switchMainTab('rms')" id="tab-rms" class="tab-btn">RMS</button>
-                    <button onclick="switchMainTab('sales')" id="tab-sales" class="tab-btn">Управление продажами</button>
-                    <button onclick="switchMainTab('creative')" id="tab-creative" class="tab-btn">Творческая</button>
-                    <button onclick="switchMainTab('reports')" id="tab-reports" class="tab-btn">Отчёты</button>
-                    <button onclick="switchMainTab('lowreq')" id="tab-lowreq" class="tab-btn" style="display:none">Запрос на понижение</button>
-                    <button onclick="switchMainTab('stats')" id="tab-stats" class="tab-btn" style="display:none">Журнал действий</button>
-                    <button onclick="switchMainTab('heli')" id="tab-heli" class="tab-btn" style="display:none">Вертолёты</button>
+                    <button data-act="switchMainTab" data-arg="today" id="tab-today" class="tab-btn">Сегодня</button>
+                    <button data-act="switchMainTab" data-arg="home" id="tab-home" class="tab-btn" style="display:none">Сеть</button>
+                    <button data-act="switchMainTab" data-arg="main" id="tab-main" class="tab-btn tab-active">Графический план</button>
+                    <button data-act="switchMainTab" data-arg="table" id="tab-table" class="tab-btn">Динамика продаж</button>
+                    <button data-act="switchMainTab" data-arg="pkz" id="tab-pkz" class="tab-btn" title="ПКЗ — предельная коммерческая загрузка, кг">ПКЗ</button>
+                    <button data-act="switchMainTab" data-arg="pair" id="tab-pair" class="tab-btn">Экономическая таблица</button>
+                    <button data-act="switchMainTab" data-arg="costs" id="tab-costs" class="tab-btn">Расчёт расходов</button>
+                    <button data-act="switchMainTab" data-arg="data" id="tab-data" class="tab-btn">Загрузка рейсов</button>
+                    <button data-act="switchMainTab" data-arg="rms" id="tab-rms" class="tab-btn">RMS</button>
+                    <button data-act="switchMainTab" data-arg="sales" id="tab-sales" class="tab-btn">Управление продажами</button>
+                    <button data-act="switchMainTab" data-arg="creative" id="tab-creative" class="tab-btn">Творческая</button>
+                    <button data-act="switchMainTab" data-arg="reports" id="tab-reports" class="tab-btn">Отчёты</button>
+                    <button data-act="switchMainTab" data-arg="lowreq" id="tab-lowreq" class="tab-btn" style="display:none">Запрос на понижение</button>
+                    <button data-act="switchMainTab" data-arg="stats" id="tab-stats" class="tab-btn" style="display:none">Журнал действий</button>
+                    <button data-act="switchMainTab" data-arg="heli" id="tab-heli" class="tab-btn" style="display:none">Вертолёты</button>
                 </nav>
             </header>
 

@@ -1001,7 +1001,7 @@ function createPairTableView(c) {
                             <h3 class="table-sales-panel-title">Продажи по рейсу и дате</h3>
                             <p id="pair-sales-panel-sub" class="table-sales-panel-sub"></p>
                         </div>
-                        <button type="button" class="table-sales-panel-close" onclick="closeTableSalesPanel()" >✕</button>
+                        <button type="button" class="table-sales-panel-close" data-act="closeTableSalesPanel" >✕</button>
                     </div>
                     <div id="pair-sales-chart-result" class="table-sales-panel-body"></div>
                 </div>
@@ -1037,7 +1037,7 @@ function createTableView(c){
                             <h3 class="table-sales-panel-title">Продажи по рейсу и дате</h3>
                             <p id="table-sales-panel-sub" class="table-sales-panel-sub"></p>
                         </div>
-                        <button type="button" class="table-sales-panel-close" onclick="closeTableSalesPanel()" >✕</button>
+                        <button type="button" class="table-sales-panel-close" data-act="closeTableSalesPanel" >✕</button>
                     </div>
                     <div id="sales-chart-result" class="table-sales-panel-body"></div>
                 </div>
@@ -1073,7 +1073,7 @@ function createPkzView(c) {
                             <h3 class="table-sales-panel-title">Расчёт ПКЗ</h3>
                             <p id="pkz-detail-panel-sub" class="table-sales-panel-sub"></p>
                         </div>
-                        <button type="button" class="table-sales-panel-close" onclick="closeTableSalesPanel()" >✕</button>
+                        <button type="button" class="table-sales-panel-close" data-act="closeTableSalesPanel" >✕</button>
                     </div>
                     <div id="pkz-detail-result" class="table-sales-panel-body"></div>
                 </div>
@@ -1358,7 +1358,7 @@ function actuallyRenderPkzTable(base, targetDate = null) {
             <td class="font-semibold">${formatNum(adults)}</td>
             <td class="font-semibold">${formatNum(children)}</td>
             <td class="font-semibold">${escHtml(bagTotalText)}</td>
-            <td class="pkz-nav-cell" onclick="event.stopPropagation()">
+            <td class="pkz-nav-cell">
                 <input type="number" class="pkz-nav-input" step="1"
                     data-date="${escAttr(date)}" data-flight="${escAttr(orig)}"
                     data-kz-kg="${kzKg != null ? escAttr(String(kzKg)) : ''}"

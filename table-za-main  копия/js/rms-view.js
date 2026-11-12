@@ -58,7 +58,7 @@ function createRmsView(c) {
                     </div>
                     <p class="rms-hero-note">
                         <span>${RMS_NOTE_SHORT}</span>
-                        <button type="button" id="rms-help-btn" class="rms-help" onclick="toggleRmsHelp()" title="${escAttr(RMS_NOTE_FULL)}" aria-label="Пояснение к таблице" aria-expanded="false" aria-controls="rms-help-full">?</button>
+                        <button type="button" id="rms-help-btn" class="rms-help" data-act="toggleRmsHelp" title="${escAttr(RMS_NOTE_FULL)}" aria-label="Пояснение к таблице" aria-expanded="false" aria-controls="rms-help-full">?</button>
                         <span id="rms-cols-note" class="rms-cols-note" role="status" hidden></span>
                     </p>
                     <p id="rms-help-full" class="rms-help-full" hidden>${escHtml(RMS_NOTE_FULL)}</p>
@@ -68,23 +68,23 @@ function createRmsView(c) {
                 <div class="table-controls-wrap">
                     <div class="table-controls-bar rms-controls-bar">
                         <div class="table-filter-group rms-filter-group">
-                            <button type="button" id="rms-conditions-btn" onclick="openRmsConditionsModal()" class="filter-btn rms-conditions-open-btn">
+                            <button type="button" id="rms-conditions-btn" data-act="openRmsConditionsModal" class="filter-btn rms-conditions-open-btn">
                                 Условия<span id="rms-cond-badge" class="rms-cond-badge"></span>
                             </button>
                         </div>
                         <div class="table-sort-wrap">
                             <span class="table-sort-label">Период</span>
-                            <select id="rms-days-filter" aria-label="Период" onchange="rmsFilterChanged(this)" class="table-sort-select">
+                            <select id="rms-days-filter" aria-label="Период" data-act-change="rmsFilterChanged" class="table-sort-select">
                                 <option value="7"${rmsSel('days', '7')}>7 дней</option>
                                 <option value="14"${rmsSel('days', '14')}>14 дней</option>
                                 <option value="30"${rmsSel('days', '30')}>30 дней</option>
                                 <option value="custom"${rmsSel('days', 'custom')}>Свой период</option>
                             </select>
-                            <label class="cp-lab" id="rms-custom-wrap">по <input type="date" class="cp-in" id="rms-custom-to" onchange="rmsCustomChanged(this)" value="${CustomPeriod.state('rms').to}"${rmsUiFilters.days === 'custom' ? '' : ' hidden'}></label>
+                            <label class="cp-lab" id="rms-custom-wrap">по <input type="date" class="cp-in" id="rms-custom-to" data-act-change="rmsCustomChanged" value="${CustomPeriod.state('rms').to}"${rmsUiFilters.days === 'custom' ? '' : ' hidden'}></label>
                         </div>
                         <div class="table-sort-wrap">
                             <span class="table-sort-label">Тип рейса</span>
-                            <select id="rms-route-type-filter" aria-label="Тип рейса" onchange="rmsFilterChanged(this)" class="table-sort-select">
+                            <select id="rms-route-type-filter" aria-label="Тип рейса" data-act-change="rmsFilterChanged" class="table-sort-select">
                                 <option value="all"${rmsSel('route', 'all')}>Все</option>
                                 <option value="krai"${rmsSel('route', 'krai')}>Краевые</option>
                                 <option value="interregional"${rmsSel('route', 'interregional')}>Межрегиональные</option>
@@ -92,13 +92,13 @@ function createRmsView(c) {
                         </div>
                         <div class="table-sort-wrap">
                             <span class="table-sort-label">Показать</span>
-                            <select id="rms-alert-filter" aria-label="Показать" onchange="rmsFilterChanged(this)" class="table-sort-select">
+                            <select id="rms-alert-filter" aria-label="Показать" data-act-change="rmsFilterChanged" class="table-sort-select">
                                 <option value="all"${rmsSel('alert', 'all')}>Все рейсы</option>
                                 <option value="alerts"${rmsSel('alert', 'alerts')}>Только предупреждения</option>
                             </select>
                         </div>
                         <div class="table-controls-spacer"></div>
-                        <button type="button" onclick="exportRmsToExcel()" class="filter-btn rms-export-btn"${typeof ProfileAuth !== 'undefined' && !ProfileAuth.hasPermission('export_excel') ? ' disabled' : ''}>
+                        <button type="button" data-act="exportRmsToExcel" class="filter-btn rms-export-btn"${typeof ProfileAuth !== 'undefined' && !ProfileAuth.hasPermission('export_excel') ? ' disabled' : ''}>
                             В Excel
                         </button>
                     </div>

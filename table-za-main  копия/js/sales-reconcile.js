@@ -63,10 +63,9 @@ window.SalesReconcile = (function () {
             || String(a.basicFareStr || '').localeCompare(String(b.basicFareStr || ''))
             || ((Number(a.grp) || 0) - (Number(b.grp) || 0))
             || String(a.grpId == null ? '' : a.grpId).localeCompare(String(b.grpId == null ? '' : b.grpId))
-            // Последним — номер билета и пассажир (есть у тех, кому видны данные): одинаково на всех ПК.
+            // Последним — номер билета и заказа (есть у тех, кому видны данные): одинаково на всех ПК.
             || String(a.bsonum || '').localeCompare(String(b.bsonum || ''))
-            || String(a.pnr || '').localeCompare(String(b.pnr || ''))
-            || String(a.fio || '').localeCompare(String(b.fio || ''));
+            || String(a.pnr || '').localeCompare(String(b.pnr || ''));
     }
 
     // Билеты одного заказа (групповая бронь) переносятся вместе: «единица» — заказ или одиночный билет.

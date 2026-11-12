@@ -660,12 +660,11 @@ function loadSalesFile(fh) {
             list.push({
                 dealDate: deal,
                 pnr: row[4] || '',
-                fio: row[3] || '',
                 fare: nf,
                 adjustedFare: adj,
                 basicFareStr: row[13] || '',
-                birthDate: birth || row[16] || '',
-                ageAtFly: calculateAgeAtFly(birth || row[16], fly),   // в общий снимок идёт возраст, а не дата рождения
+                // ФИО и дата рождения из файла на сайте не хранятся (даже в памяти страницы): для расчётов нужен только возраст.
+                ageAtFly: calculateAgeAtFly(birth || row[16], fly),
                 flyDate: fly,
                 bsonum: row[2] || '',
                 city1: row[10] || '',

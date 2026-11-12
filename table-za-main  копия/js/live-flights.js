@@ -1,8 +1,6 @@
-// Эфир KV / ЭК / SSJ через JSONP Flightradar (без CORS). Только «сегодня».
+// Эфир KV / ЭК / SSJ с Flightradar (запрос — из изолированной рамки live-frame.html). Только «сегодня».
 window.LiveKvFlights = (function () {
     const POLL_MS = 15000;
-    const FR24 = 'https://data-cloud.flightradar24.com/zones/fcgi/feed.js';
-    const BOUNDS = '76.2,46.2,70,132';
     const FLEET = new Set([
         'RA-67604', 'RA-67605', 'RA-67607', 'RA-67608', 'RA-67610', 'RA-67611',
         'RA-22306', 'RA-88213',
@@ -17,7 +15,6 @@ window.LiveKvFlights = (function () {
     let source = '';
     let onChange = null;
     let wanted = false;
-    let jsonpSeq = 0;
     const MAX_FAILS = 3;     // подряд неудачных запросов, после которых опрос прекращается
     let fails = 0;
     let down = false;        // радар недоступен: до следующего захода на вкладку «Сеть» не опрашиваем
@@ -88,49 +85,69 @@ window.LiveKvFlights = (function () {
         return out;
     }
 
-    function jsonp(url) {
-        return new Promise((resolve, reject) => {
-            const rand = Math.random().toString(36).slice(2, 10);
-            const cb = 'kvFr24_' + (++jsonpSeq) + '_' + rand;
-            let done = false;
-            const finish = (fn, arg) => {
-                if (done) return;
-                done = true;
-                try { delete window[cb]; } catch { window[cb] = undefined; }
-                if (script && script.parentNode) script.parentNode.removeChild(script);
-                clearTimeout(tid);
-                fn(arg);
-            };
-            window[cb] = (data) => {
-                if (!wanted) {
-                    finish(reject, new Error('unwanted'));
-                    return;
-                }
-                if (!data || typeof data !== 'object' || Array.isArray(data)) {
-                    finish(reject, new Error('bad jsonp'));
-                    return;
-                }
-                finish(resolve, data);
-            };
-            const script = document.createElement('script');
-            script.async = true;
-            script.referrerPolicy = 'no-referrer';
-            script.src = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'callback=' + encodeURIComponent(cb);
-            script.onerror = () => finish(reject, new Error('jsonp'));
-            const tid = setTimeout(() => finish(reject, new Error('timeout')), 12000);
-            (document.head || document.documentElement).appendChild(script);
+    // Flightradar отдаёт данные только в виде программы (JSONP). Чужую программу нельзя выполнять на странице с данными
+    // сайта, поэтому запрос делает изолированная рамка live-frame.html (sandbox: без доступа к странице, общей папке и
+    // паролям), а сюда приходит только её ответ — как данные. Адрес и параметры запроса заданы в самой рамке.
+    let frame = null;
+    let frameReady = null;
+    let frameReadyDone = null;
+    let reqSeq = 0;
+    const waiting = new Map();   // номер запроса → { resolve, reject, tid }
+
+    function onFrameMessage(e) {
+        if (!frame || e.source !== frame.contentWindow || e.origin !== 'null') return;
+        const m = e.data;
+        if (!m || m.type !== 'kv-radar' || typeof m.id !== 'number') return;
+        if (m.id === 0) { if (frameReadyDone) frameReadyDone(); return; }
+        const w = waiting.get(m.id);
+        if (!w) return;
+        waiting.delete(m.id);
+        clearTimeout(w.tid);
+        if (m.ok && m.data && typeof m.data === 'object' && !Array.isArray(m.data)) w.resolve(m.data);
+        else w.reject(new Error('radar'));
+    }
+
+    function dropFrame() {
+        window.removeEventListener('message', onFrameMessage);
+        waiting.forEach(w => { clearTimeout(w.tid); w.reject(new Error('unwanted')); });
+        waiting.clear();
+        if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
+        frame = null;
+        frameReady = null;
+        frameReadyDone = null;
+    }
+
+    function ensureFrame() {
+        if (frameReady) return frameReady;
+        frameReady = new Promise((resolve, reject) => {
+            const el = document.createElement('iframe');
+            el.setAttribute('sandbox', 'allow-scripts');
+            el.setAttribute('aria-hidden', 'true');
+            el.tabIndex = -1;
+            el.referrerPolicy = 'no-referrer';
+            el.style.cssText = 'position:absolute;width:0;height:0;border:0;visibility:hidden';
+            const tid = setTimeout(() => { reject(new Error('frame')); if (frame === el) dropFrame(); }, 8000);
+            frameReadyDone = () => { clearTimeout(tid); resolve(); };
+            window.addEventListener('message', onFrameMessage);
+            frame = el;
+            el.src = 'live-frame.html';
+            document.body.appendChild(el);
         });
+        return frameReady;
+    }
+
+    function radarRequest() {
+        return ensureFrame().then(() => new Promise((resolve, reject) => {
+            if (!frame || !frame.contentWindow) { reject(new Error('frame')); return; }
+            const id = ++reqSeq;
+            const tid = setTimeout(() => { waiting.delete(id); reject(new Error('timeout')); }, 14000);
+            waiting.set(id, { resolve, reject, tid });
+            frame.contentWindow.postMessage({ type: 'kv-radar-get', id }, '*');
+        }));
     }
 
     async function fetchFr24() {
-        const q = new URLSearchParams({
-            faa: '1', satellite: '1', mlat: '1', flarm: '0', adsb: '1',
-            gnd: '1', air: '1', vehicles: '0', estimated: '1',
-            maxage: '14400', gliders: '0', stats: '0',
-            bounds: BOUNDS
-        });
-        const json = await jsonp(FR24 + '?' + q.toString());
-        return parseFr24(json);
+        return parseFr24(await radarRequest());
     }
 
     async function poll() {
@@ -189,6 +206,7 @@ window.LiveKvFlights = (function () {
         planes = [];
         status = 'off';
         source = '';
+        dropFrame();
         if (onChange) onChange(planes, status);
     }
 

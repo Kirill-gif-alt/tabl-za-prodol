@@ -232,12 +232,15 @@ window.FlightCard = (function () {
             const rootStyle = document.documentElement.getAttribute('style') || '';
             const rootCls = document.documentElement.className || '';
             const theme = document.documentElement.getAttribute('data-theme') || '';
-            // onclick в самом окне: «открыть вкладку» и «Сравнение моделей» выносят вперёд основное окно. Вызов opener.focus()
-            // должен идти из окна, где был клик (иначе Chrome может не поднять окно), а наши обработчики живут в основной странице.
-            const focusOpener = "var t=event.target;t=t&&t.closest&&t.closest('[data-fc-tab],[data-fc=ml-window]');if(t&&window.opener){try{window.opener.focus()}catch(e){}}";
             doc.open();
-            doc.write(`<!doctype html><html lang="ru" class="${attr(rootCls)}"${theme ? ` data-theme="${attr(theme)}"` : ''} style="${attr(rootStyle)}"><head><meta charset="utf-8"><title>КРАСАВИА · Карточка рейса</title></head><body class="fc-window-body" onclick="${attr(focusOpener)}"></body></html>`);
+            doc.write(`<!doctype html><html lang="ru" class="${attr(rootCls)}"${theme ? ` data-theme="${attr(theme)}"` : ''} style="${attr(rootStyle)}"><head><meta charset="utf-8"><title>КРАСАВИА · Карточка рейса</title></head><body class="fc-window-body"></body></html>`);
             doc.close();
+            // «Открыть вкладку» и «Сравнение моделей» выносят вперёд основное окно. Вызов opener.focus() должен идти из
+            // самого окна, где был клик (иначе Chrome может не поднять окно), поэтому в окно подключается свой файл
+            // (код внутри разметки страница запрещает — см. «Действия из разметки» в core-utils.js).
+            const focusJs = doc.createElement('script');
+            focusJs.src = new URL('js/flight-card-window.js', document.baseURI).href;
+            doc.head.appendChild(focusJs);
             // Стили — встроенной копией: подключить styles.css в такое окно Chrome не даёт (см. flight-card-window-css.js).
             const style = doc.createElement('style');
             style.textContent = window.FLIGHT_CARD_WINDOW_CSS || '';

@@ -150,20 +150,20 @@ function ensureRmsConditionsModal() {
     modal.id = 'rms-conditions-modal';
     modal.className = 'rms-modal';
     modal.innerHTML = `
-        <div class="rms-modal-backdrop" onclick="closeRmsConditionsModal()"></div>
+        <div class="rms-modal-backdrop" data-act="closeRmsConditionsModal"></div>
         <div class="rms-modal-panel" role="dialog" aria-modal="true" aria-labelledby="rms-modal-title">
             <div class="rms-modal-header">
                 <div>
                     <h3 id="rms-modal-title">Условия отбора</h3>
                 </div>
-                <button type="button" class="rms-modal-close" onclick="closeRmsConditionsModal()" aria-label="Закрыть">✕</button>
+                <button type="button" class="rms-modal-close" data-act="closeRmsConditionsModal" aria-label="Закрыть">✕</button>
             </div>
             <div id="rms-conditions-modal-body" class="rms-modal-body"></div>
             <div class="rms-modal-footer">
-                <button type="button" onclick="addRmsCondition()" class="btn-secondary rms-cond-btn">+ Условие</button>
+                <button type="button" data-act="addRmsCondition" class="btn-secondary rms-cond-btn">+ Условие</button>
                 <div class="rms-modal-footer-spacer"></div>
-                <button type="button" onclick="clearRmsConditions()" class="btn-secondary rms-cond-btn">Сбросить</button>
-                <button type="button" onclick="applyRmsConditionsAndClose()" class="btn-primary rms-cond-btn rms-cond-apply">Применить</button>
+                <button type="button" data-act="clearRmsConditions" class="btn-secondary rms-cond-btn">Сбросить</button>
+                <button type="button" data-act="applyRmsConditionsAndClose" class="btn-primary rms-cond-btn rms-cond-apply">Применить</button>
             </div>
         </div>
     `;
@@ -304,11 +304,11 @@ function buildRmsConditionsModalContent() {
         const step = RMS_FILTER_FIELDS[c.field]?.step || 1;
         return `
             <div class="rms-cond-row" data-cond-id="${c.id}">
-                <select class="rms-cond-field" onchange="updateRmsCondition('${c.id}','field',this.value)">${fieldOpts}</select>
-                <select class="rms-cond-op" onchange="updateRmsCondition('${c.id}','op',this.value)">${opOpts}</select>
+                <select class="rms-cond-field" data-act-change="updateRmsCondition" data-arg="${c.id}" data-arg2="field">${fieldOpts}</select>
+                <select class="rms-cond-op" data-act-change="updateRmsCondition" data-arg="${c.id}" data-arg2="op">${opOpts}</select>
                 <input type="number" class="rms-cond-value" step="${step}" value="${escHtml(c.value)}"
-                    placeholder="значение" onchange="updateRmsCondition('${c.id}','value',this.value)">
-                <button type="button" class="rms-cond-remove" onclick="removeRmsCondition('${c.id}')">✕</button>
+                    placeholder="значение" data-act-change="updateRmsCondition" data-arg="${c.id}" data-arg2="value">
+                <button type="button" class="rms-cond-remove" data-act="removeRmsCondition" data-arg="${c.id}">✕</button>
             </div>
         `;
     }).join('') : '<div class="rms-cond-empty">Добавьте условие — без условий показаны все рейсы по периоду</div>';
@@ -321,9 +321,9 @@ function buildRmsConditionsModalContent() {
                 <option value="">Сохранённые наборы...</option>
                 ${presetOptions}
             </select>
-            <button type="button" onclick="loadRmsPresetFromSelect()" class="btn-secondary rms-cond-btn">Загрузить</button>
-            <button type="button" onclick="saveRmsPreset()" class="btn-secondary rms-cond-btn">Сохранить</button>
-            <button type="button" onclick="deleteRmsPresetFromSelect()" class="btn-secondary rms-cond-btn">Удалить</button>
+            <button type="button" data-act="loadRmsPresetFromSelect" class="btn-secondary rms-cond-btn">Загрузить</button>
+            <button type="button" data-act="saveRmsPreset" class="btn-secondary rms-cond-btn">Сохранить</button>
+            <button type="button" data-act="deleteRmsPresetFromSelect" class="btn-secondary rms-cond-btn">Удалить</button>
         </div>
     `;
 }
