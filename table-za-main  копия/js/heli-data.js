@@ -336,7 +336,33 @@ window.HeliData = (function () {
             v.forEach((cnt, la) => { if (cnt > n) { b = la; n = cnt; } });
             best.set(ru, b);
         });
-        cityCache = { stamp, best, known, resolve: (c) => best.get(c) || known.get(canon(c)) || '' };
+        const resolve = (c) => best.get(c) || known.get(canon(c)) || '';
+        // Второй проход: код, не опознанный по рейсам без остановок (например ТГП у Подкаменной Тунгуски, которая только на маршрутах с остановками).
+        // Если на рейсе ровно один неопознанный код города в продажах и ровно один пункт маршрута, на который не указывает ни один код, — это он.
+        const claimed = new Set();
+        const allCodes = new Set();
+        m.flights.forEach(F => (sales[F.key] || []).forEach(t => { allCodes.add(t[1]); allCodes.add(t[2]); }));
+        allCodes.forEach(c => { const r = resolve(c); if (r) claimed.add(canon(r)); });
+        const votes2 = new Map();
+        m.flights.forEach(F => {
+            const list = sales[F.key];
+            if (!list || !list.length) return;
+            const unknown = new Set();
+            list.forEach(t => { [t[1], t[2]].forEach(c => { if (c && !resolve(c)) unknown.add(c); }); });
+            const free = F.pts.filter(pt => !claimed.has(canon(pt)));
+            if (unknown.size === 1 && free.length === 1) {
+                const c = [...unknown][0];
+                if (!votes2.has(c)) votes2.set(c, new Map());
+                const v = votes2.get(c);
+                v.set(free[0], (v.get(free[0]) || 0) + 1);
+            }
+        });
+        votes2.forEach((v, c) => {
+            let b = '', n = 0;
+            v.forEach((cnt, la) => { if (cnt > n) { b = la; n = cnt; } });
+            if (b && !best.has(c)) best.set(c, b);
+        });
+        cityCache = { stamp, best, known, resolve };
         return cityCache;
     }
 
