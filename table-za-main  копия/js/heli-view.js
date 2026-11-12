@@ -6,7 +6,7 @@ window.HeliView = (function () {
     const DOW = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
     const LEGEND = 'Плашки — сколько человек на каждом отрезке; жирная цифра с чертой — самый загруженный; двойной щелчок — подробности.';
 
-    let ui = { base: 'all', q: '', hideFlew: false, day: false };
+    let ui = { base: 'all', q: '', hideFlew: false, day: false, attn: false };
     let uiLoaded = false;
     let open = new Set();          // раскрытые строки: «KV-781|25.11.2026»
     let renderSig = '';
@@ -54,6 +54,27 @@ window.HeliView = (function () {
         return !!(F && (F.closedAll || (typeof closedFlights !== 'undefined' && closedFlights && closedFlights.has(F.key))));
     }
 
+    // ---------- «Внимание»: вылеты завтра с пустым «лишним» отрезком ----------
+    function tomorrowTs() {
+        const d = new Date(todayTs());
+        d.setDate(d.getDate() + 1);
+        return d.getTime();
+    }
+
+    // Пара туда/обратно одной даты. Пустой (на борту 0) отрезок, кроме разворотных, — внимание.
+    // Разворотные: последний отрезок «туда» и первый «обратно» (у рейса без остановок это и есть единственные отрезки):
+    // внимание, только если пусты оба. Закрытые и неполные пары не считаются.
+    function attnOf(e) {
+        if (!e || !e.out || !e.in || e.ts !== tomorrowTs() || isClosed(e.out) || isClosed(e.in)) return null;
+        const o = e.out.segs, i = e.in.segs;
+        if (!o.length || !i.length) return null;
+        const res = { out: new Set(), in: new Set(), turn: false };
+        for (let k = 0; k < o.length - 1; k++) if (!o[k]) res.out.add(k);
+        for (let k = 1; k < i.length; k++) if (!i[k]) res.in.add(k);
+        if (!o[o.length - 1] && !i[0]) { res.turn = true; res.out.add(o.length - 1); res.in.add(0); }
+        return res.out.size || res.in.size ? res : null;
+    }
+
     // ---------- расчёт строки ----------
     function sideState(F, today) {
         if (!F) return null;
@@ -97,6 +118,7 @@ window.HeliView = (function () {
 
     function visibleEntries(card, today) {
         return card.entries.filter(e => {
+            if (ui.attn && !attnOf(e)) return false;
             if (!ui.hideFlew) return true;
             const legs = [e.out, e.in].filter(Boolean);
             return legs.some(F => !(F.ts !== null && F.ts < today));
@@ -104,10 +126,10 @@ window.HeliView = (function () {
     }
 
     // ---------- плашки ----------
-    function plaqueHtml(cell, F, st, isMax) {
+    function plaqueHtml(cell, F, st, isMax, attn) {
         if (!cell) return '<span class="heli-pl heli-pl-na">–</span>';
         const v = cell.v;
-        if (!v) return '<span class="heli-pl heli-pl-z">0</span>';
+        if (!v) return `<span class="heli-pl heli-pl-z${attn && attn.has(cell.seg) ? ' heli-pl-attn' : ''}">0</span>`;
         const p = F.seats > 0 ? Math.round(v / F.seats * 100) : 0;
         const t = Math.min(1, p / 60);
         let cls = 'heli-pl';
@@ -116,21 +138,22 @@ window.HeliView = (function () {
         else if (p >= 100) cls += ' heli-pl-full';
         else if (t >= 0.55) cls += ' heli-pl-hi';
         if (isMax) cls += ' heli-pl-mx';
+        if (attn && attn.has(cell.seg)) cls += ' heli-pl-attn';
         return `<span class="${cls}" style="--t:${t.toFixed(2)}">${v}</span>`;
     }
 
-    function plaquesCell(F, st, cellCls) {
+    function plaquesCell(F, st, cellCls, attn) {
         let used = false;
         const items = F.cells.map(c => {
             const isMax = !!(c && c.first && !used && F.max > 0 && c.v === F.max && !c.closed);
             if (isMax) used = true;
-            return plaqueHtml(c, F, st, isMax);
+            return plaqueHtml(c, F, st, isMax, attn);
         }).join('');
         return `<td class="${cellCls} heli-pl-cell"><div class="heli-pl-row">${items}</div></td>`;
     }
 
     // ---------- строка таблицы ----------
-    function legCells(F, st, isOut, side) {
+    function legCells(F, st, isOut, side, attn) {
         const block = isOut ? 'data-block-out' : 'data-block-in';
         const legCls = isOut ? 'pair-leg-out' : 'pair-leg-in';
         const nCols = side.cols;
@@ -156,7 +179,7 @@ window.HeliView = (function () {
             const extra = (!isOut && i === 0 ? ' pair-split-start' : '') + (isOut && i === nCols - 1 && !side.multi ? ' pair-split-end' : '');
             return `<td class="${base}${extra}">${html}</td>`;
         });
-        if (side.multi) out.push(plaquesCell(F, st, base + (isOut ? ' pair-split-end' : '')));
+        if (side.multi) out.push(plaquesCell(F, st, base + (isOut ? ' pair-split-end' : ''), attn));
         return out.join('');
     }
 
@@ -173,10 +196,11 @@ window.HeliView = (function () {
         const yellowAvg = !bothFlew && !bothClosed && avg !== null && avg >= 100;
         const avgHtml = bothClosed ? '<span class="closed-text">ЗАКРЫТ</span>' : (avg !== null ? `${avg}%` : '—');
         const isOpen = open.has(key);
+        const at = attnOf(e);
         let html = `<tr class="${rowCls}${isOpen ? ' heli-row-open' : ''}" data-card="${card.key}" data-date="${esc(e.date)}" tabindex="0">
-            <td class="col-date data-block-info font-semibold">${esc(e.date)}</td>
+            <td class="col-date data-block-info font-semibold">${esc(e.date)}${at ? '<span class="heli-attn-tag">внимание</span>' : ''}</td>
             <td class="font-medium data-block-info">${wd}</td>
-            ${legCells(e.out, so, true, sideOut)}${legCells(e.in, si, false, sideIn)}
+            ${legCells(e.out, so, true, sideOut, at && at.out)}${legCells(e.in, si, false, sideIn, at && at.in)}
             <td class="font-bold data-board-avg-cell data-block-avg pair-split-start${yellowAvg ? ' data-block-zpk-full' : ''}">${avgHtml}</td></tr>`;
         if (isOpen) html += sheetRow(card, e, sideOut.cols + sideIn.cols + 3);
         return html;
@@ -199,7 +223,7 @@ window.HeliView = (function () {
         return h;
     }
 
-    function sheetCol(F, isOut) {
+    function sheetCol(F, isOut, attn) {
         const cls = isOut ? 'heli-col-out' : 'heli-col-in';
         const title = `${isOut ? 'Туда' : 'Обратно'} · ${esc(F ? F.no : '')}${isClosed(F) ? ' · закрыт' : ''}`;
         if (!F) return `<div class="heli-col ${cls}"><div class="heli-col-title">${isOut ? 'Туда' : 'Обратно'}</div><div class="heli-col-none">Рейса в этот день нет</div></div>`;
@@ -217,6 +241,7 @@ window.HeliView = (function () {
             if (lt) mv += `<span class="heli-minus">−${lt}</span>`;
             if (!mv) mv = '<span class="heli-nil">—</span>';
             const sub = [];
+            if (attn && attn.turn && ((isOut && j === n) || (!isOut && j === 1))) sub.push('<span class="heli-attn-note">никто не летит — можно убрать</span>');
             if (boards.length) sub.push('до ' + boards.map(p => `${esc(gen(F.pts[p.b - 1]))} ${p.sold}`).join(' · до '));
             if (leaves.length) sub.push('из ' + leaves.map(p => `${esc(gen(F.pts[p.a - 1]))} ${p.sold}`).join(' · из '));
             const closedHere = F.closedPairs.filter(p => p.a === j && p.sold === 0);
@@ -236,15 +261,20 @@ window.HeliView = (function () {
                 h += `<div class="heli-stop heli-seg"><div class="heli-line"></div>
                     <div class="heli-sb"><span class="heli-cd">${esc(F.pts[j - 1])}→${esc(F.pts[j])}</span>
                     <div class="heli-trk"><i class="${p >= 100 ? 'heli-fill-full' : ''}" style="width:${s ? Math.max(p, 4) : 0}%;--t:${t.toFixed(2)}"></i></div>
-                    <span class="heli-sn${isMax ? ' heli-sn-mx' : ''}">${s} из ${F.seats} · ${p}%</span></div></div>`;
+                    <span class="heli-sn${isMax ? ' heli-sn-mx' : ''}">${s} из ${F.seats} · ${p}%</span>${attn && attn.set.has(j - 1) && !attn.turn ? '<span class="heli-attn-note heli-attn-seg">пусто — можно не садиться</span>' : ''}</div></div>`;
             }
         }
         h += soldLine(F);
         return h + '</div>';
     }
 
+    function attnFor(e, isOut) {
+        const a = attnOf(e);
+        return a ? { set: isOut ? a.out : a.in, turn: a.turn } : null;
+    }
+
     function sheetRow(card, e, colspan) {
-        return `<tr class="heli-exp-row" data-exp="${esc((e.out || e.in).no + '|' + e.date)}"><td colspan="${colspan}" class="heli-exp"><div class="heli-sheet-wrap"><div class="heli-sheet">${sheetCol(e.out, true)}${sheetCol(e.in, false)}</div></div></td></tr>`;
+        return `<tr class="heli-exp-row" data-exp="${esc((e.out || e.in).no + '|' + e.date)}"><td colspan="${colspan}" class="heli-exp"><div class="heli-sheet-wrap"><div class="heli-sheet">${sheetCol(e.out, true, attnFor(e, true))}${sheetCol(e.in, false, attnFor(e, false))}</div></div></td></tr>`;
     }
 
     // ---------- карточка ----------
@@ -325,7 +355,7 @@ window.HeliView = (function () {
 
     // ---------- вывод страницы ----------
     function currentSig() {
-        return [HeliData.getEpoch(), HeliData.points.rev(), ui.base, ui.q, ui.hideFlew ? 1 : 0, ui.day ? 1 : 0, HeliData.dayStrings().today, (typeof closedFlights !== 'undefined' && closedFlights ? closedFlights.size : 0), canExport() ? 1 : 0].join('|');
+        return [HeliData.getEpoch(), HeliData.points.rev(), ui.base, ui.q, ui.hideFlew ? 1 : 0, ui.day ? 1 : 0, ui.attn ? 1 : 0, HeliData.dayStrings().today, (typeof closedFlights !== 'undefined' && closedFlights ? closedFlights.size : 0), canExport() ? 1 : 0].join('|');
     }
 
     function filteredCards(model) {
@@ -350,6 +380,10 @@ window.HeliView = (function () {
         }
         const model = HeliData.model();
         fillBaseSelect(baseOptions(model.cards));
+        let nAttn = 0;
+        model.cards.forEach(c => c.entries.forEach(e => { if (attnOf(e)) nAttn++; }));
+        const ab = document.getElementById('heli-attn');
+        if (ab) { ab.textContent = 'Внимание · ' + nAttn; ab.classList.toggle('heli-attn-on', ui.attn); ab.setAttribute('aria-pressed', ui.attn ? 'true' : 'false'); }
         const today = todayTs();
         const stat = { cards: 0, rows: 0 };
         const html = filteredCards(model).map(c => cardHtml(c, today, stat)).filter(Boolean).join('');
@@ -583,6 +617,7 @@ window.HeliView = (function () {
                             <select id="heli-base" class="table-sort-select data-ctrl-sm" aria-label="База"><option value="all">Все базы</option></select>
                             <label class="data-hide-flew-label data-ctrl-sm"><input type="checkbox" id="heli-hide-flew"> Скрыть улет.</label>
                             <label class="data-hide-flew-label data-ctrl-sm"><input type="checkbox" id="heli-day"> Продажа за сутки</label>
+                            <button type="button" id="heli-attn" class="filter-btn data-ctrl-sm heli-attn-btn" aria-pressed="false">Внимание · 0</button>
                             <button type="button" id="heli-points-btn" class="filter-btn data-ctrl-sm">Справочник пунктов</button>
                             ${exportOn ? '<button type="button" id="heli-export" class="filter-btn data-export-btn data-ctrl-sm">В Excel</button>' : ''}
                             <span id="heli-stats" class="data-board-stats"></span>
@@ -610,6 +645,7 @@ window.HeliView = (function () {
         const day = c.querySelector('#heli-day');
         day.checked = ui.day;
         day.addEventListener('change', () => { ui.day = day.checked; saveUi(); render(); });
+        c.querySelector('#heli-attn').addEventListener('click', () => { ui.attn = !ui.attn; render(true); });
         c.querySelector('#heli-points-btn').addEventListener('click', () => { openPoints(); });
         const exp = c.querySelector('#heli-export');
         if (exp) exp.addEventListener('click', exportExcel);
@@ -788,5 +824,5 @@ window.HeliView = (function () {
         }
     }
 
-    return { createView, refresh, render, openPoints, exportExcel, buildSheet };
+    return { createView, refresh, render, openPoints, exportExcel, buildSheet, attnOf };
 })();
