@@ -460,3 +460,8 @@ html[data-theme="dark"] #rp-page .lrr-edit-tr td { background: #1e2a3a !importan
     height: 28px; padding: 0 6px; box-sizing: border-box; font: inherit; font-size: 0.8rem;
     border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text);
 }
+
+/* «Запросы на снижение»: шапка закреплена, таблица на всю высоту окна */
+#rp-page .lrr-card .rp-scroll { max-height: none; overflow: auto; }
+#rp-page .lrr-table thead th { position: sticky; top: 0; z-index: 3; }
+#rp-page .lrr-w-ld { width: 88px; }

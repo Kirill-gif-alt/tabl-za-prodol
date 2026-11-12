@@ -854,7 +854,7 @@ window.ReportsView = (function () {
             return;
         }
         const stamp = typeof excelExportStamp === 'function' ? excelExportStamp() : ru(new Date());
-        const W = 12;
+        const W = 13;
         const ws = {};
         const merges = [];
         const put = (r, c, v, s) => {
@@ -881,7 +881,7 @@ window.ReportsView = (function () {
         for (let c = 5; c < 8; c++) put(H, c, '', group);
         merges.push({ s: { r: H, c: 4 }, e: { r: H, c: 7 } });
         ['за 14 дн.', 'за 7 дн.', 'за 3 дн.', 'на вылете'].forEach((h, i) => put(H + 1, 4 + i, h, group));
-        ['Ожидаемая выручка на вылете, ₽', 'Текущая выручка, ₽', 'Согласовали', 'Что просили / что согласовали'].forEach((h, i) => { const c = 8 + i; put(H, c, h, head); put(H + 1, c, '', head); merges.push({ s: { r: H, c }, e: { r: H + 1, c } }); });
+        ['Текущая загрузка', 'Ожидаемая выручка на вылете, ₽', 'Текущая выручка, ₽', 'Согласовали', 'Что просили / что согласовали'].forEach((h, i) => { const c = 8 + i; put(H, c, h, head); put(H + 1, c, '', head); merges.push({ s: { r: H, c }, e: { r: H + 1, c } }); });
         const PLATE = { yes: ['D1FAE5', '065F46'], no: ['E2E8F0', '475569'], wait: ['FEF3C7', '92400E'] };
         const FACT = { up: '047857', dn: 'B45309', eq: NAVY };
         const num = (n) => (n == null ? '' : Math.round(n));
@@ -903,11 +903,12 @@ window.ReportsView = (function () {
                 } else text = tm.exp != null ? `${AP}${tm.exp}${r.seats ? ' (' + Math.round(tm.exp / r.seats * 100) + '%)' : ''}` : '—';
                 cell(4 + k, text, style(fill, color, tm.passed && tm.fact != null && tm.exp != null, 'center'));
             });
-            cell(8, num(r.expRev) === '' ? '—' : (r.approx ? '≈ ' + num(r.expRev).toLocaleString('ru-RU') : num(r.expRev)), style(fill, '1C2833', true, 'right', '#,##0'));
-            cell(9, num(r.curRev) === '' ? '—' : num(r.curRev), style(fill, '1C2833', true, 'right', '#,##0'));
+            cell(8, r.curSold != null ? `${r.curSold}${r.curSeats ? ' из ' + r.curSeats + ' (' + Math.round(r.curSold / r.curSeats * 100) + '%)' : ''}` : '—', style(fill, '1C2833', false, 'center'));
+            cell(9, num(r.expRev) === '' ? '—' : (r.approx ? '≈ ' + num(r.expRev).toLocaleString('ru-RU') : num(r.expRev)), style(fill, '1C2833', true, 'right', '#,##0'));
+            cell(10, num(r.curRev) === '' ? '—' : num(r.curRev), style(fill, '1C2833', true, 'right', '#,##0'));
             const pl = PLATE[r.res];
-            cell(10, r.edited ? `${r.resText}\nисправлено вручную` : r.resText, style(pl[0], pl[1], true, 'center'));
-            cell(11, r.what ? (r.est ? `${r.what}\nоценка` : r.what) : '—', style(fill, '1C2833', false, 'left'));
+            cell(11, r.edited ? `${r.resText}\nисправлено вручную` : r.resText, style(pl[0], pl[1], true, 'center'));
+            cell(12, r.what ? (r.est ? `${r.what}\nоценка` : r.what) : '—', style(fill, '1C2833', false, 'left'));
         });
         let lastRow = H + 1 + d.rows.length;
         if (d.rows.some(r => r.approx)) {
@@ -919,7 +920,7 @@ window.ReportsView = (function () {
         }
         ws['!ref'] = lib.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: lastRow, c: W - 1 } });
         ws['!merges'] = merges;
-        ws['!cols'] = [12, 26, 12, 18, 13, 13, 13, 13, 16, 14, 16, 30].map(w => ({ wch: w }));
+        ws['!cols'] = [12, 26, 12, 18, 13, 13, 13, 13, 16, 16, 14, 16, 30].map(w => ({ wch: w }));
         ws['!rows'] = [{ hpt: 20 }, { hpt: 18 }, { hpt: 22 }, { hpt: 18 }].concat(d.rows.map(r => ({ hpt: r.approx || (r.what && r.what.indexOf('\n') >= 0) ? 44 : 32 })));
         ws['!views'] = [{ state: 'frozen', ySplit: H + 2, xSplit: 3, topLeftCell: 'D' + (H + 3), activePane: 'bottomRight' }];
         const wb = lib.utils.book_new();

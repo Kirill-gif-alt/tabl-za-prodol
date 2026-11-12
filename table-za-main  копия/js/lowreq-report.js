@@ -451,6 +451,12 @@ window.LowReqReport = (function () {
         // Выручка по билетам: после вылета — зафиксированная итоговая.
         let curRev = it && it.revFinal != null ? it.revFinal : null;
         if (curRev == null) { lazy(); curRev = curve ? curve.rev : null; }
+        // Текущая загрузка: после вылета — итоговая (записанная или из архива), до вылета — нынешняя.
+        lazy();
+        let curSold = null;
+        if (dtdNow < 0) curSold = it && it.fact && it.fact[0] != null ? it.fact[0] : (meta.arch ? (meta.arch.sold || meta.arch.t || null) : null);
+        if (curSold == null) curSold = meta.row ? meta.load : (curve ? curve.total : null);
+        const curSeats = meta.seats || (snap && snap.seats) || null;
         // Что согласовали: вписанное в «Запрос на понижение», иначе оценка по продажам после снижения.
         let autoWhat = null;
         const ask = askOf(c.code, c.dep) || (it && it.ask) || null;   // вживую из «Запроса на понижение», иначе записанное
@@ -475,7 +481,7 @@ window.LowReqReport = (function () {
         return {
             key: c.key, code: c.code, dep: c.dep, check: c.check, author: c.author, route: routeOf(c.code),
             snap, sold: snap ? snap.sold : null, seats: snap ? snap.seats : null,
-            terms, expRev: snap ? snap.expRev : null, curRev, dtdNow, flown: dtdNow < 0,
+            terms, curSold, curSeats, expRev: snap ? snap.expRev : null, curRev, dtdNow, flown: dtdNow < 0,
             ask: ask && ask.places > 0 ? { places: ask.places, fare: ask.fare != null ? ask.fare : null } : null, approx: !!(snap && snap.late), res, autoRes: auto.res, autoText, down: auto.down, edited: !!over, over, what, saved: !!it
         };
     }
@@ -497,7 +503,7 @@ window.LowReqReport = (function () {
             if (d.from != null && ck != null && ck >= d.from) return;
             out.push(buildRow({ key: k, code: it.code, dep: it.dep, check: it.check, author: it.author || '', markAt: it.markAt || '' }, it, d));
         });
-        out.sort((a, b) => (dayNum(a.check) - dayNum(b.check)) || String(a.code).localeCompare(String(b.code), 'ru', { numeric: true }));
+        out.sort((a, b) => (dayNum(b.check) - dayNum(a.check)) || String(a.code).localeCompare(String(b.code), 'ru', { numeric: true }));
         memo = { sig: sg, rows: out };
         return out;
     }
@@ -686,7 +692,7 @@ window.LowReqReport = (function () {
     function editHtml(r) {
         const dr = draft && draft.key === r.key ? draft : { key: r.key, agree: r.res === 'yes' ? true : (r.res === 'no' ? false : null), places: r.what && r.what.places != null ? String(r.what.places) : '', fare: r.what && r.what.fare != null ? String(r.what.fare) : '' };
         draft = dr;
-        return `<tr class="lrr-edit-tr"><td colspan="12"><div class="lrr-edit" data-lrr-edit="${esc(r.key)}">
+        return `<tr class="lrr-edit-tr"><td colspan="13"><div class="lrr-edit" data-lrr-edit="${esc(r.key)}">
             <div class="lrr-ei"><span class="lrr-el">Согласовали</span><div class="lrr-tg"><button type="button" class="${dr.agree === true ? 'on' : ''}" data-lrr-agree="1">Да</button><button type="button" class="${dr.agree === false ? 'on' : ''}" data-lrr-agree="0">Нет</button></div></div>
             <div class="lrr-ei"><span class="lrr-el">мест</span><input type="text" inputmode="numeric" id="lrr-places" value="${esc(dr.places)}" style="width:70px"></div>
             <div class="lrr-ei"><span class="lrr-el">тариф, ₽</span><input type="text" inputmode="numeric" id="lrr-fare" value="${esc(dr.fare)}" style="width:100px"></div>
@@ -725,6 +731,7 @@ window.LowReqReport = (function () {
             <td class="lrr-dt">${esc(r.dep)}</td>
             <td class="lrr-ld">${load}</td>
             ${r.terms.map(t => termHtml(t, r.seats, r.approx)).join('')}
+            <td class="lrr-ld">${r.curSold != null ? `<b>${fmt(r.curSold)}</b>${r.curSeats ? ' из ' + fmt(r.curSeats) : ''}${r.curSeats > 0 ? `<span class="lrr-pc">${Math.round(r.curSold / r.curSeats * 100)}%</span>` : ''}` : '<span class="lrr-mut">—</span>'}</td>
             <td class="lrr-rub">${r.expRev != null && r.approx ? '≈ ' : ''}${fmt(r.expRev)}</td>
             <td class="lrr-rub">${fmt(r.curRev)}</td>
             <td class="lrr-ag"><span class="lrr-pl lrr-pl-${st.cls}">${st.text}</span>${r.edited ? '<span class="lrr-ed">исправлено вручную</span>' : ''}</td>
@@ -733,7 +740,7 @@ window.LowReqReport = (function () {
     }
 
     function tableBodyHtml(list) {
-        if (!list.length) return `<tr><td colspan="12" class="lrr-empty">${rows().length ? 'По выбранным условиям запросов нет.' : 'Запросов пока нет: они появляются, когда администратор отмечает вылет «Обратить внимание».'}</td></tr>`;
+        if (!list.length) return `<tr><td colspan="13" class="lrr-empty">${rows().length ? 'По выбранным условиям запросов нет.' : 'Запросов пока нет: они появляются, когда администратор отмечает вылет «Обратить внимание».'}</td></tr>`;
         return list.map(rowHtml).join('');
     }
 
@@ -761,29 +768,27 @@ window.LowReqReport = (function () {
         if (canWriteShared() && Date.now() - lastTry > 60000) { lastTry = Date.now(); capture(); }
     }
 
-    // При открытии раздела таблица прокручена к низу — к свежим запросам; старые листаются вверх.
-    let bottomUntil = 0;
-    function scrollDown() {
-        if (editKey) return;
-        const sc = document.querySelector('.lrr-card .rp-scroll');
-        if (sc) sc.scrollTop = sc.scrollHeight;
-        const rowsEl = document.querySelectorAll('#lrr-body tr[data-lrr-row]');
-        const last = rowsEl[rowsEl.length - 1];
-        if (last && last.scrollIntoView) last.scrollIntoView({ block: 'nearest' });
+    // Таблица занимает почти всю высоту окна (до низа экрана); обе строки шапки закреплены.
+    function fitTable(sc) {
+        const top = sc.getBoundingClientRect().top;
+        sc.style.maxHeight = Math.max(320, Math.round(window.innerHeight - top - 24)) + 'px';
+        const r1 = sc.querySelector('thead tr');
+        if (r1) sc.querySelectorAll('thead tr:nth-child(2) th').forEach(th => { th.style.top = r1.getBoundingClientRect().height + 'px'; });
     }
+    window.addEventListener('resize', () => { const sc = document.querySelector('.lrr-card .rp-scroll'); if (sc) fitTable(sc); });
 
     function html(rerender) {
         if (typeof rerender === 'function') lastRerender = rerender;
         if (!available()) return '<p class="rp-note">Отчёт недоступен.</p>';
         prepare(rerender);
         const sc0 = document.querySelector('.lrr-card .rp-scroll');
-        if (!sc0) bottomUntil = Date.now() + 5000;   // раздел только что открыт: держим прокрутку внизу, пока всё догружается
-        const keep = sc0 ? sc0.scrollTop : 0;
+        const keep = sc0 ? sc0.scrollTop : 0;   // новые сверху: при открытии вверху, при перерисовке позиция сохраняется
         setTimeout(() => {
             const sc = document.querySelector('.lrr-card .rp-scroll');
             if (!sc) return;
-            if (Date.now() < bottomUntil) scrollDown(); else sc.scrollTop = keep;
-        }, 60);
+            fitTable(sc);
+            sc.scrollTop = keep;
+        }, 40);
         const d = derive();
         const inP = inPeriod(rows());
         const t = totals(inP);
@@ -814,7 +819,7 @@ window.LowReqReport = (function () {
                     ${exp ? `<button type="button" class="btn-primary rp-btn" id="lrr-export"${list.length ? '' : ' disabled'}>В Excel</button>` : ''}
                 </div>
                 <div class="rp-scroll"><table class="lrr-table"><thead>
-                    <tr><th rowspan="2" class="lrr-w-dt">Дата запроса</th><th rowspan="2" class="lrr-w-fl">Рейс</th><th rowspan="2" class="lrr-w-dt">Дата рейса</th><th rowspan="2" class="lrr-w-ld">Загрузка на момент запроса</th><th colspan="4" class="lrr-grp">Ожидаемая загрузка, мест</th><th rowspan="2" class="lrr-w-rub">Ожидаемая выручка на вылете, ₽</th><th rowspan="2" class="lrr-w-rub">Текущая выручка, ₽</th><th rowspan="2" class="lrr-w-ag">Согласовали</th><th rowspan="2" class="lrr-w-wt">Что просили / что согласовали</th></tr>
+                    <tr><th rowspan="2" class="lrr-w-dt">Дата запроса</th><th rowspan="2" class="lrr-w-fl">Рейс</th><th rowspan="2" class="lrr-w-dt">Дата рейса</th><th rowspan="2" class="lrr-w-ld">Загрузка на момент запроса</th><th colspan="4" class="lrr-grp">Ожидаемая загрузка, мест</th><th rowspan="2" class="lrr-w-ld">Текущая загрузка</th><th rowspan="2" class="lrr-w-rub">Ожидаемая выручка на вылете, ₽</th><th rowspan="2" class="lrr-w-rub">Текущая выручка, ₽</th><th rowspan="2" class="lrr-w-ag">Согласовали</th><th rowspan="2" class="lrr-w-wt">Что просили / что согласовали</th></tr>
                     <tr><th>за 14 дн.</th><th>за 7 дн.</th><th>за 3 дн.</th><th>на вылете</th></tr></thead>
                     <tbody id="lrr-body">${tableBodyHtml(list)}</tbody></table></div>
                 ${list.some(r => r.approx) ? '<p class="lrr-foot"><span class="lrr-apx">примерно</span> — запрос найден позже, цифры восстановлены по истории продаж</p>' : ''}
@@ -931,7 +936,7 @@ window.LowReqReport = (function () {
                 check: r.check, code: r.code, route: r.route, dep: r.dep,
                 sold: r.sold, seats: r.seats,
                 terms: r.terms, seatsForPct: r.seats,
-                expRev: r.expRev, curRev: r.curRev,
+                expRev: r.expRev, curRev: r.curRev, curSold: r.curSold, curSeats: r.curSeats,
                 res: r.res, resText: stateOf(r.res).text, edited: r.edited,
                 what: (() => { const ap = askParts(r); return [ap.asked, ap.agreed].filter(Boolean).join('\n'); })(), est: askParts(r).est, approx: r.approx
             }))
