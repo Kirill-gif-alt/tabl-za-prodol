@@ -15,7 +15,8 @@ window.SharedHistory = (function () {
         'creative-layouts.json': 'Творческая (макеты)',
         'params.json': 'Параметры расчётов',
         'fare-grid.json': 'Сетка тарифов',
-        'lower-requests.json': 'Запрос на понижение'
+        'lower-requests.json': 'Запрос на понижение',
+        'lowreq-report.json': 'Отчёт «Запросы на снижение»'
     };
 
     function esc(v) {

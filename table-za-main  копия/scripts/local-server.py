@@ -24,7 +24,7 @@ SHARED_WRITABLE = {
     "profiles.json", "fare-grid.json", "snapshot.json", "activity.json", "flight-comments.json",
     "subsidy-overrides.json", "pkz-nav.json", "sales-management.json",
     "creative-layouts.json", "subsidy-fares.json", "subsidy-ref.json", "calendar.json", "flights.json",
-    "forecast-now.json", "signals-days.json", "params.json", "lower-requests.json",
+    "forecast-now.json", "signals-days.json", "params.json", "lower-requests.json", "lowreq-report.json",
     "export-kk.json", "export-mr.json", "heli-points.json",
 }
 # Резервные копии перед перезаписью: shared/_history/<имя>/<имя>__ГГГГ-ММ-ДД_ЧЧ-ММ-СС.json.
@@ -46,6 +46,7 @@ HISTORY_POLICY = {
     "params.json": (600, 30),
     "fare-grid.json": (600, 30),
     "lower-requests.json": (600, 30),
+    "lowreq-report.json": (3600, 24),
     "heli-points.json": (600, 30),
 }
 # Архив продаж (js/sales-archive.js): shared/history/curves-ГГГГ-ММ.json.

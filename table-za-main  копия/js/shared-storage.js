@@ -13,6 +13,7 @@ window.SharedStorage = (function () {
         'creative-layouts.json', 'subsidy-fares.json', 'subsidy-ref.json', 'calendar.json', 'flights.json',
         'export-kk.json', 'export-mr.json', // вкладки выгрузки «Загрузка - КК / Межрегионалка» (js/excel-export.js)
         'lower-requests.json', // «Запрос на понижение» (js/lower-request.js)
+        'lowreq-report.json',  // «Отчёты → Запросы на снижение»: запросы, значения на момент запроса, факт по срокам (js/lowreq-report.js)
         'params.json',        // параметры расчётов администратора (js/params.js)
         'signals-days.json',  // сигналы по дням для метки «новое» (js/signal-news.js): последние 7 дней, пишет тот, у кого share_data
         'forecast-now.json',  // прогноз к вылету по всем рейсам — один для всех (пишет тот, у кого модель обучена)
@@ -37,6 +38,7 @@ window.SharedStorage = (function () {
         'params.json': { every: 600, keep: 30 },
         'fare-grid.json': { every: 600, keep: 30 },
         'lower-requests.json': { every: 600, keep: 30 },
+        'lowreq-report.json': { every: 3600, keep: 24 },
         'heli-points.json': { every: 600, keep: 30 }
     };
     const lastBackupAt = {};

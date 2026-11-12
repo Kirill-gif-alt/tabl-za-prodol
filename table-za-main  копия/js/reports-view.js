@@ -834,6 +834,101 @@ window.ReportsView = (function () {
         });
     }
 
+    // «Запросы на снижение» → Excel: все строки текущего отбора, как на экране (шапка с группой «Ожидаемая загрузка»,
+    // плашки согласования цветом ячейки, «ожидали / стало» в ячейке, пометки «оценка» и «исправлено вручную»).
+    async function exportLowRep() {
+        if (!hasPerm('export_excel')) {
+            toast('Выгрузка недоступна для вашего профиля', 'error');
+            return;
+        }
+        if (typeof LowReqReport === 'undefined') return;
+        const d = LowReqReport.exportData();
+        if (!d.rows.length) {
+            toast('По выбранным условиям запросов нет — выгружать нечего', 'error');
+            return;
+        }
+        const folder = typeof excelPrepareFolder === 'function' ? await excelPrepareFolder('econ') : null;
+        const lib = await ensureXlsx();
+        if (!lib) {
+            toast('Библиотека Excel не загружена', 'error');
+            return;
+        }
+        const stamp = typeof excelExportStamp === 'function' ? excelExportStamp() : ru(new Date());
+        const W = 12;
+        const ws = {};
+        const merges = [];
+        const put = (r, c, v, s) => {
+            const cell = v == null || v === '' ? { t: 's', v: '' } : (typeof v === 'number' && isFinite(v) ? { t: 'n', v, z: '#,##0' } : { t: 's', v: String(v) });
+            if (s) cell.s = s;
+            ws[lib.utils.encode_cell({ r, c })] = cell;
+        };
+        const head = style(NAVY, 'FFFFFF', true);
+        const group = style('3B5F82', 'FFFFFF', true);
+        const title = style('FFFFFF', NAVY, true, 'left');
+        const t = d.totals;
+        // Шапка листа
+        put(0, 0, `Запросы на снижение · период: ${d.period} · показано: ${d.show}${d.query ? ' · рейс: ' + d.query : ''} · выгрузка ${stamp}`, title);
+        for (let c = 1; c < W; c++) put(0, c, '', title);
+        merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: W - 1 } });
+        const sumText = `Запросов ${t.n} · согласовано ${t.yes}${t.n ? ' (' + Math.round(t.yes / t.n * 100) + '%)' : ''} · не согласовано ${t.no} · ждём ответа ${t.wait} · разница выручки к ожидаемой по согласованным: ${t.diffN ? (t.diff > 0 ? '+' : (t.diff < 0 ? '−' : '')) + Math.abs(Math.round(t.diff)).toLocaleString('ru-RU') + ' ₽' : '—'}`;
+        put(1, 0, sumText, style('FFFFFF', '475569', false, 'left'));
+        for (let c = 1; c < W; c++) put(1, c, '', style('FFFFFF', '475569', false, 'left'));
+        merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: W - 1 } });
+        // Двухстрочная шапка таблицы
+        const H = 2;
+        ['Дата запроса', 'Рейс', 'Дата рейса', 'Загрузка на момент запроса'].forEach((h, c) => { put(H, c, h, head); put(H + 1, c, '', head); merges.push({ s: { r: H, c }, e: { r: H + 1, c } }); });
+        put(H, 4, 'Ожидаемая загрузка, мест', group);
+        for (let c = 5; c < 8; c++) put(H, c, '', group);
+        merges.push({ s: { r: H, c: 4 }, e: { r: H, c: 7 } });
+        ['за 14 дн.', 'за 7 дн.', 'за 3 дн.', 'на вылете'].forEach((h, i) => put(H + 1, 4 + i, h, group));
+        ['Ожидаемая выручка на вылете, ₽', 'Текущая выручка, ₽', 'Согласовали', 'Что согласовали'].forEach((h, i) => { const c = 8 + i; put(H, c, h, head); put(H + 1, c, '', head); merges.push({ s: { r: H, c }, e: { r: H + 1, c } }); });
+        const PLATE = { yes: ['D1FAE5', '065F46'], no: ['E2E8F0', '475569'], wait: ['FEF3C7', '92400E'] };
+        const FACT = { up: '047857', dn: 'B45309', eq: NAVY };
+        const num = (n) => (n == null ? '' : Math.round(n));
+        d.rows.forEach((r, i) => {
+            const row = H + 2 + i;
+            const fill = i % 2 ? ZEBRA : 'FFFFFF';
+            const cell = (c, v, s) => put(row, c, v, s);
+            cell(0, r.check, style(fill, '1C2833', false, 'center'));
+            cell(1, r.route ? `${r.code}\n${r.route}` : r.code, style(fill, '1C2833', true, 'left'));
+            cell(2, r.dep, style(fill, '1C2833', false, 'center'));
+            cell(3, r.sold != null ? `${r.sold}${r.seats ? ' из ' + r.seats + ' (' + Math.round(r.sold / r.seats * 100) + '%)' : ''}` : '—', style(fill, '1C2833', false, 'center'));
+            r.terms.forEach((tm, k) => {
+                let text;
+                let color = '1C2833';
+                if (tm.passed && tm.fact != null) {
+                    text = tm.exp != null ? `ожидали ${tm.exp}\nстало ${tm.fact}` : `стало ${tm.fact}`;
+                    if (tm.exp != null) color = FACT[tm.fact > tm.exp ? 'up' : (tm.fact < tm.exp - 2 ? 'dn' : 'eq')];
+                } else text = tm.exp != null ? `${tm.exp}${r.seats ? ' (' + Math.round(tm.exp / r.seats * 100) + '%)' : ''}` : '—';
+                cell(4 + k, text, style(fill, color, tm.passed && tm.fact != null && tm.exp != null, 'center'));
+            });
+            cell(8, num(r.expRev) === '' ? '—' : num(r.expRev), style(fill, '1C2833', true, 'right', '#,##0'));
+            cell(9, num(r.curRev) === '' ? '—' : num(r.curRev), style(fill, '1C2833', true, 'right', '#,##0'));
+            const pl = PLATE[r.res];
+            cell(10, r.edited ? `${r.resText}\nисправлено вручную` : r.resText, style(pl[0], pl[1], true, 'center'));
+            cell(11, r.what ? (r.est ? `${r.what}\nоценка` : r.what) : '—', style(fill, '1C2833', false, 'left'));
+        });
+        const lastRow = H + 1 + d.rows.length;
+        ws['!ref'] = lib.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: lastRow, c: W - 1 } });
+        ws['!merges'] = merges;
+        ws['!cols'] = [12, 26, 12, 18, 13, 13, 13, 13, 16, 14, 16, 30].map(w => ({ wch: w }));
+        ws['!rows'] = [{ hpt: 20 }, { hpt: 18 }, { hpt: 22 }, { hpt: 18 }].concat(d.rows.map(() => ({ hpt: 32 })));
+        ws['!views'] = [{ state: 'frozen', ySplit: H + 2, xSplit: 3, topLeftCell: 'D' + (H + 3), activePane: 'bottomRight' }];
+        const wb = lib.utils.book_new();
+        lib.utils.book_append_sheet(wb, ws, 'Запросы на снижение');
+        const fileDate = typeof getTodayDate === 'function' ? getTodayDate() : stamp;
+        const filename = typeof excelDailyFilename === 'function'
+            ? excelDailyFilename('КРАСАВИА_запросы_на_снижение', fileDate)
+            : `КРАСАВИА_запросы_на_снижение_${fileDate.replace(/\./g, '-')}.xlsx`;
+        const saved = typeof excelSaveWorkbook === 'function'
+            ? await excelSaveWorkbook(lib, wb, filename, folder)
+            : (lib.writeFile(wb, filename), { where: 'download' });
+        if (typeof ActivityLog !== 'undefined') ActivityLog.log('export', 'Запросы на снижение');
+        const msg = `Файл готов: запросов ${d.rows.length}`;
+        if (typeof excelAnnounceSaved === 'function') excelAnnounceSaved(saved, msg);
+        else toast(msg);
+    }
+
     // «Решения» → Excel: лист «Журнал» (каждое решение) и «Сводка» (по типу, направлениям, людям).
     async function exportDecisionsTickets() {
         if (!hasPerm('export_excel')) {
@@ -1023,6 +1118,7 @@ window.ReportsView = (function () {
             list.push({ id: 'checks', label: 'Проверки', badge: has ? String(n) : '', zero: has && !n, tip: `Рейсов с ошибкой тарифа до вылета: ${nChecks}; вылетов с расхождением продаж и загрузки: ${nRec}` });
         }
         if (typeof DecisionsReport !== 'undefined' && DecisionsReport.canView()) list.push({ id: 'decisions', label: 'Решения', badge: '' });
+        if (typeof LowReqReport !== 'undefined' && LowReqReport.canView()) list.push({ id: 'lowrep', label: 'Запросы на снижение', badge: '' });
         if (typeof ModelsView !== 'undefined' && ModelsView.canView()) list.push({ id: 'models', label: 'Модели', badge: '' });
         else if (typeof PriceAdvisor !== 'undefined' && PriceAdvisor.canView()) list.push({ id: 'models', label: 'Ценовой советник', badge: '' });
         if (typeof ReferenceView !== 'undefined' ? ReferenceView.canAny() : canRefs()) {
@@ -1040,6 +1136,7 @@ window.ReportsView = (function () {
         checks: ICON('<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/>'),
         refs: ICON('<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5z"/><path d="M4 19a2 2 0 0 1 2-2h13"/>'),
         decisions: ICON('<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>'),
+        lowrep: ICON('<path d="M3 7l6 6 4-4 8 8"/><path d="M15 17h6v-6"/>'),
         models: ICON('<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>'),
         export: ICON('<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/>')
     };
@@ -1056,6 +1153,7 @@ window.ReportsView = (function () {
         if (subtab === 'checks') content = checksPageHtml();
         else if (subtab === 'refs') content = refsTiles() + (typeof ReferenceView !== 'undefined' ? ReferenceView.html(refsHtml) : refsHtml());
         else if (subtab === 'decisions') content = DecisionsReport.html(renderBody);
+        else if (subtab === 'lowrep') content = LowReqReport.html(renderBody);
         else if (subtab === 'models') content = typeof ModelsView !== 'undefined' && ModelsView.canView() ? ModelsView.html(renderBody) : (typeof PriceAdvisor !== 'undefined' ? PriceAdvisor.reportHtml(renderBody) : '');
         else {
             content = `<div class="rp-export-grid">${[
@@ -1112,7 +1210,8 @@ window.ReportsView = (function () {
         const revs = [typeof SalesManagement !== 'undefined' && SalesManagement.markRevision ? SalesManagement.markRevision() : 0,
             typeof SalesArchive !== 'undefined' && SalesArchive.revision ? SalesArchive.revision() : 0,
             typeof Params !== 'undefined' && Params.revision ? Params.revision() : 0,
-            typeof DecisionMoney !== 'undefined' && DecisionMoney.revision ? DecisionMoney.revision() : 0].join(':');
+            typeof DecisionMoney !== 'undefined' && DecisionMoney.revision ? DecisionMoney.revision() : 0,
+            typeof LowReqReport !== 'undefined' && LowReqReport.revision ? LowReqReport.revision() : 0].join(':');
         return [epoch, today, prof, rows, checksOn, checks, revs].join('|');
     }
 
@@ -1122,7 +1221,7 @@ window.ReportsView = (function () {
                 <div class="table-page-hero">
                     <div class="table-page-hero-main">
                         <h2 class="rms-hero-title">Отчёты</h2>
-                        <span class="table-page-hint">Проверки, решения, модели прогноза, справочник и выгрузки в Excel</span>
+                        <span class="table-page-hint">Проверки, решения, запросы на снижение, модели прогноза, справочник и выгрузки в Excel</span>
                     </div>
                 </div>
                 <div class="table-page-body rp-body" id="rp-body"></div>
@@ -1135,7 +1234,10 @@ window.ReportsView = (function () {
             if (event.key === 'Escape') closeHelp(null);
             else if (typeof ModelsView !== 'undefined') ModelsView.handleKey(event);
         });
-        page.addEventListener('dblclick', (event) => { if (typeof ModelsView !== 'undefined') ModelsView.handleDblClick(event); });
+        page.addEventListener('dblclick', (event) => {
+            if (typeof LowReqReport !== 'undefined' && subtab === 'lowrep' && LowReqReport.handleDblClick(event)) return;
+            if (typeof ModelsView !== 'undefined') ModelsView.handleDblClick(event);
+        });
         // «toggle» у <details> не всплывает — ловим на стадии перехвата (блок «Подробно для аналитика»).
         page.addEventListener('toggle', (event) => { if (typeof ModelsView !== 'undefined') ModelsView.handleToggle(event.target, renderBody); }, true);
         page.addEventListener('change', (event) => {
@@ -1148,6 +1250,7 @@ window.ReportsView = (function () {
             renderBody();
         });
         page.addEventListener('input', (event) => {
+            if (typeof LowReqReport !== 'undefined' && LowReqReport.handleInput(event.target)) return;
             if (typeof ReferenceView !== 'undefined') ReferenceView.handleInput(event.target, renderBody);
         });
         page.addEventListener('click', (event) => {
@@ -1157,6 +1260,7 @@ window.ReportsView = (function () {
             if (!btn || btn.disabled) return;
             if (typeof ReferenceView !== 'undefined' && ReferenceView.handleClick(btn, renderBody)) return;
             if (typeof DecisionsReport !== 'undefined' && DecisionsReport.handleClick(btn, renderBody)) return;
+            if (typeof LowReqReport !== 'undefined' && LowReqReport.handleClick(btn, renderBody)) return;
             if (typeof ForecastLab !== 'undefined' && ForecastLab.handleClick(btn, renderBody)) return;
             if (typeof PriceAdvisor !== 'undefined' && PriceAdvisor.handleClick(btn, renderBody)) return;
             if (btn.dataset.rpTab) {
@@ -1216,7 +1320,8 @@ window.ReportsView = (function () {
                 : (btn.id === 'rp-sales' ? exportSales
                     : (btn.id === 'rp-econ' ? exportEcon
                         : (btn.id === 'rp-checks-export' ? exportChecks
-                            : (btn.id === 'dr-export' ? (DecisionsReport.view() === 'money' ? exportDecisions : exportDecisionsTickets) : null))));
+                            : (btn.id === 'lrr-export' ? exportLowRep
+                                : (btn.id === 'dr-export' ? (DecisionsReport.view() === 'money' ? exportDecisions : exportDecisionsTickets) : null)))));
             if (!run) return;
             btn.disabled = true;
             Promise.resolve()

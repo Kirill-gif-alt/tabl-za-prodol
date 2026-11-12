@@ -347,6 +347,7 @@ window.SalesArchive = (function () {
     function backgroundSummaries() {
         if (typeof SignalNews !== 'undefined' && SignalNews.backgroundSoon) SignalNews.backgroundSoon();
         if (typeof DecisionMoney !== 'undefined' && DecisionMoney.freezeSoon) DecisionMoney.freezeSoon();
+        if (typeof LowReqReport !== 'undefined' && LowReqReport.captureSoon) LowReqReport.captureSoon();
     }
 
     // После публикации новых данных.

@@ -1341,6 +1341,7 @@ window.ProfileAuth = (function () {
         openAdminPanel,
         closeAdminPanel,
         getCurrentProfile: () => currentProfile,
+        getPublicProfiles,
         changeOwnPassword,
         setShowHomeMap,
         featureOn,

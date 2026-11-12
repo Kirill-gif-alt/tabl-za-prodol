@@ -392,5 +392,27 @@ window.LowerRequest = (function () {
     // Отметки подгружаются заранее, чтобы галочки в «Управлении продажами» стояли сразу.
     function ensureLoaded() { return loaded ? Promise.resolve() : load(); }
 
-    return { createView, refresh, toggle, has, ensureLoaded, canUse };
+    // Что просят согласовать по вылету (для отчёта «Запросы на снижение»): { places, fare, parts } или null, если места не вписаны.
+    // fare — средний по просьбам тариф подкласса (цена из лестницы тарифов), null — подкласс не выбран или цены нет.
+    function askFor(code, date) {
+        const it = store.items[keyOf(code, date)];
+        if (!it || it.deleted) return null;
+        const asks = asksOf(it).filter(a => Number(a.places) > 0);
+        if (!asks.length) return null;
+        let auto = null;
+        try { auto = autoOf(code, date); } catch (e) { auto = null; }
+        let places = 0;
+        let sum = 0;
+        let priced = 0;
+        const parts = asks.map(a => {
+            const p = Math.round(Number(a.places));
+            const l = auto && a.cls ? auto.ladder.find(x => x.cls === a.cls) : null;
+            places += p;
+            if (l && l.price > 0) { sum += p * l.price; priced += p; }
+            return { places: p, cls: a.cls || '', fare: l && l.price > 0 ? Math.round(l.price) : null };
+        });
+        return { places, fare: priced ? Math.round(sum / priced) : null, parts };
+    }
+
+    return { createView, refresh, toggle, has, ensureLoaded, canUse, askFor };
 })();
