@@ -207,6 +207,13 @@ function readTimeField(chunk, idx) {
     return { time: normalizeTimeStr(cur), next: idx + 1 };
 }
 
+// Буква после цифр номера («KV-203S», «KV-203D», «KV-204М»; она зависит от дня недели, латинская или кириллическая,
+// любой регистр) — рейс задержан и вылетает позже. Возвращает букву заглавной или ''.
+function delayedFlightLetter(raw) {
+    const m = /^KV-\s*\d+\s*([A-Za-zА-Яа-яЁё])$/.exec(String(raw || '').trim());
+    return m ? m[1].toUpperCase() : '';
+}
+
 function parseAvailabilityChunk(chunk) {
     if (!chunk || chunk.length < 7) return null;
     const flight = cleanFlight(chunk[0]);
@@ -275,6 +282,9 @@ function parseAvailabilityChunk(chunk) {
 
     if (!route) route = parseSegmentField(segment).route;
     const rec = [flight, date, segment, route, config, total, free, totalSeg, avs, totalAv, status, dep, arr];
+    // Признак задержки — отдельный элемент r[13] = буква: свойства массива в снимке (JSON) теряются, индексы остаются.
+    const delayLetter = delayedFlightLetter(chunk[0]);
+    if (delayLetter) rec[13] = delayLetter;
     if (status && !isSalesStatusOpen(status)) {
         // При слиянии двух файлов «загрузка таб» закрытая строка нового файла должна перекрыть открытую строку старого.
         if (!availabilityKeepClosed) return null;

@@ -307,6 +307,8 @@ window.SalesManagement = (function () {
             if (compareDateStr(item.date, liveSchedule.from) < 0 || compareDateStr(item.date, liveSchedule.to) > 0) return;
             const live = liveSchedule.items.get(id);
             if (!live) {
+                // Исходная дата задержанного рейса остаётся в истории (строка скрыта, от неё идут отметки).
+                if (typeof DelayedFlights !== 'undefined' && DelayedFlights.movedTo(item.code, item.date)) return;
                 delete map[id];
                 changed = true;
                 return;
@@ -719,6 +721,7 @@ window.SalesManagement = (function () {
             colsToValue(),
             columnTodayStr(),
             Object.keys(cache.departures || {}).length,
+            typeof DelayedFlights !== 'undefined' ? DelayedFlights.revision() : 0,
             sig
         ].join(':');
     }
@@ -800,6 +803,15 @@ window.SalesManagement = (function () {
         return out;
     }
 
+    // Ключ той же ячейки на исходной дате задержанного рейса («KV-203|12.11.2026|10.11.2026» → «…|11.11.2026|…»).
+    function originKeyOf(key) {
+        if (typeof DelayedFlights === 'undefined') return '';
+        const p = key.split('|');
+        if (p.length !== 3) return '';
+        const o = DelayedFlights.originOf(p[0], p[1]);
+        return o ? `${p[0]}|${o}|${p[2]}` : '';
+    }
+
     // Отметки ячейки: [{ status, author, updatedAt, clsFrom?, clsTo? }], самая новая первой, ВСЕ авторы.
     // Ограничение «до трёх» — только для показа в ячейке (getMarks); журнал решений, карточка и «своя отметка» видят всех:
     // иначе решение первого человека пропадало бы из отчёта, когда трое других отметили «без изменений» позже.
@@ -819,15 +831,20 @@ window.SalesManagement = (function () {
             if (ex.clsTo) entry.clsTo = ex.clsTo;
             by.set(id, entry);
         };
-        const legacy = cache.marks[key];
-        if (legacy && statusOk(legacy.status)) apply(legacy.author, legacy.status, legacy.updatedAt, legacy);
-        const files = people[monthOfKey(key)] || {};
-        Object.keys(files).forEach(slug => {
-            const f = files[slug];
-            const e = f && f.marks && f.marks[key];
-            if (e) apply(f.author, e.s, e.at, e);
+        // Задержанный рейс: отметки исходной даты показываются у новой (файлы не меняются, только чтение).
+        const origin = originKeyOf(key);
+        [key, origin].forEach(k => {
+            if (!k) return;
+            const legacy = cache.marks[k];
+            if (legacy && statusOk(legacy.status)) apply(legacy.author, legacy.status, legacy.updatedAt, legacy);
+            const files = people[monthOfKey(k)] || {};
+            Object.keys(files).forEach(slug => {
+                const f = files[slug];
+                const e = f && f.marks && f.marks[k];
+                if (e) apply(f.author, e.s, e.at, e);
+            });
+            pending.forEach(p => { if (p.key === k) apply(p.author, p.s, p.at, p); });
         });
-        pending.forEach(p => { if (p.key === key) apply(p.author, p.s, p.at, p); });
         const list = [...by.values()]
             .filter(e => statusOk(e.status))
             .sort((x, y) => (String(x.updatedAt) < String(y.updatedAt) ? 1 : -1));
@@ -858,11 +875,17 @@ window.SalesManagement = (function () {
         const fl = typeof cleanFlight === 'function' ? cleanFlight(flight) : String(flight || '');
         const d1 = typeof normalizeDate === 'function' ? normalizeDate(dep) : String(dep || '');
         const prefix = `${fl}|${d1}|`;
-        const keys = new Set(Object.keys(cache.marks || {}).filter(k => k.indexOf(prefix) === 0));
+        const orig = typeof DelayedFlights !== 'undefined' ? DelayedFlights.originOf(fl, d1) : '';
+        const prefixes = orig ? [prefix, `${fl}|${orig}|`] : [prefix];
+        const has = k => prefixes.some(pf => k.indexOf(pf) === 0);
+        const found = new Set(Object.keys(cache.marks || {}).filter(has));
         Object.values(people).forEach(files => Object.values(files).forEach(f => {
-            Object.keys((f && f.marks) || {}).forEach(k => { if (k.indexOf(prefix) === 0) keys.add(k); });
+            Object.keys((f && f.marks) || {}).forEach(k => { if (has(k)) found.add(k); });
         }));
-        pending.forEach(p => { if (p.key.indexOf(prefix) === 0) keys.add(p.key); });
+        pending.forEach(p => { if (has(p.key)) found.add(p.key); });
+        // Ячейка одна на дату проверки: ключ исходной даты сводится к ключу новой (в нём отметки обеих дат).
+        const keys = new Set();
+        found.forEach(k => keys.add(`${fl}|${d1}|${k.split('|')[2]}`));
         const out = [];
         keys.forEach(key => {
             cellEntries(key).forEach(e => out.push({ check: key.slice(prefix.length), status: e.status, author: e.author, updatedAt: e.updatedAt, ...extraOf(e) }));
@@ -877,8 +900,15 @@ window.SalesManagement = (function () {
             Object.keys((f && f.marks) || {}).forEach(k => keys.add(k));
         }));
         pending.forEach(p => keys.add(p.key));
-        const out = [];
+        // Отметки исходной даты задержанного рейса относятся к его новому вылету.
+        const moved = new Set();
         keys.forEach(key => {
+            const q = key.split('|');
+            const to = q.length === 3 && typeof DelayedFlights !== 'undefined' ? DelayedFlights.movedTo(q[0], q[1]) : '';
+            moved.add(to ? `${q[0]}|${to}|${q[2]}` : key);
+        });
+        const out = [];
+        moved.forEach(key => {
             const parts = key.split('|');
             if (parts.length !== 3) return;
             cellEntries(key).forEach(e => out.push({ flight: parts[0], dep: parts[1], check: parts[2], status: e.status, author: e.author, updatedAt: e.updatedAt, ...extraOf(e) }));
@@ -893,7 +923,34 @@ window.SalesManagement = (function () {
     function markRevision() {
         const marks = cache.marks || null;
         if (marksCountMemo.marks !== marks) marksCountMemo = { marks, n: marks ? Object.keys(marks).length : 0 };
+        return rawMarkRevision() + ':' + (typeof DelayedFlights !== 'undefined' ? DelayedFlights.revision() : 0);
+    }
+
+    // Версия самих отметок (без карты задержанных рейсов: та сама на неё опирается).
+    function rawMarkRevision() {
+        const marks = cache.marks || null;
+        if (marksCountMemo.marks !== marks) marksCountMemo = { marks, n: marks ? Object.keys(marks).length : 0 };
         return markRev + ':' + peopleRev + ':' + pending.size + ':' + marksCountMemo.n;
+    }
+
+    // Был ли у рейса вылет в этот день (история вылетов) — для поиска исходной даты задержанного рейса.
+    function hadDeparture(code, date) {
+        return !!(cache.departures && cache.departures[operatingCode(code) + '|' + date]);
+    }
+
+    // Метка версии истории вылетов (дёшево: на каждую ячейку).
+    function departureCount() {
+        return loadedAt + ':' + (cache.updatedAt || '');
+    }
+
+    // Есть ли отметки на вылете этого дня (любой даты проверки).
+    function hasMarksOn(code, date) {
+        const prefix = `${operatingCode(code)}|${date}|`;
+        if (Object.keys(cache.marks || {}).some(k => k.indexOf(prefix) === 0)) return true;
+        if (Object.values(people).some(files => Object.values(files).some(f => Object.keys((f && f.marks) || {}).some(k => k.indexOf(prefix) === 0 && f.marks[k] && f.marks[k].s !== 'none')))) return true;
+        let found = false;
+        pending.forEach(p => { if (p.key.indexOf(prefix) === 0 && p.s !== 'none') found = true; });
+        return found;
     }
 
     function stamp(key) {
@@ -1131,9 +1188,13 @@ window.SalesManagement = (function () {
         const flights = [];
         map.forEach((items, table) => {
             const route = typeof getFlightDirection === 'function' ? getFlightDirection(table) : table;
-            const departures = items.map(item => {
+            // Исходную дату задержанного рейса не дублируем: её отметки показаны в строке новой даты.
+            const shown = typeof DelayedFlights !== 'undefined' ? items.filter(item => !DelayedFlights.movedTo(item.code, item.date)) : items;
+            if (!shown.length) return;
+            const departures = shown.map(item => {
                 const parsed = parseLocalDate(item.date);
                 return {
+                    delayed: typeof DelayedFlights !== 'undefined' && DelayedFlights.isDelayed(item.code, item.date),
                     date: item.date,
                     code: item.code,
                     weekday: (typeof DAYS_RU !== 'undefined' && parsed) ? DAYS_RU[parsed.getDay()] : '',
@@ -1262,6 +1323,10 @@ window.SalesManagement = (function () {
         getOwnMark,
         marksFor,
         markRevision,
+        rawMarkRevision,
+        hadDeparture,
+        departureCount,
+        hasMarksOn,
         loadPeople,
         putMark,
         clearMark,
@@ -1803,7 +1868,7 @@ function renderSalesGrid() {
         }).join('');
         const rowClass = dep.flown ? 'sm-row-flew' : (salesNearDeparture(dep.date, today) ? 'sm-row-near' : '');
         return `<tr class="${rowClass}" data-card-flight="${salesAttr(dep.code)}" data-card-date="${salesAttr(dep.date)}">
-            <td class="sm-freeze sm-c0">${salesEsc(dep.date)}</td>
+            <td class="sm-freeze sm-c0">${salesEsc(dep.date)}${dep.delayed ? ' <span class="delay-badge">задержан</span>' : ''}</td>
             <td class="sm-freeze sm-c1">${lrOn && !dep.flown ? `<input type="checkbox" class="sm-lr" data-flight="${salesAttr(dep.code)}" data-dep="${salesAttr(dep.date)}" title="В запрос на понижение"${LowerRequest.has(dep.code, dep.date) ? ' checked' : ''}> ` : ''}${salesEsc(dep.code)}</td>
             <td class="sm-freeze sm-c2">${salesEsc(dep.weekday)}</td>
             <td class="sm-freeze sm-c3">${salesEsc(dep.aircraft)}</td>
@@ -2335,7 +2400,7 @@ function salesFlightWorksheet(lib, flight, stamp, colored) {
     kinds.push(header.map(() => 'head'));
     const firstDataRow = aoa.length;
     flight.departures.forEach((dep, i) => {
-        const row = [dep.date, dep.code, dep.weekday, dep.aircraft, dep.route];
+        const row = [dep.date + (dep.delayed ? ' (задержан)' : ''), dep.code, dep.weekday, dep.aircraft, dep.route];
         const near = !dep.flown && salesNearDeparture(dep.date);
         const baseKind = dep.flown ? 'gray' : (near ? 'near' : 'id');
         const kind = [baseKind, baseKind, baseKind, baseKind, baseKind];

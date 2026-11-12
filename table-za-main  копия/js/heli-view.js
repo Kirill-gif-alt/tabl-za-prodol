@@ -49,14 +49,19 @@ window.HeliView = (function () {
         return t.getTime();
     }
 
+    // Закрыт, если закрыты все пары в файле загрузки или рейс (дата|номер) есть в файле закрытых рейсов.
+    function isClosed(F) {
+        return !!(F && (F.closedAll || (typeof closedFlights !== 'undefined' && closedFlights && closedFlights.has(F.key))));
+    }
+
     // ---------- расчёт строки ----------
     function sideState(F, today) {
         if (!F) return null;
         return {
             F,
             flew: F.ts !== null && F.ts < today,
-            closed: F.closedAll,
-            full: !F.closedAll && F.ts !== null && F.ts >= today && F.pct >= 100
+            closed: isClosed(F),
+            full: !isClosed(F) && F.ts !== null && F.ts >= today && F.pct >= 100
         };
     }
 
@@ -64,7 +69,7 @@ window.HeliView = (function () {
     function entryAvg(e) {
         let sold = 0, seats = 0;
         [e.out, e.in].forEach(F => {
-            if (!F || F.closedAll || !(F.seats > 0)) return;
+            if (!F || isClosed(F) || !(F.seats > 0)) return;
             sold += F.max;
             seats += F.seats;
         });
@@ -196,7 +201,7 @@ window.HeliView = (function () {
 
     function sheetCol(F, isOut) {
         const cls = isOut ? 'heli-col-out' : 'heli-col-in';
-        const title = `${isOut ? 'Туда' : 'Обратно'} · ${esc(F ? F.no : '')}`;
+        const title = `${isOut ? 'Туда' : 'Обратно'} · ${esc(F ? F.no : '')}${isClosed(F) ? ' · закрыт' : ''}`;
         if (!F) return `<div class="heli-col ${cls}"><div class="heli-col-title">${isOut ? 'Туда' : 'Обратно'}</div><div class="heli-col-none">Рейса в этот день нет</div></div>`;
         const n = F.n;
         const names = F.pts.map(nm);
@@ -298,7 +303,7 @@ window.HeliView = (function () {
         const cap = card.cap || 22;
         // Карточка, которой тесно в половине ширины (много отрезков + колонка «За сутки»), занимает весь ряд.
         const nseg = Math.max(card.outPts.length, card.inPts.length) - 1;
-        const wide = 450 + (nseg >= 2 ? 72 * nseg : 0) + (ui.day ? 84 : 0) > 744;
+        const wide = false;
         return `<div class="data-route-block data-type-krai heli-card${wide ? ' heli-wide' : ''}" data-card="${card.key}">
             <div class="data-route-table-wrap table-wrapper heli-wrap">
             <table class="data-table pair-table data-board-table heli-table${ui.day ? ' heli-with-day' : ''}">
@@ -320,7 +325,7 @@ window.HeliView = (function () {
 
     // ---------- вывод страницы ----------
     function currentSig() {
-        return [HeliData.getEpoch(), HeliData.points.rev(), ui.base, ui.q, ui.hideFlew ? 1 : 0, ui.day ? 1 : 0, HeliData.dayStrings().today, canExport() ? 1 : 0].join('|');
+        return [HeliData.getEpoch(), HeliData.points.rev(), ui.base, ui.q, ui.hideFlew ? 1 : 0, ui.day ? 1 : 0, HeliData.dayStrings().today, (typeof closedFlights !== 'undefined' && closedFlights ? closedFlights.size : 0), canExport() ? 1 : 0].join('|');
     }
 
     function filteredCards(model) {
@@ -405,6 +410,28 @@ window.HeliView = (function () {
             e.preventDefault();
             toggleRow(tr);
         });
+    }
+
+    // Перетаскивание мышью вбок — как initDataBoardDrag в «Загрузке рейсов».
+    function initDrag(box) {
+        if (!box || box.dataset.dragInit) return;
+        box.dataset.dragInit = '1';
+        let down = false, dragged = false, sx = 0, sl = 0;
+        box.addEventListener('mousedown', (e) => {
+            if (e.button !== 0 || e.target.closest('.heli-exp, input, button, select')) return;
+            down = true; dragged = false; sx = e.pageX; sl = box.scrollLeft;
+        });
+        box.addEventListener('mousemove', (e) => {
+            if (!down) return;
+            const dx = e.pageX - sx;
+            if (!dragged && Math.abs(dx) > 6) { dragged = true; box.classList.add('data-board-dragging'); }
+            if (!dragged) return;
+            e.preventDefault();
+            box.scrollLeft = sl - dx;
+        });
+        const stop = () => { down = false; dragged = false; box.classList.remove('data-board-dragging'); };
+        box.addEventListener('mouseup', stop);
+        box.addEventListener('mouseleave', stop);
     }
 
     // ---------- справочник пунктов ----------
@@ -562,7 +589,7 @@ window.HeliView = (function () {
                         </div>
                     </div>
                 </div>
-                <div class="heli-scroll"><div id="heli-grid" class="heli-grid" data-zoom-target="heli"></div></div>
+                <div id="heli-scroll" class="heli-scroll data-board-scroll"><div id="heli-grid" class="heli-grid data-board-track" data-zoom-target="heli"></div></div>
             </div>`;
         const search = c.querySelector('#heli-search');
         search.value = ui.q;
@@ -587,6 +614,7 @@ window.HeliView = (function () {
         const exp = c.querySelector('#heli-export');
         if (exp) exp.addEventListener('click', exportExcel);
         bindGrid(c.querySelector('#heli-grid'));
+        initDrag(c.querySelector('#heli-scroll'));
         render(true);
         loadPointsThenRender();
         if (typeof applyViewZoom === 'function') applyViewZoom('heli');

@@ -11,6 +11,8 @@
 // По ней строится отчёт «Сверка» (reports-view → SalesReconcile.card / tileList).
 window.SalesReconcile = (function () {
     let lastRun = { moved: 0, at: 0 };
+    let runs = 0;
+    let movedFromKeys = new Set();   // 'дата|код', откуда билеты уехали (нужно, чтобы задержанный рейс помнил исходную дату)
 
     function loadsByDeparture() {
         // 'дата|код' → загрузка (на многосегментном рейсе — наибольшая по участкам), и по базовому рейсу → даты.
@@ -102,6 +104,7 @@ window.SalesReconcile = (function () {
     function put(details, key, s, fromKey) {
         if (fromKey !== key && !s.moved) {
             s.moved = fromKey;
+            movedFromKeys.add(fromKey);
             if (s.grpId != null) s.grpId = fromKey + '#' + s.grpId;
         }
         (details[key] || (details[key] = [])).push(s);
@@ -143,6 +146,8 @@ window.SalesReconcile = (function () {
     // Пересобрать salesDetails. Возвращает > 0, если что-то поменялось (переносы или их отмена).
     function run(details) {
         if (!details) return 0;
+        runs++;
+        movedFromKeys = new Set();
         const restored = restore(details)
             + (typeof SegmentSplit !== 'undefined' ? SegmentSplit.unsplitSales(details) : 0);
         if (typeof groupedData === 'undefined' || !Object.keys(groupedData || {}).length) {
@@ -240,12 +245,14 @@ window.SalesReconcile = (function () {
                 codes.forEach(c => {
                     const tk = dt + '|' + c;
                     const deficit = (load.get(tk) || 0) - (details[tk] || []).length;
-                    if (deficit > 0) targets.push({ tk, gap, deficit, ts: d.getTime(), later: d >= d0 });
+                    // Задержанный рейс: билеты исходной даты — на его новую дату.
+                    const pref = typeof DelayedFlights !== 'undefined' && DelayedFlights.movedTo(code, date) === dt && code === c;
+                    if (deficit > 0) targets.push({ tk, gap, deficit, ts: d.getTime(), later: d >= d0, pref });
                 });
             });
             if (!targets.length) return;
             // Ближайший вылет; при равном расстоянии — более поздний (рейсы чаще переносят вперёд).
-            targets.sort((a, b) => a.gap - b.gap || (b.later - a.later) || b.deficit - a.deficit || a.tk.localeCompare(b.tk));
+            targets.sort((a, b) => (b.pref - a.pref) || a.gap - b.gap || (b.later - a.later) || b.deficit - a.deficit || a.tk.localeCompare(b.tk));
             const units = sortedUnits(k);
             targets.forEach(t => {
                 if (!units.length) return;
@@ -263,6 +270,8 @@ window.SalesReconcile = (function () {
         lastRun = { moved, at: Date.now() };
         return moved + restored;
     }
+
+    function wasMovedFrom(key) { return movedFromKeys.has(key); }
 
     // Отчёт: будущие вылеты, где продажи и загрузка расходятся или билеты пришлось перенести.
     let reportMemo = { sig: '', v: null };
@@ -408,5 +417,5 @@ window.SalesReconcile = (function () {
         return true;
     }
 
-    return { run, html, card, tileList, handleChange, canView, badge, hasSales };
+    return { run, html, card, tileList, handleChange, canView, badge, hasSales, wasMovedFrom, runCount: () => runs };
 })();

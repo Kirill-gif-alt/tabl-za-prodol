@@ -40,36 +40,35 @@ html[data-theme="dark"] .heli-page {
     overscroll-behavior: contain;
 }
 
-/* Карточки по две в ряд */
-.heli-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 18px 16px;
-    grid-auto-flow: row dense;
-    align-items: start;
+/* Карточки в один ряд с прокруткой вбок, как «Загрузка рейсов» (data-board-scroll / data-board-track) */
+.heli-scroll { cursor: default; }
+.heli-grid.data-board-track {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 20px;
     padding: 16px;
-}
-.heli-card.heli-wide { grid-column: 1 / -1; }
-@media (max-width: 1180px) {
-    .heli-grid { grid-template-columns: minmax(0, 1fr); }
+    width: max-content;
+    min-height: min-content;
 }
 
 .heli-empty {
-    grid-column: 1 / -1;
+    width: calc(100vw - 80px);
     padding: 48px 24px;
     text-align: center;
     color: var(--text-muted);
 }
 
 .heli-card {
+    flex: 0 0 auto;
     min-width: 0;
     contain-intrinsic-size: auto 420px;
 }
-.heli-wrap { overflow-x: auto; }
+.heli-wrap { overflow: visible; }
 
 .heli-table.data-board-table {
     min-width: 0;
-    width: 100%;
+    width: auto;
 }
 .heli-table th,
 .heli-table td {

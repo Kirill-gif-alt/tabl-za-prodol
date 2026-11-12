@@ -2402,6 +2402,23 @@ table.pair-table button {
     font-weight: 600;
 }
 
+/* Метка «задержан» рядом с датой или номером: тихая, как «(ДОП)», без цвета и подсказки */
+.delay-badge {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 1px 6px;
+    border: 1px solid rgb(100 116 139 / 0.4);
+    border-radius: 9999px;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.3;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+html[data-theme="dark"] .delay-badge { color: #b1bac4; border-color: rgb(177 186 196 / 0.4); }
+
 .pair-date-line {
     display: inline-flex;
     align-items: center;

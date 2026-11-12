@@ -186,6 +186,7 @@ async function classifyFilesFromInput(fileList) {
 }
 
 function resetDataBeforeLoad() {
+    if (typeof DelayedFlights !== 'undefined') DelayedFlights.rememberPrevious(allData);
     dataLoadStatus = { availability: false, closed: false, sales: false, expected: false, weights: false, children: false, costs: false, subsidy: false };
     closedFlights = new Set();
     allData = [];
