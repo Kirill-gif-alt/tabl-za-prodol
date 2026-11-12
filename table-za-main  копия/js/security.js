@@ -129,7 +129,7 @@ window.Security = (function () {
     let snapshotRejected = false;
 
     function countSnapshot(snap) {
-        const rows = Array.isArray(snap && snap.allData) ? snap.allData.length : 0;
+        let rows = Array.isArray(snap && snap.allData) ? snap.allData.length : 0;
         let sales = 0;
         const details = snap && (snap.salesDetails || (snap.data && snap.data.salesDetails));
         if (details && typeof details === 'object') {

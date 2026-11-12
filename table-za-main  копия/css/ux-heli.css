@@ -45,9 +45,11 @@ html[data-theme="dark"] .heli-page {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 18px 16px;
+    grid-auto-flow: row dense;
     align-items: start;
     padding: 16px;
 }
+.heli-card.heli-wide { grid-column: 1 / -1; }
 @media (max-width: 1180px) {
     .heli-grid { grid-template-columns: minmax(0, 1fr); }
 }
@@ -80,14 +82,17 @@ html[data-theme="dark"] .heli-page {
 .heli-table td.col-date,
 .heli-table th.col-date { padding-left: 8px !important; white-space: nowrap; }
 .heli-table td.data-block-info { white-space: nowrap; }
+.heli-table td.col-date { font-size: 0.78rem; padding-right: 4px !important; }
+.heli-table th.data-board-avg-head,
+.heli-table td.data-board-avg-cell { padding-left: 2px !important; padding-right: 2px !important; }
 .heli-table th.data-board-th-date,
 .heli-table th.data-board-avg-head,
 .heli-table td.data-board-avg-cell { min-width: 0 !important; }
 .heli-table th.data-board-th-dow { padding-left: 2px !important; padding-right: 2px !important; }
 .heli-table td.data-block-info + td.data-block-info { padding-left: 2px !important; padding-right: 2px !important; }
 .heli-zag { font-weight: 800; }
-.heli-table thead tr.pair-head-sub th { font-size: 0.62rem; letter-spacing: 0; white-space: nowrap; }
-.heli-table .data-board-th-label { font-size: 0.68rem; }
+.heli-table thead tr.pair-head-sub th { font-size: 0.6rem; letter-spacing: 0; line-height: 1.15; }
+.heli-table .data-board-th-label { font-size: 0.66rem; letter-spacing: 0; }
 
 /* Плашки по отрезкам: одна синяя шкала по % занятости */
 .heli-pl-cell { padding-top: 3px !important; padding-bottom: 3px !important; }
@@ -103,7 +108,7 @@ html[data-theme="dark"] .heli-page {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
+    width: 34px;
     height: 23px;
     border-radius: 7px;
     font-size: 0.8rem;
@@ -147,7 +152,7 @@ html[data-theme="dark"] .heli-page {
 .heli-pll-th { padding: 4px 3px !important; text-transform: none !important; }
 .heli-pll span {
     flex: 0 0 auto;
-    width: 36px;
+    width: 34px;
     line-height: 1.15;
     text-align: center;
     font-size: 0.62rem;
@@ -203,7 +208,7 @@ html[data-theme="dark"] .heli-page {
 /* Пункт: название, под ним «+N / −M» и разбивка; справа «на борту». Для широкой карточки — всё в одну строку. */
 .heli-stop {
     display: grid;
-    grid-template-columns: 22px minmax(0, 1fr) 64px;
+    grid-template-columns: 22px minmax(0, 1fr) auto;
     align-items: center;
     column-gap: 8px;
     min-height: 30px;
@@ -287,7 +292,7 @@ html[data-theme="dark"] .heli-trk i:not(.heli-fill-full) { background: color-mix
 
 /* Широкая раскрытая строка (карточка во всю ширину или мелкий масштаб): пункт в одну строку, как на наброске */
 @container (min-width: 1000px) {
-    .heli-stop { grid-template-columns: 24px minmax(0, 1.05fr) minmax(0, 1.5fr) 86px; }
+    .heli-stop { grid-template-columns: 24px minmax(0, 1.05fr) minmax(0, 1.5fr) 96px; }
     .heli-stop > .heli-line { grid-row: 1; }
     .heli-stop > .heli-pn { grid-column: 2; grid-row: 1; padding: 0; }
     .heli-stop > .heli-mv { grid-column: 3; grid-row: 1; padding: 0; }
