@@ -542,10 +542,10 @@ function renderTimelineChipHtml(flight, date, meta, opts = {}) {
             <span class="timeline-chip-flight">${escHtml(flight)}</span>
             ${pctLabel ? `<span class="timeline-chip-pct">${pctLabel}</span>` : ''}
             ${opts.plus1 ? '<span class="timeline-plus1">+1</span>' : ''}
-            ${!opts.gantt && typeof DelayedFlights !== 'undefined' ? DelayedFlights.tag(flight, date) : ''}
             ${!opts.gantt && typeof FlightChecks !== 'undefined' && FlightChecks.modeBadge ? FlightChecks.modeBadge(flight, date, meta.row) : ''}
         </div>
         ${line2 ? `<span class="timeline-chip-dir">${escHtml(line2)}</span>` : ''}
+        ${!opts.gantt && typeof DelayedFlights !== 'undefined' ? DelayedFlights.tag(flight, date) : ''}
         ${!opts.gantt && meta.pct !== null && !meta.closed && !meta.flew ? `<span class="timeline-chip-bar"><span class="timeline-chip-bar-fill" style="width:${Math.min(100, Math.max(0, meta.pct))}%"></span></span>` : ''}
     </div>`;
 }
