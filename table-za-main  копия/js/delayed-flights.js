@@ -172,11 +172,6 @@ window.DelayedFlights = (function () {
         return any ? rev : 0;
     }
 
-    function hasAny() {
-        ensure();
-        return any;
-    }
-
     // Метка рядом с датой или номером: без исходной даты и без подсказки.
     function tag(rowOrCode, date) {
         return isDelayed(rowOrCode, date) ? ` <span class="delay-badge">${WORD}</span>` : '';
@@ -187,5 +182,5 @@ window.DelayedFlights = (function () {
         return isDelayed(rowOrCode, date) ? ` (${WORD})` : '';
     }
 
-    return { isDelayed, originOf, movedTo, revision, hasAny, tag, xlSuffix, rememberPrevious, WORD };
+    return { isDelayed, originOf, movedTo, revision, tag, xlSuffix, rememberPrevious };
 })();

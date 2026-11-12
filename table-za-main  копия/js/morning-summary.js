@@ -9,9 +9,7 @@ window.MorningSummary = (function () {
     let builtFor = '';
     let building = null;
 
-    function esc(v) {
-        return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    }
+    function esc(v) { return escHtml(v); }
 
     function profile() {
         return typeof ProfileAuth !== 'undefined' && ProfileAuth.getCurrentProfile ? ProfileAuth.getCurrentProfile() : null;

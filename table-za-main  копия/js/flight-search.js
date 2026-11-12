@@ -14,9 +14,7 @@ window.FlightSearch = (function () {
     let dropdown = null;     // { el, input, items, active, onPick }
     let palette = null;      // { ov, input, list, items, active }
 
-    function esc(v) {
-        return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    }
+    function esc(v) { return escHtml(v); }
 
     function norm(s) {
         return String(s || '').toLowerCase().replace(/ё/g, 'е').replace(/[—–\-,;]/g, ' ').replace(/\s+/g, ' ').trim();

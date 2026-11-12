@@ -33,9 +33,7 @@ window.NetworkMap = (function () {
 
     window.networkMapFilter = window.networkMapFilter || null;
 
-    function esc(s) {
-        return typeof escHtml === 'function' ? escHtml(s) : String(s ?? '');
-    }
+    function esc(s) { return escHtml(s); }
 
     function cacheSig() {
         const ep = typeof dataEpoch !== 'undefined' ? dataEpoch : 0;
@@ -1796,5 +1794,5 @@ window.NetworkMap = (function () {
         });
     }
 
-    return { createView, refresh, pauseLive, flightMatchesFilter, gotoWork };
+    return { createView, refresh, pauseLive, flightMatchesFilter };
 })();

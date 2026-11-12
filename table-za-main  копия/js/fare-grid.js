@@ -14,7 +14,7 @@ window.FareGrid = (function () {
     let rev = 0;
     let memo = { sig: '', grids: new Map() };
 
-    function esc(v) { return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v); }
+    function esc(v) { return escHtml(v); }
 
     function canEdit() {
         if (typeof ProfileAuth === 'undefined') return true;

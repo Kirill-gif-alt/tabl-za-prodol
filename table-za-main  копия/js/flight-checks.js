@@ -9,7 +9,7 @@
 //   fare_above_subsidy — продан билет дороже предела из справочника субсидированных тарифов (fare-refs.js).
 //   На коммерческих датах проверки нет: там своя лестница тарифов, в том числе дешевле субсидированного,
 //   и те же коды классов (MSTOW, GSTOW…) — совпадение кода ошибкой не является.
-// modeFor/modeBadge — режим даты вылета «субсидия / коммерция» для меток в таблицах и на Графплане.
+// modeBadge — режим даты вылета «субсидия / коммерция» для меток в таблицах и на Графплане.
 // Значок «!» ставится у рейса в «Загрузке рейсов», «Экономической таблице» и «Динамике продаж»,
 // полный список — во вкладке «Отчёты», счётчик — в шапке.
 window.FlightChecks = (function () {
@@ -377,10 +377,6 @@ window.FlightChecks = (function () {
         return res;
     }
 
-    function modeFor(code, date, row) {
-        return modeInfo(code, date, row).mode;
-    }
-
     function modeBadge(code, date, row) {
         if (typeof ProfileAuth !== 'undefined' && typeof ProfileAuth.featureOn === 'function' && !ProfileAuth.featureOn('subsidy_mode')) return '';
         const info = modeInfo(code, date, row);
@@ -442,5 +438,5 @@ window.FlightChecks = (function () {
         if (typeof updateHeaderStatus === 'function') updateHeaderStatus();
     }
 
-    return { enabled, isNeverSubsidized, list, issuesFor, missingRefs, suggestRefs, modeFor, modeBadge, flagForRow, rowClass, headerChip, openReport, refreshViews, RULES };
+    return { enabled, isNeverSubsidized, list, issuesFor, missingRefs, suggestRefs, modeBadge, flagForRow, rowClass, headerChip, refreshViews };
 })();

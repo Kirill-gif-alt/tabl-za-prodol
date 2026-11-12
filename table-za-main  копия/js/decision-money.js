@@ -928,5 +928,5 @@ window.DecisionMoney = (function () {
         return !!(flyDt && flyDt.getTime() < cutoff);
     }
 
-    return { compute, estimateWindow, estimateRemainder, sigmaTickets, keyOf, get, ensureMonths, resolveAll, freezeSoon, freezeInBackground, recompute, canFreeze, revision: () => rev, METHOD_VERSION, erf };
+    return { compute, keyOf, get, ensureMonths, resolveAll, freezeSoon, recompute, canFreeze, revision: () => rev, METHOD_VERSION, erf };
 })();

@@ -197,6 +197,7 @@ function buildOnHandByDtd(flyDateStr, flightCode) {
 // • Берутся вылеты в пределах ±8 недель (без смешивания сезонов); если на сегодняшний день
 //   до вылета так набирается меньше 2 вылетов — весь период данных.
 let salesCutoffCache = { ref: null, sig: '', time: 0 };
+const salesDealDayMs = new Map();   // «дд.мм.гггг» → начало дня, мс
 
 // Дата среза продаж: последний день, за который есть сделки (не дата на часах компьютера).
 function salesDataCutoffTime() {
@@ -204,25 +205,44 @@ function salesDataCutoffTime() {
     // Зовётся тысячи раз (на каждый вылет когорты): быстрый ключ — эпоха данных; число рейсов в объекте продаж
     // (он заполняется постепенно при загрузке CSV) пересчитываем, только когда сменилась эпоха.
     const epoch = typeof dataEpoch === 'number' ? dataEpoch : 0;
-    if (salesCutoffCache.ref === ref && salesCutoffCache.epoch === epoch && salesCutoffCache.time
-        && !(typeof window !== 'undefined' && window.ingestQuiet)) return salesCutoffCache.time;
-    const sig = `${Object.keys(ref || {}).length}|${typeof lastSalesUpdate !== 'undefined' && lastSalesUpdate ? new Date(lastSalesUpdate).getTime() : 0}|${typeof window !== 'undefined' && window.ingestQuiet ? 1 : 0}`;
+    const quiet = !!(typeof window !== 'undefined' && window.ingestQuiet);
+    const now = Date.now();
+    if (salesCutoffCache.ref === ref && salesCutoffCache.time) {
+        if (!quiet && salesCutoffCache.epoch === epoch) return salesCutoffCache.time;
+        // Во время загрузки зовётся десятки тысяч раз, а сам подсчёт рейсов в продажах небыстрый: проверяем не чаще
+        // раза в 0,2 с. Посчитанное в это время после загрузки всё равно пересчитывается (в подписи признак загрузки).
+        if (quiet && salesCutoffCache.quiet && now - salesCutoffCache.at < 200) return salesCutoffCache.time;
+    }
+    const sig = `${Object.keys(ref || {}).length}|${typeof lastSalesUpdate !== 'undefined' && lastSalesUpdate ? new Date(lastSalesUpdate).getTime() : 0}|${quiet ? 1 : 0}`;
     if (salesCutoffCache.ref === ref && salesCutoffCache.sig === sig && salesCutoffCache.time) {
         salesCutoffCache.epoch = epoch;
+        salesCutoffCache.quiet = quiet;
+        salesCutoffCache.at = now;
         return salesCutoffCache.time;
     }
-    let max = 0;
+    // Во время загрузки зовётся сотни раз по всем билетам: каждую дату сделки разбираем один раз.
+    if (salesDealDayMs.size > 20000) salesDealDayMs.clear();
+    let max = 0, last, lastMs = 0;
     Object.keys(ref || {}).forEach(k => {
         const list = ref[k] || [];
         for (let i = 0; i < list.length; i++) {
-            const d = parseLocalDate(list[i].dealDate);
-            if (d && d.getTime() > max) max = d.getTime();
+            const s = list[i].dealDate;
+            if (s !== last) {
+                last = s;
+                lastMs = salesDealDayMs.get(s);
+                if (lastMs === undefined) {
+                    const d = parseLocalDate(s);
+                    lastMs = d ? d.getTime() : 0;
+                    salesDealDayMs.set(s, lastMs);
+                }
+            }
+            if (lastMs > max) max = lastMs;
         }
     });
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const time = max && max < today.getTime() ? max : today.getTime();
-    salesCutoffCache = { ref, sig, time, epoch };
+    salesCutoffCache = { ref, sig, time, epoch, quiet, at: now };
     return time;
 }
 

@@ -294,7 +294,6 @@ html[data-theme="dark"] .cost-calc-page {
     background: color-mix(in srgb, var(--text-muted) 14%, transparent);
 }
 .cost-calc-page .cost-calc-row-mid td { background: color-mix(in srgb, var(--cc-sub) 9%, transparent); }
-.cost-calc-page .cost-calc-row-over td { background: var(--cc-neg-bg); }
 .cost-calc-page .cost-calc-neg { color: var(--cc-neg); font-weight: 700; }
 .cost-calc-page .cost-calc-muted { color: var(--text-muted); }
 

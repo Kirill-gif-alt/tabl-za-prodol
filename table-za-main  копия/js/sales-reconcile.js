@@ -341,9 +341,7 @@ window.SalesReconcile = (function () {
 
     let onlyDivergent = false;
 
-    function esc(v) {
-        return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    }
+    function esc(v) { return escHtml(v); }
 
     function canView() {
         if (typeof ProfileAuth === 'undefined') return true;
@@ -370,10 +368,6 @@ window.SalesReconcile = (function () {
             { label: 'Сверка: продаж меньше загрузки', value: String(less), sub: 'билеты не найдены в файле', tone: less ? 'bad' : '' },
             { label: 'Сверка: продаж больше загрузки', value: String(more), sub: 'незакрытые возвраты или обмены', tone: more ? 'warn' : '' }
         ];
-    }
-
-    function html() {
-        return ReportsView.tiles(tileList()) + card();
     }
 
     function card() {
@@ -417,5 +411,5 @@ window.SalesReconcile = (function () {
         return true;
     }
 
-    return { run, html, card, tileList, handleChange, canView, badge, hasSales, wasMovedFrom, runCount: () => runs };
+    return { run, card, tileList, handleChange, canView, badge, hasSales, wasMovedFrom, runCount: () => runs };
 })();

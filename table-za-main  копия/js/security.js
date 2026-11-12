@@ -211,8 +211,6 @@ window.Security = (function () {
         redactSalesDetails,
         stripSalesPii,
         sanitizeTextInput,
-        MAX_FILE_BYTES,
-        MAX_UPLOAD_FILES,
         get MIN_PASSWORD_LEN() { return PV.MIN_PASSWORD_LEN; },
         MIN_PASSWORD_LEN_ADMIN
     };

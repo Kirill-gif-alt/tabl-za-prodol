@@ -93,13 +93,6 @@ window.TabOrder = (function () {
         return clean;
     }
 
-    function reset() {
-        try { localStorage.removeItem(getStorageKey()); } catch { /* ignore */ }
-        try { localStorage.removeItem(NAMES_PREFIX + profileId()); } catch { /* ignore */ }
-        apply();
-        return [...DEFAULT_ORDER];
-    }
-
     function apply() {
         const nav = document.querySelector('.tab-nav');
         if (!nav) return;
@@ -134,9 +127,7 @@ window.TabOrder = (function () {
         return next;
     }
 
-    function esc(v) {
-        return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    }
+    function esc(v) { return escHtml(v); }
 
     // Редактор: порядок (▲ ▼) и своё название каждой вкладки. onNames(names) — при правке названий.
     function renderEditor(container, onChange, initialOrder, onNames, initialNames) {
@@ -196,10 +187,7 @@ window.TabOrder = (function () {
     return {
         load,
         save,
-        reset,
         apply,
-        LABELS,
-        DEFAULT_ORDER,
         loadNames,
         saveNames,
         labelOf,

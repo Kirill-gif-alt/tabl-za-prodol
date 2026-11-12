@@ -205,10 +205,10 @@ window.LiveKvFlights = (function () {
     }
 
     return {
-        start, stop, poll,
+        start, stop,
         getPlanes: () => planes,
         getStatus: () => status,
         getSource: () => source,
-        extrapolate, kvFlight
+        extrapolate
     };
 })();

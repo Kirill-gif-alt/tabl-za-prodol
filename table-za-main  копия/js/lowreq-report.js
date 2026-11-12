@@ -43,9 +43,7 @@ window.LowReqReport = (function () {
 
     // ---------- мелочи ----------
 
-    function esc(v) {
-        return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    }
+    function esc(v) { return escHtml(v); }
     function toast(m, t) { if (typeof showToast === 'function') showToast(m, t); }
     function today() { return typeof getTodayDate === 'function' ? getTodayDate() : formatDateRu(new Date()); }
     function dayNum(s) {
@@ -943,5 +941,5 @@ window.LowReqReport = (function () {
         };
     }
 
-    return { canView, html, handleClick, handleInput, handleDblClick, captureSoon, capture, exportData, revision: () => rev + ':' + lrRev() + ':' + CustomPeriod.sig('low'), canExport };
+    return { canView, html, handleClick, handleInput, handleDblClick, captureSoon, capture, exportData, revision: () => rev + ':' + lrRev() + ':' + CustomPeriod.sig('low') };
 })();

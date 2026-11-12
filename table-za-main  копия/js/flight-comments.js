@@ -223,5 +223,5 @@ window.FlightComments = (function () {
         });
     }
 
-    return { load, get, has, set, markRows, commentKey, updatedAtOf };
+    return { load, get, has, set, markRows, updatedAtOf };
 })();

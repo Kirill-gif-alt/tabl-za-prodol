@@ -517,5 +517,5 @@ window.MlModel = (function () {
         });
     }
 
-    return { ensure, health, predictMany, onChange, status: () => S.status, reset: () => { S.sigNow = ''; } };
+    return { ensure, health, predictMany, onChange, status: () => S.status };
 })();

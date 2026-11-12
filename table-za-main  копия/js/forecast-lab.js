@@ -120,9 +120,7 @@ window.ForecastLab = (function () {
         return canView() && (isAdmin() || !!(typeof ProfileAuth !== 'undefined' && ProfileAuth.hasPermission('share_data')));
     }
 
-    function esc(v) {
-        return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    }
+    function esc(v) { return escHtml(v); }
 
     function pad(n) { return String(n).padStart(2, '0'); }
 
@@ -2428,12 +2426,6 @@ window.ForecastLab = (function () {
         return [evalState.sig, typeof dataEpoch === 'number' ? dataEpoch : 0, today(), cfg.under, cfg.over, cfg.days].join('|');
     }
 
-    // Готовый список (или null, если ещё не посчитан под текущие данные и пороги).
-    function warnings() {
-        if (!evalState.ev || !loaded || !canView()) return null;
-        return warnMemo.sig === warnSig() ? warnMemo.list : null;
-    }
-
     // Все вылеты горизонта (и без сигналов) — для общей таблицы «Модели». null — ещё не посчитано под текущие данные и пороги.
     function signalsAll() {
         if (!evalState.ev || !loaded || !canView()) return null;
@@ -3042,5 +3034,5 @@ window.ForecastLab = (function () {
         return true;
     }
 
-    return { canView, html, handleClick, summary, signalsAll, signalsAllAsync, applyWarnSettings, warnSettings, exportWarnings, WARN_LABEL, trustHtml, afterStart, afterDataLoad, afterHistoryImport, modelRevision: () => modelRev, forecastFor, ensureLoaded, capture, startEvaluation, evaluation: () => evalState.ev, predict, HORIZONS, mlHistory, mlLive };
+    return { canView, html, handleClick, summary, signalsAll, signalsAllAsync, applyWarnSettings, warnSettings, exportWarnings, afterStart, afterDataLoad, afterHistoryImport, modelRevision: () => modelRev, forecastFor, ensureLoaded, startEvaluation, mlHistory, mlLive };
 })();

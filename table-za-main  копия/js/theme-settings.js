@@ -921,5 +921,5 @@ window.ThemeSettings = (function () {
         });
     }
 
-    return { init, load, save, apply, reset, openModal, closeModal, DEFAULTS, PRESETS };
+    return { init, load, apply, DEFAULTS, PRESETS };
 })();

@@ -19,9 +19,7 @@ window.SharedHistory = (function () {
         'lowreq-report.json': 'Отчёт «Запросы на снижение»'
     };
 
-    function esc(v) {
-        return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    }
+    function esc(v) { return escHtml(v); }
 
     // «profiles__2026-10-08_09-15-02.json» → «08.10.2026 09:15»
     function versionLabel(id) {
@@ -116,5 +114,5 @@ window.SharedHistory = (function () {
         document.getElementById('shared-history-modal')?.classList.remove('open');
     }
 
-    return { open, close, versionLabel };
+    return { open, close };
 })();

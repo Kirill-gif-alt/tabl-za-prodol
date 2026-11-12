@@ -11,7 +11,6 @@ window.SubsidyRef = (function () {
 
     let cache = { version: 1, updatedAt: null, periods: {}, amounts: {}, pkz: {} };
     let rev = 0;
-    let loaded = false;
 
     function num(v) {
         if (v === '' || v == null) return null;
@@ -232,7 +231,6 @@ window.SubsidyRef = (function () {
         }
         const before = JSON.stringify([cache.periods, cache.amounts, cache.pkz]);
         cache = mergeStores(remote || normStore(null), newerThan(readLocal(), remote && remote.restoredAt));
-        loaded = true;
         if (JSON.stringify([cache.periods, cache.amounts, cache.pkz]) !== before) {
             rev++;
             saveLocal();
@@ -724,9 +722,7 @@ window.SubsidyRef = (function () {
         pkzRuleFor,
         dirKey,
         dirLabel,
-        aptOf: aptOfRoute,
         krasSide,
-        aptName: (a) => APT_NAME[aptCode(a)] || '',
         navSeasonRange,
         navFileInfo,
         navParseSheet,
@@ -738,7 +734,6 @@ window.SubsidyRef = (function () {
         amountKey,
         canView,
         canEdit,
-        revision: () => rev,
-        get loaded() { return loaded; }
+        revision: () => rev
     };
 })();

@@ -11,7 +11,7 @@ window.LowerRequest = (function () {
     let loaded = false;
     let host = null;
 
-    function esc(v) { return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+    function esc(v) { return escHtml(v); }
     function canExport() { return typeof ProfileAuth === 'undefined' || ProfileAuth.hasPermission('export_excel'); }
     function canUse() { return typeof ProfileAuth !== 'undefined' && !!ProfileAuth.canAccessTab('lowreq'); }
     function keyOf(code, date) { return `${code}|${date}`; }

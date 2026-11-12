@@ -26,9 +26,7 @@ window.ModelsView = (function () {
     let mounted = false;
 
     // ---------- общее ----------
-    function esc(v) {
-        return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v);
-    }
+    function esc(v) { return escHtml(v); }
     function hasM1() { return typeof ForecastLab !== 'undefined' && ForecastLab.canView(); }
     function hasM2() { return typeof MlForecast !== 'undefined' && MlForecast.canView(); }
     function canView() { return hasM1() || hasM2(); }

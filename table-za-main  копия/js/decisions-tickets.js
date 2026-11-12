@@ -12,9 +12,7 @@ window.DecisionsTickets = (function () {
     let toneFilter = '';
     let memo = { sig: '', rows: null };
 
-    function esc(v) {
-        return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    }
+    function esc(v) { return escHtml(v); }
 
     function canView() {
         if (typeof ProfileAuth === 'undefined') return true;
@@ -310,7 +308,7 @@ window.DecisionsTickets = (function () {
 
     // Период и вид решений общие с вкладкой «В рублях» (DecisionsReport): при переключении вида они не сбрасываются.
     return {
-        canView, html, handleClick, exportData, summarize,
+        canView, html, handleClick, exportData,
         setPeriod: (n) => { if (PERIODS.includes(n)) period = n; },
         setKind: (k) => { kindFilter = k === 'down' || k === 'up' ? k : ''; },
         getPeriod: () => period,

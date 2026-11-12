@@ -696,9 +696,7 @@ window.CreativeView = (function () {
 
     // ---------- вывод ----------
 
-    function esc(v) {
-        return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v);
-    }
+    function esc(v) { return escHtml(v); }
 
     function attr(v) {
         return typeof escAttr === 'function' ? escAttr(v) : String(v == null ? '' : v);

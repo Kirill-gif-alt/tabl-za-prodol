@@ -28,9 +28,7 @@ window.ReportsView = (function () {
         return typeof groupedData !== 'undefined' && groupedData && Object.keys(groupedData).length > 0;
     }
 
-    function esc(v) {
-        return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v);
-    }
+    function esc(v) { return escHtml(v); }
 
     function fmt(n) {
         return n == null || isNaN(n) ? '—' : Number(n).toLocaleString('ru-RU', { maximumFractionDigits: 0 });

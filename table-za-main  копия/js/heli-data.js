@@ -550,7 +550,6 @@ window.HeliData = (function () {
         return model;
     }
 
-    function getFlight(date, no) { return buildModel().flights.get(date + '|' + no) || null; }
 
     // ---------- снимок ----------
     function toSnapshot() {
@@ -587,9 +586,9 @@ window.HeliData = (function () {
 
     return {
         parseText, classifyText, setRows, reset, hasData, hasSales, rowCount, ticketCount, getEpoch,
-        isHeliFlight, beginSales, addTicket, endSales, flightSales, cityMap,
-        model: buildModel, getFlight, toSnapshot, applySnapshot,
+        isHeliFlight, beginSales, addTicket, endSales, flightSales,
+        model: buildModel, toSnapshot, applySnapshot,
         points: { load: loadPoints, map: pointsSnapshot, name: pointName, has: hasPointName, save: savePoints, rev: pointsRevision, defaults, genitive, clean: { code: cleanCode, name: cleanName } },
-        canon, genitive, dayStrings, fmtDate, dateTs
+        canon, genitive, dayStrings
     };
 })();

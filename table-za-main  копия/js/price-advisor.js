@@ -405,7 +405,7 @@ window.PriceAdvisor = (function () {
     let report = { sig: '', list: null, busy: false };
     let onlyChange = true;
 
-    function esc(v) { return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v); }
+    function esc(v) { return escHtml(v); }
 
     function reportSig() { return sig() + '|' + JSON.stringify(settings()); }
 

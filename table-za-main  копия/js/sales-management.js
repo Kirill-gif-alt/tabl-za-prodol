@@ -2002,10 +2002,6 @@ function refreshSalesManagement(force, snapToday) {
 const SALES_SYNC_MS = 30 * 60 * 1000;
 let salesSyncTimer = null;
 
-function salesSharedSyncMs() {
-    return SALES_SYNC_MS;
-}
-
 function salesPopoverOpen() {
     const pop = document.getElementById('sm-pop');
     return !!(pop && !pop.hidden);

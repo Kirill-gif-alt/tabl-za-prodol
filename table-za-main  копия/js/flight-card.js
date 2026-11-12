@@ -113,7 +113,7 @@ window.FlightCard = (function () {
         document.body.classList.remove('flight-card-pinned', 'flight-card-open');
     }
 
-    function esc(v) { return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v); }
+    function esc(v) { return escHtml(v); }
     function attr(v) { return typeof escAttr === 'function' ? escAttr(v) : String(v == null ? '' : v); }
 
     // В какой строке данных этот вылет. Рейс может лететь под другим номером (KV-301 вместо KV-101)

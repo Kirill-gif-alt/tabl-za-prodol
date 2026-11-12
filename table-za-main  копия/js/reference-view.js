@@ -16,9 +16,7 @@ window.ReferenceView = (function () {
     let flFilter = '';
     let calYear = String(new Date().getFullYear());
 
-    function esc(v) {
-        return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    }
+    function esc(v) { return escHtml(v); }
 
     function toast(msg, type) {
         if (typeof showToast === 'function') showToast(msg, type);

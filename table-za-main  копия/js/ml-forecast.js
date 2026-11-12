@@ -5,7 +5,6 @@
 // Сравнение моделей теперь — раздел «Отчёты» → «Модели» (js/models-view.js); окно в коде осталось, но кнопки его не открывают.
 // Включает админ в «Управлении профилями» → «Функции» («Вторая модель прогноза»).
 window.MlForecast = (function () {
-    const BASE = '/__krasavia/ml/';
     const HZ = [
         { key: '30d', center: 30, label: 'за 30 дн.' },
         { key: '14d', center: 14, label: 'за 14 дн.' },
@@ -22,9 +21,7 @@ window.MlForecast = (function () {
     let queue = [];
     let queueTimer = null;
 
-    function esc(v) {
-        return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    }
+    function esc(v) { return escHtml(v); }
 
     function canView() {
         return typeof ProfileAuth !== 'undefined' && typeof ProfileAuth.featureOn === 'function' && ProfileAuth.featureOn('ml_forecast');
@@ -606,9 +603,6 @@ window.MlForecast = (function () {
         wstate.status = '';
     }
 
-    // Новая загрузка данных: расчёты устарели.
-    function reset() { cache.clear(); wstate.rows = []; }
-
     // Ход обучения: обновляем состояние не чаще раза в 400 мс.
     let modelTimer = 0;
     if (typeof MlModel !== 'undefined') {
@@ -630,5 +624,5 @@ window.MlForecast = (function () {
         if (b) openModels();
     });
 
-    return { canView, status, health, forFlight, cardParts, headline, openWindow, openModels, closeWindow, onChange, refreshHealth, reset, flagTexts, compareFlights, qualityHtml: () => qualityHtml(), HZ };
+    return { canView, status, health, cardParts, openWindow, openModels, onChange, refreshHealth, compareFlights, qualityHtml: () => qualityHtml() };
 })();

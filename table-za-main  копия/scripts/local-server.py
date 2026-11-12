@@ -231,6 +231,8 @@ def backup_if_due(name, force=False):
 class Handler(SimpleHTTPRequestHandler):
     timeout = SOCKET_TIMEOUT
     protocol_version = "HTTP/1.1"
+    # Без задержки отправки мелких пакетов: иначе каждый из ~80 файлов страницы ждёт ~40 мс.
+    disable_nagle_algorithm = True
     # Типы заданы явно: на Windows Python берёт их из реестра, и .js там бывает text/plain.
     extensions_map = {
         **SimpleHTTPRequestHandler.extensions_map,

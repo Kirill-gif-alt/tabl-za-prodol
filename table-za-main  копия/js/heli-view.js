@@ -13,7 +13,7 @@ window.HeliView = (function () {
     let pointsPromise = null;
     let searchTimer = null;
 
-    function esc(s) { return typeof escHtml === 'function' ? escHtml(s) : String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+    function esc(s) { return escHtml(s); }
     function nm(code) { return HeliData.points.name(code); }
     function plural(n, a, b, c) { return typeof pluralRu === 'function' ? pluralRu(n, a, b, c) : (n % 10 === 1 && n % 100 !== 11 ? a : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? b : c)); }
 
@@ -332,9 +332,7 @@ window.HeliView = (function () {
 
         const cap = card.cap || 22;
         // Карточка, которой тесно в половине ширины (много отрезков + колонка «За сутки»), занимает весь ряд.
-        const nseg = Math.max(card.outPts.length, card.inPts.length) - 1;
-        const wide = false;
-        return `<div class="data-route-block data-type-krai heli-card${wide ? ' heli-wide' : ''}" data-card="${card.key}">
+        return `<div class="data-route-block data-type-krai heli-card" data-card="${card.key}">
             <div class="data-route-table-wrap table-wrapper heli-wrap">
             <table class="data-table pair-table data-board-table heli-table${ui.day ? ' heli-with-day' : ''}">
                 <caption class="data-board-caption"><div class="data-board-caption-inner"><div class="data-board-caption-routes">${capHtml}</div><span class="data-board-cap-badge">Ми-8 · ${cap} ${plural(cap, 'место', 'места', 'мест')}</span></div></caption>
@@ -824,5 +822,5 @@ window.HeliView = (function () {
         }
     }
 
-    return { createView, refresh, render, openPoints, exportExcel, buildSheet, attnOf };
+    return { createView, refresh };
 })();

@@ -135,5 +135,5 @@ window.GEO_AIRPORTS = (function () {
         return { a: null, b: null, unknown };
     }
 
-    return { BY_CODE, lookupCode, lookupCity, lookupToken, endpointsFromRow, cityKey };
+    return { lookupCode, lookupCity, endpointsFromRow };
 })();

@@ -1,8 +1,6 @@
 // Диаграммы для «Отчёты» → «Решения»: полоса долей, горизонтальные столбики, колонки по неделям. Чистый HTML/CSS, без библиотек.
 window.DecisionsViz = (function () {
-    function esc(v) {
-        return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    }
+    function esc(v) { return escHtml(v); }
 
     // Полоса долей: items = [{ label, value, cls }], cls — dv-pos / dv-neg / dv-unk / dv-na / dv-wait.
     function stack(title, items) {

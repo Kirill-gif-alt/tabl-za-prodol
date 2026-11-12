@@ -232,13 +232,3 @@ html[data-theme="dark"] .ec-page {
     border-left: 1px solid var(--ec-sep) !important;
 }
 
-/* ---------- строка «Как считается» под таблицей ---------- */
-.ec-page .ec-howto {
-    flex: 0 0 auto;
-    margin: 0;
-    padding: 0 2px 2px;
-    font-size: 0.8rem;
-    line-height: 1.4;
-    color: var(--text-muted);
-}
-.ec-page .ec-howto b { color: var(--text); }

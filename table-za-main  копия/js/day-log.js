@@ -392,5 +392,5 @@ window.SalesDayLog = (function () {
         whenIdle(() => { capture(); }, 40000);
     }
 
-    return { build, flight, daysFor, adultDays, syntheticTickets, fileWindow, monthsLoaded, ensureMonths, capture, captureSoon, mergeFlight, revision: () => rev };
+    return { flight, daysFor, adultDays, syntheticTickets, fileWindow, monthsLoaded, ensureMonths, capture, captureSoon, revision: () => rev };
 })();

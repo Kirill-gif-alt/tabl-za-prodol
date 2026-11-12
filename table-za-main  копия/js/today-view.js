@@ -53,9 +53,7 @@ window.TodayView = (function () {
         try { localStorage.setItem(aheadKey().replace(AHEAD_KEY, SORT_KEY), v); } catch (e) { /* ignore */ }
     }
 
-    function esc(v) {
-        return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    }
+    function esc(v) { return escHtml(v); }
 
     function canTab(t) {
         return typeof ProfileAuth === 'undefined' || ProfileAuth.canAccessTab(t);

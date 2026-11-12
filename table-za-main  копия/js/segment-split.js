@@ -170,5 +170,5 @@ window.SegmentSplit = (function () {
         return n;
     }
 
-    return { splitRows, unsplitSales, splitSales, movedCount: () => moved.length };
+    return { splitRows, unsplitSales, splitSales };
 })();

@@ -14,9 +14,7 @@ window.DecisionsReport = (function () {
     let toneFilter = '';
     let money = { sig: '', map: null, loading: false, done: 0 };
 
-    function esc(v) {
-        return typeof escHtml === 'function' ? escHtml(v) : String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    }
+    function esc(v) { return escHtml(v); }
 
     function canView() {
         if (typeof ProfileAuth === 'undefined') return true;
@@ -38,8 +36,6 @@ window.DecisionsReport = (function () {
     function confPct(z) { return typeof DecisionMoney !== 'undefined' && DecisionMoney.erf ? Math.round(100 * DecisionMoney.erf(z / Math.SQRT2)) : 94; }
 
     function moneyWindow() { return typeof PV !== 'undefined' && typeof PV.DECISION_WINDOW_MONEY === 'number' ? PV.DECISION_WINDOW_MONEY : 4; }
-
-    function wd() { return typeof PriceMarks !== 'undefined' && PriceMarks.winDays ? PriceMarks.winDays() : '3 дня'; }
 
     function sig() {
         return [typeof dataEpoch === 'number' ? dataEpoch : 0, typeof getTodayDate === 'function' ? getTodayDate() : '',
@@ -257,11 +253,6 @@ window.DecisionsReport = (function () {
         return out;
     }
 
-    function signed(n) {
-        if (n == null) return '—';
-        return (n > 0 ? '+' : (n < 0 ? '−' : '')) + String(Math.abs(n)).replace('.', ',');
-    }
-
     // «Сработало» — по билетам против нормы (PriceMarks.judge); «рано судить» в долю не входит.
     function worked(r) {
         return verdictOf(r).worked;
@@ -307,11 +298,6 @@ window.DecisionsReport = (function () {
     // Итог одной строки: вердикт для экрана и для Excel.
     function verdictOf(r) {
         return PriceMarks.judge(r.e, r.status);
-    }
-
-    function shareBar(share) {
-        if (share == null) return '<span class="rp-muted">—</span>';
-        return `<span class="dr-bar" title="Сработало ${share}%"><span class="dr-bar-fill ${share >= 50 ? 'dr-bar-pos' : 'dr-bar-neg'}" style="width:${Math.max(0, Math.min(100, share))}%"></span></span><span class="${share >= 50 ? 'dr-pos' : 'dr-neg'}">${share}%</span>`;
     }
 
     function summaryTable(title, groups, keyLabel) {

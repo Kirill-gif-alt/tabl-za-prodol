@@ -471,5 +471,5 @@ window.PriceMarks = (function () {
         setToday(chip.dataset.pmCode, chip.dataset.pmDate, st);
     });
 
-    return { winDays, decisions, markOverlaps, todayMark, effectFor, judge, decisionsHtml, chartItems, chipHtml, buttonsHtml, setToday, setMany, canMark, GLYPH };
+    return { winDays, decisions, markOverlaps, todayMark, effectFor, judge, decisionsHtml, chartItems, chipHtml, buttonsHtml, setToday, setMany, canMark };
 })();

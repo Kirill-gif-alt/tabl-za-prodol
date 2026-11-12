@@ -131,16 +131,6 @@ window.SalesArchive = (function () {
         return { n, h, from, to, months: loadedMonths.size };
     }
 
-    // Догрузить конкретный месяц (например, дату год назад) и перерисовать открытую детализацию.
-    function ensureMonth(dateStr) {
-        const m = monthOf(dateStr);
-        if (!m || loadedMonths.has(m)) return;
-        readMonth(m).then(() => {
-            rev++;
-            refreshOpenReport();
-        }).catch(() => null);
-    }
-
     function refreshOpenReport() {
         if (typeof refreshOpenSalesReport === 'function') refreshOpenSalesReport();
     }
@@ -620,7 +610,6 @@ window.SalesArchive = (function () {
         typicalSeats,
         autoImportTickets,
         ticketsFor,
-        ensureMonth,
         ensureMonths,
         entries,
         entryFor,

@@ -151,9 +151,7 @@ window.DataBoardFilters = (function () {
         return bits.join(' и ') || 'нет условий';
     }
 
-    function esc(s) {
-        return typeof escHtml === 'function' ? escHtml(s) : String(s || '').replace(/[&<>"]/g, '');
-    }
+    function esc(s) { return escHtml(s); }
 
     function ensureModal() {
         if (document.getElementById('data-hl-modal')) return;
@@ -346,7 +344,6 @@ window.DataBoardFilters = (function () {
         signature,
         highlightForLeg,
         openModal,
-        updateBadge,
-        apply
+        updateBadge
     };
 })();
