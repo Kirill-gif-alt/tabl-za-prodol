@@ -425,19 +425,15 @@ window.ReferenceView = (function () {
         return [...set].sort((a, b) => a.localeCompare(b, 'ru'));
     }
 
-    // Сколько вылетов в загруженных данных получат это правило (с учётом более точных правил).
-    function pkzMatches(id) {
-        let n = 0;
+    // Сколько вылетов в загруженных данных получат каждое правило (с учётом более точных правил): { id: число }.
+    function pkzMatchCounts() {
+        const out = {};
         dataRows().forEach(r => {
             const code = typeof cleanFlight === 'function' ? cleanFlight(r[0]) : r[0];
-            const rule = SubsidyRef.pkzRules()[id];
-            if (!rule || typeof compareDateStr !== 'function') return;
-            if (compareDateStr(r[1], rule.from) < 0 || compareDateStr(r[1], rule.to) > 0) return;
-            const route = r.segRoute || r[3] || '';
-            if (rule.apt && SubsidyRef.aptOf(rule.direction, route) !== rule.apt) return;
-            if (SubsidyRef.pkzFor(r[1], code, r[4], route) === rule.value) n++;
+            const hit = SubsidyRef.pkzRuleFor(r[1], code, r[4], r.segRoute || r[3] || '');
+            if (hit) out[hit.id] = (out[hit.id] || 0) + 1;
         });
-        return n;
+        return out;
     }
 
     // ---------- загрузка ПКЗ из выгрузок NAV ----------
@@ -490,8 +486,8 @@ window.ReferenceView = (function () {
                 <div class="rp-scroll"><table class="rp-table rp-refs-table">
                     <thead><tr><th>Файл</th><th>Тип ВС</th><th>Сезон</th><th>Период</th><th>Занесётся</th><th>Пропущено</th><th>Заменит</th></tr></thead>
                     <tbody>${rows}</tbody>
-                    <tfoot><tr><td class="rp-left"><strong>Всего</strong></td><td></td><td></td><td></td><td><strong>${total}</strong></td><td>${skipped}</td><td>${replaced}</td></tr></tfoot>
                 </table></div>
+                <p class="rp-card-text"><strong>Всего:</strong> занесётся ${total}, пропущено ${skipped}, заменит ${replaced}.</p>
                 <p class="rp-note">Пропущено — направления, которых нет на сайте. Аэропорты Красноярска (Емельяново и Черемшанка) заносятся отдельно.</p>
                 ${noType ? '<p class="rp-note rp-warn">Не удалось определить тип ВС по имени файла: выберите его в списке.</p>' : ''}
                 ${dup ? '<p class="rp-note rp-warn">Два файла с одним типом ВС и сезоном: оставьте один.</p>' : ''}
@@ -572,6 +568,7 @@ window.ReferenceView = (function () {
             .filter(r => !navFlight || r.direction === navFlight)
             .sort((a, b) => a.direction.localeCompare(b.direction, 'ru') || (typeof compareDateStr === 'function' ? compareDateStr(a.from, b.from) : 0));
         const ne = navEdit;
+        const counts = pkzMatchCounts();
         const form = can && ne ? `
             <div class="rp-ref-form" id="ref-nav-form">
                 <div class="rp-ref-form-title">${ne.id ? 'Изменить правило' : 'Новое правило ПКЗ'}</div>
@@ -595,7 +592,7 @@ window.ReferenceView = (function () {
                 <td class="rp-left"><strong>${esc(SubsidyRef.dirLabel(r.direction, r.apt))}</strong></td>
                 <td>${r.ac ? esc(r.ac) : '<span class="rp-muted">любой</span>'}</td>
                 <td><strong>${esc(Number(r.value).toLocaleString('ru-RU'))}</strong> кг</td>
-                <td>${pkzMatches(r.id)}</td>
+                <td>${counts[r.id] || 0}</td>
                 <td class="rp-left rp-muted">${esc(r.by || '')}${r.at ? '<br>' + esc(when(r.at)) : ''}</td>
                 ${can ? `<td class="rp-nowrap">
                     <button type="button" class="filter-btn rp-open" data-refn-edit="${esc(r.id)}">Изменить</button>
@@ -608,7 +605,7 @@ window.ReferenceView = (function () {
                 ${ReportsView.head('ПКЗ из NAV', `Правило: <strong>период + направление в одну сторону + тип ВС → ПКЗ, кг</strong>. Значение само подставляется во все
                     вылеты, которые подходят (вкладка «ПКЗ», «Творческая», карточки). Обратное направление — отдельное правило.
                     Если подходят несколько — берётся правило с конкретным типом ВС, затем с более поздним началом периода.
-                    Ручное значение, введённое в таблице «ПКЗ» для конкретного вылета, важнее правила.`, can && !ne ? '<button type="button" class="filter-btn rp-btn" data-refn-load>Загрузить из NAV</button> <button type="button" class="btn-primary rp-btn" data-refn-new>Добавить правило</button>' : '')}
+                    Ручное значение, введённое в таблице «ПКЗ» для конкретного вылета, важнее правила.`, can && !ne ? '<button type="button" class="btn-primary rp-btn" data-refn-load>Загрузить из NAV</button> <button type="button" class="btn-primary rp-btn" data-refn-new>Добавить правило</button>' : '')}
                 <p class="rp-card-text">Правило: период, направление и тип ВС дают ПКЗ в кг. Оно подставляется во все подходящие вылеты.</p>
                 ${can ? navImportHtml() : ''}
                 ${form}

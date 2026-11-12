@@ -221,6 +221,7 @@ window.SubsidyRef = (function () {
         if (typeof PerfCache !== 'undefined' && PerfCache.reset) PerfCache.reset();
         if (typeof tableHtmlCache !== 'undefined') tableHtmlCache = { sig: '', html: '' };
         pkzMemo = new Map();
+        pkzIdx = null;
     }
 
     async function load() {
@@ -353,24 +354,33 @@ window.SubsidyRef = (function () {
     // Аэропорт берётся из маршрута строки загрузки (route, например «KCY-TGP»); маршрута нет — подходит правило без
     // аэропорта, иначе наименьшее из KJA/KCY. Несколько подходят — точнее по типу ВС и аэропорту, потом более позднее начало.
     let pkzMemo = new Map();
-    function pkzFor(date, flightCode, acRaw, route) {
+    let pkzIdx = null;   // правила по направлению: { ключ направления: [{ id, r, rk }] }
+    function pkzIndex() {
+        if (pkzIdx) return pkzIdx;
+        pkzIdx = Object.create(null);
         const rules = activePkz();
-        const ids = Object.keys(rules);
-        if (!ids.length || !date || !flightCode) return null;
+        Object.keys(rules).forEach(id => {
+            const r = rules[id];
+            const k = dirKey(r.direction);
+            (pkzIdx[k] || (pkzIdx[k] = [])).push({ id, r, rk: r.ac ? acKey(r.ac) : '' });
+        });
+        return pkzIdx;
+    }
+
+    // Правило, которое получает вылет: { id, r } или null (см. описание pkzFor).
+    function pkzRuleFor(date, flightCode, acRaw, route) {
+        if (!date || !flightCode) return null;
         const routeText = typeof route === 'string' ? route : '';
         const memoKey = date + '|' + flightCode + '|' + (acRaw || '') + '|' + routeText;
         if (pkzMemo.has(memoKey)) return pkzMemo.get(memoKey);
         const base = typeof getBaseFlight === 'function' ? getBaseFlight(flightCode) : flightCode;
         const dirLabelText = typeof getFlightDirection === 'function' ? getFlightDirection(base) : '';
-        const dir = dirKey(dirLabelText);
+        const list = pkzIndex()[dirKey(dirLabelText)] || [];
         const apt = aptOfRoute(dirLabelText, routeText);
         const ak = acRaw ? acKey(typeof getAircraftType === 'function' ? getAircraftType(acRaw) : acRaw) : '';
         let best = null;
-        ids.forEach(id => {
-            const r = rules[id];
-            if (!dir || dirKey(r.direction) !== dir) return;
+        list.forEach(({ id, r, rk }) => {
             if (typeof compareDateStr === 'function' && (compareDateStr(date, r.from) < 0 || compareDateStr(date, r.to) > 0)) return;
-            const rk = r.ac ? acKey(r.ac) : '';
             if (rk && rk !== ak) return;
             const ra = r.apt || '';
             if (ra && apt && ra !== apt) return;
@@ -386,12 +396,16 @@ window.SubsidyRef = (function () {
                     else better = String(r.at) > String(best.r.at);
                 }
             }
-            if (better) best = { r, score };
+            if (better) best = { id, r, score };
         });
-        const v = best ? best.r.value : null;
         if (pkzMemo.size > 20000) pkzMemo.clear();
-        pkzMemo.set(memoKey, v);
-        return v;
+        pkzMemo.set(memoKey, best);
+        return best;
+    }
+
+    function pkzFor(date, flightCode, acRaw, route) {
+        const b = pkzRuleFor(date, flightCode, acRaw, route);
+        return b ? b.r.value : null;
     }
 
     // ---------- загрузка ПКЗ из выгрузок NAV (Excel) ----------
@@ -707,6 +721,7 @@ window.SubsidyRef = (function () {
         removePkzRule,
         pkzRules: activePkz,
         pkzFor,
+        pkzRuleFor,
         dirKey,
         dirLabel,
         aptOf: aptOfRoute,
