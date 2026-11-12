@@ -167,7 +167,10 @@ window.LowReqReport = (function () {
         const t = dayNum(today());
         const cands = new Map();
         const downs = new Map();
+        let from = null;   // самая ранняя дата проверки среди прочитанных отметок: раньше неё отметки не читаются
         SalesManagement.allMarks().forEach(m => {
+            const cd = dayNum(m.check);
+            if (cd != null && (from == null || cd < from)) from = cd;
             if (m.status === 'attn' && adm.set.has(norm(m.author))) {
                 const c = dayNum(m.check);
                 if (c == null || c > t) return;   // отметка на будущую дату — запросом станет в свой день
@@ -180,7 +183,7 @@ window.LowReqReport = (function () {
                 downs.get(k).push({ check: m.check, author: m.author || '', at: m.updatedAt || '' });
             }
         });
-        deriveMemo = { sig: sg, cands: [...cands.values()], downs, known: adm.known };
+        deriveMemo = { sig: sg, cands: [...cands.values()], downs, known: adm.known, from };
         return deriveMemo;
     }
 
@@ -489,6 +492,9 @@ window.LowReqReport = (function () {
             if (seen.has(k)) return;
             const it = store.items[k];
             if (!it || !it.code || !it.dep || !it.check) return;
+            // Отметку «Обратить внимание» сняли (дата в пределах прочитанных отметок, а отметки нет) — запроса больше нет.
+            const ck = dayNum(it.check);
+            if (d.from != null && ck != null && ck >= d.from) return;
             out.push(buildRow({ key: k, code: it.code, dep: it.dep, check: it.check, author: it.author || '', markAt: it.markAt || '' }, it, d));
         });
         out.sort((a, b) => (dayNum(a.check) - dayNum(b.check)) || String(a.code).localeCompare(String(b.code), 'ru', { numeric: true }));
