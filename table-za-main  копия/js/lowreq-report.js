@@ -1,6 +1,6 @@
 // «Отчёты» → «Запросы на снижение»: что администратор просил снизить и что ему согласовали.
 // Запрос = отметка «Обратить внимание» (attn) в «Управлении продажами», поставленная администратором. Дата запроса = день отметки.
-// Согласовано = в тот же или следующий день на этом вылете у любого автора стоит «Снижение» (down). Следующий день ещё не прошёл — «ждём ответа»,
+// Согласовано = в день запроса или в течение 2 дней после него (D, D+1, D+2) на этом вылете у любого автора стоит «Снижение» (down). Следующий день ещё не прошёл — «ждём ответа»,
 // прошёл — «не согласовано». Перенесённые рейсы: отметки исходной даты уже приходят от SalesManagement.allMarks() на новую дату.
 //
 // Файл продаж помнит ~14 дней, поэтому отчёт ведёт собственную общую историю — shared/lowreq-report.json (за всё время):
@@ -184,14 +184,14 @@ window.LowReqReport = (function () {
         return deriveMemo;
     }
 
-    // Ответ по правилу: «Снижение» в тот же или следующий день от любого автора.
+    // Ответ по правилу: «Снижение» в день запроса или в течение 2 дней после него (D…D+2) от любого автора.
     function autoResult(code, dep, check, downs) {
         const c = dayNum(check);
         const hit = (downs.get(code + '|' + dep) || [])
-            .filter(d => { const n = dayNum(d.check); return n === c || n === c + 1; })
+            .filter(d => { const n = dayNum(d.check); return n >= c && n <= c + 2; })
             .sort((a, b) => (dayNum(a.check) - dayNum(b.check)) || String(a.at).localeCompare(String(b.at)))[0];
         if (hit) return { res: 'yes', down: hit };
-        return { res: dayNum(today()) <= c + 1 ? 'wait' : 'no', down: null };
+        return { res: dayNum(today()) <= c + 2 ? 'wait' : 'no', down: null };
     }
 
     // ---------- цифры по вылету (источники: живые билеты, журнал продаж по дням, архив) ----------
@@ -756,19 +756,28 @@ window.LowReqReport = (function () {
     }
 
     // При открытии раздела таблица прокручена к низу — к свежим запросам; старые листаются вверх.
+    let bottomUntil = 0;
     function scrollDown() {
         if (editKey) return;
+        const sc = document.querySelector('.lrr-card .rp-scroll');
+        if (sc) sc.scrollTop = sc.scrollHeight;
         const rowsEl = document.querySelectorAll('#lrr-body tr[data-lrr-row]');
         const last = rowsEl[rowsEl.length - 1];
-        if (last && last.scrollIntoView) last.scrollIntoView({ block: 'end' });
+        if (last && last.scrollIntoView) last.scrollIntoView({ block: 'nearest' });
     }
 
     function html(rerender) {
         if (typeof rerender === 'function') lastRerender = rerender;
         if (!available()) return '<p class="rp-note">Отчёт недоступен.</p>';
         prepare(rerender);
-        const fresh = !document.querySelector('.lrr-card');
-        if (fresh) setTimeout(scrollDown, 60);
+        const sc0 = document.querySelector('.lrr-card .rp-scroll');
+        if (!sc0) bottomUntil = Date.now() + 5000;   // раздел только что открыт: держим прокрутку внизу, пока всё догружается
+        const keep = sc0 ? sc0.scrollTop : 0;
+        setTimeout(() => {
+            const sc = document.querySelector('.lrr-card .rp-scroll');
+            if (!sc) return;
+            if (Date.now() < bottomUntil) scrollDown(); else sc.scrollTop = keep;
+        }, 60);
         const d = derive();
         const inP = inPeriod(rows());
         const t = totals(inP);
@@ -776,9 +785,9 @@ window.LowReqReport = (function () {
         const tile = (label, valueHtml, sub, tone) => `<div class="rp-tile${tone ? ' rp-tile-' + tone : ''}"><div class="rp-tile-label">${esc(label)}</div><div class="rp-tile-value">${valueHtml}</div><div class="rp-tile-sub">${esc(sub)}</div></div>`;
         const tilesHtml = `<div class="rp-tiles lrr-tiles">${[
             tile('Запросов за период', String(t.n), 'отметок «Обратить внимание»'),
-            tile('Согласовано', `${t.yes}${t.n ? ` <span class="lrr-tpct">${Math.round(t.yes / t.n * 100)}%</span>` : ''}`, 'поставлено «Снижение» в тот же или следующий день', 'ok'),
+            tile('Согласовано', `${t.yes}${t.n ? ` <span class="lrr-tpct">${Math.round(t.yes / t.n * 100)}%</span>` : ''}`, 'поставлено «Снижение» в течение 2 дней', 'ok'),
             tile('Не согласовано', String(t.no), '«Снижения» не было'),
-            tile('Ждём ответа', String(t.wait), 'следующий день ещё не наступил', 'warn')
+            tile('Ждём ответа', String(t.wait), '2 дня на ответ ещё не прошли', 'warn')
         ].join('')}</div>`;
         const sign = t.diff > 0 ? '+' : (t.diff < 0 ? '−' : '');
         const diffCls = t.diff > 0 ? 'lrr-pos' : (t.diff < 0 ? 'lrr-neg' : '');
