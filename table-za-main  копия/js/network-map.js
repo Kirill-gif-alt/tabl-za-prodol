@@ -1,4 +1,4 @@
-// Главная: географическая карта сети. Контур кэшируется, пульс рисует только верхний слой.
+// главная: карта сети; контур кэшируется, пульс рисует только верхний слой
 window.NetworkMap = (function () {
     const DEFAULT_VIEW = { lon0: 94, lat0: 58, lonMin: 78, lonMax: 114, latMin: 46.5, latMax: 75.5 };
     const WATER = '#c5d4e4';
@@ -106,8 +106,8 @@ window.NetworkMap = (function () {
         leg.au += au;
         leg.sold += sold;
         leg.avs += avs;
-        // ЗПК направления = загрузка / кресла в продаже по всем вылетам (как в «Загрузке рейсов» и в «Творческой»),
-        // а не среднее из процентов отдельных вылетов: иначе вылет на 40 кресел весит как вылет на 120.
+        // ЗПК направления = загрузка / кресла в продаже по всем вылетам (как в "Загрузке рейсов" и "Творческой"), а не среднее процентов
+        // иначе вылет на 40 кресел весит как вылет на 120
         if (denom > 0) {
             leg.zSold += sold;
             leg.zSeats += denom;
@@ -902,7 +902,7 @@ window.NetworkMap = (function () {
             : (p._bind && p._bind.fromCity
                 ? `${p._bind.fromCity} → ${p._bind.toCity}`
                 : '');
-        const alt = p.gnd ? 'на земле' : (p.estimated ? '' : (p.alt > 50 ? 'высота ' + Math.round(p.alt * 0.3048 / 100) * 100 + ' м' : ''));   // радар отдаёт футы — показываем метры
+        const alt = p.gnd ? 'на земле' : (p.estimated ? '' : (p.alt > 50 ? 'высота ' + Math.round(p.alt * 0.3048 / 100) * 100 + ' м' : ''));   // радар отдает футы, показываем метры
         const src = p.estimated ? 'по расписанию' : '';
         return [code, route, alt, src].filter(Boolean).join(' · ');
     }
@@ -1442,7 +1442,7 @@ window.NetworkMap = (function () {
         }, { passive: false });
     }
 
-    // Админ выключает эфир профилю в «Управлении профилями» → «Функции»: тогда Flightradar не опрашивается.
+    // эфир выключают в "Управлении профилями" -> "Функции": тогда Flightradar не опрашиваем
     function liveFeatureOn() {
         return typeof ProfileAuth === 'undefined' || typeof ProfileAuth.featureOn !== 'function' || ProfileAuth.featureOn('live_flights');
     }

@@ -1,5 +1,5 @@
-// Резервные копии общих файлов (shared/_history): просмотр и восстановление. Только для админа.
-// Копии делаются сами перед перезаписью файла (shared-storage.js и scripts/local-server.py).
+// резервные копии общих файлов (shared/_history): просмотр и восстановление, только для админа
+// копии делаются перед перезаписью (shared-storage.js, scripts/local-server.py)
 window.SharedHistory = (function () {
     const LABELS = {
         'snapshot.json': 'Данные (снимок для всех ПК)',
@@ -21,7 +21,7 @@ window.SharedHistory = (function () {
 
     function esc(v) { return escHtml(v); }
 
-    // «profiles__2026-10-08_09-15-02.json» → «08.10.2026 09:15»
+    // "profiles__2026-10-08_09-15-02.json" -> "08.10.2026 09:15"
     function versionLabel(id) {
         const m = /__(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})/.exec(id);
         return m ? `${m[3]}.${m[2]}.${m[1]} ${m[4]}:${m[5]}` : id;

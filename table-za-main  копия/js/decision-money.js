@@ -1,30 +1,10 @@
-// Деньги по ценовым решениям («Отчёты» → «Решения»). Нигде, кроме этого отчёта, не показываются.
-//
-// Идея. После решения (снижение или повышение цены) смотрим, сколько реально продали и на какую сумму, и сравниваем с тем,
-// что вероятно продали бы без решения, по цене класса, который был открыт до него.
-//   Δ ₽ = выручка факта − ожидаемое число платных билетов × цена прежнего класса.
-//   Разложение (сумма точна): «цена» = ожидалось × (новая − прежняя); «объём» = всё остальное (в том числе поправка на сдвиг).
-//
-// Ожидание — норма по аналогам: вылеты того же рейса. Основа — тот же день недели, ±8 недель (затем шире), не меньше 3 вылетов; без вылетов,
-// где самих ставили решения, и без допов/чартеров. К ним добавлены соседние вылеты этого рейса (±5 дней, другие дни недели): их билеты
-// пересчитываются на день недели нашего вылета по обычному соотношению дней недели этого рейса. Вес вылета падает с давностью.
-// Дальше три поправки, все проверены на улетевших вылетах без решений («плацебо»):
-//   • уровень: как последние улетевшие вылеты сети выходили против такой же нормы (спрос идёт волнами, норма из прошлых недель отстаёт);
-//   • сила рейса, затухающая: темп за 3 дня до решения почти не переносится на следующие дни, но без поправки отбор «решения ставят на
-//     слабых рейсах» даёт ложный минус;
-//   • сдвиг рублей (biasShift): тариф сам меняется к вылету, а норма «сжата» к середине.
-// Шум большой (продажи идут пачками, разброс в 3–5 раз выше пуассоновского), поэтому у каждой оценки есть диапазон,
-// а вердикт «помогло / навредило» только если диапазон не включает ноль и эффект не меньше порога; иначе слабее («скорее», «чуть») или «без эффекта».
-// Диапазон несимметричный (MONEY_RANGE_LOW / MONEY_RANGE_HIGH): на вылетах без решений случайные плюсы чаще случайных минусов.
-//
-// Понижение: окно от 4 до 10 дней (так, чтобы ожидалось не меньше ~6 билетов), без дня решения (время сделки неизвестно);
-// результат фиксируется через день после окна. Повышение: через окно — только ранний сигнал, итог после вылета по остатку продаж
-// (до вылета или до следующего решения по этому вылету: одни и те же дни двум решениям не засчитываются).
-// Зафиксированный итог лежит в shared/decision-money/ГГГГ-ММ.json и дальше не меняется (при смене данных и параметров тоже).
+// деньги по ценовым решениям (только в отчёте "Решения")
+// Δ ₽ = выручка факта - ожидаемые платные билеты × прежняя цена
+// цена = ожидалось × (новая - прежняя), объём = остальное, в т.ч. поправка на сдвиг
 window.DecisionMoney = (function () {
     const METHOD_VERSION = 11;
     const DAY = 86400000;
-    const REGULAR = /^KV-\d{3}$/;      // допы и чартеры (KV-9xxx и т. п.) не оцениваем: покупки блоками, нормы нет
+    const REGULAR = /^KV-\d{3}$/;      // допы и чартеры (KV-9xxx) не оцениваем, нормы нет
     const GAPS = [56, 84, 182, 100000]; // расширение окна поиска аналогов, дней
 
     function num(name, d) { const v = typeof PV !== 'undefined' ? PV[name] : undefined; return typeof v === 'number' ? v : d; }
@@ -43,21 +23,19 @@ window.DecisionMoney = (function () {
     }
 
     function round1(v) { return Math.round(v * 10) / 10; }
-    function round1k(v) { return (Math.round(v / 100) * 100) || 0; }   // рубли — до сотен: без ложной точности (и без «−0», и без NaN)
+    function round1k(v) { return (Math.round(v / 100) * 100) || 0; }   // рубли до сотен, без -0 и NaN
 
-    // ---------- чистая часть: оценка по готовым входам (проверяется отдельно, без данных сайта) ----------
-
-    // Допустимое отклонение ожидания (билетов). Окно: √(0,4 + 4,7·E) — продажи идут пачками, разброс примерно в 5 раз выше
-    // пуассоновского и растёт вместе с ожиданием. Остаток: √(24 + 2,5·E) — длинный хвост, к разбросу добавляется цена и добор.
-    // Подобрано по вылетам без решений. Поправка на число аналогов — по эффективному k (оптимум — около 10).
+    // разброс ожидания в билетах: окно √(0,4 + 4,7·E), остаток √(24 + 2,5·E)
+    // продажи идут пачками, разброс ~в 5 раз выше пуассоновского; подобрано по вылетам без решений
+    // поправка на число аналогов по эффективному k (оптимум около 10)
     function sigmaTickets(E, k, tail) {
         const e = Math.max(0, E);
         const base = Math.sqrt(tail ? 24 + 2.5 * e : 0.4 + 4.7 * e);
         return base * Math.sqrt((1 + 1 / Math.max(1, k)) / 1.1);
     }
 
-    // Окно после решения. inp: E (ожидание всех билетов), k (аналогов), nFactAll, nFactPaid, rFact, priceBefore, share,
-    // strength: { own, norm } — билеты за 3 дня до решения у рейса и у аналогов.
+    // окно после решения; inp: E (ожидание всех билетов), k (аналогов), nFactAll, nFactPaid, rFact, priceBefore, share
+    // strength: { own, norm } - билеты за 3 дня до решения у рейса и у аналогов
     function estimateWindow(inp) {
         const gamma = num('MONEY_STRENGTH_GAMMA', 0.2);
         const adj = inp.strength && inp.strength.norm != null
@@ -86,12 +64,12 @@ window.DecisionMoney = (function () {
         };
     }
 
-    // Остаток до вылета (итог повышения). inp: E (ожидание остатка, все билеты), k, free (свободно на момент решения),
-    // filled (рейс заполнился), nFactAll, nFactPaid, rFact, priceBefore, share.
+    // остаток до вылета (итог повышения); inp: E (ожидание остатка, все билеты), k, free (свободно при решении),
+    // filled (рейс заполнился), nFactAll, nFactPaid, rFact, priceBefore, share
     function estimateRemainder(inp) {
         let nExpAll = inp.E;
         if (inp.free != null) nExpAll = Math.min(nExpAll, inp.free);
-        if (inp.filled) nExpAll = inp.nFactAll;   // заполнился — мест не потеряли, остаётся эффект цены
+        if (inp.filled) nExpAll = inp.nFactAll;   // заполнился: мест не потеряли, остаётся только эффект цены
         const share = inp.share;
         const nExpPaid = nExpAll * share;
         const priceAfter = inp.nFactPaid > 0 ? inp.rFact / inp.nFactPaid : inp.priceBefore;
@@ -99,7 +77,7 @@ window.DecisionMoney = (function () {
         const sigma = sigmaTickets(inp.E, inp.k, true);
         const z = num('MONEY_NOISE_Z', 1.9);
         let half = inp.filled ? 0 : z * sigma * share * inp.priceBefore;
-        // Разброс не больше возможного: выручка остатка не может отличаться больше, чем на все свободные места по прежней цене.
+        // разброс не больше свободных мест по прежней цене
         let halfMax = null;
         if (!inp.filled && inp.free != null) { halfMax = inp.free * share * inp.priceBefore; half = Math.min(half, halfMax); }
         const thr = Math.max(num('MONEY_MIN_PCT', 15) / 100 * nExpPaid * inp.priceBefore, num('MONEY_MIN_RUB', 20000));
@@ -116,20 +94,18 @@ window.DecisionMoney = (function () {
         };
     }
 
-    // ---------- данные сайта ----------
-
     function curveAt(curve, t) {
         return t > curve.maxDtd ? 0 : (curve.onHand[t] != null ? curve.onHand[t] : curve.total);
     }
 
-    function countRange(curve, lo, hi) {   // билетов с «дней до вылета» от lo до hi (hi ≥ lo)
+    function countRange(curve, lo, hi) {   // билеты с днями до вылета от lo до hi (hi >= lo)
         return Math.max(0, curveAt(curve, lo) - curveAt(curve, hi + 1));
     }
 
-    // Деньги — по фактическому тарифу (fare): у детского билета со скидкой в выручку идёт столько, сколько заплатили.
-    // Пересчитанный тариф (adjustedFare) — только если фактического нет.
+    // деньги по фактическому тарифу (fare), детский со скидкой - по заплаченному
+    // adjustedFare только если fare нет
     function price(s) { return s.fare > 0 ? s.fare : (s.adjustedFare || 0); }
-    // Считаем все билеты с ненулевым тарифом: взрослые, дети, группы. Нулевой тариф (служебные, бесплатные) не считаем.
+    // платные - ненулевой тариф (взрослые, дети, группы); служебные и бесплатные не считаем
     function isPaid(s) { return price(s) > 0; }
     function classOf(s) {
         if (typeof FareGrid !== 'undefined' && typeof FareGrid.classOf === 'function') return FareGrid.classOf(s);
@@ -141,7 +117,7 @@ window.DecisionMoney = (function () {
         return SalesManagement.marksFor(code, date).some(m => m.status === 'up' || m.status === 'down');
     }
 
-    // То же, с запоминанием на время одного расчёта (при переборе сотен вылетов отметки смотрим один раз на вылет).
+    // кэш на один расчёт: отметки по вылету смотрим один раз
     let decMemo = new Map();
     function hasDec(code, date) {
         const k = code + '|' + date;
@@ -160,13 +136,9 @@ window.DecisionMoney = (function () {
         return seats;
     }
 
-    // Аналоги: вылеты того же рейса.
-    //  1) Тот же день недели, ±8 недель (расширяем до 12, 26 недель и всех дат) — вес 1, с давностью падает.
-    //  2) Соседние по дате вылеты этого же рейса в другие дни недели (±5 дней): число билетов приводится к дню недели
-    //     вылета по обычному соотношению дней недели этого рейса в том же окне «дней до вылета».
-    // Нужны данные по концу окна (lo). Сначала берём вылеты без ценовых решений; если их мало — и вылеты с решениями (оценка помечается).
-    // «Достаточно» значит: эффективное число аналогов (Σw)²/Σw² не меньше минимума.
-    // Результат поиска запоминается на время неизменных данных и отметок: у серии решений по одному вылету он один и тот же.
+    // аналоги - вылеты того же рейса: тот же день недели ±8 нед (до 12, 26 и всех дат), вес падает с давностью
+    // + соседние по дате вылеты ±5 дней в другие дни недели, билеты пересчитываются на день недели вылета
+    // сначала без решений; "достаточно" = (Σw)²/Σw² не меньше минимума
     const analogMemo = new Map();
     const poolMemo = new Map();
     const dowMemo = new Map();
@@ -189,7 +161,7 @@ window.DecisionMoney = (function () {
         return analogMemo.get(key);
     }
 
-    // Все вылеты базового рейса (любой день недели) с продажами: из файлов и из архива. Кривые считаются один раз.
+    // все вылеты базового рейса с продажами, из файлов и архива; кривые считаем один раз
     function basePool(base, code) {
         const key = base;
         if (poolMemo.has(key)) return poolMemo.get(key);
@@ -199,7 +171,7 @@ window.DecisionMoney = (function () {
         const rows = (typeof groupedData !== 'undefined' && groupedData[base]) || [];
         rows.forEach(row => {
             const dtStr = row[1];
-            if (!dtStr || seen.has(dtStr) || row.segKey) return;   // участок доп. посадки другого рейса — не вылет этого рейса
+            if (!dtStr || seen.has(dtStr) || row.segKey) return;   // участок доп. посадки другого рейса - не вылет
             const dt = parseLocalDate(dtStr);
             if (!dt) return;
             const orig = cleanFlight(row[0]);
@@ -231,8 +203,8 @@ window.DecisionMoney = (function () {
         return it.curve;
     }
 
-    // Средняя доля кресел, проданная в окне [lo..hi] дней до вылета, по дням недели этого рейса (ближние ±26 недель, без самого вылета).
-    // Сжатие к общему среднему (τ псевдо-вылета): дни недели с 1–2 вылетами не дают случайного перекоса.
+    // доля проданных кресел в окне [lo..hi] по дням недели рейса, ближние ±26 нед, без самого вылета
+    // сжатие к общему среднему (τ псевдо-вылета), чтобы дни с 1-2 вылетами не перекашивали
     function dowLevels(an, lo, hi) {
         const key = [an.base, an.dep, lo, hi, an.withDecisions ? 1 : 0, an.asOfMs || 0].join('|');
         if (dowMemo.has(key)) return dowMemo.get(key);
@@ -252,7 +224,7 @@ window.DecisionMoney = (function () {
         return out;
     }
 
-    // Множитель «день недели соседнего вылета → день недели этого вылета» для окна [lo..hi].
+    // множитель: день недели соседнего вылета -> день недели этого, окно [lo..hi]
     function dowFactor(an, it, lo, hi) {
         const L = dowLevels(an, lo, hi);
         const a = L.lev[an.dow]; const b = L.lev[it.dow];
@@ -266,10 +238,9 @@ window.DecisionMoney = (function () {
         return q > 0 ? s * s / q : 0;
     }
 
-    // Поправка уровня. Спрос движется по времени (сезон, всплески): норма из прошлых недель отстаёт. Смотрим, как последние
-    // улетевшие вылеты (до дня решения) выходили против такой же нормы, посчитанной только по ещё более ранним вылетам:
-    // если у них факт был выше нормы на 20%, то и для этого вылета норму поднимаем (с затуханием λ и в пределах [0,6; 1,8]).
-    // Считается по кривым продаж (число билетов за 1–10 дней до вылета) по всей сети; кэшируется по дню решения.
+    // поправка уровня: спрос ходит волнами, норма из прошлых недель отстаёт
+    // смотрим, как последние улетевшие вылеты сети (до дня решения) шли против нормы по более ранним вылетам
+    // если факт выше нормы на 20%, норму поднимаем (затухание λ, в пределах [0,6; 1,8])
     const levelMemo = new Map();
     function levelFactor(checkStr) {
         const days = num('MONEY_LEVEL_DAYS', 10);
@@ -279,9 +250,9 @@ window.DecisionMoney = (function () {
         if (!cdt) return { k: 1, n: 0 };
         ensureSig();
         const cutoffMs = typeof salesDataCutoffTime === 'function' ? salesDataCutoffTime() : Date.now();
-        const asOfMs = Math.min(cdt.getTime() - DAY, cutoffMs - DAY);   // вылеты не позже дня до даты: их продажи уже закончились
+        const asOfMs = Math.min(cdt.getTime() - DAY, cutoffMs - DAY);   // вылеты не позже дня до даты, их продажи уже закончились
         const key = String(asOfMs);
-        const lo = 1; const hi = 10;   // окно сравнения: 1–10 дней до вылета (на других окнах поправка выходит той же, а считать дольше в разы)
+        const lo = 1; const hi = 10;   // окно 1-10 дн. до вылета: на других окнах поправка та же, а считается в разы дольше
         if (levelMemo.has(key)) return levelMemo.get(key);
         let a = 0; let e = 0; let n = 0;
         const win = num('WEEKDAY_NORM_WINDOW_DAYS', 56);
@@ -345,7 +316,7 @@ window.DecisionMoney = (function () {
             for (let i = 0; i < tiers.length; i++) {
                 const list = pool.filter(c => c.dayGap <= tiers[i]);
                 const ws = list.map(wSame).concat(nbPool.map(() => nbW));
-                // Достаточность — по числу вылетов (соседние считаются вполовину); разброс оценки считается по эффективному числу с весами.
+                // достаточно по числу вылетов, соседние считаются вполовину; разброс - по эффективному числу с весами
                 const nEq = list.length + 0.5 * nbPool.length;
                 if (list.length + nbPool.length >= 2 && nEq >= attempts[a].min - 1e-9) {
                     const items = list.map(c => ({ c, curve: departureCurve(c.date, c.code), nb: false, w: wSame(c), scale: seats > 0 ? Math.min(2.5, Math.max(0.4, seats / c.seats)) : 1 }))
@@ -357,7 +328,7 @@ window.DecisionMoney = (function () {
         return { list: [], tier: 0, keff: 0 };
     }
 
-    // Среднее по аналогам (взвешенное): билетов в днях до вылета [lo..hi] (приведено к местам и дню недели этого вылета).
+    // среднее по аналогам: билеты в днях до вылета [lo..hi], приведены к местам и дню недели этого вылета
     function analogMean(an, lo, hi) {
         if (!an.list.length) return null;
         let s = 0; let sw = 0;
@@ -369,10 +340,9 @@ window.DecisionMoney = (function () {
         return sw > 0 ? s / sw : null;
     }
 
-    // Естественный рост тарифа: у похожих вылетов средняя цена билетов, проданных в тех же днях до вылета, против цены за 1–3 дня до них.
-    // Тариф сам растёт к вылету (дешёвые классы выкупаются), и без решения цена «после» тоже была бы выше прежней.
-    // Возвращает { drift, n }: drift — медианное отношение цен со сжатием к 1 (мало вылетов — почти без поправки), n — число вылетов.
-    // Пул — похожие вылеты и ближайшие по дате вылеты этого же рейса (любой день недели): билетов у вылетов в файлах немного.
+    // естественный рост тарифа: средняя цена билетов, проданных в те же дни до вылета, против цены за 1-3 дня до них
+    // медиана отношений со сжатием к 1 (мало вылетов - почти без поправки); возвращает { drift, n }
+    // пул: похожие вылеты и ближние по дате вылеты этого рейса (любой день недели)
     function driftPool(an, base, dep, code) {
         const seen = new Set();
         const pool = [];
@@ -437,13 +407,13 @@ window.DecisionMoney = (function () {
         return best ? best.cls : null;
     }
 
-    // Ключ решения — один для хранения и отчёта.
+    // ключ решения, общий для хранения и отчёта
     function keyOf(m) { return [m.flight || m.code, m.dep, m.check, m.status].join('|'); }
 
     function na(reason, extra) { return Object.assign({ stage: 'na', reason, grade: 'C', v: METHOD_VERSION }, extra || {}); }
 
-    // Следующее ценовое решение по этому вылету не дальше окна: до него и считаем эффект этой отметки (окна соседних отметок не пересекаются).
-    // maxDays — искать дальше окна (итог повышения до вылета не должен заходить в дни следующего решения).
+    // до следующего решения по этому вылету (окна соседних отметок не пересекаются)
+    // maxDays - искать дальше окна: итог повышения не должен заходить в дни следующего решения
     function nextDecisionGap(code, dep, check, maxDays) {
         const maxW = maxDays != null ? maxDays : num('MONEY_WINDOW_MAX', 10);
         const marks = typeof SalesManagement !== 'undefined' && SalesManagement.marksFor ? SalesManagement.marksFor(code, dep) : [];
@@ -456,10 +426,9 @@ window.DecisionMoney = (function () {
         return best;
     }
 
-    // Оценка одного решения по данным сайта. m: { code|flight, dep, check, status, clsFrom?, clsTo? }.
-    // Почти всё считается; сомнительные случаи помечаются флагами (m.flags) и получают доверие «низкое».
-    // Дни сделок, которых уже нет в файле продаж (он держит последние ~14 дней), берём из журнала продаж по дням (day-log.js):
-    // число билетов и выручка по дню те же, что были в файле. Дни, которые в файле есть, журналом не заменяются.
+    // оценка одного решения по данным сайта; m: { code|flight, dep, check, status, clsFrom?, clsTo? }
+    // сомнительное помечаем флагами (m.flags), доверие "низкое"
+    // дней, которых нет в файле продаж (~14 дней), берём из журнала (day-log.js); дни из файла не заменяем
     function withJournal(dep, code, fileList) {
         if (typeof SalesDayLog === 'undefined' || !SalesDayLog.syntheticTickets) return fileList;
         let syn = [];
@@ -486,7 +455,7 @@ window.DecisionMoney = (function () {
         if (nextGap != null) flags.push(`серия решений: окно только до следующего решения (${nextGap} дн.)`);
         if (dtdD < 3) flags.push(`решение за ${dtdD} дн. до вылета: окно очень короткое`);
         const maxW = num('MONEY_WINDOW_MAX', 10);
-        // Праздники и события: норма из обычных дней грубее — считаем, но с пометкой.
+        // праздники и события: норма из обычных дней грубее, считаем с пометкой
         if (typeof CalendarEvents !== 'undefined') {
             const hi = Math.min(nextGap != null ? nextGap : maxW, dtdD);
             const probe = [dep, m.check, addDays(m.check, hi)].some(d => CalendarEvents.normKey(d) !== '');
@@ -501,8 +470,8 @@ window.DecisionMoney = (function () {
         if (an.list.length < 2) return na('нет похожих вылетов этого рейса и дня недели в данных: сравнивать не с чем');
         if (an.withDecisions) flags.push('у похожих вылетов тоже были ценовые решения');
         if (an.few || an.nEq < num('MONEY_MIN_ANALOGS', 3) - 1e-9) flags.push(`похожих вылетов всего ${an.list.length}`);
-        // Окно: от W0 дней (для эпизода — до последней отметки плюс W0), пока ожидание не дойдёт до минимума.
-        // Уровень спроса берём по вылетам до конца окна (но не позже вылета этого рейса): продажи других рейсов в те же дни не зависят от решения.
+        // окно от W0 дней (для эпизода - до последней отметки + W0), пока ожидание не дойдёт до минимума
+        // уровень спроса - по вылетам до конца окна, но не позже вылета: продажи других рейсов от решения не зависят
         const asOfStr = dayDiff(addDays(m.check, maxW + 1), dep) > 0 ? dep : addDays(m.check, maxW + 1);
         const lvK = levelFactor(asOfStr).k;
         let w = Math.min(W0, wCap);
@@ -515,7 +484,7 @@ window.DecisionMoney = (function () {
         const base0 = { w, windowFrom: addDays(m.check, 1), windowTo, k: an.list.length, ke: round1(an.keff), kNb: an.nNb || 0, levelK: Math.round(lvK * 100) / 100, dtd: dtdD, tierDays: an.tier, v: METHOD_VERSION, kind, flags };
         if (cutoffMs < needMs) return Object.assign(base0, { stage: 'wait', reason: `ждём данные до ${windowTo}`, grade: 'C', readyOn: addDays(windowTo, num('MONEY_LAG_DAYS', 1)) });
 
-        // Факт по билетам вылета.
+        // факт по билетам вылета
         const own = { all: 0, paid: 0, rev: 0, beforeAll: 0, beforeAdult: 0 };
         const before3 = []; const before7 = []; const afterAdult = []; let nOwn3 = 0;
         list.forEach(s => {
@@ -536,17 +505,16 @@ window.DecisionMoney = (function () {
             if (d >= dtdD + 1 && d <= dtdD + 3) nOwn3++;
         });
         const ladder = ladderIndex(code, dep);
-        // Цена и класс до решения: по продажам за 3 (запасной — 7) дней до решения — тот же средний фактический тариф, что и «после»
-        // (с семействами и детскими); «Класс до» из отметки — только подпись. Своих продаж нет — «Класс до» по сетке тарифов,
-        // иначе — по средней цене продаж после решения (тогда считается только объём), иначе — по самому дешёвому классу лестницы.
+        // цена и класс до решения: средний фактический тариф за 3 дня до решения (запасной - 7), как и "после"
+        // класс до из отметки только подпись; своих продаж нет - по сетке, иначе по цене после, иначе самый дешёвый класс
         let priceBefore = null; let clsBefore = null;
         const src = before3.length ? before3 : before7;
         if (src.length) { priceBefore = mean(src.map(price)); clsBefore = m.clsFrom || lowestClass(src, ladder); }
-        if (!(priceBefore > 0)) priceBefore = null;   // нулевой или пустой тариф: делить на него нельзя
+        if (!(priceBefore > 0)) priceBefore = null;   // нулевой тариф не годится, делить на него нельзя
         const avgAfter = afterAdult.length ? mean(afterAdult.map(price)) : null;
         if (priceBefore == null && m.clsFrom && ladder.get(m.clsFrom) && ladder.get(m.clsFrom).price > 0) {
-            // Сравниваем одинаковое: есть и «Класс после» — цена «без решения» = фактический тариф после × (сетка «до» / сетка «после»),
-            // то есть разница цены — как в сетке, а состав билетов (семейства, дети) — тот же, что по факту. Иначе — цена класса по сетке.
+            // цена без решения = факт после × (сетка до / сетка после): разница как в сетке, состав билетов как по факту
+            // нет "класс после" - цена класса по сетке
             const pFrom = ladder.get(m.clsFrom).price;
             const to = m.clsTo ? ladder.get(m.clsTo) : null;
             priceBefore = to && to.price > 0 && avgAfter != null ? avgAfter * pFrom / to.price : pFrom;
@@ -562,8 +530,8 @@ window.DecisionMoney = (function () {
         if (clsBefore && clsAfter && clsBefore === clsAfter && !m.clsFrom && !m.clsTo && avgAfter != null && Math.abs(avgAfter - priceBefore) / priceBefore < 0.03) {
             flags.push('по продажам тариф не изменился: эффект в основном объёмный');
         }
-        // Доля платных взрослых негрупповых среди всех билетов вылета до решения.
-        // Слишком малая доля (почти нет платных до решения) ненадёжна: берём долю по умолчанию.
+        // доля платных взрослых негрупповых среди всех билетов до решения
+        // мало билетов до решения (<10) или доля меньше 0,3 - берём долю по умолчанию (MONEY_PAID_SHARE)
         let share = own.beforeAll >= 10 ? own.beforeAdult / own.beforeAll : num('MONEY_PAID_SHARE', 0.9);
         if (share < 0.3) share = num('MONEY_PAID_SHARE', 0.9);
         // Сила рейса: билеты за 3 дня до решения у вылета и у аналогов.
@@ -575,12 +543,12 @@ window.DecisionMoney = (function () {
         const dataCoversFlight = !!(flyDt && flyDt.getTime() < cutoffMs);
 
         if (kind === 'up' && nextGap == null && dataCoversFlight) {
-            // Итог повышения: остаток продаж от дня после решения до вылета против обычного добора (чистая норма).
+            // итог повышения: остаток продаж после решения до вылета против обычного добора
             const an0 = findAnalogs(base, code, dep, 0, seats);
             if (an0.list.length < 2) return na('нет улетевших похожих вылетов для итога', out);
             if (an0.withDecisions && !flags.includes('у похожих вылетов тоже были ценовые решения')) flags.push('у похожих вылетов тоже были ценовые решения');
-            // Следующее решение дальше окна: остаток — только до него (включая его день, как у окна), дни после — уже его.
-            // Иначе одни и те же билеты шли и в это повышение, и в следующее решение.
+            // следующее решение дальше окна: остаток только до него (его день включаем, как у окна)
+            // иначе одни и те же билеты засчитаются и повышению, и следующему решению
             const nextFar = nextDecisionGap(code, dep, m.check, Infinity);
             const remLo = nextFar != null ? Math.max(0, dtdD - nextFar) : 0;
             if (nextFar != null) flags.push(`серия решений: итог только до следующего решения (${nextFar} дн.)`);
@@ -597,7 +565,7 @@ window.DecisionMoney = (function () {
             const totalNow = list.length;
             const filled = seats > 0 && totalNow / seats >= num('RMS_FULL_PCT', 95) / 100;
             const dr = priceDriftOf(an0, dtdD, remLo, dtdD - 1, base, dep, code);
-            const pCf = priceBefore * dr.drift;   // цена «без решения»: прежняя с естественным ростом тарифа
+            const pCf = priceBefore * dr.drift;   // цена без решения - прежняя с естественным ростом тарифа
             Object.assign(out, { priceCf: Math.round(pCf), drift: Math.round(dr.drift * 1000) / 1000, driftN: dr.n });
             const est = estimateRemainder({ E: Erem, k: an0.keff, free, filled, nFactAll: rem.all, nFactPaid: rem.paid, rFact: rem.rev, priceBefore: pCf, share });
             return finish(out, est, { stage: 'final', k: an0.list.length, ke: round1(an0.keff), kNb: an0.nNb || 0, tierDays: an0.tier, remainder: true, filled, expAll: round1(est.nExpAll), factAll: rem.all,
@@ -605,18 +573,18 @@ window.DecisionMoney = (function () {
         }
 
         const dr = priceDriftOf(an, dtdD, dtdD - w, dtdD - 1, base, dep, code);
-        const pCf = priceBefore * dr.drift;   // цена «без решения»: прежняя с естественным ростом тарифа
+        const pCf = priceBefore * dr.drift;
         Object.assign(out, { priceCf: Math.round(pCf), drift: Math.round(dr.drift * 1000) / 1000, driftN: dr.n });
         const est = estimateWindow({ E, k: an.keff, nFactAll: own.all, nFactPaid: own.paid, rFact: own.rev, priceBefore: pCf, share, strength: normOwn == null ? null : { own: nOwn3, norm: normOwn } });
         if (kind === 'up' && nextGap == null) {
-            // Через окно — только ранний сигнал: рост цены сдвигает покупки на позже, вердикт по итогу вылета.
+            // через окно только ранний сигнал: рост цены сдвигает покупки на позже, вердикт - по итогу вылета
             const res = finish(out, est, { stage: 'prelim', expAll: round1(est.nExpAll), factAll: own.all });
             res.verdict = null;
             res.reason = 'ранний сигнал: итог повышения будет после вылета';
             return res;
         }
         const res = finish(out, est, { stage: 'final', expAll: round1(est.nExpAll), factAll: own.all });
-        // Хвост и заполнение — для пояснения (без рублей): сколько продали после окна против обычного.
+        // хвост и заполнение для пояснения, без рублей: продажи после окна против обычного
         if (dataCoversFlight) {
             const an0 = findAnalogs(base, code, dep, 0, seats);
             const Etail = an0.list.length ? analogMean(an0, 0, dtdD - w - 1) * lvK : null;
@@ -628,7 +596,7 @@ window.DecisionMoney = (function () {
         return res;
     }
 
-    // Функция ошибок (Абрамовиц–Стеган): для вероятности «плюс» в finish.
+    // функция ошибок (Абрамовиц-Стеган), для вероятности "плюс" в finish
     function erf(x) {
         const sign = x < 0 ? -1 : 1;
         const a = Math.abs(x);
@@ -637,17 +605,15 @@ window.DecisionMoney = (function () {
         return sign * y;
     }
 
-    // Сдвиг, который вычитаем из эффекта (рубли). Проверка на вылетах без решений показала два устойчивых сдвига:
-    //  1) тариф сам меняется по мере приближения вылета: доля ожидаемой выручки, линейно от «решение за ≤2 дня» до «за ≥9 дней» (окно);
-    //  2) норма по аналогам «сжата» к середине: при малых ожиданиях факт выше нормы, при больших ниже. Это — добавка в билетах за каждый
-    //     день окна (у остатка — за каждый день до вылета, не больше 12).
-    // У заполненного рейса билеты не оцениваются — поправка 0.
+    // сдвиг (рубли), вычитаем из эффекта; два устойчивых на вылетах без решений:
+    // 1) тариф растёт к вылету: доля выручки линейно от "решение за <=2 дня" до ">=9 дней"
+    // 2) норма сжата к середине: добавка в билетах за день окна (у остатка до 12 дней); заполненный - 0
     function biasShift(base, est, extra, filled) {
         const pb = base.priceCf || base.priceBefore || 0;
-        const ticketRub = (base.share != null ? base.share : 1) * pb;   // рублей на «один ожидаемый билет»
+        const ticketRub = (base.share != null ? base.share : 1) * pb;   // рублей на один ожидаемый билет
         if (extra.remainder) {
             if (filled) return 0;
-            const days = extra.remDays != null ? extra.remDays : (base.dtd || 0);   // дней в остатке (до вылета или до следующего решения)
+            const days = extra.remDays != null ? extra.remDays : (base.dtd || 0);   // дней в остатке: до вылета или до следующего решения
             return num('MONEY_BIAS_REMAINDER', -0.32) * est.nExpPaid * pb + num('MONEY_BIAS_ADD_REMAINDER', 0.58) * ticketRub * Math.min(12, Math.max(0, days));
         }
         const t = base.dtd > 0 ? Math.min(1, Math.max(0, (base.dtd - 2) / 7)) : 1;
@@ -656,25 +622,23 @@ window.DecisionMoney = (function () {
     }
 
     function finish(base, est, extra) {
-        // Ни обычных, ни фактических продаж за срок: судить не о чем (иначе метку давала бы одна поправка на сдвиг).
+        // нет ни обычных, ни фактических продаж: судить не о чем, иначе метку дала бы одна поправка на сдвиг
         if (extra.stage === 'final' && est.nExpAll < 0.5 && !(extra.factAll > 0)) {
             return Object.assign(base, extra, { stage: 'na', reason: 'нет продаж ни обычно, ни по факту: оценивать нечего', grade: 'C', expAll: round1(est.nExpAll) });
         }
-        const pbCf = base.priceCf || base.priceBefore || 0;   // цена «без решения»
+        const pbCf = base.priceCf || base.priceBefore || 0;   // цена "без решения"
         const sampleOk = est.nExpAll + (extra.factAll || 0) >= num('MONEY_MIN_TICKETS', 4);
         const flags = base.flags || [];
-        const kUsed = extra.ke != null ? extra.ke : (base.ke != null ? base.ke : base.k);   // у итога повышения — число аналогов именно для него
+        const kUsed = extra.ke != null ? extra.ke : (base.ke != null ? base.ke : base.k);   // для итога повышения - свой ke (число аналогов)
         const grade = flags.length ? 'C' : (kUsed >= 5 && est.nExpAll >= 6 ? 'A' : 'B');
-        // Каждый флаг расширяет диапазон на 25%: сомнительные оценки реже получают «сработало/не сработало».
+        // каждый флаг расширяет диапазон на 25%, сомнительные реже дают "сработало" или "не сработало"
         const widen = 1 + 0.25 * flags.length;
-        // Поправка на сдвиг (см. biasShift).
+        // поправка на сдвиг, см. biasShift
         const filledNow = !!(est.filled || extra.filled);
         const bias = biasShift(base, est, extra, filledNow);
-        // Спрос не растёт от повышения цены и не падает от снижения.
-        // Повышение: билеты сверх обычного купили бы и по старой цене, поэтому «без решения» — не меньше факта; нехватка идёт решению в минус.
-        // Снижение: нехватку билетов снижение вызвать не могло, поэтому «без решения» — не больше факта; прибавка билетов идёт в плюс.
-        // Отбрасывание шума только в одну сторону смещает сумму, поэтому добавляется его среднее (до 0,4 σ; подобрано по вылетам без решений),
-        // и на вылетах без решений итог остаётся около нуля.
+        // спрос не зависит от решения: при повышении "без решения" не меньше факта, при снижении не больше
+        // разница идёт решению (минус при повышении, плюс при снижении)
+        // шум в одну сторону смещает сумму: добавляем его среднее, до 0,4 σ (подобрано по вылетам без решений)
         let cfAdj = 0;
         let cfNoise = 0;
         const pb0 = pbCf;
@@ -692,26 +656,25 @@ window.DecisionMoney = (function () {
             }
         }
         let half = (est.hi - est.lo) / 2 * widen;
-        // Рейс заполнен: билетов уже не прибавить, но цена билета всё равно шумит.
+        // рейс заполнен: билетов не прибавить, но цена всё равно шумит
         if (filledNow) half = num('MONEY_NOISE_Z', 1.9) * num('MONEY_PRICE_NOISE', 0.32) * est.nExpPaid * pbCf * widen;
         else if (est.halfMax != null) half = Math.min(half, est.halfMax);
-        // Отклонения на вылетах без решений несимметричны: вверх хвост длиннее. Вниз от оценки диапазон шире (строже «помогло»),
-        // вверх уже («навредило» подтверждается мягче).
+        // на вылетах без решений хвост вверх длиннее: вниз диапазон шире (строже "помогло"), вверх уже
         let lo = dcorr - half * num('MONEY_RANGE_LOW', 1.2); let hi = dcorr + half * num('MONEY_RANGE_HIGH', 0.65);
-        // Билеты «без решения»: повышение — не меньше факта, снижение — не больше факта; у заполненного рейса — по факту.
+        // билеты без решения: при повышении не меньше факта, при снижении не больше; у заполненного - по факту
         let nCf = base.kind === 'up' ? est.nExpPaid + cfAdj : (base.kind === 'down' ? est.nExpPaid - cfAdj : est.nExpPaid);
         if (filledNow && est.nFactPaid != null) nCf = est.nFactPaid;
-        // Порог значимости — от выручки «без решения».
+        // порог значимости от выручки без решения
         const thr = Math.max(num('MONEY_MIN_PCT', 15) / 100 * nCf * pbCf, num('MONEY_MIN_RUB', 20000));
         let verdict = 'unclear';
         if (lo > 0 && dcorr >= thr) verdict = 'worked';
         else if (hi < 0 && dcorr <= -thr) verdict = 'failed';
-        // «Скорее»: диапазон включает ноль, но вероятность плюса (или минуса) по нормальной оценке не ниже 75%.
+        // "скорее": диапазон включает ноль, но вероятность знака по нормальной оценке не ниже 75%
         const zc = num('MONEY_NOISE_Z', 1.9);
         const sd = half > 0 ? half / zc : 0;
         let pPos = null;
         if (sd > 0) {
-            // Продажи идут пачками: на вылетах без решений отклонения вверх длиннее, чем вниз. Плюс подтверждаем строже, минус — мягче.
+            // плюс подтверждаем строже, минус мягче (отклонения вверх длиннее)
             const skew = num('MONEY_SKEW', 0.1);
             const t = dcorr / (sd * (dcorr >= 0 ? 1 + skew : 1 - skew));
             pPos = 0.5 * (1 + erf(t / Math.SQRT2));
@@ -720,9 +683,8 @@ window.DecisionMoney = (function () {
                 else if (pPos <= 1 - num('MONEY_LEAN_P', 0.75)) verdict = 'lean_neg';
             }
         }
-        // Эффект по продажам — простая разница: выручка по факту минус билеты «без решения» × прежняя цена.
-        // «Без решения»: для повышения не меньше факта, для снижения не больше факта (см. выше).
-        // Поправка на шум и сдвиг (corr) в эффект не входит: она нужна только для метки и вероятности и показывается отдельно.
+        // эффект по продажам: выручка по факту минус билеты без решения × прежняя цена
+        // поправка на шум и сдвиг (corr) в эффект не входит, она только для метки и вероятности
         const nFp = est.nFactPaid != null ? est.nFactPaid : nCf;
         const pure = est.revFact - nCf * pb0;
         const shift = dcorr - pure;
@@ -730,18 +692,18 @@ window.DecisionMoney = (function () {
         const priceEffect = round1k(nCf * (est.priceAfter - pb0));
         const volPure = delta - priceEffect;
         const corr = round1k(shift);
-        // Только цена: количество билетов не трогаем (факт), меняется лишь цена против цены «без решения». Это вторая граница результата.
+        // только цена: билеты как по факту, меняется цена против "без решения"; вторая граница результата
         const priceOnly = round1k((nFp) * (est.priceAfter - pb0));
         const volume = volPure;
-        // Диапазон — вокруг того же числа, по которому ставится метка: эффект с поправкой (delta + corr).
+        // диапазон вокруг того же числа, что и метка: эффект с поправкой (delta + corr)
         const res = Object.assign(base, extra, {
             priceAfter: Math.round(est.priceAfter), delta, lo: round1k(lo), hi: round1k(hi), sd: round1k(sd),
             volume, volPure, corr, priceEffect, nCf: round1(nCf), priceOnly, rangeLow: Math.min(delta, priceOnly), rangeHigh: Math.max(delta, priceOnly), payback: est.priceAfter > 0 ? round1(nCf * pb0 / est.priceAfter) : null,
             thr: round1k(thr), nExpPaid: round1(est.nExpPaid), expRev: round1k(nCf * pb0), revFact: round1k(est.revFact), strengthK: Math.round(est.strengthK * 100) / 100,
             dTickets: round1(est.dTickets), grade, cfAdj: round1(cfAdj)
         });
-        // Остаток: эффект ниже порога значимости — «без заметного эффекта», иначе — направление по знаку («чуть лучше / хуже»).
-        // Вероятность плюса (pPos) показывается рядом, поэтому слабый сигнал не выдаётся за твёрдый.
+        // остаток: ниже порога - "без заметного эффекта", иначе направление по знаку ("чуть лучше / хуже")
+        // pPos показываем рядом, чтобы слабый сигнал не выдавали за твёрдый
         if (!sampleOk) verdict = verdict === 'worked' ? 'lean_pos' : (verdict === 'failed' ? 'lean_neg' : verdict);
         if (verdict === 'unclear') {
             if (Math.abs(dcorr) < thr) verdict = 'flat';
@@ -753,9 +715,7 @@ window.DecisionMoney = (function () {
         return res;
     }
 
-    // ---------- зафиксированные итоги (общий файл) ----------
-
-    const store = new Map();       // key → запись
+    const store = new Map();       // ключ -> запись
     const loadedMonths = new Set();
     let rev = 0;
 
@@ -776,7 +736,7 @@ window.DecisionMoney = (function () {
         for (const month of months) {
             if (!month || loadedMonths.has(month)) continue;
             const r = await SharedStorage.readJsonFileStrict(fileOf(month)).catch(() => ({ ok: false }));
-            if (!r.ok) continue;   // не читается — не считаем «пусто», повторим позже
+            if (!r.ok) continue;   // файл не читается: не считаем пустым, повторим позже
             loadedMonths.add(month);
             const items = (r.data && r.data.items) || {};
             Object.keys(items).forEach(k => { store.set(k, items[k]); });
@@ -786,40 +746,40 @@ window.DecisionMoney = (function () {
 
     function get(key) { return store.get(key) || null; }
 
-    // Записывает зафиксированные итоги. Слияние по ключу: итог не заменяется предварительным; при двух итогах побеждает ранний.
+    // слияние по ключу: итог не затирает предварительный; при двух итогах побеждает ранний
     async function persist(entries) {
         if (!entries.length || typeof SharedStorage === 'undefined' || !canFreeze()) return false;
         const byMonth = new Map();
         entries.forEach(e => { const mo = monthOf(e.check); if (mo) { if (!byMonth.has(mo)) byMonth.set(mo, []); byMonth.get(mo).push(e); } });
         let ok = true;
         for (const [month, list] of byMonth) {
-            // Перечитать файл → добавить свои итоги → записать «только если файл не менялся с прочтения»:
-            // итоги, которые другой ПК зафиксировал между чтением и записью, не теряются (при расхождении — заново).
+            // перечитать, добавить свои итоги, записать только если файл не менялся с прочтения
+            // итоги другого ПК, записанные между чтением и записью, не теряем; при расхождении - заново
             let items = null;
             const res = await SharedStorage.updateJsonFile(fileOf(month), (cur) => {
                 const next = Object.assign({}, (cur && cur.items) || {});
                 let changed = false;
                 list.forEach(e => {
                     const old = next[e.key];
-                    if (old && old.stage === 'final' && old.v === METHOD_VERSION) return;                               // итог уже зафиксирован — не трогаем
-                    if (old && old.stage === 'prelim' && e.stage === 'prelim') return;       // ранний сигнал один раз
+                    if (old && old.stage === 'final' && old.v === METHOD_VERSION) return;                               // итог уже зафиксирован, не трогаем
+                    if (old && old.stage === 'prelim' && e.stage === 'prelim') return;       // ранний сигнал пишем один раз
                     next[e.key] = e;
                     changed = true;
                 });
                 items = next;
-                return changed ? { version: 1, updatedAt: new Date().toISOString(), items: next } : false;   // всё уже записано — файл не трогаем
+                return changed ? { version: 1, updatedAt: new Date().toISOString(), items: next } : false;   // всё уже записано, файл не трогаем
             }).catch(() => ({ ok: false }));
             if (res.ok || res.aborted) { Object.keys(items).forEach(k => store.set(k, items[k])); rev++; } else ok = false;
         }
         return ok;
     }
 
-    // Пересчитать зафиксированный итог с текущими параметрами (кнопка администратора): запись заменяется.
+    // пересчёт зафиксированного итога с текущими параметрами (кнопка админа), запись заменяется
     async function recompute(m) {
         const key = keyOf(m);
         if (typeof SalesDayLog !== 'undefined' && SalesDayLog.ensureMonths) { try { await SalesDayLog.ensureMonths([monthOf(m.dep)]); } catch (e) { /* ignore */ } }
         const res = compute(m);
-        // Пересчитать нечем (билетов вылета уже нет) — прежний итог не стираем.
+        // пересчитать нечем (билетов вылета уже нет): прежний итог не стираем
         const old = get(key);
         if (old && old.stage === 'final' && res.stage === 'na' && res.noTickets) return old;
         const entry = Object.assign({}, res, { key, check: m.check, at: new Date().toISOString(), recomputed: true });
@@ -838,12 +798,12 @@ window.DecisionMoney = (function () {
         return entry;
     }
 
-    // Итог для строки отчёта: зафиксированный или свежий расчёт (не зафиксированный — пометка live).
-    // Фиксирует итоговые (и ранние сигналы) тот, у кого есть право, порциями, чтобы не вешать страницу.
+    // итог для строки отчёта: зафиксированный или свежий расчёт (незафиксированный - пометка live)
+    // фиксирует тот, у кого есть право, порциями, чтобы не вешать страницу
     async function resolveAll(decisions, onProgress) {
         const months = [...new Set(decisions.map(d => monthOf(d.check)).filter(Boolean))];
         await ensureMonths(months);
-        // Журнал продаж по дням: месяцы вылетов решений (в фоне чтения нет ничего тяжёлого — файл на месяц небольшой).
+        // журнал продаж по дням: читаем месяцы вылетов решений (файл на месяц небольшой)
         if (typeof SalesDayLog !== 'undefined' && SalesDayLog.ensureMonths) {
             const dm = [...new Set(decisions.map(d => monthOf(d.dep)).filter(Boolean))];
             try { await SalesDayLog.ensureMonths(dm); } catch (e) { /* без журнала считаем по файлу продаж */ }
@@ -872,14 +832,14 @@ window.DecisionMoney = (function () {
         return out;
     }
 
-    // Фоновая фиксация итогов: после входа и после публикации данных, в простое, порциями (resolveAll отдаёт управление каждые 20 мс).
-    // Нужна, чтобы плитка «Сегодня» была актуальной, даже если никто не открывал отчёт «Решения». Только у тех, кому можно фиксировать.
+    // фоновая фиксация итогов после входа и публикации, в простое, порциями (resolveAll - каждые 20 мс)
+    // нужна, чтобы плитка "Сегодня" была актуальной; только у тех, кому можно фиксировать
     let freezeSig = '';
     let freezing = false;
     function freezeInBackground() {
         if (freezing || !canFreeze() || typeof SalesManagement === 'undefined' || !SalesManagement.allMarks) return Promise.resolve(false);
         if (typeof groupedData === 'undefined' || !groupedData || !Object.keys(groupedData).length) return Promise.resolve(false);
-        // Нет свежего файла продаж — итог по нему был бы неверным.
+        // нет свежего файла продаж: итог был бы неверным
         if (typeof hasSalesFileLoaded === 'function' && !hasSalesFileLoaded()) return Promise.resolve(false);
         if (typeof getStaleSalesInfo === 'function' && getStaleSalesInfo()) return Promise.resolve(false);
         const today = typeof getTodayDate === 'function' ? getTodayDate() : '';
@@ -892,7 +852,7 @@ window.DecisionMoney = (function () {
             if (m.status !== 'down' && m.status !== 'up') return;
             const d = parseLocalDate(m.check);
             const ago = d && t0 ? Math.round((t0 - d) / 86400000) : null;
-            if (ago == null || ago < 0 || ago > 30) return;       // то же окно, что у плитки «Сегодня»
+            if (ago == null || ago < 0 || ago > 30) return;       // то же окно, что у плитки "Сегодня"
             const k = keyOf(m);
             if (seen.has(k)) return;
             seen.add(k);
@@ -913,15 +873,15 @@ window.DecisionMoney = (function () {
         else setTimeout(run, 5000);
     }
 
-    // Метод сменился, а билетов вылета уже нет в файле продаж (в архиве — только число билетов по дням и выручка за весь вылет,
-    // без тарифа по дням сделки, поэтому рубли за окно по нему не пересчитать): оставляем прежний итог.
-    // Он записывается под текущей версией с пометкой vOld — посчитан прежним способом.
+    // метод сменился, а билетов вылета уже нет в файле продаж: оставляем прежний итог
+    // в архиве только билеты по дням и выручка за вылет, тарифа по дням нет, рубли за окно не пересчитать
+    // записываем под текущей версией с пометкой vOld (посчитан прежним способом)
     function keepOld(frozen, res) {
         if (!frozen || frozen.stage !== 'final' || frozen.v === METHOD_VERSION || !res || res.stage !== 'na' || !res.noTickets) return null;
         return Object.assign({}, frozen, { v: METHOD_VERSION, vOld: frozen.vOld || frozen.v });
     }
 
-    // Ранний сигнал повышения можно заменить итогом, когда вылет состоялся.
+    // ранний сигнал повышения заменяем итогом, когда вылет состоялся
     function frozenUpgradable(m) {
         const flyDt = parseLocalDate(m.dep);
         const cutoff = typeof salesDataCutoffTime === 'function' ? salesDataCutoffTime() : Date.now();

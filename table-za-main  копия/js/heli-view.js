@@ -1,6 +1,6 @@
-// Вкладка «Вертолёты»: карточки по парам рейсов (туда / обратно), загрузка по отрезкам маршрута,
-// двойной щелчок по строке — «маршрутный лист». Данные — js/heli-data.js (самолётные данные не затрагиваются).
-// Стили — css/ux-heli.css; таблица рисуется теми же классами, что «Загрузка рейсов» (data-board-table).
+// вкладка "Вертолёты": карточки по парам туда/обратно, загрузка по отрезкам, двойной клик - маршрутный лист
+// данные в js/heli-data.js, самолётные не трогаем; стили в css/ux-heli.css
+// таблица на тех же классах, что "Загрузка рейсов" (data-board-table)
 window.HeliView = (function () {
     const UI_KEY = 'krasavia_heli_ui';
     const DOW = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
@@ -8,7 +8,7 @@ window.HeliView = (function () {
 
     let ui = { base: 'all', q: '', hideFlew: false, day: false, attn: false };
     let uiLoaded = false;
-    let open = new Set();          // раскрытые строки: «KV-781|25.11.2026»
+    let open = new Set();          // раскрытые строки, ключ вида "KV-781|25.11.2026"
     let renderSig = '';
     let pointsPromise = null;
     let searchTimer = null;
@@ -49,21 +49,19 @@ window.HeliView = (function () {
         return t.getTime();
     }
 
-    // Закрыт, если закрыты все пары в файле загрузки или рейс (дата|номер) есть в файле закрытых рейсов.
+    // закрыт, если закрыты все пары в файле загрузки или рейс (дата|номер) есть в файле закрытых
     function isClosed(F) {
         return !!(F && (F.closedAll || (typeof closedFlights !== 'undefined' && closedFlights && closedFlights.has(F.key))));
     }
 
-    // ---------- «Внимание»: вылеты завтра с пустым «лишним» отрезком ----------
     function tomorrowTs() {
         const d = new Date(todayTs());
         d.setDate(d.getDate() + 1);
         return d.getTime();
     }
 
-    // Пара туда/обратно одной даты. Пустой (на борту 0) отрезок, кроме разворотных, — внимание.
-    // Разворотные: последний отрезок «туда» и первый «обратно» (у рейса без остановок это и есть единственные отрезки):
-    // внимание, только если пусты оба. Закрытые и неполные пары не считаются.
+    // пустой отрезок (на борту 0) - внимание; для разворотных (последний туда, первый обратно) только если пусты оба
+    // у рейса без остановок это единственные отрезки; закрытые и неполные пары не считаем
     function attnOf(e) {
         if (!e || !e.out || !e.in || e.ts !== tomorrowTs() || isClosed(e.out) || isClosed(e.in)) return null;
         const o = e.out.segs, i = e.in.segs;
@@ -75,7 +73,6 @@ window.HeliView = (function () {
         return res.out.size || res.in.size ? res : null;
     }
 
-    // ---------- расчёт строки ----------
     function sideState(F, today) {
         if (!F) return null;
         return {
@@ -86,7 +83,7 @@ window.HeliView = (function () {
         };
     }
 
-    // ЗПК пары по местам: загрузка туда + обратно / места туда + обратно; закрытое направление не считается.
+    // ЗПК пары: загрузка туда+обратно / места туда+обратно; закрытое направление не считаем
     function entryAvg(e) {
         let sold = 0, seats = 0;
         [e.out, e.in].forEach(F => {
@@ -125,7 +122,6 @@ window.HeliView = (function () {
         });
     }
 
-    // ---------- плашки ----------
     function plaqueHtml(cell, F, st, isMax, attn) {
         if (!cell) return '<span class="heli-pl heli-pl-na">–</span>';
         const v = cell.v;
@@ -152,7 +148,6 @@ window.HeliView = (function () {
         return `<td class="${cellCls} heli-pl-cell"><div class="heli-pl-row">${items}</div></td>`;
     }
 
-    // ---------- строка таблицы ----------
     function legCells(F, st, isOut, side, attn) {
         const block = isOut ? 'data-block-out' : 'data-block-in';
         const legCls = isOut ? 'pair-leg-out' : 'pair-leg-in';
@@ -206,7 +201,6 @@ window.HeliView = (function () {
         return html;
     }
 
-    // ---------- маршрутный лист ----------
     function soldLine(F) {
         if (!HeliData.hasSales()) return '';
         const s = HeliData.flightSales(F);
@@ -277,7 +271,6 @@ window.HeliView = (function () {
         return `<tr class="heli-exp-row" data-exp="${esc((e.out || e.in).no + '|' + e.date)}"><td colspan="${colspan}" class="heli-exp"><div class="heli-sheet-wrap"><div class="heli-sheet">${sheetCol(e.out, true, attnFor(e, true))}${sheetCol(e.in, false, attnFor(e, false))}</div></div></td></tr>`;
     }
 
-    // ---------- карточка ----------
     function cardHtml(card, today, stat) {
         const entries = visibleEntries(card, today);
         if (!entries.length) return '';
@@ -306,7 +299,7 @@ window.HeliView = (function () {
                 + `<th class="pair-sub-${c}${isOut && !side.multi ? ' pair-split-end' : ''}">Занято, %</th>` + labels(pts, side, isOut);
         };
 
-        // строка «Итого за сутки» (как в «Загрузке рейсов»)
+        // строка "Итого за сутки" (как в "Загрузке рейсов")
         let daySum = '';
         if (ui.day) {
             let so = 0, si = 0;
@@ -331,7 +324,7 @@ window.HeliView = (function () {
         }).join('');
 
         const cap = card.cap || 22;
-        // Карточка, которой тесно в половине ширины (много отрезков + колонка «За сутки»), занимает весь ряд.
+        // карточка с многими отрезками и колонкой "За сутки" занимает весь ряд, не половину
         return `<div class="data-route-block data-type-krai heli-card" data-card="${card.key}">
             <div class="data-route-table-wrap table-wrapper heli-wrap">
             <table class="data-table pair-table data-board-table heli-table${ui.day ? ' heli-with-day' : ''}">
@@ -351,7 +344,6 @@ window.HeliView = (function () {
             ${card.multi ? `<div class="heli-legend">${LEGEND}</div>` : ''}</div>`;
     }
 
-    // ---------- вывод страницы ----------
     function currentSig() {
         return [HeliData.getEpoch(), HeliData.points.rev(), ui.base, ui.q, ui.hideFlew ? 1 : 0, ui.day ? 1 : 0, ui.attn ? 1 : 0, HeliData.dayStrings().today, (typeof closedFlights !== 'undefined' && closedFlights ? closedFlights.size : 0), canExport() ? 1 : 0].join('|');
     }
@@ -402,7 +394,6 @@ window.HeliView = (function () {
         sel.value = ui.base;
     }
 
-    // ---------- раскрытие строки ----------
     function toggleRow(tr) {
         if (!tr || !tr.classList.contains('heli-row')) return;
         const model = HeliData.model();
@@ -444,7 +435,7 @@ window.HeliView = (function () {
         });
     }
 
-    // Перетаскивание мышью вбок — как initDataBoardDrag в «Загрузке рейсов».
+    // перетаскивание мышью вбок, как initDataBoardDrag в "Загрузке рейсов"
     function initDrag(box) {
         if (!box || box.dataset.dragInit) return;
         box.dataset.dragInit = '1';
@@ -466,7 +457,6 @@ window.HeliView = (function () {
         box.addEventListener('mouseleave', stop);
     }
 
-    // ---------- справочник пунктов ----------
     let hp = null;   // { rows: [{code, name, isNew}], editable, q }
 
     function ensureModal() {
@@ -601,7 +591,6 @@ window.HeliView = (function () {
         render(true);
     }
 
-    // ---------- страница ----------
     function createView(c) {
         loadUi();
         const exportOn = canExport();
@@ -654,7 +643,7 @@ window.HeliView = (function () {
         if (typeof applyViewZoom === 'function') applyViewZoom('heli');
     }
 
-    // Общий справочник читается один раз; после чтения названия в таблице обновляются.
+    // общий справочник читаем один раз, потом обновляем названия в таблице
     function loadPointsThenRender() {
         if (!pointsPromise) {
             pointsPromise = HeliData.points.load().catch(() => {});
@@ -669,7 +658,6 @@ window.HeliView = (function () {
         if (typeof applyViewZoom === 'function') applyViewZoom('heli');
     }
 
-    // ---------- Excel ----------
     function exFill(p) {
         const t = Math.min(1, p / 60);
         const mix = (a, b) => Math.round(a + (b - a) * t);

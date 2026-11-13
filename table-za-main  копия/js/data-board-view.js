@@ -1,5 +1,4 @@
-// js\data-board-view.js - вкладка «Загрузка рейсов».
-// Globals on purpose: no bundler; onclick and other files call by name.
+// вкладка "Загрузка рейсов"; глобальные функции намеренно, без сборщика, onclick зовёт по имени
 
 function invalidateDataBoardCache() {
     dataBoardRenderCache = { sig: '', chunks: null, stats: '' };
@@ -20,7 +19,8 @@ function getDataBoardLegColCount() {
     return n;
 }
 
-// ЗПК пары по местам: (загрузка туда + обратно) / (места туда + обратно); нога без продаж даёт 0, закрытая не считается.
+// ЗПК пары по местам: (загрузка туда + обратно) / (места туда + обратно)
+// нога без продаж дает 0, закрытая не считается
 function getEntryPairZpk(entry) {
     let sold = 0, seats = 0;
     [entry.outRow, entry.inRow].forEach(row => {
@@ -68,7 +68,7 @@ function getDataPairEntries(pair, todayStart) {
             return dz !== 0 ? dz : comparePairEntriesByDateThenDep(a, b, 'asc');
         });
     } else {
-        // маршрут / по умолчанию — внутри пары: дата, затем время вылета
+        // внутри пары по умолчанию: дата, затем время вылета
         entries.sort((a, b) => comparePairEntriesByDateThenDep(a, b, 'asc'));
     }
 
@@ -83,7 +83,7 @@ function sortDataRoutePairs(pairs, todayStart) {
     }
     if (dataSort === 'zpk-desc' || dataSort === 'zpk-asc') {
         const dir = dataSort === 'zpk-desc' ? -1 : 1;
-        // один проход: иначе sort() вызывает getDataPairEntries O(n²) раз
+        // один проход, иначе sort() дергает getDataPairEntries O(n²) раз
         const score = new Map();
         pairs.forEach((p) => {
             const entries = getDataPairEntries(p, todayStart);
@@ -145,18 +145,18 @@ function getDataRoutePairs(todayStart) {
 function getDataLegMetrics(row) {
     if (!row) return { seats: null, load: null, zpk: null, bookings: null };
     const sold = parseInt(row[6] || 0, 10) || 0;
-    // AV SSP Seg = спец. брони; кресла в продаже = всего − спец. брони
+    // AV SSP Seg = спец. брони; кресла в продаже = всего - спец. брони
     const avs = typeof getSpecBookings === 'function' ? getSpecBookings(row) : (parseInt(row[8] || 0, 10) || 0);
     const seats = typeof getSeatsOnSale === 'function' ? getSeatsOnSale(row) : Math.max(0, (parseInt(row[5] || 0, 10) || 0) - avs);
     const denom = seats;
     let zpk = null;
-    if (denom > 0) {   // нога без продаж — 0%, как на других вкладках
+    if (denom > 0) {   // нога без продаж - 0%, как на других вкладках
         zpk = Math.round(sold / denom * 100);
     }
     return { seats, load: sold, zpk, bookings: avs };
 }
 
-// Продажи у вылета с посадками записаны на общий ключ рейса: в «За сутки» их показываем один раз, на основном участке.
+// продажи рейса с посадками записаны на общий ключ: в "За сутки" показываем один раз, на основном участке
 function getDataEntriesFirstSales(entries) {
     const rows = [];
     (entries || []).forEach(e => { if (e.outRow) rows.push(e.outRow); if (e.inRow) rows.push(e.inRow); });
@@ -186,7 +186,7 @@ function renderDataLegCells(row, legCls, options = {}) {
     const block = isOut ? 'data-block-out' : 'data-block-in';
     const showBook = !!dataShowSpecBookings;
     const showTimes = !!dataShowLocalTimes;
-    // Рейса в этот день нет (например, доп. без обратного) — половина строки серая, как у закрытого.
+    // рейса в этот день нет (например, доп. без обратного): половина строки серая, как у закрытого
     const emptyDash = (extra = '') => `<td class="${legCls} ${block} font-semibold data-leg-closed data-leg-none${extra}">—</td>`;
     const emptyBook = (showBook ? emptyDash() : '') + (dataShowDaySales ? emptyDash() : '');
     if (!row) {
@@ -204,7 +204,7 @@ function renderDataLegCells(row, legCls, options = {}) {
     // серый блок ноги, если закрыта (даже когда второе направление открыто)
     const closedCls = closed ? ' data-leg-closed' : '';
     const flewCls = (!closed && options.flew) ? ' data-leg-flew' : '';
-    // Блок: жёлтый только если ЗПК ≥ 100% (и не улетевший / не закрытый)
+    // Блок: жёлтый только если ЗПК >= 100% (и не улетевший / не закрытый)
     const fullCls = (options.allowYellow && !closed && !options.flew && m.zpk !== null && m.zpk >= 100) ? ' data-block-zpk-full' : '';
     const customColor = (!fullCls && !closed && !options.flew && options.customColor) ? options.customColor : '';
     const hlCls = customColor ? ' data-block-custom-hl' : '';
@@ -226,7 +226,7 @@ function renderDataLegCells(row, legCls, options = {}) {
     const bookCell = showBook
         ? `<td class="${cellBase} data-col-bookings${fullCls}${hlCls}"${hlStyle}>${m.bookings != null ? formatNum(m.bookings) : '—'}</td>`
         : '';
-    // Продажи за прошлые сутки (DEALDATE = вчера), как столбец «Вчера» в «Динамике продаж».
+    // продажи за прошлые сутки (DEALDATE = вчера), как столбец "Вчера" в "Динамике продаж"
     const dsYest = dataShowDaySales ? getDataLegYesterday(row, options.salesFirst) : 0;
     const daySalesCell = dataShowDaySales
         ? `<td class="${cellBase} data-col-bookings${fullCls}${hlCls}"${hlStyle}>${dsYest ? formatNum(dsYest) : '—'}</td>`
@@ -286,7 +286,7 @@ function renderDataRouteTableRows(pair, todayStart) {
         const avgHtml = bothClosed
             ? '<span class="closed-text">ЗАКРЫТ</span>'
             : (avgPctOpen !== null ? `${avgPctOpen}%` : '—');
-        // У рейса с посадками в один день несколько строк — подписываем участок («TGP → THX»).
+        // у рейса с посадками в один день несколько строк: подписываем участок (TGP -> THX)
         const segOf = (r) => (r && String(r[3] || '').split('-').length >= 3 ? getRouteLabel(r) : '');
         const segTag = segOf(entry.outRow) || segOf(entry.inRow);
         const dateCell = buildPairRowDateCell(entry.date, entry.outRow, entry.inRow, pair.outbound, pair.inbound)
@@ -296,7 +296,7 @@ function renderDataRouteTableRows(pair, todayStart) {
             : ((!flewIn && entry.inRow) ? entry.inRow[1] : entry.date);
 
         const checkCls = typeof FlightChecks !== 'undefined' ? FlightChecks.rowClass([entry.outRow, entry.inRow]) : '';
-        // Для клика по своей половине строки: «туда» открывает свой рейс, «обратно» — обратный.
+        // клик по своей половине строки: "туда" открывает свой рейс, "обратно" - обратный
         const legAttrs = (entry.outRow ? ` data-out-code="${escAttr(cleanFlight(entry.outRow[0]))}" data-out-date="${escAttr(entry.outRow[1])}"` : '')
             + (entry.inRow ? ` data-in-code="${escAttr(cleanFlight(entry.inRow[0]))}" data-in-date="${escAttr(entry.inRow[1])}"` : '');
         return `<tr class="${rowCls}${checkCls}" data-outbound="${escAttr(pair.outbound)}" data-date="${escAttr(clickDate)}"${legAttrs} tabindex="0">
@@ -309,7 +309,7 @@ function renderDataRouteTableRows(pair, todayStart) {
     }).join('');
 }
 
-// Строка «Итого за сутки» над таблицей маршрута (галочка «Продажа за сутки»): сумма столбца «За сутки» по показанным вылетам.
+// строка "Итого за сутки" над маршрутом (галочка "Продажа за сутки"): сумма "За сутки" по показанным вылетам
 function buildDataDaySalesSumRow(pair, todayStart) {
     if (!dataShowDaySales) return '';
     const entries = getDataPairEntries(pair, todayStart);
@@ -449,7 +449,7 @@ function openDataBoardFlight(base, date) {
     } else if (!isValidFlightBase(flight)) {
         return;
     }
-    // Остаёмся на «Данных» — только запоминаем выбранный рейс
+    // остаёмся на "Данных", только запоминаем выбранный рейс
     currentFlight = typeof getBaseFlight === 'function' ? (getBaseFlight(flight) || flight) : flight;
     lastSelectedDate = flyDate;
     if (typeof SessionStore !== 'undefined') SessionStore.saveUiSession();
@@ -457,7 +457,7 @@ function openDataBoardFlight(base, date) {
 }
 
 function bindDataBoardInteractions(track) {
-    // после cache-hit HTML пересоздаётся, но флаг bound на track остаётся — ок для делегирования
+    // после cache-hit HTML пересоздаётся, флаг bound на track остаётся - ок для делегирования
     if (!track || track.dataset.bound) return;
     track.dataset.bound = '1';
 
@@ -621,7 +621,7 @@ function renderDataBoard() {
         return;
     }
     if (dataBoardRenderCache.sig === sig && dataBoardRenderCache.chunks) {
-        // Готовый HTML вставляется порциями по кадрам, а не одной огромной вставкой.
+        // готовый HTML вставляем порциями по кадрам, не одной огромной вставкой
         const chunks = dataBoardRenderCache.chunks;
         track.innerHTML = '';
         track.dataset.renderSig = '';
@@ -643,7 +643,7 @@ function renderDataBoard() {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const pairs = getDataRoutePairs(todayStart);
-    // Сначала столько маршрутов, сколько видно на экране, остальные — следующими кадрами.
+    // сначала маршруты, которые видно на экране, остальные следующими кадрами
     const FIRST_CHUNK = 4;
     const CHUNK = 12;
     _dataBoardRowAcc = 0;
@@ -651,11 +651,11 @@ function renderDataBoard() {
     track.dataset.renderSig = '';
 
     const chunks = [];
-    let cardsShown = 0;   // маршруты, у которых есть что показать (при «Скрыть улет.» часть маршрутов остаётся пустой)
+    let cardsShown = 0;   // маршруты, у которых есть что показать (при "Скрыть улет." часть пустая)
     const statsLine = (n, rows) => `${n} ${pluralRu(n, 'маршрут', 'маршрута', 'маршрутов')} · ${rows} ${pluralRu(rows, 'дата', 'даты', 'дат')}`;
     const finish = (statsText) => {
         if (gen !== dataBoardRenderGen) return;
-        // Порции HTML запоминаются при построении: сериализовать готовый DOM заново не нужно.
+        // порции HTML кэшируем при построении, DOM заново сериализовать не нужно
         dataBoardRenderCache = { sig, chunks, stats: statsText };
         track.dataset.renderSig = sig;
         track.classList.remove('data-board-loading');
@@ -684,7 +684,7 @@ function renderDataBoard() {
             return;
         }
         if (!cardsShown) {
-            // Маршруты есть, но все даты скрыты («Скрыть улет.»): вместо пустого экрана — пояснение.
+            // маршруты есть, но все даты скрыты ("Скрыть улет."): вместо пустого экрана пояснение
             const none = '<div class="data-board-empty">Нет рейсов по выбранным фильтрам</div>';
             track.insertAdjacentHTML('beforeend', none);
             chunks.push(none);
@@ -785,8 +785,8 @@ function initDataBoardDrag() {
         container.scrollLeft = scrollLeft - dx;
     });
 
-    // Подавляем только клик, который придёт сразу после отпускания кнопки над доской.
-    // Ушли мышью за край — клика не будет, и следующий настоящий клик терять нельзя.
+    // гасим только клик сразу после отпускания кнопки над доской
+    // ушли мышью за край - клика не будет, следующий настоящий клик терять нельзя
     const stop = (suppress) => {
         if (didDrag && suppress) dataBoardSuppressClick = true;
         isDown = false;

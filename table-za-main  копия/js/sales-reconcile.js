@@ -1,28 +1,20 @@
-// Сверка продаж с загрузкой: билеты из файла продаж — к тому вылету, на котором люди реально летят.
-// Файл продаж оставляет билет на старом номере и старой дате, когда рейс переносят или дают ему доп. номер:
-// тогда у вылета загрузка 40, а продаж 2. Здесь (после загрузки данных и после снимка):
-//  1. один день, основной и доп. номера рейса: лишние билеты (сверх загрузки номера и с номеров, которые
-//     в этот день не летят) — на номер, где загрузка больше продаж, не больше, чем там не хватает;
-//  2. перенос даты: билеты с даты, на которой этого рейса нет, — на ближайший вылет этого рейса (±7 дней),
-//     где загрузка больше продаж, но не больше, чем там не хватает.
-// У перенесённого билета остаётся пометка moved — «дд.мм.гггг|KV-…», где он был в файле. Каждый запуск
-// сначала возвращает билеты на места из файла и считает заново — результат одинаков на всех ПК.
-// Групповая бронь переносится целиком.
-// По ней строится отчёт «Сверка» (reports-view → SalesReconcile.card / tileList).
+// сверка продаж с загрузкой: билеты переносим на вылет, где люди реально летят (файл держит старый номер и дату)
+// 1) один день, основной и доп. номера: лишние билеты туда, где продано меньше загрузки; 2) перенос даты - на ближайший вылет ±7 дней
+// каждый запуск с нуля от файла, поэтому результат одинаков на всех ПК; групповая бронь едет целиком; отчёт Сверка - reports-view
 window.SalesReconcile = (function () {
     let lastRun = { moved: 0, at: 0 };
     let runs = 0;
-    let movedFromKeys = new Set();   // 'дата|код', откуда билеты уехали (нужно, чтобы задержанный рейс помнил исходную дату)
+    let movedFromKeys = new Set();   // 'дата|код', откуда уехали билеты (задержанный рейс помнит исходную дату)
 
     function loadsByDeparture() {
-        // 'дата|код' → загрузка (на многосегментном рейсе — наибольшая по участкам), и по базовому рейсу → даты.
+        // 'дата|код' -> загрузка (на многосегментном - максимум по участкам); по базовому рейсу - даты
         const load = new Map();
         const byBase = new Map();
         let minTs = Infinity;
         let maxTs = -Infinity;
         Object.keys(typeof groupedData !== 'undefined' && groupedData ? groupedData : {}).forEach(base => {
             (groupedData[base] || []).forEach(row => {
-                if (row.segKey) return;   // участок доп. посадки в чужом рейсе — свои билеты по «откуда / куда»
+                if (row.segKey) return;   // участок доп. посадки в чужом рейсе: свои билеты по откуда / куда
                 const code = cleanFlight(row[0]);
                 const date = row[1];
                 if (!code || !date) return;
@@ -40,7 +32,7 @@ window.SalesReconcile = (function () {
         return { load, byBase, minTs, maxTs };
     }
 
-    // Равномерно выбрать n билетов из списка (сохраняет форму кривой продаж).
+    // равномерно берём n билетов из списка, форма кривой сохраняется
     function takeEvenly(list, n) {
         if (n <= 0) return [];
         if (n >= list.length) return list.splice(0, list.length);
@@ -52,8 +44,8 @@ window.SalesReconcile = (function () {
         return picked;
     }
 
-    // Порядок билетов не зависит от того, в каком порядке они лежат в списке: по дате сделки, затем по тарифу.
-    // Одинаковые по этим полям билеты для расчётов неотличимы — результат одинаков на всех ПК.
+    // порядок: дата сделки, потом тариф, не зависит от порядка в списке
+    // одинаковые по этим полям билеты неотличимы, результат одинаков на всех ПК
     function byDeal(a, b) {
         const da = parseLocalDate(a.dealDate);
         const db = parseLocalDate(b.dealDate);
@@ -63,12 +55,12 @@ window.SalesReconcile = (function () {
             || String(a.basicFareStr || '').localeCompare(String(b.basicFareStr || ''))
             || ((Number(a.grp) || 0) - (Number(b.grp) || 0))
             || String(a.grpId == null ? '' : a.grpId).localeCompare(String(b.grpId == null ? '' : b.grpId))
-            // Последним — номер билета и заказа (есть у тех, кому видны данные): одинаково на всех ПК.
+            // последним номер билета и заказа (видны не всем), тоже одинаково на всех ПК
             || String(a.bsonum || '').localeCompare(String(b.bsonum || ''))
             || String(a.pnr || '').localeCompare(String(b.pnr || ''));
     }
 
-    // Билеты одного заказа (групповая бронь) переносятся вместе: «единица» — заказ или одиночный билет.
+    // билеты одного заказа едут вместе; единица - заказ или одиночный билет
     function unitsOf(list) {
         const units = [];
         const byGrp = new Map();
@@ -82,8 +74,8 @@ window.SalesReconcile = (function () {
         return units;
     }
 
-    // Выбрать из единиц не больше n билетов: сначала одиночные (равномерно — сохраняет форму кривой),
-    // потом целые заказы, которые помещаются. Выбранное удаляется из units.
+    // берём не больше n: сначала одиночные (равномерно, форма кривой), потом целые заказы, которые помещаются
+    // выбранное удаляем из units
     function takeUnits(units, n, ok) {
         if (n <= 0 || !units.length) return [];
         const fits = ok ? units.filter(u => u.every(ok)) : units.slice();
@@ -98,8 +90,7 @@ window.SalesReconcile = (function () {
         return picked;
     }
 
-    // Перенос: пометка moved — откуда; номер заказа — с префиксом исходного вылета, чтобы не совпасть
-    // с заказом №1 на новом месте.
+    // пометка moved - откуда; номер заказа с префиксом исходного вылета, чтобы не совпал с заказом №1 на новом месте
     function put(details, key, s, fromKey) {
         if (fromKey !== key && !s.moved) {
             s.moved = fromKey;
@@ -109,8 +100,8 @@ window.SalesReconcile = (function () {
         (details[key] || (details[key] = [])).push(s);
     }
 
-    // Вернуть все ранее перенесённые билеты на места из файла: расчёт всегда с нуля, поэтому повторный
-    // запуск (снимок на другом ПК, правка справочника рейсов) даёт тот же результат.
+    // вернуть перенесённые билеты на места из файла, расчёт всегда с нуля
+    // поэтому повторный запуск (другой ПК, правка справочника рейсов) даёт тот же результат
     function restore(details) {
         let n = 0;
         Object.keys(details).forEach(k => {
@@ -134,7 +125,7 @@ window.SalesReconcile = (function () {
             else delete details[k];
         });
         if (n && typeof FlightInsights !== 'undefined') {
-            // Номера заказов по PNR — заново по вылетам, куда билеты вернулись.
+            // номера заказов по PNR заново по вылетам, куда вернулись билеты
             const withPnr = {};
             Object.keys(details).forEach(k => { if ((details[k] || []).some(s => s && s.pnr)) withPnr[k] = details[k]; });
             FlightInsights.annotateGroups(withPnr);
@@ -142,7 +133,7 @@ window.SalesReconcile = (function () {
         return n;
     }
 
-    // Пересобрать salesDetails. Возвращает > 0, если что-то поменялось (переносы или их отмена).
+    // пересобираем salesDetails; > 0, если что-то поменялось
     function run(details) {
         if (!details) return 0;
         runs++;
@@ -174,9 +165,8 @@ window.SalesReconcile = (function () {
             salesByBaseDate.get(bk).push(code);
         });
 
-        // 1. Один день, несколько номеров рейса: лишнее (сверх загрузки и с нелетящих номеров) —
-        //    туда, где загрузка больше продаж, не больше нехватки. Номер, где продажи совпадают
-        //    с загрузкой, не трогается.
+        // 1. один день, несколько номеров: лишнее (сверх загрузки и с нелетящих номеров) - туда, где нехватка
+        // не больше нехватки; номер, где продажи равны загрузке, не трогаем
         salesByBaseDate.forEach((codesWithSales, bk) => {
             const i = bk.indexOf('|');
             const base = bk.slice(0, i);
@@ -192,7 +182,7 @@ window.SalesReconcile = (function () {
             if (!deficits.length) return;
             const sources = codes.filter(c => salesOf(c) && (!flying.has(c) || salesOf(c) > loadOf(c)));
             if (!sources.length) return;
-            // Котёл: сначала нелетящие номера, затем излишки.
+            // котёл: сначала нелетящие номера, потом излишки
             const pool = [];
             sources.sort((a, b) => (flying.has(a) - flying.has(b)) || a.localeCompare(b)).forEach(c => {
                 const key = date + '|' + c;
@@ -204,7 +194,7 @@ window.SalesReconcile = (function () {
             deficits.forEach(c => {
                 const key = date + '|' + c;
                 let need = loadOf(c) - salesOf(c);
-                // Сначала билеты номеров, которые в этот день не летят (им больше некуда), потом излишки.
+                // сначала билеты нелетящих номеров (им больше некуда), потом излишки
                 [true, false].forEach(orphan => {
                     if (need <= 0) return;
                     const part = pool.filter(p => p.orphan === orphan);
@@ -217,13 +207,13 @@ window.SalesReconcile = (function () {
                 });
                 if (details[key]) details[key].sort(byDeal);
             });
-            // Не хватило места — остаются где были.
+            // не хватило места - остаются на месте
             pool.forEach(p => p.u.forEach(s => put(details, p.from, s, p.from)));
             pool.forEach(p => details[p.from].sort(byDeal));
         });
 
-        // 2. Перенос даты: билеты на дату, где рейса нет, — на ближайший вылет с нехваткой продаж.
-        // По порядку дат вылета (а не по тексту «дд.мм.гггг»).
+        // 2. перенос даты: билеты с даты, где рейса нет, на ближайший вылет с нехваткой
+        // даты сравниваем как даты, а не как текст дд.мм.гггг
         const keyTs = (k) => { const d = parseLocalDate(k.slice(0, k.lastIndexOf('|'))); return d ? d.getTime() : 0; };
         Object.keys(details).sort((a, b) => keyTs(a) - keyTs(b) || a.localeCompare(b)).forEach(k => {
             const i = k.lastIndexOf('|');
@@ -233,7 +223,7 @@ window.SalesReconcile = (function () {
             const dates = byBase.get(getBaseFlight(code));
             if (!dates || dates.has(date)) return;
             const d0 = parseLocalDate(date);
-            // Дата вне файла загрузки (старые вылеты, дальние даты) — это не перенос, а просто нет данных загрузки.
+            // дата вне файла загрузки - не перенос, просто нет данных загрузки
             if (!d0 || d0.getTime() < minTs || d0.getTime() > maxTs) return;
             const targets = [];
             dates.forEach((codes, dt) => {
@@ -244,19 +234,19 @@ window.SalesReconcile = (function () {
                 codes.forEach(c => {
                     const tk = dt + '|' + c;
                     const deficit = (load.get(tk) || 0) - (details[tk] || []).length;
-                    // Задержанный рейс: билеты исходной даты — на его новую дату.
+                    // задержанный рейс: билеты исходной даты едут на его новую дату
                     const pref = typeof DelayedFlights !== 'undefined' && DelayedFlights.movedTo(code, date) === dt && code === c;
                     if (deficit > 0) targets.push({ tk, gap, deficit, ts: d.getTime(), later: d >= d0, pref });
                 });
             });
             if (!targets.length) return;
-            // Ближайший вылет; при равном расстоянии — более поздний (рейсы чаще переносят вперёд).
+            // ближайший вылет; при равном расстоянии более поздний (рейсы чаще переносят вперёд)
             targets.sort((a, b) => (b.pref - a.pref) || a.gap - b.gap || (b.later - a.later) || b.deficit - a.deficit || a.tk.localeCompare(b.tk));
             const units = sortedUnits(k);
             targets.forEach(t => {
                 if (!units.length) return;
                 const deficit = (load.get(t.tk) || 0) - (details[t.tk] || []).length;
-                // Билет не может лететь вылетом, который улетел раньше, чем билет купили.
+                // билет не может лететь вылетом раньше даты покупки
                 const ok = (s) => { const dd = parseLocalDate(s.dealDate); return !dd || dd.getTime() <= t.ts; };
                 takeUnits(units, deficit, ok).forEach(u => u.forEach(s => { put(details, t.tk, s, k); moved++; }));
                 if (details[t.tk]) details[t.tk].sort(byDeal);
@@ -264,7 +254,7 @@ window.SalesReconcile = (function () {
             store(k, units);
         });
 
-        // Билеты участков доп. посадки — к рейсу, куда ушёл участок (segment-split.js).
+        // билеты участков доп. посадки - к рейсу, куда ушёл участок (segment-split.js)
         if (typeof SegmentSplit !== 'undefined') moved += SegmentSplit.splitSales(details);
         lastRun = { moved, at: Date.now() };
         return moved + restored;
@@ -272,12 +262,12 @@ window.SalesReconcile = (function () {
 
     function wasMovedFrom(key) { return movedFromKeys.has(key); }
 
-    // Отчёт: будущие вылеты, где продажи и загрузка расходятся или билеты пришлось перенести.
+    // отчёт: будущие вылеты, где продажи и загрузка расходятся или билеты перенесли
     let reportMemo = { sig: '', v: null };
 
     function report() {
         const details = typeof salesDetails !== 'undefined' ? salesDetails : {};
-        // Пересчёт только при новых данных: «Отчёты» спрашивают отчёт при каждой перерисовке.
+        // пересчёт только при новых данных: Отчёты спрашивают отчёт на каждой перерисовке
         const sig = `${typeof dataEpoch === 'number' ? dataEpoch : 0}|${typeof getTodayDate === 'function' ? getTodayDate() : ''}|${lastRun.at}`;
         if (reportMemo.sig === sig && reportMemo.details === details) return reportMemo.v;
         const v = buildReport(details);
@@ -356,7 +346,7 @@ window.SalesReconcile = (function () {
         return hasSales() ? report().divergent : 0;
     }
 
-    // «Отчёты» → «Проверки»: плитки уходят в общий ряд сверху (tileList), блок «Расхождения продаж и загрузки» — card().
+    // Отчёты / Проверки: плитки в общий ряд сверху (tileList), блок Расхождения - card()
     function tileList() {
         if (!hasSales()) return [];
         const r = report();

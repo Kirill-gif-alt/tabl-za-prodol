@@ -64,7 +64,7 @@ function getRmsFlightFieldValue(f, field) {
         case 'delta': return f.delta;
         case 'dtd': return f.dtd;
         case 'pickup':
-            // Файл продаж старый: на экране «—», в отборе это «нет данных», а не ноль.
+            // файл продаж старый: на экране прочерк, в отборе это нет данных, а не ноль
             if (rmsSalesStale()) return null;
             return f.pickup;
         case 'remainder': return f.remainder;
@@ -73,7 +73,7 @@ function getRmsFlightFieldValue(f, field) {
             if (rmsSalesStale()) return null;
             return f.s?.today ?? 0;
         case 'avg':
-            // На экране без тарифа «—» (нет продаж или файл не загружен): в отборе это «нет данных», а не 0 ₽.
+            // на экране без тарифа прочерк (нет продаж или файл не загружен): в отборе нет данных, а не 0 ₽
             return f.avg > 0 && (typeof hasSalesFileLoaded !== 'function' || hasSalesFileLoaded()) ? f.avg : null;
         default: return null;
     }

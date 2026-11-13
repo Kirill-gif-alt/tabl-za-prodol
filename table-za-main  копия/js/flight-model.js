@@ -1,5 +1,5 @@
-// Модель рейса: допустимые номера, направление, базовый номер.
-// Globals on purpose: no bundler; onclick and other files call by name.
+// модель рейса: допустимые номера, направление, базовый номер
+// глобальные специально, без сборщика; onclick и другие файлы зовут по имени
 
 function isValidFlightBase(base) {
     if (typeof Security !== 'undefined' && Security.isFlightBase) {

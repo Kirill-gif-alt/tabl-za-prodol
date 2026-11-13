@@ -1,11 +1,9 @@
-// Утренняя сводка: что требует внимания сегодня. Открывается сама один раз в день (на профиль),
-// потом — по значку «☀ N» в шапке. Считается после старта в фоне, порциями (не тормозит вход).
-//  • ждут решения: вылеты из «Управления продажами» на 15 дней с подсказкой (▼ / ! / ▲) и без отметки за сегодня;
-//  • ошибки тарифов: рейсы до вылета с ошибкой проверки;
-//  • пропуски справочника (только тем, кто видит справочник).
+// утренняя сводка: что требует внимания сегодня; сама открывается раз в день (на профиль), потом по значку в шапке
+// после старта считается в фоне, порциями (вход не тормозит)
+// ждут решения (вылеты УП на 15 дней без отметки за сегодня), ошибки тарифов, пропуски справочника
 window.MorningSummary = (function () {
     const SEEN_KEY = 'krasavia_morning_seen_';
-    let advice = [];          // все подсказки окна (до фильтра по отметкам)
+    let advice = [];          // все подсказки окна, до фильтра по отметкам
     let builtFor = '';
     let building = null;
 
@@ -46,8 +44,8 @@ window.MorningSummary = (function () {
         return typeof groupedData !== 'undefined' && groupedData && Object.keys(groupedData).length > 0;
     }
 
-    // Вылеты, которые есть во вкладке «Управление продажами» (с учётом выбранных там маршрутов).
-    // Список УП тот же (кэш в SalesManagement) — набор вылетов не пересобираем.
+    // вылеты из "Управления продажами" (с учетом выбранных там маршрутов)
+    // список УП тот же, что в SalesManagement (кэш), набор вылетов не пересобираем
     let depCache = { list: null, set: new Set() };
     function salesDepartures() {
         if (typeof SalesManagement === 'undefined' || !SalesManagement.listFlights) return new Set();
@@ -64,7 +62,7 @@ window.MorningSummary = (function () {
         }
     }
 
-    // Подсказки только по вылетам из «Управления продажами», по которым сегодня ещё никто не отметился.
+    // подсказки только по вылетам из "Управления продажами" без отметки за сегодня
     function pending() {
         const t = today();
         const inSales = salesDepartures();
@@ -81,7 +79,7 @@ window.MorningSummary = (function () {
         return typeof ReferenceView !== 'undefined' && ReferenceView.completenessCount ? ReferenceView.completenessCount() : 0;
     }
 
-    // Ссылки в «Отчёты» — только профилю с этой вкладкой.
+    // ссылки в "Отчеты" - только профилю с этой вкладкой
     function canRep() { return typeof ProfileAuth === 'undefined' || ProfileAuth.canAccessTab('reports'); }
 
     function adviceAllowed() {
@@ -113,7 +111,7 @@ window.MorningSummary = (function () {
         return pending().length + fareErrors() + refGaps();
     }
 
-    // После входа: посчитать и, если есть что показать и сегодня ещё не показывали, открыть.
+    // после входа: считаем, и если есть что показать и сегодня еще не показывали, открываем
     async function afterStart() {
         if (!enabled()) return;
         await new Promise(r => setTimeout(r, 1200));
@@ -124,7 +122,7 @@ window.MorningSummary = (function () {
 
     function headerChip() {
         if (!enabled() || !builtFor) return null;
-        // Данные поменялись — пересчитать в фоне (по окончании шапка обновится), а пока показать прежнее.
+        // данные поменялись: пересчитываем в фоне, пока показываем прежнее
         if (builtFor !== sig() && hasData()) build().catch(() => {});
         const n = pending().length;
         if (!n) return null;
@@ -237,7 +235,7 @@ window.MorningSummary = (function () {
         if (row && typeof FlightCard !== 'undefined') FlightCard.maybeOpen(row.dataset.msCode, row.dataset.msDate);
     }
 
-    // Отметка поставлена — счётчик в шапке и открытая сводка обновляются.
+    // отметка поставлена - обновляем счетчик в шапке и открытую сводку
     document.addEventListener('krasavia:mark', () => {
         if (typeof updateHeaderStatus === 'function') updateHeaderStatus();
         if (document.getElementById('morning-modal')?.classList.contains('open')) render();

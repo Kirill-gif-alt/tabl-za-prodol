@@ -1,7 +1,6 @@
-// «Отчёты» → «Решения»: журнал ценовых решений и их итог в рублях (единственное место на сайте, где показаны деньги по решениям).
-// Эффект = выручка в окне после решения минус ожидаемое число билетов × прежняя цена; делится на объём и цену.
-// «Помогло / навредило» только при диапазоне без нуля и эффекте выше порога, иначе слабее («скорее», «чуть») или без эффекта (расчёт — js/decision-money.js).
-// Билеты до/после и норма — те же, что в карточке рейса (price-marks.js).
+// Отчеты - Решения: журнал решений и итог в рублях, деньги показываем только здесь
+// эффект = выручка после решения минус ожидаемые билеты x прежняя цена, делим на объем и цену
+// "помогло / навредило" только если диапазон без нуля и эффект выше порога, иначе "скорее", "чуть" или без эффекта
 window.DecisionsReport = (function () {
     const PERIODS = [30, 60, 90];
     const KIND = { down: '▼ Снижение', up: '▲ Повышение', attn: '! Внимание' };
@@ -32,7 +31,7 @@ window.DecisionsReport = (function () {
     }
     function ruNum(n) { return Number(n).toLocaleString('ru-RU'); }
     function daysWord(n, forms) { return n + ' ' + pluralRu(n, forms[0], forms[1], forms[2]); }
-    // Вероятность попадания в диапазон при ширине z (в процентах, целое).
+    // вероятность попасть в диапазон при ширине z, в процентах
     function confPct(z) { return typeof DecisionMoney !== 'undefined' && DecisionMoney.erf ? Math.round(100 * DecisionMoney.erf(z / Math.SQRT2)) : 94; }
 
     function moneyWindow() { return typeof PV !== 'undefined' && typeof PV.DECISION_WINDOW_MONEY === 'number' ? PV.DECISION_WINDOW_MONEY : 4; }
@@ -53,14 +52,12 @@ window.DecisionsReport = (function () {
     }
 
 
-    // ---------- деньги (только здесь, нигде больше на сайте) ----------
-
     function moneyAvailable() { return typeof DecisionMoney !== 'undefined'; }
 
     function ensureMoney(rerender) {
         if (!moneyAvailable()) return;
         const list = rows();
-        // Подпись — только по данным и отметкам: запись итогов в общий файл её не меняет, иначе расчёт шёл бы по кругу.
+        // подпись только по данным и отметкам; запись итогов ее не меняет, иначе расчет пойдет по кругу
         const s = sig();
         if (money.sig === s || money.loading) return;
         money.loading = true;
@@ -83,9 +80,9 @@ window.DecisionsReport = (function () {
 
     function rubPlain(n) { return n == null || !Number.isFinite(Number(n)) ? '—' : Math.round(n).toLocaleString('ru-RU') + ' ₽'; }
 
-    // Средний тариф до и после решения. Если рубли по решению посчитаны, берём ТЕ ЖЕ цифры, что в расчёте
-    // («был 15 236 ₽» в подробностях), а не тариф «По билетам» (другое окно и пересчитанный тариф): иначе у одного решения
-    // на одном экране два разных «тарифа до». После решения без продаж тарифа нет — пишем «—», а не прежний.
+    // тариф до и после: если рубли посчитаны, берем те же цифры, что в расчете (был 15 236 ₽), а не "По билетам"
+    // иначе у одного решения два разных "тарифа до" на экране
+    // после решения без продаж тарифа нет - прочерк, а не прежний
     function fares(r, m) {
         const e = r.e;
         let before = e && e.before.avg != null ? e.before.avg : null;
@@ -97,8 +94,8 @@ window.DecisionsReport = (function () {
         return { before, after };
     }
 
-    // Состояние денежной оценки одного решения для экрана и Excel.
-    // mm / loading — готовый итог и признак расчёта из другого источника (карточка рейса); без них — из отчёта.
+    // состояние денежной оценки одного решения для экрана и Excel
+    // mm и loading - готовый итог и признак расчета из карточки рейса, без них берем из отчета
     function moneyState(r, mm, loading) {
         if (r.overlap) return { cls: 'none', text: 'перекрыто', short: 'перекрыто', reason: OVERLAP, m: null };
         const m = mm !== undefined ? mm : moneyOf(r);
@@ -118,7 +115,7 @@ window.DecisionsReport = (function () {
 
     const OVERLAP = 'перекрыто противоположным решением: на ту же дату позже отмечено другое, в итог идёт оно';
 
-    // Итоги пулом: «по определённым» — только твёрдые «помогло / навредило»; «по всем оценённым» (sumAll) — все решения с оценкой.
+    // итоги пулом: по определенным - только твердые "помогло / навредило"; по всем оцененным (sumAll) - все с оценкой
     function moneyTotals(list) {
         const t = { n: list.length, finalN: 0, worked: 0, failed: 0, unclear: 0, na: 0, wait: 0, sum: 0, lo: 0, hi: 0, definite: 0, sumAll: 0, corrSum: 0, approx: 0, approxSum: 0, weakPos: 0, weakNeg: 0, flat: 0, varSum: 0, lean: 0, leanSum: 0, leanPos: 0, leanNeg: 0, series: 0, reasons: {} };
         list.forEach(r => {
@@ -142,17 +139,17 @@ window.DecisionsReport = (function () {
             t.lo += m.lo || 0;
             t.hi += m.hi || 0;
         });
-        // Как в верхней полосе: «помогло» = твёрдо + «скорее» + «чуть» (и ориентировочные по знаку эффекта).
+        // помогло = твердо + скорее + чуть (и ориентировочные по знаку эффекта), как в верхней полосе
         t.good = t.worked + t.leanPos + t.weakPos;
         t.bad = t.failed + t.leanNeg + t.weakNeg;
-        // Итог по всем оценённым С поправкой на шум и сдвиг — та же цифра, что «Общий итог» вверху и плитка на «Сегодня».
+        // итог по всем оцененным с поправкой на шум и сдвиг - та же цифра, что "Общий итог" и плитка на "Сегодня"
         t.sumAdj = t.sumAll + t.corrSum;
         return t;
     }
 
-    // ---------- для карточки рейса: последние решения по рейсу (любая дата вылета) ----------
-    // Итоги — те же, что в отчёте: зафиксированные из общего файла или уже посчитанные отчётом; недостающие (не больше n штук) считает
-    // тот же DecisionMoney.resolveAll. Отметки раскладываются по рейсам один раз на изменение отметок.
+    // для карточки рейса: последние решения по рейсу, любая дата вылета
+    // итоги как в отчете: из общего файла или уже посчитанные; недостающие (не больше n) считает DecisionMoney.resolveAll
+    // отметки раскладываем по рейсам один раз на их изменение
     let baseIdx = { rev: null, map: null };
     function baseIndex() {
         const rev = SalesManagement.markRevision ? SalesManagement.markRevision() : '';
@@ -189,7 +186,7 @@ window.DecisionsReport = (function () {
         if (!list.length) return { items: [], loading: false };
         const rev = DecisionMoney.revision();
         const ver = (typeof dataEpoch === 'number' ? dataEpoch : 0) + '|' + (SalesManagement.markRevision ? SalesManagement.markRevision() : '') + '|' + (typeof getTodayDate === 'function' ? getTodayDate() : '');
-        if (cardMoney.ver !== ver && !cardMoney.loading) cardMoney = { sig: '', ver, map: new Map(), loading: false };   // данные или отметки сменились — прежние итоги не годятся
+        if (cardMoney.ver !== ver && !cardMoney.loading) cardMoney = { sig: '', ver, map: new Map(), loading: false };   // данные или отметки сменились, старые итоги не годятся
         const sg = list.map(r => DecisionMoney.keyOf(r)).join(';') + '|' + (typeof dataEpoch === 'number' ? dataEpoch : 0) + '|' + rev;
         const lookup = (r) => {
             const k = DecisionMoney.keyOf(r);
@@ -213,12 +210,12 @@ window.DecisionsReport = (function () {
         return { items, loading };
     }
 
-    // Строки журнала (решения «снижение/повышение» за период), с итогом.
+    // строки журнала за период (снижение/повышение), с итогом
     function rows() {
         const s = sig();
         if (memo.sig === s && memo.rows) return memo.rows;
         const out = [];
-        // Одно решение, отмеченное двумя людьми, — одна строка (иначе его билеты и рубли посчитаются дважды).
+        // одно решение от двух людей - одна строка, иначе билеты и рубли посчитаются дважды
         const seen = new Map();
         SalesManagement.allMarks().forEach(m => {
             if (m.status !== 'down' && m.status !== 'up') return;
@@ -246,19 +243,19 @@ window.DecisionsReport = (function () {
             });
             seen.set(dk, out[out.length - 1]);
         });
-        // Противоположные решения на одной ячейке от разных людей — в итог только последнее, остальные «перекрыто».
+        // противоположные решения на ячейке: в итог только последнее, остальные "перекрыто"
         if (PriceMarks.markOverlaps) PriceMarks.markOverlaps(out).forEach(r => { if (r.overlap) r.done = false; });
         out.sort((a, b) => (parseLocalDate(b.check) - parseLocalDate(a.check)) || String(a.code).localeCompare(String(b.code), 'ru', { numeric: true }));
         memo = { sig: s, rows: out };
         return out;
     }
 
-    // «Сработало» — по билетам против нормы (PriceMarks.judge); «рано судить» в долю не входит.
+    // сработало - по билетам против нормы (PriceMarks.judge); "рано судить" в долю не входит
     function worked(r) {
         return verdictOf(r).worked;
     }
 
-    // Сводка: решений, с итогом, «сработало», средний итог в билетах.
+    // Сводка: решений, с итогом, "сработало", средний итог в билетах.
     function summarize(list) {
         const done = list.filter(r => r.done);
         const judged = done.filter(r => worked(r) != null);
@@ -283,7 +280,7 @@ window.DecisionsReport = (function () {
         return [...map.entries()].map(([k, l]) => ({ key: k, ...summarize(l) })).sort(sortFn || ((a, b) => b.n - a.n));
     }
 
-    // Группы по людям: решение, отмеченное двумя людьми, считается у каждого из них.
+    // группы по людям: решение двух людей считается у каждого
     function groupByPeople(list) {
         const map = new Map();
         list.forEach(r => {
@@ -295,7 +292,7 @@ window.DecisionsReport = (function () {
         return [...map.entries()].map(([k, l]) => ({ key: k, ...summarize(l) })).sort((a, b) => b.n - a.n);
     }
 
-    // Итог одной строки: вердикт для экрана и для Excel.
+    // вердикт строки для экрана и Excel
     function verdictOf(r) {
         return PriceMarks.judge(r.e, r.status);
     }
@@ -405,7 +402,7 @@ window.DecisionsReport = (function () {
             const lines = [];
             let say = ''; let range = ''; const tags = [];
             if (hasNum) {
-                // выручка без решения и по факту: из расчёта (у старых зафиксированных записей — из округлённых величин, не ниже нуля)
+                // выручка без решения и по факту; у старых записей из округленных величин, не ниже нуля
                 const exp = m.expRev != null ? m.expRev : m.nExpPaid * m.priceBefore;
                 const fact = m.revFact != null ? m.revFact : Math.max(0, exp + m.delta);
                 lines.push(m.remainder
@@ -455,20 +452,20 @@ window.DecisionsReport = (function () {
             });
         });
         const good = mt.good; const bad = mt.bad;
-        // итог с поправкой: на вылетах без решений он около нуля
-        const totSales = mt.sumAll; const tot = mt.sumAdj; const tsd = Math.sqrt(mt.varSum) * pv('MONEY_NOISE_Z', 1.9);   // ошибки разных решений почти не связаны (проверено на вылетах без решений): складываем как независимые
+        // итог с поправкой; на вылетах без решений около нуля
+        const totSales = mt.sumAll; const tot = mt.sumAdj; const tsd = Math.sqrt(mt.varSum) * pv('MONEY_NOISE_Z', 1.9);   // ошибки решений почти не связаны (проверено на вылетах без решений), складываем как независимые
         const nOc = mt.finalN;
-        const dAdj = down.money.sumAdj; const uAdj = up.money.sumAdj;   // как и общий итог: с поправкой на шум и сдвиг
+        const dAdj = down.money.sumAdj; const uAdj = up.money.sumAdj;   // как общий итог, с поправкой на шум и сдвиг
         const summary = list.length ? DecisionsViz.strip([{ label: 'Решений', value: total.n }, { label: 'Помогло', value: good, cls: 'dr-pos' }, { label: 'Навредило', value: bad, cls: 'dr-neg' }, { label: 'Без заметного эффекта', value: mt.flat }, { label: 'Мало данных', value: mt.unclear + mt.na }, { label: 'Ждём итога', value: mt.wait }]
             .concat(!kindFilter ? [{ label: 'Снижения', value: down.money.finalN ? rub(dAdj) : '—', cls: dAdj > 0 ? 'dr-pos' : (dAdj < 0 ? 'dr-neg' : '') }, { label: 'Повышения', value: up.money.finalN ? rub(uAdj) : '—', cls: uAdj > 0 ? 'dr-pos' : (uAdj < 0 ? 'dr-neg' : '') }] : [])
             .concat([{ label: 'Общий итог по оценённым', value: mt.finalN ? rub(tot) : '—', cls: tot > 0 ? 'dr-pos' : (tot < 0 ? 'dr-neg' : '') }])) + (mt.finalN ? `<div class="dp-reasons">Общий итог по ${nOc} ${pluralRu(nOc, 'оценённому решению', 'оценённым решениям', 'оценённым решениям')}: ${rub(tot)}, диапазон ${rub(Math.round((tot - tsd) / 100) * 100)} … ${rub(Math.round((tot + tsd) / 100) * 100)} (около ${confPct(pv('MONEY_NOISE_Z', 1.9))}%). Диапазон суммы уже, чем у отдельных решений: ошибки разных решений почти не связаны и частично гасят друг друга. ${Math.abs(mt.corrSum) >= 1000 ? `Это с поправкой на шум и сдвиг метода: по продажам ${rub(totSales)}, поправка ${rub(mt.corrSum)}. ` : ''}${mt.definite ? `Твёрдых «помогло / навредило» ${mt.definite}, их сумма ${rub(mt.sum)} (остальные в неё не входят).` : 'Твёрдых «помогло / навредило» пока нет.'} Ещё ${mt.leanPos + mt.leanNeg} «скорее», ${mt.weakPos + mt.weakNeg} «чуть», ${mt.unclear} без вывода (мало данных). Снижения и повышения считаются по всем оценённым решениям.</div>` : '') : '';
         const reasonNote = mt.na ? `<div class="dp-reasons">Не считаем (${mt.na}): ${Object.entries(mt.reasons).sort((a, b) => b[1] - a[1]).map(([k, v]) => esc(k) + ' — ' + v).join('; ')}.</div>` : '';
         const sts = list.map(moneyState);
-        // График по направлениям: 8 лучших и 3 худших по сумме, в порядке убывания модуля эффекта.
+        // график по направлениям: 8 лучших и 3 худших по сумме, по убыванию модуля эффекта
         const dirAll = groupBy(list, r => r.direction || r.code).filter(g => g.money.definite).sort((a, b) => b.money.sum - a.money.sum);
         const dirCut = dirAll.length > 11;
         const byDir = (dirCut ? dirAll.slice(0, 8).concat(dirAll.slice(-3)) : dirAll).sort((a, b) => Math.abs(b.money.sum) - Math.abs(a.money.sum));
-        const leadGroups = groupBy(list, leadOf, leadSort);   // за сколько дней до вылета принято решение
+        const leadGroups = groupBy(list, leadOf, leadSort);   // за сколько дней до вылета решили
         const weeks = new Map();
         list.forEach((r, i) => {
             const m = sts[i].m;
@@ -545,7 +542,7 @@ window.DecisionsReport = (function () {
             </section>`;
     }
 
-    // Данные для выгрузки в Excel (reports-view.js → exportDecisions).
+    // данные для выгрузки в Excel (reports-view.js, exportDecisions)
     function moneyExport() {
         const list = filtered();
         const g = (fn) => groupBy(list, fn);
@@ -599,8 +596,8 @@ window.DecisionsReport = (function () {
         try { localStorage.setItem(VIEW_KEY, view); } catch (e) { /* ignore */ }
     }
 
-    // Новая отметка (своя из карточки/RMS или чужая из файла), пока отчёт открыт на экране, — итоги обновляются сами.
-    // Когда отчёт скрыт, перерисовку делает «Отчёты» при возврате на вкладку (см. ReportsView.refresh).
+    // новая отметка, пока отчет открыт, - итоги обновляются сами
+    // если отчет скрыт, перерисует ReportsView.refresh при возврате на вкладку
     let lastRerender = null;
     let markTimer = null;
     document.addEventListener('krasavia:mark', () => {
@@ -619,12 +616,11 @@ window.DecisionsReport = (function () {
         return sw + (view === 'money' ? moneyHtml(rerender) : DecisionsTickets.html());
     }
 
-    // Период и вид решений («все / снижение / повышение») общие для «По билетам» и «В рублях»:
-    // иначе после смены вида отчёт показывал бы другой период, и те же решения давали бы другие числа.
+    // период и вид решений общие для "По билетам" и "В рублях", иначе одни и те же решения дают разные числа
     function handleClick(btn, rerender) {
         if (btn.dataset.drView) {
             setView(btn.dataset.drView);
-            toneFilter = '';   // наборы меток в двух видах разные: фильтр по метке не переносим
+            toneFilter = '';   // наборы меток в видах разные, фильтр по метке не переносим
             if (typeof DecisionsTickets !== 'undefined' && DecisionsTickets.resetTone) DecisionsTickets.resetTone();
             rerender();
             return true;

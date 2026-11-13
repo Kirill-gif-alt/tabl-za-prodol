@@ -1,8 +1,8 @@
-// Пары рейсов туда/обратно, метрики ног пары.
-// Globals on purpose: no bundler; onclick and other files call by name.
+// пары рейсов туда/обратно, метрики ног пары
+// глобальные функции нарочно: без бандлера, onclick и другие файлы зовут по имени
 
 function getFlightPair(base) {
-    // Пара из справочника рейсов (обратный номер не по правилу «нечётный + 1»).
+    // пара из справочника (обратный номер не по правилу "нечетный + 1")
     const own = window.FLIGHT_PAIR_OVERRIDES && window.FLIGHT_PAIR_OVERRIDES[base];
     if (own) return { outbound: own.outbound, inbound: own.inbound };
     const n = parseInt(String(base || '').replace('KV-', ''), 10) || 0;
@@ -75,12 +75,12 @@ function filterPairLegRows(rows, todayStart, status = tableFilterStatus) {
     return rows.filter(row => flightRowMatchesStatusFilter(row, todayStart, status));
 }
 
-/** Дата в ячейке: одна дата или «11.08/12.08» при переходящих сутках туда/обратно */
+// дата в ячейке: одна или "11.08/12.08" при переходящих сутках туда/обратно
 function formatPairDateLabel(outRow, inRow, fallbackDate) {
     const outDate = outRow?.[1] || '';
     const inDate = inRow?.[1] || '';
     if (outDate && inDate && outDate !== inDate) {
-        // короткий вид: DD.MM / DD.MM.YYYY или DD.MM/DD.MM если год один
+        // короткий вид: DD.MM, DD.MM.YYYY или DD.MM/DD.MM, если год один
         const short = (d) => {
             const p = String(d).split('.');
             return p.length === 3 ? `${p[0]}.${p[1]}` : d;
@@ -95,7 +95,7 @@ function formatPairDateLabel(outRow, inRow, fallbackDate) {
     return outDate || inDate || fallbackDate || '';
 }
 
-/** День недели: «Пт» или «Пт/Сб» при переходящих сутках */
+// день недели: "Пт" или "Пт/Сб" при переходящих сутках
 function formatPairDayOfWeek(outRow, inRow, fallbackDate) {
     const outDate = outRow?.[1] || '';
     const inDate = inRow?.[1] || '';
@@ -149,7 +149,7 @@ function flightRowMatchesStatusFilter(row, todayStart, status = tableFilterStatu
     const closed = closedFlights.has(k);
     const fd = parseLocalDate(date);
     const flew = fd ? fd < todayStart : false;
-    // Загрузка — как в колонке: загрузка / кресла в продаже, без кресел значения нет (null)
+    // загрузка как в колонке: загрузка / кресла в продаже; без кресел null
     const denom = getSeatsOnSale(row);
     const pct = denom > 0 ? Math.round(free / denom * 100) : null;
     const rowBase = cleanFlight(row[0]);
@@ -168,7 +168,7 @@ function getTableSortValue(row, base) {
     const denom = getSeatsOnSale(row);
     const pct = denom > 0 ? Math.round(free / denom * 100) : null;
 
-    if (tableSort.by === 'load') return pct === null ? 0 : pct;   // без кресел в колонке «—»; в сортировке — как нулевая
+    if (tableSort.by === 'load') return pct === null ? 0 : pct;   // без кресел в колонке "-"; в сортировке как ноль
     if (tableSort.by === 'sales') return s.today;
     if (tableSort.by === 'avgfare') return getSalesAggForKey(resolveSalesKey(row)).avg;
     if (tableSort.by === 'delta') return getRowDelta(row, base);
@@ -182,27 +182,27 @@ function getSpecBookings(row) {
     return isNaN(n) || n < 0 ? 0 : n;
 }
 
-/** AU снимка = поле total файла (row[5]). Не физическая ёмкость ВС. */
+// AU снимка = поле total файла (row[5]); это не физическая ёмкость ВС
 function getAuFromRow(row) {
     if (!row) return 0;
     const n = parseInt(row[5] || 0, 10);
     return isNaN(n) || n < 0 ? 0 : n;
 }
 
-/** sold / загрузка = поле free файла (row[6]). Это НЕ свободные места. */
+// sold / загрузка = поле free файла (row[6]); это не свободные места
 function getSoldFromRow(row) {
     if (!row) return 0;
     const n = parseInt(row[6] || 0, 10);
     return isNaN(n) || n < 0 ? 0 : n;
 }
 
-/** Кресла в продаже = AU снимка − спец. брони */
+// кресла в продаже = AU снимка - спецброни
 function getSeatsOnSale(row) {
     if (!row) return 0;
     return Math.max(0, getAuFromRow(row) - getSpecBookings(row));
 }
 
-/** Остаток = AU − sold − avs (не меньше нуля: свободных мест «минус 11» не бывает) */
+// остаток = AU - sold - avs, не меньше нуля: "минус 11" мест не бывает
 function getSeatRemainder(row) {
     if (!row) return 0;
     return Math.max(0, getAuFromRow(row) - getSoldFromRow(row) - getSpecBookings(row));
@@ -263,7 +263,7 @@ function buildFlightLegMetrics(row, firstSalesByKey, todayStart) {
 
     const flightCode = cleanFlight(row[0]);
     const econ = typeof RouteCosts !== 'undefined' ? RouteCosts.lookup(row, flightCode, date) : null;
-    // Участок вылета с посадками, не основной: субсидия (и ручная тоже) считается в строке основного участка.
+    // участок с посадками, не основной: субсидия (и ручная тоже) считается в строке основного
     const segShare = !!row.segShare;
     const manualSub = !segShare && typeof SharedOverrides !== 'undefined' && SharedOverrides.hasSubsidy(flightCode, date);
     const costNum = econ && econ.unitCost != null ? econ.unitCost : 0;
@@ -313,7 +313,7 @@ function sortRowsByDepTime(rows) {
     });
 }
 
-/** Номер «туда» пары: 111↔112, 153↔154, 311↔312, 353↔354 (нечётный из пары) */
+// номер "туда" пары: 111<->112, 153<->154, 311<->312, 353<->354 (нечетный из пары)
 function getPairOutboundNum(flightCodeOrRow) {
     const code = Array.isArray(flightCodeOrRow)
         ? cleanFlight(flightCodeOrRow[0])
@@ -323,14 +323,14 @@ function getPairOutboundNum(flightCodeOrRow) {
     return n % 2 === 1 ? n : n - 1;
 }
 
-/** Тип ВС для склейки туда/обратно (нормализованный) */
+// Тип ВС для склейки туда/обратно (нормализованный)
 function getPairAircraftKey(row) {
     if (!row) return '';
     const ac = typeof getAircraftType === 'function' ? getAircraftType(row[4]) : String(row[4] || '');
     return String(ac || '').trim().toUpperCase() || '-';
 }
 
-/** Сортировка парных строк: дата (туда), затем время вылета */
+// сортировка пар: дата туда, потом время вылета
 function comparePairEntriesByDateThenDep(a, b, dir = 'asc') {
     const sign = dir === 'desc' ? -1 : 1;
     const da = compareDateStr(a.date, b.date);
@@ -345,24 +345,20 @@ function comparePairEntriesByDateThenDep(a, b, dir = 'asc') {
     return sign * (ta - tb);
 }
 
-/**
- * Стыковка одной пары номеров (111↔112, 311↔312, 353↔354…):
- * — жёстко outN ↔ outN+1;
- * — одинаковый тип ВС;
- * — тот же день или переходящие сутки (обратно на 0…+2 дня);
- * — по времени: исключения ок (например 354 раньше 353 в тот же день).
- */
+// стыковка пары номеров (111<->112, 311<->312, 353<->354...): жестко outN <-> outN+1, одинаковый тип ВС
+// тот же день или переходящие сутки (обратно на 0...+2 дня)
+// по времени исключения ок (354 раньше 353 в тот же день)
 function matchPairLegsTurnaround(outRows, inRows) {
     const outs = sortRowsByDepTime(outRows || []);
     const ins = sortRowsByDepTime(inRows || []);
     const usedIn = new Set();
     const entries = [];
-    // Тип ВС, дата и время «обратно» считаем один раз: внутренний цикл работает только с числами.
+    // тип ВС, дату и время "обратно" считаем один раз: внутри цикла только числа
     const tsOfDate = (d) => (typeof PerfCache !== 'undefined' ? PerfCache.dateTsMemo(d) : (parseLocalDate(d) || { getTime: () => null }).getTime());
     const insInfo = ins.map(r => ({ ac: getPairAircraftKey(r), ts: tsOfDate(r[1]), dep: typeof timeToMinutes === 'function' ? timeToMinutes(getDepTime(r)) : 0 }));
 
-    // Сначала пары одного дня, потом «обратно» на следующие сутки — иначе ранний вылет без пары
-    // (например, второй участок рейса с посадкой) забирал обратный рейс у вылета того дня.
+    // сначала пары одного дня, потом обратные на следующие сутки
+    // иначе ранний вылет без пары (например, второй участок с посадкой) забирал обратный рейс у вылета того дня
     const outInfo = outs.map(out => ({
         date: out[1],
         dep: typeof timeToMinutes === 'function' ? timeToMinutes(getDepTime(out)) : 0,
@@ -376,20 +372,20 @@ function matchPairLegsTurnaround(outRows, inRows) {
         outs.forEach((out, o) => {
             if (match[o] >= 0) return;
             const oi = outInfo[o];
-            // Другой участок этого рейса в этот день уже в паре — на чужие сутки не тянемся.
+            // другой участок рейса в этот день уже в паре - на чужие сутки не тянем
             if (minDay > 0 && pairedDays.has(oi.day)) return;
             let bestIdx = -1;
             let bestScore = Infinity;
             for (let i = 0; i < ins.length; i++) {
                 if (usedIn.has(i)) continue;
                 const info = insInfo[i];
-                // одинаковый тип ВС — обязателен для «туда-обратно»
+                // одинаковый тип ВС обязателен для туда-обратно
                 if (info.ac !== oi.ac) continue;
                 if (oi.ts == null || info.ts == null) continue;
                 const dayDiff = Math.round((info.ts - oi.ts) / 86400000);
-                // только тот же день или обратный после «туда» (переходящие сутки), не «вчера»
+                // только тот же день или обратный после туда (переходящие сутки), не "вчера"
                 if (dayDiff < minDay || dayDiff > maxDay) continue;
-                // внутри дня — ближайшее время к вылету «туда» (354 раньше 353 тоже допускается)
+                // внутри дня - ближайшее по времени к вылету туда
                 const score = dayDiff * 100000 + Math.abs(info.dep - oi.dep);
                 if (score < bestScore) {
                     bestScore = score;
@@ -422,10 +418,7 @@ function matchPairLegsTurnaround(outRows, inRows) {
     return entries;
 }
 
-/**
- * Жёстко: 111↔112, 153↔154, 311↔312, 353↔354…
- * + одинаковый тип ВС; переходящие сутки → одна строка, дата через «/».
- */
+// переходящие сутки - одна строка, дата через "/"
 function buildPairTableEntries(outRows, inRows) {
     const groups = new Map();
 
@@ -463,7 +456,7 @@ function buildTableSalesSumRowHtml(beforeSalesCols, sums, fareCols = 0, showExpa
     const s = sums || {};
     const salesReady = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(typeof dataLoadStatus !== 'undefined' && dataLoadStatus.sales);
     const sn = (v) => salesReady ? formatNum(v || 0) : '—';
-    // файл продаж старше 1 дня: «сегодня» и «вчера» по нему не видны, нули ничего не значат (как в RMS и на «Сегодня»)
+    // файл продаж старше 1 дня: сегодня и вчера по нему не видно, нули ничего не значат (как в RMS)
     const snRecent = (v) => (salesReady && !(typeof getStaleSalesInfo === 'function' && getStaleSalesInfo())) ? formatNum(v || 0) : '—';
     const farePlaceholders = fareCols > 0
         ? Array.from({ length: fareCols }, () => '<th class="col-extra table-head-sum-skip"></th>').join('')

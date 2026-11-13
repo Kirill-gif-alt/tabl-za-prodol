@@ -1,17 +1,12 @@
-// Вертолёты (Ми-8, конфигурация MIH-…): данные отдельно от самолётных.
-// • Строки файла «загрузка таб» с конфигурацией MIH-* не попадают в allData: самолётные вкладки, итоги шапки,
-//   RMS, «Сегодня» и модели вертолётов не видят. Они лежат здесь и уходят в снимок отдельным полем heli.
-// • У рейса с остановками в файле на каждую дату перечислены ВСЕ пары «откуда-куда»; «Free SegBkd» = продано на пару.
-//   Загрузка отрезка i→i+1 = сумма продаж пар, у которых начало ≤ i и конец ≥ i+1. Мест в продаже = вместимость − спецброни сквозной пары.
-// • Билеты вертолётных рейсов из файла продаж хранятся отдельно (без ПДн): дата продажи и пункты «откуда / куда».
-// • Справочник пунктов (код → название) — общий файл shared/heli-points.json; без файла — встроенный.
+// вертолеты (Ми-8, MIH-...): данные отдельно от самолетных, в allData не попадают (поле heli в снимке)
+// загрузка отрезка i->i+1 = сумма продаж пар с началом <= i и концом >= i+1
+// мест в продаже = вместимость - спецброни сквозной пары; билеты вертолетных рейсов хранятся отдельно, без ПДн
 window.HeliData = (function () {
-    const NUM_MIN = 765;   // запасной признак вертолётного рейса, пока нет файла загрузки (KV-765 … KV-812)
+    const NUM_MIN = 765;   // запасной признак, пока нет файла загрузки: KV-765...KV-812
     const NUM_MAX = 812;
     const CAP_DEFAULT = 22;
     const POINTS_FILE = 'heli-points.json';
 
-    // ---------- справочник пунктов ----------
     const DEFAULT_POINTS = [
         ['BKA', 'Байкит'], ['TGP', 'Подкаменная Тунгуска'], ['VAQ', 'Ванавара'], ['HTG', 'Хатанга'],
         ['ТРЛ', 'Тура'], ['ЧИР', 'Чиринда'], ['ЕСИ', 'Ессей'], ['ЭКО', 'Эконда'], ['УМИ', 'Учами'],
@@ -21,13 +16,13 @@ window.HeliData = (function () {
         ['НРЫ', 'Новорыбная'], ['СДН', 'Сындасско'], ['НАЯ', 'Новая'], ['ХЭТ', 'Хета'], ['КТЫ', 'Катырык'],
         ['ПГА', 'Попигай']
     ];
-    let points = null;        // код → название (рабочий справочник)
-    let pointsBase = null;    // что было в файле при загрузке (для слияния правок)
+    let points = null;        // код -> название (рабочий справочник)
+    let pointsBase = null;    // как было в файле при загрузке, для слияния правок
     let pointsRev = 0;
     let pointsLoaded = false;
     let canonIndex = null;
 
-    // Латиница и кириллица в кодах путаются (A/А, B/В, K/К …): для поиска в справочнике приводим к одному виду.
+    // латиница и кириллица в кодах путаются (A/А, B/В, K/К...): для поиска приводим к одному виду
     const LOOK = { A: 'А', B: 'В', C: 'С', E: 'Е', H: 'Н', K: 'К', M: 'М', O: 'О', P: 'Р', T: 'Т', X: 'Х', Y: 'У' };
     function canon(code) {
         return String(code || '').trim().toUpperCase().replace(/[ABCEHKMOPTXY]/g, c => LOOK[c]);
@@ -63,7 +58,7 @@ window.HeliData = (function () {
         const m = pointsMap();
         if (Object.prototype.hasOwnProperty.call(m, c)) return m[c];
         if (!canonIndex) reindex();
-        return canonIndex.get(canon(c)) || c;   // неизвестный код — сам код
+        return canonIndex.get(canon(c)) || c;   // неизвестный код - сам код
     }
 
     function hasPointName(code) {
@@ -74,7 +69,7 @@ window.HeliData = (function () {
         return canonIndex.has(canon(c));
     }
 
-    // Загрузить общий справочник (один раз; force — перечитать). Файла нет — остаётся встроенный.
+    // загрузить общий справочник (один раз; force - перечитать); нет файла - встроенный
     async function loadPoints(force) {
         if (pointsLoaded && !force) return pointsMap();
         let file = null;
@@ -84,7 +79,7 @@ window.HeliData = (function () {
         const next = defaults();
         const src = file && typeof file === 'object' && file.points && typeof file.points === 'object' ? file.points : null;
         if (src) {
-            // Файл — полный справочник: пункты, которых в нём нет, считаются удалёнными.
+            // файл полный: пункта, которого в нём нет, значит удалён
             Object.keys(next).forEach(k => { delete next[k]; });
             Object.keys(src).slice(0, 500).forEach(k => {
                 const c = cleanCode(k), n = cleanName(src[k]);
@@ -103,8 +98,8 @@ window.HeliData = (function () {
         return Object.assign({}, pointsMap());
     }
 
-    // Сохранить правки для всех: к свежему файлу применяются только мои изменения относительно прочитанного.
-    // edited — { код: название }; удалённые пункты — те, что были в base и пропали.
+    // сохранение: к свежему файлу применяем только свои правки относительно прочитанного
+    // edited - { код: название }; удалённые - пункты из base, которых пропали
     async function savePoints(edited) {
         const base = pointsBase || defaults();
         const clean = {};
@@ -131,10 +126,10 @@ window.HeliData = (function () {
         return { ok: false, reason: res && res.readFailed ? 'read' : 'write' };
     }
 
-    // Временная правка в окне (без записи): рабочий справочник заменяется копией только после «Сохранить».
+    // правка в окне без записи: рабочий справочник заменяем копией только после "Сохранить"
     function pointsRevision() { return pointsRev; }
 
-    // Название места в родительном падеже: «до Кузьмовки», «из Байкита». Код вне справочника не склоняется.
+    // название в родительном падеже: "до Кузьмовки", "из Байкита"; код вне справочника не склоняем
     function genitive(name) {
         const s = String(name || '');
         if (!/[А-Яа-яЁё]/.test(s)) return s;
@@ -160,10 +155,9 @@ window.HeliData = (function () {
         return s.split(' ').map(part => part.split('-').map(one).join('-')).join(' ');
     }
 
-    // ---------- хранилище ----------
     let rows = [];            // [рейс, дата, сегмент, маршрут, статус, вылет, прилёт, конфиг, AU, продано, всего, спецброни, всего AV]
     let flightNos = new Set();
-    let sales = {};           // 'дд.мм.гггг|KV-781' → [[дата продажи, откуда, куда], …]
+    let sales = {};           // 'дд.мм.гггг|KV-781' -> [[дата продажи, откуда, куда], ...]
     let salesCount = 0;
     let epoch = 0;
     let salesEpoch = 0;
@@ -199,7 +193,7 @@ window.HeliData = (function () {
         return m ? parseInt(m[1], 10) : 0;
     }
 
-    // Билет какого рейса — вертолётный: номер есть в файле загрузки; пока файла нет — по диапазону номеров.
+    // вертолетный ли рейс: номер есть в файле загрузки; пока файла нет - по диапазону номеров
     function isHeliFlight(code) {
         const c = String(code || '').trim().toUpperCase();
         if (flightNos.has(c)) return true;
@@ -233,7 +227,7 @@ window.HeliData = (function () {
         return String(v || '').trim();
     }
 
-    // Разбор текста файла: только строки с конфигурацией MIH-*. other — сколько строк с другой конфигурацией (самолётных).
+    // разбор файла: только строки MIH-*; other - сколько строк самолетных
     function parseText(text) {
         const out = [];
         const seen = new Set();
@@ -241,7 +235,7 @@ window.HeliData = (function () {
         const lines = String(text || '').split(/\r?\n/);
         for (let i = 0; i < lines.length; i++) {
             const t = lines[i];
-            if (!/^\s*KV-\d+\s*;/i.test(t)) continue;   // строка рейса («KV-781;…»), а не заголовок вида «KV-555-999, дата»
+            if (!/^\s*KV-\d+\s*;/i.test(t)) continue;   // строка рейса ("KV-781;..."), а не заголовок вида "KV-555-999, дата"
             if (!/;\s*MIH-/i.test(t)) { other++; continue; }
             const c = t.split(';').map(x => x.trim());
             const ci = c.findIndex(x => /^MIH-/i.test(x));
@@ -261,13 +255,13 @@ window.HeliData = (function () {
         return { rows: out, other };
     }
 
-    // Вид файла по первым строкам: 'heli' — только вертолётные строки, 'mixed' — и те и другие, 'air' — самолётный.
+    // вид файла по первым строкам: 'heli' - только вертолетные, 'mixed' - оба, 'air' - самолетный
     function classifyText(text) {
         let heli = 0, other = 0;
         const lines = String(text || '').split(/\r?\n/);
         for (let i = 0; i < lines.length && heli + other < 400; i++) {
             const t = lines[i];
-            if (!/^\s*KV-\d+\s*;/i.test(t)) continue;   // строка рейса («KV-781;…»), а не заголовок вида «KV-555-999, дата»
+            if (!/^\s*KV-\d+\s*;/i.test(t)) continue;
             if (/;\s*MIH-/i.test(t)) heli++; else other++;
         }
         if (heli && !other) return 'heli';
@@ -290,7 +284,6 @@ window.HeliData = (function () {
         bump();
     }
 
-    // ---------- продажи ----------
     function beginSales() {
         sales = {};
         salesCount = 0;
@@ -311,8 +304,8 @@ window.HeliData = (function () {
         cityCache = null;
     }
 
-    // Русский код города из продаж → код пункта из файла загрузки: по рейсам без остановок (откуда/куда = концы маршрута), голосованием.
-    // Остальные коды — как есть, если совпали с пунктом файла (с поправкой на латиницу/кириллицу).
+    // русский код города из продаж -> код пункта файла: по рейсам без остановок (откуда/куда = концы маршрута), голосованием
+    // остальные коды как есть, если совпали с пунктом файла (с поправкой на латиницу/кириллицу)
     function cityMap() {
         const stamp = epoch + ':' + salesEpoch;
         if (cityCache && cityCache.stamp === stamp) return cityCache;
@@ -337,8 +330,8 @@ window.HeliData = (function () {
             best.set(ru, b);
         });
         const resolve = (c) => best.get(c) || known.get(canon(c)) || '';
-        // Второй проход: код, не опознанный по рейсам без остановок (например ТГП у Подкаменной Тунгуски, которая только на маршрутах с остановками).
-        // Если на рейсе ровно один неопознанный код города в продажах и ровно один пункт маршрута, на который не указывает ни один код, — это он.
+        // второй проход: код, не опознанный по рейсам без остановок (например ТГП у Подкаменной Тунгуски, она только на маршрутах с остановками)
+        // если на рейсе один неопознанный код и один пункт маршрута без кода - это он
         const claimed = new Set();
         const allCodes = new Set();
         m.flights.forEach(F => (sales[F.key] || []).forEach(t => { allCodes.add(t[1]); allCodes.add(t[2]); }));
@@ -373,7 +366,7 @@ window.HeliData = (function () {
         return { today: fmtDate(t), yesterday: fmtDate(y), todayTs: t.getTime() };
     }
 
-    // Продано за сегодня / вчера / 7 дней: по рейсу и по каждой паре «откуда-куда».
+    // продано за сегодня / вчера / 7 дней: по рейсу и по каждой паре откуда-куда
     function flightSales(F) {
         const d = dayStrings();
         const ck = F.key + '|' + d.today + '|' + salesEpoch + '|' + epoch;
@@ -414,7 +407,6 @@ window.HeliData = (function () {
         return res;
     }
 
-    // ---------- расчёт по отрезкам ----------
     function capOf(cfg) {
         const m = /(\d+)\s*$/.exec(String(cfg || ''));
         const n = m ? parseInt(m[1], 10) : 0;
@@ -455,7 +447,7 @@ window.HeliData = (function () {
         F.closedAll = F.pairs.length > 0 && F.pairs.every(p => p.closed);
         F.closedPairs = F.pairs.filter(p => p.closed);
         F.total = F.pairs.reduce((s, p) => s + p.sold, 0);
-        // Время вылета из пункта j (1…n−1) — по паре «j → j+1», иначе по любой паре, начинающейся в j; прилёт — по сквозной паре.
+        // время вылета из пункта j (1...n-1): по паре j->j+1, иначе по любой паре с началом в j; прилет - по сквозной паре
         F.depAt = [];
         for (let j = 1; j < n; j++) {
             let p = F.pairMap.get(j + '-' + (j + 1));
@@ -472,11 +464,11 @@ window.HeliData = (function () {
         }
     }
 
-    // Столбцы плашек карточки: пункты маршрута карточки → значение отрезка этой даты (рейс с другим набором остановок «растягивается»).
+    // столбцы плашек карточки: пункты маршрута -> значение отрезка этой даты (рейс с другими остановками растягивается)
     function mapCells(F, cardPts) {
         const nCols = cardPts.length - 1;
         const cells = new Array(nCols).fill(null);
-        // Пункт может повторяться в маршруте (А-Б-А): ищем каждый пункт рейса по порядку, правее предыдущего.
+        // пункт может повторяться (А-Б-А): ищем пункты рейса по порядку, правее предыдущего
         const cardCanon = cardPts.map(canon);
         let prevIdx = -1;
         const rowIdx = F.pts.map(c => {
@@ -519,7 +511,7 @@ window.HeliData = (function () {
         });
         flights.forEach(finishFlight);
 
-        // карточки: пара рейсов «туда» (нечётный) / «обратно» (следующий чётный)
+        // карточка: пара рейсов туда (нечетный) и обратно (следующий четный)
         const byCard = new Map();
         flights.forEach(F => {
             const k = F.num % 2 ? F.num : F.num - 1;
@@ -556,7 +548,6 @@ window.HeliData = (function () {
     }
 
 
-    // ---------- снимок ----------
     function toSnapshot() {
         if (!rows.length && !salesCount) return null;
         return { v: 1, rows, sales };

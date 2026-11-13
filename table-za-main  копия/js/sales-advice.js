@@ -1,10 +1,6 @@
-// Подсказка ценового решения по вылету (для «Управления продажами» и утренней сводки).
-// Только вылеты в ближайшие дни (окно из параметров расчётов; на «Сегодня» выбирается). Сравнивает продано сейчас с нормой («обычно к этому дню»)
-// и с планом (файл ожидаемой загрузки) — те же цифры, что в выводе карточки и детализации:
-//   отстаёт от всех доступных ориентиров на порог и больше  → ▼ снизить;
-//   опережает все ориентиры на порог и больше             → ▲ повысить;
-//   от одного отстаёт, другой опережает на порог           → ! внимание.
-// Порог — доля кресел, но не меньше минимума билетов (задаются в параметрах расчётов). Решение всегда принимает человек: это только подсветка.
+// подсказка ценового решения по вылету (Управление продажами, утренняя сводка), только ближайшие дни
+// продано против нормы 'обычно к этому дню' и плана: отстаёт на порог - снизить, опережает - повысить
+// разнобой - внимание; порог - доля кресел, не меньше минимума билетов; решает человек, это подсветка
 window.SalesAdvice = (function () {
     let memo = new Map();
     let memoSig = '';
@@ -20,10 +16,10 @@ window.SalesAdvice = (function () {
         return typeof getDaysUntil === 'function' ? getDaysUntil(date) : null;
     }
 
-    // maxDays — своё окно (вкладка «Сегодня»); по умолчанию PV.ADVICE_DAYS_AHEAD (УП и утренняя сводка).
+    // maxDays - своё окно (вкладка Сегодня), по умолчанию PV.ADVICE_DAYS_AHEAD
     function inWindow(date, maxDays) {
         const d = daysUntil(date);
-        // С завтрашнего дня: в день вылета менять цену уже поздно.
+        // с завтрашнего дня: в день вылета менять цену поздно
         return d != null && d >= 1 && d <= (maxDays || PV.ADVICE_DAYS_AHEAD);
     }
 
@@ -39,7 +35,7 @@ window.SalesAdvice = (function () {
         const ref = s.refData && s.refData.length ? s.refData[s.refData.length - 1] : null;
         const exp = s.expectedData && s.expectedData.length ? s.expectedData[s.expectedData.length - 1] : null;
         const refs = [];
-        // Прошлый год — не ориентир для решения сегодня (спрос, цены и конкуренты другие): только нынешняя норма и план.
+        // прошлый год не берём: спрос и конкуренты другие, только норма и план
         if (ref != null && !isNaN(ref) && !s.refIsLy) refs.push({ label: 'обычно к этому дню', value: Math.round(ref), d: sold - Math.round(ref) });
         if (exp != null && !isNaN(exp)) refs.push({ label: 'по плану', value: exp, d: sold - exp });
         if (!refs.length) return null;
@@ -50,14 +46,14 @@ window.SalesAdvice = (function () {
         if (behind === refs.length) status = 'down';
         else if (ahead === refs.length) status = 'up';
         else if (behind && ahead) status = 'attn';
-        // Прогноз к вылету (тот же, что в карточке и RMS): темп ниже обычного, но вылет доберёт до порога (по умолчанию 80%) — не «снизить»;
-        // темп выше, но прогноз ниже 60% — не «повысить». Тогда «внимание»: решать человеку.
+        // прогноз к вылету как в карточке и RMS: темп ниже, но вылет доберёт до порога (80%) - не снизить
+        // темп выше, а прогноз ниже 60% - не повысить, тогда внимание
         const fc = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(code, date) : null;
         const fcOk = fc && fc.source !== 'flown' && fc.final != null;
         let conflict = '';
         if (fcOk && status === 'down' && fc.lf >= PV.ADVICE_FC_HIGH) { status = 'attn'; conflict = `темп ниже обычного, но прогноз ${fc.lf}%`; }
         if (fcOk && status === 'up' && fc.lf < PV.ADVICE_FC_LOW) { status = 'attn'; conflict = `темп выше обычного, но прогноз ${fc.lf}%`; }
-        // Продажи — на день среза данных: если файл не сегодняшний, «за N дн.» считаем от него и пишем дату данных.
+        // продажи на день среза данных: если файл не сегодняшний, 'за N дн.' считаем от него, дату данных пишем
         const dtdNow = daysUntil(date);
         const dtd = typeof observedFromDtd === 'function' && dtdNow != null ? Math.max(dtdNow, observedFromDtd(date)) : dtdNow;
         const lag = dtd != null && dtdNow != null && dtd > dtdNow && typeof salesDataCutoffTime === 'function'
@@ -68,10 +64,9 @@ window.SalesAdvice = (function () {
         return { code, date, base, status, sold, refs, threshold: T, dtd, text, seats, money: status ? money(code, date, status === 'up' ? 'up' : 'down', undefined, row, base) : null };
     }
 
-    // Стоимость пустых мест, ₽ (для сортировки и столбца «Стоимость пустых мест»):
-    //  down — пустые места по прогнозу × средний тариф вылета (сколько выручки не добираем);
-    //  up   — места, которые ещё в продаже, × последний тариф (с чего можно взять больше).
-    // Без прогноза или тарифа — null (на экране «—»). avgHint: средний тариф, если он уже известен.
+    // стоимость пустых мест, ₽: down - пустые по прогнозу x средний тариф (выручки не добираем)
+    // up - места в продаже x последний тариф (с чего можно взять больше)
+    // без прогноза или тарифа null (на экране прочерк); avgHint - средний тариф, если уже известен
     let moneyMemo = new Map();
     let moneySig = '';
     function money(code, date, kind, avgHint, row0, base0) {
@@ -111,7 +106,7 @@ window.SalesAdvice = (function () {
         return { kind, seats: empty, fare: Math.round(fare), rub: Math.round(empty * fare) };
     }
 
-    // Подпись к сумме: из чего она получена.
+    // подпись к сумме - из чего она посчитана
     function moneyTitle(m) {
         if (!m) return 'Нет прогноза или тарифа: сумму не посчитать';
         const f = (n) => Math.round(n).toLocaleString('ru-RU');
@@ -120,8 +115,8 @@ window.SalesAdvice = (function () {
             : `Пустые места по прогнозу: ${m.seats} × средний тариф ${f(m.fare)} ₽`;
     }
 
-    // Цифры вылета к нынешнему дню: продано, кресла, ожидаемая (файл) и «аналогичные дни» (норма по дню недели).
-    // Не зависит от переключателей подсказок — нужна отчёту «Запрос на понижение».
+    // цифры вылета на сегодня: продано, кресла, ожидаемая (файл), аналогичные дни (норма по дню недели)
+    // не зависит от переключателей подсказок, нужна отчёту Запрос на понижение
     function norms(code, date) {
         const base = typeof getBaseFlight === 'function' ? getBaseFlight(code) : code;
         const row = typeof getFlightRowForDate === 'function' ? getFlightRowForDate(base, date, code) : null;
@@ -135,9 +130,8 @@ window.SalesAdvice = (function () {
         return { sold, seats, ref: ref != null && !isNaN(ref) ? Math.round(ref) : null, exp: exp != null && !isNaN(exp) ? Math.round(exp) : null, dtd: daysUntil(date), aircraft: row[4] };
     }
 
-    // Подсказка для вылета или null (нет данных / вне окна / не о чем подсказывать).
-    // Где показывать — переключатели в «Настройки» → «Параметры расчётов» → «Подсказки по тарифам»:
-    // place = 'today' (страница «Сегодня»), 'sales' («Управление продажами»), 'summary' (утренняя сводка).
+    // подсказка или null (нет данных, вне окна); переключатели: Настройки / Параметры расчётов / Подсказки по тарифам
+    // place: 'today' (Сегодня), 'sales' (Управление продажами), 'summary' (утренняя сводка)
     function enabled(place) {
         return place === 'today' ? PV.HINT_TODAY === 1 : (place === 'sales' ? PV.HINT_SALES === 1 : (place === 'summary' ? PV.HINT_SUMMARY === 1 : false));
     }
@@ -156,7 +150,7 @@ window.SalesAdvice = (function () {
 
     const LABEL = { down: '▼ снизить', up: '▲ повысить', attn: '! сигналы разные' };
 
-    // Все вылеты в окне (по загруженным данным): [{ code, date, base }].
+    // все вылеты в окне по загруженным данным: [{ code, date, base }]
     function departuresAhead(maxDays) {
         const out = [];
         const seen = new Set();
@@ -173,8 +167,8 @@ window.SalesAdvice = (function () {
         return out;
     }
 
-    // Подсказки по всем вылетам окна (для сводки). Считается порциями, чтобы не подвешивать страницу.
-    // only — набор «рейс|дата»: считать только эти вылеты (например, из «Управления продажами»).
+    // подсказки по всем вылетам окна, считаем порциями, чтобы не вешать страницу
+    // only - набор 'рейс|дата': считать только эти вылеты (например, из Управления продажами)
     async function scanAll(only, maxDays, place) {
         if (!enabled(place)) return [];
         const list = departuresAhead(maxDays).filter(d => !only || only.has(d.code + '|' + d.date));

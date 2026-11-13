@@ -1,9 +1,8 @@
-// Расходы + периоды субсидии (папка «Расходы»)
-// Себестоимость на направление = столбец «Себестоимость» / 2 * 1000
-// Периоды 1–3 в «Период субсидии» = коммерция (без субсидии)
+// расходы и периоды субсидии из папки "Расходы"
+// себестоимость на направление = "Себестоимость" / 2 * 1000; периоды 1-3 в "Период субсидии" = коммерция, без субсидии
 
-// Справочник субсидий в приложении (subsidy-ref.js) важнее файлов: costRows/periodsByNum ниже —
-// уже итог «файл + справочник», а данные самих файлов лежат в fileCostRows/filePeriods.
+// справочник subsidy-ref.js важнее файлов: costRows/periodsByNum уже итог файл+справочник
+// сами данные файлов в fileCostRows/filePeriods
 
 window.RouteCosts = (function () {
     let costRows = [];
@@ -59,7 +58,7 @@ window.RouteCosts = (function () {
         return `${pad2(d)}.${pad2(m)}.${y}`;
     }
 
-    /** Календарный ключ YYYYMMDD — без часовых поясов, границы периодов включительно */
+    // ключ YYYYMMDD, без часовых поясов; границы периодов включительно
     function dateKey(ru) {
         const p = String(ru || '').trim().split(/[./-]/);
         if (p.length !== 3) return 0;
@@ -71,7 +70,7 @@ window.RouteCosts = (function () {
         return y * 10000 + mo * 100 + d;
     }
 
-    /** Excel serial / OADate → ДД.ММ.ГГГГ без сдвига на сутки */
+    // Excel serial / OADate -> ДД.ММ.ГГГГ без сдвига на сутки
     function excelSerialToRu(serial) {
         const n = Math.floor(Number(serial));
         if (!isFinite(n) || n < 60) return '';
@@ -161,7 +160,7 @@ window.RouteCosts = (function () {
         return rows;
     }
 
-    // Краевой маршрут — оба конца в крае (или хаб). Межрегиональные и международные — как в файле.
+    // краевой маршрут: оба конца в крае (или хаб); межрегиональные и международные как в файле
     function isKraiPair(from, to) {
         const cities = [from, to].filter(c => !(typeof isHubCity === 'function' && isHubCity(c)));
         if (!cities.length || typeof isKraiCity !== 'function') return false;
@@ -170,17 +169,17 @@ window.RouteCosts = (function () {
         return cities.every(c => isKraiCity(c) && !inter(c));
     }
 
-    // Сводная таблица по месяцам: «Названия строк | Тип ВС | 6 | 6 | 7 | 7 | 8 | 8», во второй строке —
-    // «Максимум по полю Субсидии» / «Среднее по полю Себестоимость рейса». Маршрут «Красноярск-Абакан-Красноярск»,
-    // суммы — тыс. ₽ на рейс туда-обратно (как в прежнем файле). Месяцев сколько угодно, на сайт — последние три.
+    // сводная по месяцам: "Названия строк | Тип ВС | 6 | 6 | 7 | 7 | 8 | 8", во второй строке "Максимум по полю Субсидии" и "Среднее по полю Себестоимость рейса"
+    // маршрут "Красноярск-Абакан-Красноярск", суммы в тыс. ₽ на рейс туда-обратно
+    // на сайт берем последние три месяца
     function isPivotSheet(json) {
         const r0 = (json && json[0]) || [];
         const r1 = (json && json[1]) || [];
         return /названия строк/i.test(String(r0[0] || '')) || r1.some(c => /по полю/i.test(String(c || '')));
     }
 
-    // «Красноярск-Горно-алтайск-Красноярск» → [Красноярск, Горно-алтайск]: город отправления — то, чем название
-    // начинается и заканчивается (в названиях городов бывает свой дефис), назначение — между ними.
+    // Красноярск-Горно-алтайск-Красноярск -> [Красноярск, Горно-алтайск]: отправление - то, чем название начинается и заканчивается
+    // в названиях городов бывает свой дефис, назначение между ними
     function splitRoute(name) {
         const n = String(name || '').replace(/\s*-\s*/g, '-').trim();
         const idx = [];
@@ -192,12 +191,12 @@ window.RouteCosts = (function () {
                 if (mid) return [a, mid];
             }
         }
-        // Без возврата в начало: «А-Б» — первый и последний участок.
+        // без возврата в начало: А-Б - первый и последний участок
         if (idx.length) return [n.slice(0, idx[0]), n.slice(idx[idx.length - 1] + 1)];
         return null;
     }
 
-    // Субсидия направления одна на все месяцы: есть хотя бы в одном месяце — во всех (наибольшая из месяцев).
+    // субсидия направления одна на все месяцы: если есть хотя бы в одном, то во всех (наибольшая)
     function evenSubsidy(byMonth, krai) {
         const vals = Object.values(byMonth);
         const top = krai ? 0 : vals.reduce((a, v) => Math.max(a, v.sub || 0), 0);
@@ -220,7 +219,7 @@ window.RouteCosts = (function () {
             else if (h.includes('рейс') || h.includes('кол-во') || h.includes('количество')) c.n = i;
         }
         let months = Object.keys(cols).map(Number).filter(m => cols[m].cost != null);
-        // Порядок месяцев — как в файле; через новый год (11, 12, 1) идёт по порядку столбцов.
+        // порядок месяцев как в файле; через новый год (11, 12, 1) по порядку столбцов
         months.sort((a, b) => cols[a].cost - cols[b].cost);
         months = months.slice(-3);
         const rows = [];
@@ -248,7 +247,7 @@ window.RouteCosts = (function () {
             evenSubsidy(byMonth, krai);
             const avg = (k) => have.reduce((a, m) => a + byMonth[m][k], 0) / have.length;
             const base = { scepka: '', from, to, ac, fromKey: cityKey(from), toKey: cityKey(to), acK: acKey(ac), krai, months, byMonth };
-            // Всегда два варианта: с субсидией и без. Себестоимость одна и та же, без субсидии — субсидия 0.
+            // всегда два варианта, с субсидией и без; себестоимость одна, без субсидии субсидия 0
             rows.push({ ...base, flag: 'да', costPair: avg('cost'), subsidyAmt: krai ? 0 : avg('sub') });
             rows.push({ ...base, flag: 'нет', costPair: avg('cost'), subsidyAmt: 0 });
         }
@@ -273,7 +272,7 @@ window.RouteCosts = (function () {
             const iStart = cells.findIndex(h => h.includes('начал') && h.includes(token));
             const iEnd = cells.findIndex(h => (h.includes('конец') || h.includes('конца')) && h.includes(token));
             if (iStart >= 0 && iEnd >= 0) pairs.push([iStart, iEnd]);
-            else pairs.push([n * 2 - 1, n * 2]); // B–C / D–E / F–G
+            else pairs.push([n * 2 - 1, n * 2]); // B-C / D-E / F-G
         }
         return pairs;
     }
@@ -311,7 +310,7 @@ window.RouteCosts = (function () {
         const XLSX = await loadPlainXlsx();
         if (!XLSX) return null;
         const buf = await file.arrayBuffer();
-        // cellDates:false — сырые серийники Excel, без сдвига часового пояса
+        // cellDates:false - сырые серийники Excel, без сдвига часового пояса
         const wb = XLSX.read(buf, { type: 'array', cellDates: false });
         const sh = wb.Sheets[wb.SheetNames[0]];
         return XLSX.utils.sheet_to_json(sh, { header: 1, raw: true, defval: '' });
@@ -327,7 +326,7 @@ window.RouteCosts = (function () {
         return (fromKey < toKey ? `${fromKey}|${toKey}` : `${toKey}|${fromKey}`) + '|' + acK;
     }
 
-    // Итог: данные файлов, поверх — записи справочника (по номеру рейса и по маршруту+типу ВС).
+    // итог: файлы, поверх записи справочника (по номеру и по маршруту+ВС)
     function rebuild() {
         const periods = { ...filePeriods };
         Object.keys(refPeriods).forEach(n => {
@@ -337,8 +336,8 @@ window.RouteCosts = (function () {
         const refKeys = new Set(Object.keys(refAmounts));
         const fileByKey = {};
         fileCostRows.forEach(r => { fileByKey[routePairKey(r.fromKey, r.toKey, r.acK) + '|' + r.flag] = r; });
-        // Справочник главнее файлов. Файл по месяцам при загрузке сам записывается в справочник (pivotEntries):
-        // субсидия межрегионального направления, которой нет в файле ни в одном месяце, берётся из справочника.
+        // справочник главнее файлов; файл по месяцам при загрузке сам пишется в справочник (pivotEntries)
+        // субсидия межрегионального направления, которой нет в файле ни в одном месяце, берется из справочника
         const subFromRef = (r) => {
             const e = refAmounts[routePairKey(r.fromKey, r.toKey, r.acK)];
             return e && e.subsidy > 0 ? e.subsidy : 0;
@@ -354,8 +353,8 @@ window.RouteCosts = (function () {
         });
         Object.keys(refAmounts).forEach(key => {
             let e0 = refAmounts[key];
-            // Запись справочника одним числом, а в файле маршрут по месяцам: число справочника — во все месяцы
-            // (пустое поле — значение месяца из файла).
+            // число справочника на все месяцы, если в файле маршрут по месяцам
+            // пустое поле в справочнике - берем значение месяца из файла
             const fp = !e0.byMonth && (fileByKey[key + '|да'] || fileByKey[key + '|нет']);
             if (fp && fp.byMonth) {
                 const byMonth = {};
@@ -384,7 +383,7 @@ window.RouteCosts = (function () {
             if (fm && fm.byMonth) { base.months = fm.months; base.byMonth = fm.byMonth; base.krai = fm.krai; }
             const fDa = fileByKey[key + '|да'];
             const fNet = fileByKey[key + '|нет'];
-            // Себестоимость одна — и в субсидированные, и в коммерческие даты.
+            // Себестоимость одна - и в субсидированные, и в коммерческие даты.
             rows.push({ ...base, scepka: '', flag: 'да', costPair: e.cost != null ? e.cost : (fDa ? fDa.costPair : (fNet ? fNet.costPair : null)), subsidyAmt: e.subsidy != null ? e.subsidy : (fDa ? fDa.subsidyAmt : 0) });
             rows.push({ ...base, scepka: '', flag: 'нет', costPair: e.cost != null ? e.cost : (fNet ? fNet.costPair : (fDa ? fDa.costPair : null)), subsidyAmt: 0 });
         });
@@ -436,12 +435,12 @@ window.RouteCosts = (function () {
         rebuild();
     }
 
-    // В снимок для других ПК — только данные файлов: справочник они читают сами из общей папки.
+    // в снимок для других ПК только данные файлов, справочник они читают сами из общей папки
     function toSnapshot() {
         return { costRows: fileCostRows, periodsByNum: filePeriods };
     }
 
-    // Все маршруты с суммами (итог файл + справочник) для раздела «Справочник».
+    // Все маршруты с суммами (итог файл + справочник) для раздела "Справочник".
     function amountRows() {
         const map = {};
         costRows.forEach(r => {
@@ -460,8 +459,8 @@ window.RouteCosts = (function () {
         return Object.values(map).sort((a, b) => (a.from + a.to).localeCompare(b.from + b.to, 'ru') || a.acLabel.localeCompare(b.acLabel, 'ru'));
     }
 
-    // Что записать в справочник после загрузки файла по месяцам: итог (с субсидией из справочника там,
-    // где у межрегионального направления в файле её нет), по одной записи на маршрут и ВС.
+    // что пишем в справочник после загрузки по месяцам: итог, с субсидией из справочника там, где в файле ее нет
+    // по одной записи на маршрут и ВС
     function pivotEntries() {
         const out = [];
         fileCostRows.forEach(r => {
@@ -487,7 +486,7 @@ window.RouteCosts = (function () {
         return { costRows: fileCostRows, periodsByNum: filePeriods };
     }
 
-    // Откуда берутся периоды рейса и суммы маршрута: 'ref' — справочник, 'file' — файл, '' — нигде.
+    // Откуда берутся периоды рейса и суммы маршрута: 'ref' - справочник, 'file' - файл, '' - нигде.
     function periodSource(num) {
         if (refPeriods[num]) return 'ref';
         return filePeriods[num] ? 'file' : '';
@@ -498,19 +497,19 @@ window.RouteCosts = (function () {
         return parseInt(String(code).replace(/[^0-9]/g, ''), 10) || 0;
     }
 
-    /** Периоды рейса по базовому номеру (доп. KV-305 = KV-105). 105 ≠ 106. */
+    // Периоды рейса по базовому номеру (доп. KV-305 = KV-105). 105 ≠ 106.
     function periodsForFlight(flightCode) {
         const n = flightNum(flightCode);
         const b = typeof getBaseFlight === 'function' ? flightNum(getBaseFlight(flightCode)) : n;
-        // Справочник: пустой список — «коммерции нет», это тоже ответ.
+        // пустой список в справочнике - коммерции нет, это тоже ответ
         if (b && refPeriods[b]) return periodsByNum[b] || [];
         if (b && periodsByNum[b] && periodsByNum[b].length) return periodsByNum[b];
-        // Старый файл мог содержать строку под номером доп. рейса — берём её, если у базового нет.
+        // в старом файле могла быть строка под номером доп. рейса, берем ее, если у базового нет
         if (n && n !== b && periodsByNum[n] && periodsByNum[n].length) return periodsByNum[n];
         return [];
     }
 
-    /** Периоды 1–3 = коммерция, обе границы включительно. */
+    // периоды 1-3 = коммерция, обе границы включительно
     function isCommercialDate(flightCode, dateStr) {
         const ranges = periodsForFlight(flightCode);
         if (!ranges.length) return false;
@@ -578,7 +577,7 @@ window.RouteCosts = (function () {
         return out;
     }
 
-    /** Калькулятор вкладки: туда+обратно. В файле сумма на пару → × 1000. Экономическая таблица не трогается. */
+    // калькулятор: туда+обратно; в файле сумма на пару, умножаем на 1000; "Экономическая таблица" не трогаем
     function quote(fromKey, toKey, acK, subsidized) {
         const flag = subsidized ? 'да' : 'нет';
         const rec = (fromKey && toKey && acK)
@@ -622,10 +621,8 @@ window.RouteCosts = (function () {
         return [];
     }
 
-    /**
-     * Субсидия и коммерция — только этот рейс и его дата (row[0], row[1]).
-     * В файле сумма на туда+обратно → на одно направление: сумма / 2 * 1000.
-     */
+    // субсидия и коммерция - только этот рейс и его дата (row[0], row[1])
+    // в файле сумма на туда+обратно, на одно направление: сумма / 2 * 1000
     function lookup(row, flightCode, dateStr) {
         const code = (row && typeof cleanFlight === 'function')
             ? cleanFlight(row[0])
@@ -649,7 +646,7 @@ window.RouteCosts = (function () {
         const subsidyOneWay = (!commercial && pairFromFile)
             ? pairFromFile / 2 * 1000
             : 0;
-        // Другой участок того же вылета с посадками: расходы и субсидия — в строке основного участка.
+        // другой участок вылета с посадками: расходы и субсидия в строке основного участка
         if (row && row.segShare) {
             return { unitCost: null, from: cities[0] || '', to: cities[1] || '', ac, subsidyAmt: 0, subsidyOneWay: 0,
                 subsidized: !commercial, commercial, krai, shared: true };

@@ -1,15 +1,15 @@
-// js\rms-view.js - вкладка RMS.
-// Globals on purpose: no bundler; onclick and other files call by name.
+// вкладка RMS
+// глобальные функции намеренно: без сборщика, onclick и другие файлы зовут их по имени
 
 let rmsVirtualHandle = null;
-// Фильтры RMS живут здесь, а не только в выпадающих списках: вкладка строится позже восстановления сессии.
+// фильтры RMS храним здесь, а не только в выпадающих списках: вкладка строится позже восстановления сессии
 let rmsUiFilters = { days: '30', route: 'all', alert: 'all' };
 
 function rmsFilterChanged(el) {
     const key = { 'rms-days-filter': 'days', 'rms-route-type-filter': 'route', 'rms-alert-filter': 'alert' }[el.id];
     if (key) rmsUiFilters[key] = el.value;
     if (el.id === 'rms-days-filter') {
-        // «Свой период»: окно вперёд до выбранной даты «по».
+        // свой период: окно вперед до даты "по"
         if (el.value === 'custom' && !CustomPeriod.on('rms')) CustomPeriod.toggle('rms', true);
         else if (el.value !== 'custom') CustomPeriod.set('rms', { on: false });
         const box = document.getElementById('rms-custom-to');
@@ -25,7 +25,7 @@ function rmsCustomChanged(el) {
     renderRmsWatchlist();
 }
 
-// Сколько дней вперёд показывает RMS: выбранное число или до даты «по» своего периода.
+// дней вперед: выбранное число или до даты "по" своего периода
 function rmsDaysValue() {
     const v = document.getElementById('rms-days-filter')?.value || '30';
     return v === 'custom' ? CustomPeriod.aheadDays('rms') : (parseInt(v, 10) || 30);
@@ -33,7 +33,7 @@ function rmsDaysValue() {
 
 function rmsSel(key, v) { return rmsUiFilters[key] === v ? ' selected' : ''; }
 
-// Пояснение под шапкой: коротко на странице, полностью — по значку «?».
+// Пояснение под шапкой: коротко на странице, полностью - по значку "?".
 const RMS_NOTE_SHORT = 'Занято — какая часть мест, открытых в продаже, уже продана. Клик по строке — карточка рейса, двойной клик — подробности.';
 const RMS_NOTE_FULL = 'Занято = проданные места ÷ (места по снимку − специальные брони). '
     + 'Тариф, деньги и продажи за 1–2 дня берутся из файла продаж за 14 дней: если его нет, они не показываются, а не заменяются нулём. '
@@ -112,13 +112,13 @@ function createRmsView(c) {
     renderRmsWatchlist();
 }
 
-// Высота строки, px. Одна на все строки списка (рейс, подробности, заголовок группы): окно прокрутки считает по ней.
-// То же число стоит в css/ux-rms.css (--rms-row-h).
+// высота строки, px; одна на все строки списка (рейс, подробности, заголовок группы), окно прокрутки считает по ней
+// то же число в css/ux-rms.css (--rms-row-h)
 const RMS_ROW_H = 38;
-// Сколько ждать второго щелчка, прежде чем открыть карточку: двойной клик раскрывает подробности, а не карточку.
+// сколько ждать второго щелчка перед карточкой: двойной клик раскрывает подробности
 const RMS_DBL_MS = 250;
 
-// Состояние показа: раскрытые строки и «остальные» живут между перерисовками (отметка, смена фильтра).
+// состояние показа: раскрытые строки и остальные живут между перерисовками (отметка, смена фильтра)
 const rmsExpanded = new Set();
 let rmsRestOpen = false;
 let rmsModel = null;
@@ -134,11 +134,9 @@ function rmsDtdText(dtd) {
     return dtd <= 0 ? 'сегодня' : (dtd === 1 ? 'завтра' : `через ${dtd} дн.`);
 }
 
-// Одно действие на строку — из того, что сайт уже подсказывает (сигнал RMS, прогноз к вылету, «Деньги»):
-//  КРИТ — снизить цену (так же считает столбец «Деньги»);
-//  «!» с прогнозом ниже порога «Повысить не советовать» — снизить цену, с прогнозом выше порога — продвигать, без прогноза — проверить;
-//  «!», смягчённый высоким прогнозом, — проверить;
-//  «почти полный» и «активные продажи» — повысить цену (как в «Деньгах»), остальное — проверить.
+// действие на строку из того, что сайт уже подсказывает (сигнал RMS, прогноз, "Деньги")
+// КРИТ - снизить цену (как в столбце "Деньги"); "!" с прогнозом ниже порога "Повысить не советовать" - снизить, выше - продвигать, без прогноза - проверить
+// "!", смягченный высоким прогнозом - проверить; "почти полный" и "активные продажи" - повысить цену, остальное - проверить
 function rmsAction(f, fc) {
     const lvl = f.alertLevel;
     if (!lvl) return null;
@@ -158,12 +156,12 @@ function rmsAction(f, fc) {
     return { id: 'check', label: 'Проверить', title: 'Посмотрите карточку рейса' };
 }
 
-// В строке причина короче: «вылет через N дн.» уже стоит в столбце «Вылет». Полный текст — в подсказке.
+// в строке причина короче: "вылет через N дн." уже в столбце "Вылет", полный текст в подсказке
 function rmsReasonShort(reason) {
     return String(reason).replace(/, вылет через \d+ дн\./, '');
 }
 
-// Рейс с несколькими участками в один день: участок словами. Если он начинается и кончается теми же городами, что направление, направление не повторяем.
+// рейс с несколькими участками в день: участок словами; если он начинается и кончается теми же городами, что направление, направление не повторяем
 function rmsRouteNameHtml(flightDir, route) {
     const cities = formatRouteCities(route);
     const ends = cities.split(' → ');
@@ -182,7 +180,7 @@ function rmsRowHtml(f, ctx) {
     const routeType = typeof getFlightRouteType === 'function' ? getFlightRouteType(flightCode) : 'unknown';
     const routeTypeLabel = typeof getFlightRouteTypeLabel === 'function' ? getFlightRouteTypeLabel(flightCode) : '';
     const routeTypeCls = routeType === 'krai' ? 'rms-route-krai' : (routeType === 'interregional' ? 'rms-route-inter' : 'rms-route-unknown');
-    const fc = typeof FlightInsights !== 'undefined' && !f.segShare ? FlightInsights.forecast(flightCode, f.date) : null;   // у остальных участков вылета с посадками прогноза нет: он на сквозной участок
+    const fc = typeof FlightInsights !== 'undefined' && !f.segShare ? FlightInsights.forecast(flightCode, f.date) : null;   // у остальных участков с посадками прогноза нет, он только на сквозной участок
     const fcOn = !!(fc && fc.source !== 'flown');
     const fcCls = fcOn ? (fc.soldOutDtd != null && fc.load < fc.seats ? 'rms-fc-up' : (fc.lf < 60 ? 'rms-fc-down' : '')) : '';
     const fcTitle = fc ? FlightInsights.forecastText(fc) : 'Мало истории для прогноза';
@@ -215,7 +213,7 @@ function rmsRowHtml(f, ctx) {
         `;
 }
 
-// Подробности под строкой: то, что убрано из таблицы. Одна строка той же высоты, что и остальные.
+// подробности под строкой: то, что убрано из таблицы; высота как у остальных строк
 function rmsDetailHtml(f, ctx) {
     const code = f.orig || f.base;
     const mny = typeof getRmsMoney === 'function' ? getRmsMoney(f) : null;
@@ -250,7 +248,7 @@ function rmsGroupHtml(id, count, ctx) {
         `;
 }
 
-// Список строк таблицы: заголовки групп, рейсы и раскрытые подробности. Каждая строка строится лениво — только когда её показывают.
+// список строк: заголовки групп, рейсы, подробности; строка строится, только когда ее показывают
 function rmsBuildEntries(m) {
     const ctx = m.ctx;
     const out = [];
@@ -271,7 +269,7 @@ function rmsBuildEntries(m) {
     return out;
 }
 
-// Ставит строки в таблицу: окно прокрутки для длинного списка, иначе всё сразу. Прокрутка не сбрасывается.
+// ставит строки в таблицу: для длинного списка окно прокрутки, иначе все сразу; прокрутка не сбрасывается
 function rmsMountRows(container) {
     if (!rmsModel || !container) return;
     const tbody = container.querySelector('#rms-tbody');
@@ -339,7 +337,7 @@ function renderRmsWatchlist() {
     const rmsDays = rmsDaysValue();
     const kpi = getGlobalKPIs();
     const alertCnt = flights.filter(f => Attention.is(f)).length;
-    // Средняя загрузка — по местам: сумма проданных / сумма кресел в продаже.
+    // Средняя загрузка - по местам: сумма проданных / сумма кресел в продаже.
     const seatSum = flights.reduce((a, f) => a + (f.total || 0), 0);
     const avgLoad = seatSum ? Math.round(flights.reduce((a, f) => a + (f.total ? f.free : 0), 0) / seatSum * 100) : null;
     const stale = typeof getStaleSalesInfo === 'function' ? getStaleSalesInfo() : null;
@@ -371,7 +369,7 @@ function renderRmsWatchlist() {
     }
 
     const hasExpected = expectedReady || showExpectedLoadColumn;
-    // Продажи за 1–2 дня и за сегодня — в подробностях; без данных их там нет (а не одни «—»). Считается один раз, не по строкам.
+    // продажи за 1-2 дня и за сегодня в подробностях; без данных их там нет, а не одни прочерки; считаем один раз, не по строкам
     const salesOff = !salesReady || !!stale;
     const showPickup = !salesOff && flights.some(f => f.pickup !== null && f.pickup !== undefined);
     const showToday = !salesOff;
@@ -382,7 +380,7 @@ function renderRmsWatchlist() {
         colsNote.textContent = note;
         colsNote.hidden = !note;
     }
-    // Порядок внутри групп — как отдаёт расчёт (по деньгам, потом по близости вылета): он не меняется.
+    // порядок внутри групп как отдает расчет (по деньгам, потом по близости вылета), не меняем
     const crit = [], warn = [], rest = [];
     flights.forEach(f => { const lv = Attention.level(f); (lv >= 3 ? crit : (lv >= 2 ? warn : rest)).push(f); });
     const colCount = 6 + (hasExpected ? 1 : 0) + (markOn ? 1 : 0);
@@ -447,7 +445,7 @@ function bindRmsWatchlistClicks(container) {
     });
 }
 
-// Отметка поставлена (чип, клавиши 1–4, карточка) — обновить чипы и счётчик, вернуть фокус на строку.
+// отметка поставлена (чип, клавиши 1-4, карточка): обновляем чипы и счетчик, фокус на строку
 document.addEventListener('krasavia:mark', (e) => {
     if (typeof currentTab === 'undefined' || currentTab !== 'rms') return;
     const container = document.getElementById('rms-watchlist');

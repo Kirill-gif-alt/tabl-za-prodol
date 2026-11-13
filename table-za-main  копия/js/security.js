@@ -7,11 +7,11 @@ window.Security = (function () {
     const MAX_SNAPSHOT_ROWS = 1_000_000;
     const MAX_SNAPSHOT_SALES = 1_000_000;
     const PROFILE_ID_RE = /^[a-z][a-z0-9_]{0,31}$/;
-    /** Номер рейса: KV- + 1–6 цифр (защита от мусорных значений) */
+    // номер рейса: KV- и 1-6 цифр, защита от мусорных значений
     const FLIGHT_BASE_RE = /^KV-\d{1,6}$/;
     const DATE_RE = /^\d{2}\.\d{2}\.\d{4}$/;
-    /** Минимальная длина пароля при сбросе администратором */
-    const MIN_PASSWORD_LEN_ADMIN = 8;   // и при сбросе администратором — не короче 8 (короткий пароль подбирается по хешу)
+    // минимальная длина пароля при сбросе админом
+    const MIN_PASSWORD_LEN_ADMIN = 8;   // короткий пароль подбирается по хешу, поэтому не короче 8
 
     let loginState = { fails: 0, lockUntil: 0 };
 
@@ -125,7 +125,7 @@ window.Security = (function () {
         return String(s ?? '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '').trim().slice(0, maxLen);
     }
 
-    // Последний отказ по размеру: нужен, чтобы вход мог объяснить, почему «Последних данных» нет.
+    // последний отказ по размеру: вход объясняет, почему "Последних данных" нет
     let snapshotRejected = false;
 
     function countSnapshot(snap) {
@@ -137,7 +137,7 @@ window.Security = (function () {
                 if (Array.isArray(list)) sales += list.length;
             });
         }
-        // Вертолёты: строки файла загрузки и билеты (дата, откуда, куда) — в те же лимиты.
+        // вертолёты: строки файла загрузки и билеты (дата, откуда, куда) в те же лимиты
         const heli = snap && (snap.heli || (snap.data && snap.data.heli));
         if (heli && typeof heli === 'object') {
             if (Array.isArray(heli.rows)) rows += heli.rows.length;
@@ -148,7 +148,7 @@ window.Security = (function () {
         return { rows, sales };
     }
 
-    // Входит ли набор в лимиты снимка (то же правило и при публикации, и при чтении).
+    // входит ли набор в лимиты снимка: одно правило и при публикации, и при чтении
     function snapshotFits(snap) {
         const c = countSnapshot(snap);
         return c.rows <= MAX_SNAPSHOT_ROWS && c.sales <= MAX_SNAPSHOT_SALES;

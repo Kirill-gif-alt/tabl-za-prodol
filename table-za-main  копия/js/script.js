@@ -1,4 +1,4 @@
-// App core: shared state, tabs, boot. Domain code lives in sibling js files.
+// ядро приложения: общее состояние, вкладки, запуск; предметный код в соседних js
 
 
 let allData = [];
@@ -16,11 +16,11 @@ let showExpectedLoadColumn = false;
 
 // Фильтры и сортировка таблицы рейса (сбрасываются при смене рейса)
 let tableSort = { by: 'date', dir: 'asc' }; // date | load | sales | avgfare
-let tableFilterStatus = 'open'; // open | all | closed | full | attention. По умолчанию «Открытые» (впереди); выбор пользователя запоминается в сессии.
-let tableFilterChosen = false;  // true — статус выбрал сам пользователь (кнопкой), его не подменяем значением по умолчанию
-/** @deprecated оставлено для миграции сессии; экономическая таблица использует pairColVisibility */
+let tableFilterStatus = 'open'; // open | all | closed | full | attention; по умолчанию open, выбор пользователя помнится в сессии
+let tableFilterChosen = false;  // true - статус выбран кнопкой, не подменяем дефолтом
+// deprecated, оставлено для миграции сессии
 let tableExtraColsExpanded = false;
-/** Видимость доп. столбцов экономической таблицы (галочки на панели) */
+// доп. столбцы экономической таблицы (галочки на панели)
 let pairColVisibility = {
     avgFare: false,
     lastFare: false,
@@ -30,7 +30,7 @@ let pairColVisibility = {
     totalRevenue: false,
     subsidy: false,        // субсидия на рейсе (между общей выручкой и общими расходами)
     totalExpenses: false,
-    finResult: false       // фин. рез — последний столбец
+    finResult: false       // фин. рез - последний столбец
 };
 
 let dataRouteTypeFilter = 'all';
@@ -41,8 +41,8 @@ let dataSearchTimer = null;
 let dataBoardRenderCache = { sig: '', chunks: null, stats: '' };
 let dataBoardRenderGen = 0;
 
-// Класс оформления вкладки (прокрутка, раскладка) — на её панели. Общий контейнер свой класс не меняет:
-// смена display у контейнера заставляла браузер заново раскладывать все открытые вкладки.
+// класс оформления вкладки ставим на её панель, контейнер свой класс не меняет
+// смена display у контейнера заставляла браузер перекладывать все открытые вкладки
 const TAB_HOST_CLASSES = {
     today: 'content-area content-today',
     main: 'content-area',
@@ -78,8 +78,8 @@ function getDeltaFromExpected(actualLoad, expectedLoad) {
     return { delta, cls };
 }
 
-// Строка вылета: у рейса с посадками в день несколько участков — берём основной (сквозной), не помеченный segShare,
-// как в таблицах: иначе карточка, подсказки и «Сегодня» показывали бы загрузку случайного участка.
+// у рейса с посадками несколько участков: берём сквозной, без segShare, как в таблицах
+// иначе карточка и "Сегодня" покажут загрузку случайного участка
 function getFlightRowForDate(baseFlight, flyDateStr, flightCode) {
     const rows = groupedData[baseFlight] || [];
     const code = flightCode ? cleanFlight(flightCode) : baseFlight;
@@ -127,7 +127,6 @@ function appendPkzAdjustPanel(resultDiv, baseFlight, flyDateStr, flightCode) {
     return html;
 }
 
-/** Скрыть плашку «кол-во / сумма / среднее» (например при детализации) */
 function hideSelectionStatusBar() {
     document.getElementById('selection-status-bar')?.classList.remove('is-visible');
     if (typeof clearActiveTableSelection === 'function') clearActiveTableSelection();
@@ -144,9 +143,8 @@ function getExpectedLoadForFlightDate(baseFlight, flyDateStr, aircraftCode) {
 let dataLoadStatus = { availability: false, closed: false, sales: false, expected: false, weights: false, children: false, costs: false, subsidy: false };
 let salesChartPeriodDays = 30;
 
-// Липкие шапки таблиц из нескольких строк: каждая нижняя строка прилипает ровно под верхней —
-// по реальной высоте строк (она зависит от переносов и масштаба), а не по числу из стилей.
-// Пересчёт при прокрутке, раз за кадр и только если высоты изменились.
+// липкие шапки из нескольких строк: нижняя прилипает под верхней по реальной высоте (зависит от переносов)
+// пересчёт при прокрутке, раз за кадр, и только если высоты изменились
 (function () {
     const done = new WeakMap();
     function fixHead(thead) {
@@ -186,8 +184,8 @@ function updateHeaderStatus() {
         statusBar.textContent = ready ? '✓' : '';
     }
     if (window.ingestQuiet) return;
-    // Счётчики шапки (KPI, проверка рейсов, сводка) считаются один раз на серию вызовов:
-    // при входе и загрузке шапку просят обновить несколько раз подряд.
+    // счётчики шапки (KPI, проверка рейсов, сводка) считаем один раз на серию вызовов
+    // при входе и загрузке шапку обновляют несколько раз подряд
     if (headerKpiTimer) return;
     headerKpiTimer = setTimeout(() => {
         headerKpiTimer = 0;
@@ -200,15 +198,14 @@ let headerKpiTimer = 0;
 function renderHeaderKpi() {
     const kpiBar = document.getElementById('header-kpi');
     if (!kpiBar || !Object.keys(groupedData || {}).length) return;
-    // Сначала собираем всё, потом одной заменой: если какой-то счётчик упадёт с ошибкой,
-    // в шапке остаётся прежнее, а не пустое место.
+    // сначала собираем всё, потом одной заменой: если счётчик упал, в шапке остаётся старое
     const items = [];
     const safe = (fn) => { try { const el = fn(); if (el) items.push(el); } catch (e) { console.warn('header kpi', e); } };
     const featureOn = (key) => typeof ProfileAuth === 'undefined' || typeof ProfileAuth.featureOn !== 'function' || ProfileAuth.featureOn(key);
     let k;
     try { k = getGlobalKPIs(); } catch (e) { console.warn('header kpi', e); return; }
     const salesReady0 = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(dataLoadStatus && dataLoadStatus.sales);
-    // Файл продаж старше 1 дня: «0 продаж сегодня» значило бы «нет свежих данных», а не «не продаём» — как на «Сегодня» и в RMS, тут «—».
+    // файл продаж старше дня: "0 сегодня" значит "нет данных", поэтому тут прочерк, как в "Сегодня" и RMS
     const staleSales = salesReady0 && typeof getStaleSalesInfo === 'function' ? getStaleSalesInfo() : null;
     const salesReady = salesReady0 && !staleSales;
     const sales = Number(k.todaySales) || 0;
@@ -240,7 +237,6 @@ function renderHeaderKpi() {
     }
     if (typeof FlightChecks !== 'undefined') safe(() => FlightChecks.headerChip());
     if (typeof MorningSummary !== 'undefined') safe(() => MorningSummary.headerChip());
-    // Файл продаж давно не обновлялся — «0 продаж за сегодня» означает «нет свежих данных», а не «не продаём».
     safe(() => {
         if (!salesReady0 || typeof lastSalesUpdate === 'undefined' || !lastSalesUpdate) return null;
         const upd = new Date(lastSalesUpdate);
@@ -259,17 +255,16 @@ function renderHeaderKpi() {
     updateHeaderWithLastUpdate();
 }
 
-// Вернулись на вкладку браузера (или прошла полночь) — счётчики шапки на сегодня.
-// Наступил новый день — продажи «за сегодня» пересчитываются от новой даты (иначе в шапке вчерашние).
+// вернулись на вкладку или прошла полночь - счётчики шапки на сегодня
 function refreshHeaderForToday() {
     if (document.hidden) return;
-    // Идёт загрузка продаж — пересчёт по недогруженным билетам испортил бы счётчики.
+    // идёт загрузка продаж: пересчёт по недогруженным билетам испортит счётчики
     if ((typeof salesLoadLock !== 'undefined' && salesLoadLock) || window.ingestQuiet) return;
     if (typeof salesAggregatesFresh === 'function' && typeof rebuildSalesAggregatesFromDetails === 'function'
         && Object.keys(typeof salesDetails !== 'undefined' && salesDetails ? salesDetails : {}).length && !salesAggregatesFresh()) {
         rebuildSalesAggregatesFromDetails();
         if (typeof invalidateMetricsCache === 'function') invalidateMetricsCache();
-        if (typeof refreshCurrentView === 'function') refreshCurrentView();   // новый день — таблицы тоже на новую дату
+        if (typeof refreshCurrentView === 'function') refreshCurrentView();   // таблицы тоже на новую дату
         return;
     }
     if (typeof updateHeaderStatus === 'function') updateHeaderStatus();
@@ -288,22 +283,20 @@ function emptySalesBucket() {
 
 let salesAggregatesBuiltFor = null;
 
-// Агрегаты уже посчитаны по этим же продажам и на эту же дату — повторный пересчёт не нужен.
+// агрегаты уже посчитаны по этим продажам и на эту дату
 function salesAggregatesFresh() {
     return !!salesAggregatesBuiltFor
         && salesAggregatesBuiltFor.details === salesDetails
         && salesAggregatesBuiltFor.today === getTodayDate();
 }
 
-/**
- * Пересчёт salesMap / KPI из salesDetails по текущей дате.
- * Нужен после восстановления снимка: «сегодня/вчера» в snapshot устаревают на следующий день.
- */
+// пересчёт salesMap / KPI из salesDetails по текущей дате
+// нужен после восстановления снимка: "сегодня/вчера" в нём устаревают на следующий день
 function rebuildSalesAggregatesFromDetails() {
     const details = salesDetails || {};
     salesAggregatesBuiltFor = { details: salesDetails, today: getTodayDate() };
     if (!Object.keys(details).length) {
-        // Нет детализации — salesMap из снимка оставляем как есть
+        // нет детализации: salesMap из снимка оставляем как есть
         if (typeof invalidateMetricsCache === 'function') invalidateMetricsCache();
         if (typeof updateHeaderStatus === 'function') updateHeaderStatus();
         return false;
@@ -313,7 +306,7 @@ function rebuildSalesAggregatesFromDetails() {
     const nextMap = {};
 
     if (typeof PerfCache !== 'undefined') PerfCache.resetSalesStats();
-    // Дат продаж немного (сотни), билетов — десятки тысяч: «сколько дней назад» считаем один раз на дату.
+    // дат продаж сотни, билетов десятки тысяч: "сколько дней назад" считаем один раз на дату
     const agoByDeal = new Map();
     const daysAgoOf = (deal) => {
         let v = agoByDeal.get(deal);
@@ -336,7 +329,7 @@ function rebuildSalesAggregatesFromDetails() {
                 const adj = sale.adjustedFare != null ? sale.adjustedFare : (sale.fare || 0);
                 PerfCache.recordSaleStat(k, deal || '', adj, sale.fare || 0, sale.basicFareStr || '', dates.today, dates.yesterday);
             }
-            if (!deal) return;   // без даты продажи — только в выручку и средний тариф, не в «сегодня/вчера»
+            if (!deal) return;   // без даты продажи только в выручку и средний тариф
             if (deal === dates.today) bucket.today++;
             else if (deal === dates.yesterday) bucket.yesterday++;
             else if (deal === dates.day2) bucket.day2++;
@@ -366,7 +359,7 @@ function rebuildSalesAggregatesFromDetails() {
 
 
 function toggleReturnFlight() {
-    // Вкладка показала рейс по умолчанию (ещё ничего не выбирали) — берём показанный рейс.
+    // рейс по умолчанию на вкладке (ничего не выбирали) - берём показанный
     if (!currentFlight && typeof tabPanelState !== 'undefined') {
         const shown = ['table', 'pkz', 'pair'].map(k => tabPanelState[k] && tabPanelState[k].flight).find(Boolean);
         if (shown) currentFlight = shown;
@@ -387,9 +380,9 @@ function toggleReturnFlight() {
 function updateHeaderWithLastUpdate(){
     const el=document.getElementById('last-update-text');
     if(!el)return;
-    // Продажи сброшены (загрузили только таб) — старую дату в шапке не оставляем.
+    // продажи сброшены, загрузили только таб: старую дату в шапке не оставляем
     if(!lastSalesUpdate){document.getElementById('last-update-info')?.classList.add('hidden');return;}
-    // Вручную, без toLocaleString: создание форматтера при входе стоило ~0,1 с на слабом ПК.
+    // без toLocaleString: форматтер при входе стоил ~0,1 с на слабом ПК
     const d=lastSalesUpdate, p2=n=>String(n).padStart(2,'0');
     el.textContent=`${p2(d.getDate())}.${p2(d.getMonth()+1)}.${d.getFullYear()}, ${p2(d.getHours())}:${p2(d.getMinutes())}`;
     document.getElementById('last-update-info').classList.remove('hidden');
@@ -434,7 +427,7 @@ function invalidateTabPanelState() {
         const el = document.getElementById(id);
         if (el) delete el.dataset.renderSig;
     });
-    // НЕ вызывать invalidateMetricsCache — она сама зовёт invalidateTabPanelState (цикл → stack overflow)
+    // не вызывать invalidateMetricsCache: она сама зовёт invalidateTabPanelState, будет цикл и stack overflow
     if (typeof invalidateDataBoardCache === 'function') invalidateDataBoardCache();
     if (typeof invalidateTimelineCache === 'function') invalidateTimelineCache();
 }
@@ -632,9 +625,9 @@ function initKeyboardShortcuts() {
             if (e.key === 'Escape') e.target.blur();
             return;
         }
-        // поиск рейсов — в панели таблицы, если есть
+        // поиск рейсов - в панели таблицы, если есть
         if (e.key === '/') {
-            // Поле поиска на открытой вкладке (id повторяется во вкладках — берём видимое).
+            // поле поиска: id повторяется во вкладках, берём видимое
             const el = document.querySelector('#main-content-inner > .tab-panel:not([hidden]) .table-flight-search')
                 || document.querySelector('#main-content-inner > .tab-panel:not([hidden]) #data-search-input')
                 || document.querySelector('#main-content-inner > .tab-panel:not([hidden]) #heli-search');
@@ -668,7 +661,7 @@ function initKeyboardShortcuts() {
 }
 
 
-// Общие справочники и отметки читаются параллельно: друг от друга они не зависят.
+// справочники и отметки читаем параллельно, они не зависят друг от друга
 async function loadSharedSideData() {
     const jobs = [];
     const run = (name, fn) => jobs.push(Promise.resolve().then(fn).catch(e => console.warn(name, e)));
@@ -682,8 +675,8 @@ async function loadSharedSideData() {
     await Promise.all(jobs);
 }
 
-// Общий запуск после входа — и при восстановленной сессии, и после ввода пароля.
-// Стартовая вкладка выбирается заранее, чтобы не рисовать сначала одну вкладку, а сразу за ней другую.
+// общий запуск и после входа по паролю, и при восстановленной сессии
+// стартовую вкладку выбираем заранее, чтобы не рисовать одну и тут же другую
 async function startAppAfterLogin() {
     await loadSharedSideData();
     const startTab = typeof ProfileAuth !== 'undefined' && ProfileAuth.canAccessTab('home') ? 'home' : null;
@@ -696,7 +689,7 @@ async function startAppAfterLogin() {
     if (typeof SalesSync !== 'undefined') {
         await SalesSync.initAfterLogin();
     }
-    // Параметры расчётов администратора (shared/params.json): поменялись — пересчитать открытое.
+    // параметры расчётов (shared/params.json): поменялись - пересчитываем открытое
     if (typeof FareGrid !== 'undefined') FareGrid.load().then(() => { if (typeof refreshCurrentView === 'function') refreshCurrentView(); }).catch(() => null);
     if (typeof Params !== 'undefined') Params.load().then(changed => { if (changed && typeof refreshCurrentView === 'function') refreshCurrentView(); }).catch(() => null);
     if (typeof SalesArchive !== 'undefined') SalesArchive.scheduleAfterStart();

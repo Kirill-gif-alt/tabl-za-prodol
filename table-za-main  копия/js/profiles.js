@@ -1,4 +1,4 @@
-// Профили доступа: 3 пользовательских + администратор
+// профили доступа: 3 пользовательских и админ
 window.ProfileAuth = (function () {
     const STORE_KEY = 'krasavia_profiles_v1';
     const SESSION_KEY = 'krasavia_profile_session';
@@ -7,7 +7,7 @@ window.ProfileAuth = (function () {
     const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
     const PBKDF2_ITERATIONS = 120_000;
 
-    // Права профиля. label — коротко, hint — что именно даёт (видно в «Управлении профилями» под названием).
+    // права профиля: label - коротко, hint - что дает (видно в "Управлении профилями")
     const PERMISSIONS = {
         tab_today: { label: 'Сегодня', group: 'Вкладки' },
         tab_main: { label: 'Графический план', group: 'Вкладки' },
@@ -43,7 +43,7 @@ window.ProfileAuth = (function () {
         manage_profiles: { label: 'Управление профилями', group: 'Админ' }
     };
 
-    // Справочник в редакторе профиля — строкой «видеть / менять».
+    // справочник в редакторе - строкой "видеть / менять"
     const REF_PAIRS = [
         { label: 'Тарифы субсидии', view: 'view_fare_refs', edit: 'edit_fare_refs', hint: 'без «видеть» раздел и суммы пределов скрыты' },
         { label: 'Периоды, суммы субсидии и себестоимость', view: 'view_subsidy_ref', edit: 'edit_subsidy_ref' },
@@ -52,7 +52,7 @@ window.ProfileAuth = (function () {
         { label: 'Календарь событий', view: null, edit: 'edit_calendar', hint: 'праздники и каникулы; видят все' }
     ];
 
-    // Шаблоны доступа: быстро отметить типичный набор прав (потом можно поправить).
+    // шаблоны: типичный набор прав, потом можно поправить
     const TEMPLATES = {
         view: { label: 'Только просмотр', perms: ['tab_main', 'tab_table', 'tab_rms', 'tab_reports', 'export_excel'] },
         sales: { label: 'Продажи', perms: ['tab_today', 'tab_main', 'tab_table', 'tab_rms', 'tab_sales', 'tab_reports', 'export_excel', 'sales_detail', 'edit_sales_mgmt'] },
@@ -60,8 +60,8 @@ window.ProfileAuth = (function () {
         all: { label: 'Всё, кроме профилей', perms: null }
     };
 
-    // Функции, которые админ включает и выключает каждому профилю (и себе) в «Управлении профилями».
-    // def — значение, пока админ ничего не менял. Хранятся в profile.features.
+    // функции, которые админ включает каждому профилю (и себе)
+    // def - значение по умолчанию, пока админ не менял; хранится в profile.features
     const FEATURES = {
         flight_checks: { label: 'Проверка рейсов', hint: 'детский −50% и тариф выше субсидированного: «!», счётчик в шапке, раздел в «Отчётах»', def: true },
         subsidy_mode: { label: 'Метки «С» / «К» у дат вылета', hint: 'субсидия или коммерция — в «Графическом плане», в «Динамике продаж» и RMS', def: true },
@@ -87,7 +87,7 @@ window.ProfileAuth = (function () {
         if (!meta) return false;
         const f = profile && profile.features;
         if (f && typeof f[key] === 'boolean') return f[key];
-        // def: 'admin' — по умолчанию включено только администратору, остальным админ включает сам.
+        // def 'admin' - включено только админу, остальным админ включает сам
         if (meta.def === 'admin') return !!(profile && profile.isAdmin);
         return meta.def;
     }
@@ -116,7 +116,7 @@ window.ProfileAuth = (function () {
         user2: 'profile2',
         user3: 'profile3'
     };
-    // Однократный сброс пароля admin → 123 (после поломки hashVer / локального кэша)
+    // однократный сброс пароля admin в 123 (после поломки hashVer или локального кэша)
     const ADMIN_PWD_FIX_KEY = 'krasavia_admin_pwd_fix_v3';
 
     let currentProfile = null;
@@ -183,12 +183,12 @@ window.ProfileAuth = (function () {
         return tryVer(1);
     }
 
-    /** Смена пароля самим пользователем — всегда минимум 8 */
+    // Смена пароля самим пользователем - всегда минимум 8
     function minPasswordLenSelfChange() {
         return (typeof Security !== 'undefined' && Security.MIN_PASSWORD_LEN) || 8;
     }
 
-    /** Сброс пароля админом (любому профилю) */
+    // Сброс пароля админом (любому профилю)
     function minPasswordLenAdminReset() {
         return (typeof Security !== 'undefined' && Security.MIN_PASSWORD_LEN_ADMIN) || 8;
     }
@@ -358,7 +358,7 @@ window.ProfileAuth = (function () {
                     profilesCache = parsed;
                     profilesFromShared = false;
                     if (usable) await ensureAdminPasswordFix();
-                    // Локальная копия может быть без паролей и устаревшей — в общий файл её не пишем.
+                    // локальная копия без паролей и может быть старой, в общий файл не пишем
                     if (migrateSalesViewPermission()) persistLocalProfilesCache();
                     return profilesCache;
                 }
@@ -367,8 +367,8 @@ window.ProfileAuth = (function () {
             console.warn('loadProfiles', e);
         }
 
-        // Стандартные профили пишем в общую папку, только если файла профилей там точно нет.
-        // Ошибка чтения или битый файл — не повод затирать все пароли и права.
+        // стандартные профили пишем в общую папку, только если файла там точно нет
+        // ошибка чтения или битый файл - не повод затирать пароли и права
         let read = { ok: false };
         if (typeof SharedStorage !== 'undefined' && SharedStorage.readJsonFileStrict) {
             read = await SharedStorage.readJsonFileStrict('profiles.json').catch(() => ({ ok: false }));
@@ -382,7 +382,7 @@ window.ProfileAuth = (function () {
         profilesCache = await buildDefaultStore();
         profilesFromShared = false;
         migrateSalesViewPermission();
-        // Файл есть, но без профилей (повреждён) — его не затираем стандартными паролями.
+        // файл есть, но пустой или битый - стандартными паролями не затираем
         if (read.ok && !read.data) await saveProfiles(true);
         else persistLocalProfilesCache();
         try { localStorage.setItem(ADMIN_PWD_FIX_KEY, '1'); } catch (e) { /* ignore */ }
@@ -410,15 +410,14 @@ window.ProfileAuth = (function () {
         } catch (e) { /* ignore */ }
     }
 
-    // Запись профилей — поверх свежего файла: каждый ПК держит копию со входа, и запись копии целиком
-    // откатывала бы чужие изменения (пароль, сменённый сотрудником после входа админа, права, снятые админом).
-    // change: { update: { id: {поля} }, remove: [id], add: [профиль] } — только то, что поменял этот ПК.
+    // пишем поверх свежего файла: копия со входа откатила бы чужие правки (пароли, права)
+    // change: { update: { id: {поля} }, remove: [id], add: [профиль] } - только то, что поменял этот ПК
     async function saveProfiles(silent, change) {
         if (change && typeof SharedStorage !== 'undefined' && SharedStorage.readJsonFileStrict) {
             const read = await SharedStorage.readJsonFileStrict('profiles.json').catch(() => ({ ok: false }));
             const fresh = read.ok && read.data && Array.isArray(read.data.profiles) ? read.data.profiles : null;
             if (!(fresh && fresh.length)) {
-                // Свежий файл не прочитан — свою устаревшую копию поверх не пишем.
+                // свежий файл не прочитан - устаревшую копию поверх не пишем
                 if (typeof showToast === 'function') showToast('Не удалось прочитать общие профили — изменения не сохранены', 'error');
                 return false;
             }
@@ -462,7 +461,7 @@ window.ProfileAuth = (function () {
         if (result.ok) {
             profilesCache = null;
             await loadProfiles();
-            // Локальная копия хранится без паролей: если папка не прочиталась, писать её туда нельзя — сотрёт все пароли.
+            // локальная копия без паролей: если папка не читается, туда не пишем, иначе сотрем пароли
             if (hasPermission('manage_profiles') && profilesCache.every(p => p && p.hash && p.salt)) await saveProfiles(false);
             updateSharedStatus();
             const select = document.getElementById('login-profile-select');
@@ -502,8 +501,8 @@ window.ProfileAuth = (function () {
         return id;
     }
 
-    // Права в редакторе профиля: вкладки — плитками, данные — переключателями, справочник — «видеть / менять».
-    // Каждое право — обычный checkbox с data-profile и data-perm: их читает сохранение и создание профиля.
+    // права в редакторе: вкладки плитками, данные переключателями, справочник "видеть / менять"
+    // каждое право - checkbox с data-profile и data-perm, их читают сохранение и создание профиля
     function permInput(profileId, key, perms, prefix) {
         return `<input type="checkbox" class="${prefix}profile-perm-cb" data-profile="${escAttr(profileId)}" data-perm="${key}" ${perms.includes(key) ? 'checked' : ''}>`;
     }
@@ -546,7 +545,7 @@ window.ProfileAuth = (function () {
         return !!profile.isAdmin;
     }
 
-    // Строка-переключатель: название, пояснение и сам переключатель (обычный checkbox — его читает сохранение).
+    // строка-переключатель: название, пояснение, checkbox (его читает сохранение)
     function switchRow(inputHtml, label, hint) {
         return `<label class="pa-switch-row">
             <span class="pa-switch-text"><span class="pa-switch-label">${label}</span>${hint ? `<span class="pa-switch-hint">${hint}</span>` : ''}</span>
@@ -583,11 +582,10 @@ window.ProfileAuth = (function () {
         if (tab === 'home') return resolveShowHomeMap(currentProfile);
         if (tab === 'stats') return hasPermission('tab_stats');
         if (tab === 'heli') return hasPermission('tab_heli');
-        if (tab === 'lowreq') return hasPermission('lowreq');   // «Запрос на понижение» — по праву, по умолчанию только у администратора
+        if (tab === 'lowreq') return hasPermission('lowreq');   // запрос на понижение: по праву, по умолчанию только у админа
         const perm = TAB_PERM[tab];
         if (!perm) return false;
-        // ПКЗ и «Расчёт расходов» — свои права (раньше открывались с «Динамикой продаж» / «Экономикой»;
-        // старым профилям их один раз проставила миграция, дальше админ может их снять).
+        // ПКЗ и расчет расходов - свои права; старым профилям проставила миграция один раз, дальше админ может снять
         return hasPermission(perm);
     }
 
@@ -634,7 +632,7 @@ window.ProfileAuth = (function () {
         }
         if (typeof Security !== 'undefined') Security.resetLoginFailures();
         if (profile.hashVer !== 2) {
-            // Старый хеш (SHA-256 без растяжения) → PBKDF2 при успешном входе.
+            // старый хеш (SHA-256 без растяжения) переводим в PBKDF2 при успешном входе
             try {
                 const cred = await makePasswordRecord(password);
                 applyPasswordRecord(profile, cred);
@@ -714,7 +712,7 @@ window.ProfileAuth = (function () {
         };
         Object.entries(tabMap).forEach(([elId]) => {
             const btn = document.getElementById(elId);
-            // Те же правила, что у доступа к вкладке (ПКЗ — и с «Динамикой продаж», расчёт расходов — и с экономикой).
+            // правила как у доступа к вкладке: ПКЗ с "Динамикой продаж", расчет расходов с экономикой
             if (btn) btn.style.display = canAccessTab(elId.slice(4)) ? '' : 'none';
         });
 
@@ -724,7 +722,7 @@ window.ProfileAuth = (function () {
         if (restoreBtn && restoreBtn.style.display !== 'none' && !hasPermission('load_data')) {
             restoreBtn.style.display = 'none';
         }
-        // Без права загрузки «Последние» не показываем и позже (когда сессия сохранит снимок); правило в styles.css.
+        // без права загрузки не показываем "Последние", даже когда сессия сохранит снимок (styles.css)
         document.body.classList.toggle('no-load-data', !hasPermission('load_data'));
 
         const adminBtn = document.getElementById('profile-admin-btn');
@@ -806,16 +804,16 @@ window.ProfileAuth = (function () {
             e.preventDefault();
             const profileId = document.getElementById('login-profile-select')?.value;
             const password = document.getElementById('login-password')?.value || '';
-            // Доступ к общей папке Chrome возвращает только по клику: просим сразу, пока клик «свежий»,
-            // а не после проверки пароля. Иначе после перезапуска браузера папка выглядит отключённой.
+            // доступ к общей папке Chrome отдают только по клику, просим сразу, пока клик свежий
+            // не после проверки пароля, иначе после перезапуска папка выглядит отключенной
             const folderJob = typeof SharedStorage !== 'undefined'
                 ? SharedStorage.restoreRootHandle().catch(() => null)
                 : Promise.resolve(null);
             const err = document.getElementById('login-error');
             const btn = document.getElementById('login-submit-btn');
             if (btn) btn.disabled = true;
-            // Если профили взяты из локальной копии (папка была недоступна), а доступ вернулся —
-            // перечитываем общий файл: там актуальные пароли и права.
+            // профили из локальной копии, а папка снова доступна - перечитываем общий файл
+            // там актуальные пароли и права
             await folderJob;
             if (!profilesFromShared && typeof SharedStorage !== 'undefined' && SharedStorage.isLinked()) {
                 profilesCache = null;
@@ -866,7 +864,7 @@ window.ProfileAuth = (function () {
         return String(name || '?').trim().slice(0, 1).toUpperCase() || '?';
     }
 
-    // «5 вкладок · 3 права» — для списка профилей.
+    // "5 вкладок · 3 права" - для списка профилей.
     function permSummary(p) {
         if (p.isAdmin) return 'полный доступ';
         const perms = p.permissions || [];
@@ -937,7 +935,7 @@ window.ProfileAuth = (function () {
         </div>`;
     }
 
-    // Новый профиль — в список и редактор без перерисовки всего окна; форма создания очищается.
+    // новый профиль - в список и редактор без перерисовки окна, форма очищается
     function insertProfileEditor(profile) {
         const body = document.getElementById('profile-admin-body');
         if (!body || !body.querySelector('.pa-layout')) { paSelected = profile.id; renderAdminPanel(); return; }
@@ -989,7 +987,7 @@ window.ProfileAuth = (function () {
             ? Security.sanitizeTextInput(name, 80)
             : String(name || '').trim();
         if (!trimmed) return { ok: false, error: 'Укажите имя профиля' };
-        // Создание профиля — админ задаёт пароль
+        // админ задает пароль при создании
         const minLen = minPasswordLenAdminReset();
         if (!password || password.length < minLen) return { ok: false, error: `Пароль — минимум ${minLen} символов` };
         if (!permissions.length) return { ok: false, error: 'Выберите хотя бы одно право доступа' };
@@ -1006,7 +1004,7 @@ window.ProfileAuth = (function () {
             showHomeMap: !!showHomeMap,
             showScreenWidgets: !!showScreenWidgets,
             features: normalizeFeatures(features),
-            // Разовая миграция «Управления продажами» к новому профилю не относится: иначе снятая вкладка вернётся при входе.
+            // миграцию УП новому профилю не ставим, иначе снятая вкладка вернется при входе
             salesPermMigrated: true,
             tabsSplitMigrated: true
         };
@@ -1080,7 +1078,7 @@ window.ProfileAuth = (function () {
             if (typeof ActivityLog !== 'undefined') {
                 await ActivityLog.log('profile_delete', profile.name, { profileId });
             }
-            // Убираем только этот профиль — несохранённые правки остальных остаются на экране.
+            // убираем только этот профиль, несохраненные правки других остаются
             document.querySelectorAll(`#profile-admin-body [data-pa-select="${CSS.escape(profileId)}"], #profile-admin-body [data-pa-editor="${CSS.escape(profileId)}"]`).forEach(el => el.remove());
             selectProfileEditor('admin');
             if (typeof showToast === 'function') showToast(`Профиль «${profile.name}» удалён`);
@@ -1105,7 +1103,7 @@ window.ProfileAuth = (function () {
     async function changeOwnPassword(currentPwd, newPwd, confirmPwd) {
         if (!currentProfile) return { ok: false, error: 'Не выполнен вход' };
         if (!currentPwd) return { ok: false, error: 'Введите текущий пароль' };
-        // Самостоятельная смена — всегда ≥ 8 символов (даже для админа)
+        // смена себе - минимум 8 символов, даже админу
         const minLen = minPasswordLenSelfChange();
         if (!newPwd || newPwd.length < minLen) return { ok: false, error: `Новый пароль — минимум ${minLen} символов` };
         if (newPwd !== confirmPwd) return { ok: false, error: 'Новые пароли не совпадают' };
@@ -1133,7 +1131,7 @@ window.ProfileAuth = (function () {
         if (!guardPermission('manage_profiles')) return;
 
         try {
-            // Сначала проверить всё, потом менять: иначе часть профилей изменится, а сохранение оборвётся на ошибке.
+            // сначала проверяем все, потом меняем, иначе сохранение оборвется на полпути
             const minLen = minPasswordLenAdminReset();
             for (const p of profilesCache) {
                 const passInput = document.querySelector(`.profile-pass-input[data-profile="${p.id}"]`);
@@ -1158,7 +1156,7 @@ window.ProfileAuth = (function () {
                 }
 
                 const passInput = document.querySelector(`.profile-pass-input[data-profile="${p.id}"]`);
-                // Пароль администратора меняет только он сам (иначе manage_profiles = захват админа).
+                // пароль админа меняет только он сам, иначе manage_profiles = захват админа
                 if (passInput?.value && (!p.isAdmin || currentProfile?.isAdmin)) {
                     const cred = await makePasswordRecord(passInput.value);
                     applyPasswordRecord(p, cred);
@@ -1190,7 +1188,7 @@ window.ProfileAuth = (function () {
                 }
             }
 
-            // В файл — только то, что в этой форме: имя, права, функции; пароль — только если его сейчас сменили.
+            // в файл пишем только то, что в форме: имя, права, функции; пароль - если сменили
             const update = {};
             profilesCache.forEach(p => {
                 update[p.id] = { name: p.name, permissions: [...(p.permissions || [])], isAdmin: !!p.isAdmin,
@@ -1220,7 +1218,7 @@ window.ProfileAuth = (function () {
                     currentProfile.features = normalizeFeatures(updated.features);
                 }
             }
-            // Значки и шапка зависят от функций профиля — перерисовать открытые таблицы.
+            // значки и шапка зависят от функций, перерисовываем открытые таблицы
             if (typeof invalidateTabPanelState === 'function') invalidateTabPanelState();
 
             applyPermissions();
@@ -1275,7 +1273,7 @@ window.ProfileAuth = (function () {
         document.getElementById('profile-admin-body')?.addEventListener('change', (e) => {
             const cb = e.target.closest('input[data-perm]');
             if (!cb) return;
-            // Справочник: «менять» без «видеть» не бывает.
+            // менять без видеть не бывает
             const row = cb.closest('[data-pa-ref]');
             if (row) {
                 const boxes = row.querySelectorAll('input[data-perm]');
@@ -1316,7 +1314,7 @@ window.ProfileAuth = (function () {
         await loadProfiles();
         const p = profilesCache.find(x => x.id === currentProfile.id);
         if (!p || !p.isAdmin) return false;
-        // Значение не изменилось — общий файл профилей не пишем.
+        // значение не поменялось - в общий файл не пишем
         if (resolveShowHomeMap(p) === !!value && p.showHomeMap === !!value) return true;
         p.showHomeMap = !!value;
         currentProfile.showHomeMap = resolveShowHomeMap(p);

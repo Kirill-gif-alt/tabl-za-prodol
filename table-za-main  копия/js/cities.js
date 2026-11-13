@@ -1,15 +1,13 @@
-// Справочник городов для классификации рейсов (редактируйте списки ниже)
-// Красноярск — хаб, в списки НЕ входит.
-// Краевой рейс: пункт назначения/отправления (кроме Красноярска) в KRAI_CITIES.
-// Межрегиональный: город в INTERREGIONAL_CITIES.
+// справочник городов для классификации рейсов, списки правим здесь
+// Красноярск - хаб, в списки не входит; краевой рейс: пункт в KRAI_CITIES, межрегиональный: в INTERREGIONAL_CITIES
 
 window.CITY_CLASSIFICATION = {
-    // Хаб — не классифицируется
+    // Хаб - не классифицируется
     HUB_CITIES: [
         'Красноярск'
     ],
 
-    // Краевые — города Красноярского края
+    // Краевые - города Красноярского края
     KRAI_CITIES: [
         'Богучаны',
         'Байкит',
@@ -28,7 +26,7 @@ window.CITY_CLASSIFICATION = {
         'Хатанга'
     ],
 
-    // Межрегиональные — города за пределами края
+    // Межрегиональные - города за пределами края
     INTERREGIONAL_CITIES: [
         'Абакан',
         'Барнаул',
@@ -50,13 +48,13 @@ window.CITY_CLASSIFICATION = {
         'Чара'
     ],
 
-    // Международные (МВЛ) — города за пределами России. Остальные рейсы считаются ВВЛ.
-    // Город должен быть и в списке выше: здесь только отметка для отчётов ВВЛ/МВЛ.
+    // международные (МВЛ) - города за пределами России, остальные рейсы ВВЛ
+    // город должен быть и в списке выше, здесь только отметка для отчетов ВВЛ/МВЛ
     INTERNATIONAL_CITIES: [
         'Улан-Батор'
     ],
 
-    // Синонимы из маршрутов (routes.js) → каноническое имя из списков выше
+    // синонимы из routes.js -> каноническое имя из списков
     CITY_ALIASES: {
         'П.Тунгуска': 'Подкаменная Тунгуска',
         'П. Тунгуска': 'Подкаменная Тунгуска',
@@ -94,8 +92,8 @@ function cityMatchKey(name) {
     return String(name || '').toLowerCase().replace(/[—–\s\-]+/g, '');
 }
 
-// Справочник выше читается, но не меняется во время работы, поэтому разбор названий и
-// наборы городов кэшируются. Без кэша вкладка RMS тратила ~0,7 с на повторный разбор.
+// справочник не меняется во время работы, поэтому разбор названий и наборы городов кэшируем
+// без кэша RMS тратил ~0,7 с на повторный разбор
 let cityCacheCfg = null;
 let cityNameCache = new Map();
 let cityLookupCache = null;
@@ -158,7 +156,7 @@ function buildCityLookup() {
 function parseDirectionCities(direction) {
     const text = String(direction || '').trim();
     if (!text || text.startsWith('Рейс ')) return [];
-    // Тире внутри названия (Горно-Алтайск, Улан-Удэ) не должно резать маршрут
+    // тире внутри названия (Горно-Алтайск, Улан-Удэ) не режет маршрут
     let parts;
     if (/[—–]/.test(text)) {
         parts = text.split(/\s*[—–]\s*/);
@@ -208,7 +206,7 @@ function isInterregionalCity(city) {
 }
 
 function getFlightRouteType(flightCode) {
-    // Тип, заданный в справочнике рейсов (новый город, которого нет в списках выше).
+    // тип из справочника рейсов, для нового города, которого нет в списках
     const own = window.FLIGHT_TYPE_OVERRIDES;
     if (own) {
         const key = resolveDirectionFlightCode(flightCode);
@@ -237,7 +235,7 @@ function isInternationalCity(city) {
     return intl.has(canonicalCityName(city).toLowerCase());
 }
 
-// ВВЛ — внутренние воздушные линии, МВЛ — международные (есть город из INTERNATIONAL_CITIES).
+// ВВЛ - внутренние воздушные линии, МВЛ - международные (есть город из INTERNATIONAL_CITIES).
 function getFlightLineType(flightCode) {
     return getCitiesFromFlight(flightCode).some(isInternationalCity) ? 'mvl' : 'vvl';
 }

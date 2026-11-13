@@ -1,12 +1,9 @@
-// Доп. посадка: в день, когда у рейса лишняя посадка (маршрут дня — не его обычный), участок,
-// совпадающий с маршрутом другого нашего рейса, показывается в том рейсе строкой «доп.» со своим номером.
-// Пример: KV-173 17.11 KCY-TGP-THX → участок KCY-TGP уходит в KV-171 строкой «KV-173 (ДОП)»;
-// сквозной KCY-THX и участок без своего рейса TGP-THX остаются в KV-173.
-// Билеты этого участка (по «откуда / куда» из файла продаж) — на свой ключ «дата|KV-173~KJA-TGP».
-// Рейсы с посадками по расписанию не трогаются: их маршрут дня совпадает с обычным.
+// доп. посадка: участок, совпавший с маршрутом другого рейса в день лишней посадки, идет в тот рейс как "доп."
+// пример: KV-173, 17.11, KCY-TGP-THX: участок KCY-TGP уходит в KV-171 как "KV-173 (ДОП)"
+// его билеты - на ключ "дата|KV-173~KJA-TGP"; рейсы с посадками по расписанию не трогаем
 window.SegmentSplit = (function () {
-    const SAME = { KCY: 'KJA' };                      // Черемшанка и Емельяново — один Красноярск
-    const RU = { 'КЯА': 'KJA', 'КЯС': 'KJA' };        // остальные русские коды городов узнаём по продажам
+    const SAME = { KCY: 'KJA' };                      // Черемшанка и Емельяново - один Красноярск
+    const RU = { 'КЯА': 'KJA', 'КЯС': 'KJA' };        // остальные русские коды городов - по продажам
     let moved = [];                                   // ушедшие в другой рейс: { row, key, seg }
 
     function lat(c) {
@@ -18,14 +15,14 @@ window.SegmentSplit = (function () {
         return String(route || '').toUpperCase().split('-').map(s => s.trim()).filter(Boolean).map(lat);
     }
 
-    // Разнести строки загрузки по рейсам (после группировки по номеру). Меняет grouped на месте.
+    // разнести строки загрузки по рейсам (после группировки по номеру); меняет grouped на месте
     function splitRows(grouped) {
         moved = [];
         const bases = Object.keys(grouped);
         bases.forEach(b => grouped[b].forEach(r => { delete r.segKey; delete r.segRoute; delete r.segShare; }));
 
-        // Один самолёт — одни расходы: у вылета с посадками расходы и субсидия считаются в одной строке
-        // (сквозной участок, иначе первый), остальные участки помечены segShare.
+        // один самолет - одни расходы: расходы и субсидия вылета с посадками в одной строке (сквозной участок, иначе первый)
+        // остальные участки помечены segShare
         const byDep = new Map();
         bases.forEach(b => grouped[b].forEach(r => {
             if (points(r[3]).length < 3) return;
@@ -44,7 +41,7 @@ window.SegmentSplit = (function () {
             list.forEach(r => { if (r !== main) r.segShare = true; });
         });
 
-        // Обычный маршрут рейса — тот, которым он летит в большинство дней (у дня с посадками строк больше).
+        // обычный маршрут рейса - которым он летит в большинство дней (у дня с посадками строк больше)
         const usual = Object.create(null);
         bases.forEach(b => {
             const days = new Map();
@@ -58,7 +55,7 @@ window.SegmentSplit = (function () {
             days.forEach((set, k) => { const v = set.size; if (v > n || (v === n && k < best)) { best = k; n = v; } });
             usual[b] = best;
         });
-        // «KJA-TGP» → рейс, который обычно летит так без посадок.
+        // KJA-TGP -> рейс, который обычно летит так без посадок
         const byEnds = new Map();
         bases.forEach(b => {
             const p = points(usual[b]);
@@ -97,7 +94,7 @@ window.SegmentSplit = (function () {
         return moves.length;
     }
 
-    // Русский код города → латинский: по билетам рейсов без посадок (откуда/куда = концы маршрута).
+    // русский код города -> латинский: по билетам рейсов без посадок (откуда/куда = концы маршрута)
     function cityMap(details) {
         const votes = new Map();
         const vote = (ru, la) => {
@@ -143,10 +140,10 @@ window.SegmentSplit = (function () {
         return n;
     }
 
-    // Билеты ушедших участков — на ключ участка, по «откуда / куда» билета.
+    // билеты ушедших участков - на ключ участка, по "откуда / куда" билета
     function splitSales(details) {
         if (!details || !moved.length) return 0;
-        // Список закрытых рейсов грузится параллельно с загрузкой — пометку «закрыт» участку ставим и здесь.
+        // список закрытых рейсов грузится параллельно с загрузкой, поэтому пометку участку ставим и здесь
         const closed = typeof closedFlights !== 'undefined' && closedFlights ? closedFlights : null;
         if (closed) moved.forEach(m => { if (closed.has(m.key)) closed.add(m.key + '~' + m.seg); });
         const map = cityMap(details);

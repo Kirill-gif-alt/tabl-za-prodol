@@ -1,7 +1,7 @@
-// Оконный tbody: идея Clusterize.js (MIT), без зависимости.
-// thead не режем. Excel берёт полный набор строк через getExportTable(), не DOM.
+// оконный tbody, идея из Clusterize.js (MIT), без зависимости
+// thead не режем; Excel берет полный набор через getExportTable(), не DOM
 
-// Строка таблицы, HTML которой строится только когда её показывают (join/toString), а не для всех строк сразу.
+// строка строит HTML только при показе (join/toString), а не для всех сразу
 function lazyRow(build) {
     let html;
     return { toString() { if (html === undefined) html = String(build()); return html; } };
@@ -54,7 +54,7 @@ const TableVirtual = (function () {
                 + rows.slice(start, end).join('')
                 + `<tr class="tv-pad" aria-hidden="true"><td colspan="32" style="height:${padBot}px;padding:0;border:0"></td></tr>`;
             if (onPaint) onPaint();
-            // Строки перерисованы — выделение (сумма в строке состояния) по старым строкам больше не верно.
+            // строки перерисованы, выделение (сумма в строке состояния) по старым строкам уже не верно
             tbody.dispatchEvent(new CustomEvent('tv-repaint', { bubbles: true }));
         }
 

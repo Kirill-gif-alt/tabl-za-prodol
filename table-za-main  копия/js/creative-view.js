@@ -1,8 +1,6 @@
-// Вкладка «Творческая»: конструктор своей таблицы из данных остальных вкладок.
-// Строка — один вылет (рейс + дата + участок) или группа вылетов, если выбрана группировка.
-// Столбцы берутся из тех же расчётов, что и на вкладках-источниках; группа столбцов видна,
-// только если у профиля есть доступ хотя бы к одной из её вкладок.
-// Настройка хранится по профилю в браузере; шаблон можно сделать общим (shared/creative-layouts.json).
+// вкладка "Творческая": конструктор таблицы из данных остальных вкладок
+// строка - вылет (рейс+дата+участок) или группа вылетов; настройка по профилю в браузере, общий шаблон в shared/creative-layouts.json
+// группа столбцов видна, если у профиля есть доступ хотя бы к одной ее вкладке
 window.CreativeView = (function () {
     const STORE_PREFIX = 'krasavia_creative_v1_';
     const SHARED_FILE = 'creative-layouts.json';
@@ -40,8 +38,6 @@ window.CreativeView = (function () {
         { id: 'filled', label: 'не пусто' }
     ];
 
-    // ---------- контекст строки: расчёты из других вкладок, лениво ----------
-
     function lazy(c, key, fn) {
         if (!Object.prototype.hasOwnProperty.call(c.memo, key)) c.memo[key] = fn();
         return c.memo[key];
@@ -55,7 +51,7 @@ window.CreativeView = (function () {
         return typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : false;
     }
 
-    // На многосегментном рейсе продажи висят только на первом участке — как в «Экономической таблице».
+    // на многоучастковом рейсе продажи только на первом участке, как в "Экономической таблице"
     function salesBucket(c) {
         return lazy(c, 'sb', () => {
             if (!salesReady() || !c.attach || typeof getSalesMapForRow !== 'function') return null;
@@ -88,11 +84,11 @@ window.CreativeView = (function () {
         return lazy(c, 'econ', () => (typeof RouteCosts !== 'undefined' && RouteCosts.lookup ? RouteCosts.lookup(c.row, c.code, c.date) : null));
     }
 
-    // Себестоимость и субсидия берутся по всему рейсу (по номеру) — считаем их один раз,
-    // на первом участке, как и выручку. Иначе у рейса из двух участков суммы удваиваются.
+    // себестоимость и субсидия по всему рейсу (по номеру), считаем один раз на первом участке, как выручку
+    // иначе у рейса из двух участков суммы удвоятся
     function subsidyOf(c) {
         if (!c.attach) return null;
-        // Участок вылета с посадками, не основной: субсидия (и ручная) — в строке основного участка, как в «Экономической таблице».
+        // не основной участок с посадками: субсидия (и ручная) в строке основного участка
         if (c.row && c.row.segShare) return null;
         if (typeof SharedOverrides !== 'undefined' && SharedOverrides.hasSubsidy(c.code, c.date)) {
             return SharedOverrides.getSubsidy(c.code, c.date) || 0;
@@ -107,7 +103,7 @@ window.CreativeView = (function () {
         return econ && econ.unitCost != null ? econ.unitCost : null;
     }
 
-    // Прогноз к вылету и безубыточность (flight-insights.js): на рейс — один раз, на первом участке.
+    // прогноз и безубыточность на рейс, один раз на первом участке
     function forecastOf(c) {
         if (!c.attach || typeof FlightInsights === 'undefined') return null;
         return lazy(c, 'fc', () => {
@@ -131,7 +127,7 @@ window.CreativeView = (function () {
         return v == null || isNaN(v) ? null : Number(v);
     }
 
-    // Номер недели (с понедельника) без ограничения 52: 28–31.12 — отдельная 53-я неделя.
+    // номер недели с понедельника, без потолка 52: 28-31.12 - отдельная 53-я неделя
     function weekOfYear(d) {
         const j = new Date(d.getFullYear(), 0, 1);
         const mon = new Date(j);
@@ -149,7 +145,7 @@ window.CreativeView = (function () {
         return s ? (s[key] || 0) : null;
     }
 
-    // Файл продаж старше суток: «сегодня», «вчера» и «подбор» по нему не видны — как в RMS и на «Сегодня», прочерк вместо нуля.
+    // файл продаж старше суток: сегодня, вчера и подбор не показываем, прочерк вместо нуля (как в RMS и на "Сегодня")
     let staleMemo = { at: 0, v: false };
     function salesStale() {
         const now = Date.now();
@@ -161,8 +157,7 @@ window.CreativeView = (function () {
         return v == null || v === '' || isNaN(v) ? null : Number(v);
     }
 
-    // ---------- каталог столбцов ----------
-    // type: text | date | num | rub | pct | kg. agg: sum | avg | min | max | ratio (num/den) | text.
+    // type: text | date | num | rub | pct | kg; agg: sum | avg | min | max | ratio (num/den) | text
 
     const FIELDS = [
         { key: 'date', group: 'flight', label: 'Дата', type: 'date', agg: 'text', get: c => c.date },
@@ -204,7 +199,7 @@ window.CreativeView = (function () {
         { key: 'delta', group: 'rms', label: 'Отклонение от ожидаемой', type: 'num', agg: 'sum', get: c => { const m = metricsOf(c); return m ? m.delta : null; } },
         { key: 'fcPax', group: 'rms', label: 'Прогноз к вылету, пасс.', type: 'num', agg: 'sum', get: c => { const f = forecastOf(c); return f ? f.final : null; } },
         { key: 'fcLf', group: 'rms', label: 'Прогноз занятых мест к вылету, %', xl: 'Прогноз ЗПК к вылету, %', type: 'pct', agg: 'ratio', scale: 100,
-          // Кресла — только у вылетов, где есть прогноз (он один на вылет с посадками, у улетевших его нет), иначе процент занижен.
+          // кресла только у вылетов с прогнозом (на вылет с посадками он один, у улетевших нет), иначе процент занижен
           numFn: c => { const f = forecastOf(c); return f ? f.final : null; },
           denFn: c => { const f = forecastOf(c); return f && typeof getSeatsOnSale === 'function' ? getSeatsOnSale(c.row) : null; }, get: c => { const f = forecastOf(c); return f ? f.lf : null; } },
         { key: 'groups', group: 'sales', label: 'Групповые брони, бил.', type: 'num', agg: 'sum', get: c => (c.attach && typeof FlightInsights !== 'undefined' ? FlightInsights.groupSeats(c.code, c.date) || null : null) },
@@ -275,13 +270,11 @@ window.CreativeView = (function () {
         }
     };
 
-    // ---------- состояние ----------
-
     let layout = null;
     let activeRef = '';
     let saved = {};
     let shared = {};
-    // Панель столбцов — выдвижная справа, по умолчанию закрыта (таблица на всю ширину).
+    // Панель столбцов - выдвижная справа, по умолчанию закрыта (таблица на всю ширину).
     let panelOpen = false;
     let filtersOpen = false;
     let menuOpen = false;
@@ -402,9 +395,9 @@ window.CreativeView = (function () {
     async function writeShared(mutate) {
         if (typeof SharedStorage === 'undefined' || typeof SharedStorage.writeJsonFile !== 'function') return false;
         if (typeof SharedStorage.updateJsonFile !== 'function') return false;
-        // Перечитать файл → применить правку → записать, только если файл не менялся (чужие шаблоны не теряются).
+        // перечитать файл, применить правку, писать только если файл не менялся; чужие шаблоны не теряются
         const res = await SharedStorage.updateJsonFile(SHARED_FILE, (remote) => {
-            // Файл раньше читался, а сейчас пуст — не записываем, иначе пропадут чужие общие шаблоны.
+            // файл раньше читался, а сейчас пуст - не пишем, иначе пропадут чужие шаблоны
             if (!remote && sharedSeen) return false;
             const layouts = remote && remote.layouts && typeof remote.layouts === 'object' ? { ...remote.layouts } : {};
             mutate(layouts);
@@ -414,8 +407,6 @@ window.CreativeView = (function () {
         if (ok) await loadShared();
         return !!ok;
     }
-
-    // ---------- данные ----------
 
     function startOfDay(d) {
         const t = new Date(d.getTime());
@@ -431,7 +422,7 @@ window.CreativeView = (function () {
         const today = startOfDay(new Date());
         switch (layout.period) {
             case 'today': return { from: today, to: today };
-            // Границы включительные: «7 дней» — сегодня и ещё 6.
+            // границы включительно: "7 дней" - сегодня и еще 6
             case 'next7': return { from: today, to: addDays(today, 6) };
             case 'next30': return { from: today, to: addDays(today, 29) };
             case 'next90': return { from: today, to: addDays(today, 89) };
@@ -449,13 +440,13 @@ window.CreativeView = (function () {
         const epoch = typeof dataEpoch === 'number' ? dataEpoch : 0;
         const rows = typeof allData !== 'undefined' && allData ? allData.length : 0;
         const today = typeof getTodayDate === 'function' ? getTodayDate() : '';
-        // Версия отметок без первого поля (время записи файла): оно меняется при каждой попытке записи.
+        // версия отметок без первого поля: это время записи файла, оно меняется при каждой попытке
         const fullRev = typeof SalesManagement !== 'undefined' && SalesManagement.revision ? SalesManagement.revision() : '';
         const marks = fullRev.slice(fullRev.indexOf('\u0001') + 1);
         const ov = typeof SharedOverrides !== 'undefined' && SharedOverrides.subsidyRevision
             ? SharedOverrides.subsidyRevision() + ':' + (SharedOverrides.navRevision ? SharedOverrides.navRevision() : 0) + ':' + (typeof SubsidyRef !== 'undefined' ? SubsidyRef.revision() : 0)
             : '';
-        // Прогноз к вылету и безубыточность меняются без новых данных: обучилась модель, архив продаж, календарь, параметры.
+        // прогноз и безубыточность меняются без новых данных: модель, архив продаж, календарь, параметры
         const an = typeof analyticsRevision === 'function' ? analyticsRevision() : '';
         return [epoch, rows, today, ov, JSON.stringify(layout), marks, an].join('|');
     }
@@ -597,7 +588,7 @@ window.CreativeView = (function () {
             if (v != null) vals.push(v);
         });
         if (!vals.length) return null;
-        if (f.agg === 'sum') return vals.reduce((a, b) => a + (f.sumFloor0 ? Math.max(0, b) : b), 0);   // перепроданный рейс остаток не уменьшает
+        if (f.agg === 'sum') return vals.reduce((a, b) => a + (f.sumFloor0 ? Math.max(0, b) : b), 0);   // перепроданный рейс не уменьшает остаток
         if (f.agg === 'avg') return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length * 10) / 10;
         if (f.agg === 'min') return Math.min.apply(null, vals);
         if (f.agg === 'max') return Math.max.apply(null, vals);
@@ -613,7 +604,7 @@ window.CreativeView = (function () {
         if (built.sig === sig && built.result) return built.result;
         const cols = visibleCols();
         let ctxs = collectContexts();
-        // Условие без значения (только что добавленное) не применяется, иначе таблица пустеет.
+        // условие без значения (только что добавили) не применяем, иначе таблица пустеет
         const conds = layout.conds.filter(cond => fieldAllowed(cond.field)
             && (cond.op === 'empty' || cond.op === 'filled' || String(cond.value == null ? '' : cond.value).trim() !== ''));
         if (conds.length) ctxs = ctxs.filter(c => conds.every(cond => condMatches(c, cond)));
@@ -694,15 +685,13 @@ window.CreativeView = (function () {
         return result;
     }
 
-    // ---------- вывод ----------
-
     function esc(v) { return escHtml(v); }
 
     function attr(v) {
         return typeof escAttr === 'function' ? escAttr(v) : String(v == null ? '' : v);
     }
 
-    // Форматтеры создаются один раз: toLocaleString на каждую ячейку заметно тормозит большие таблицы.
+    // форматтеры создаем один раз: toLocaleString на каждую ячейку тормозит большие таблицы
     const numFormats = {};
     function fmtNumber(n, digits) {
         if (n == null || isNaN(n)) return '—';
@@ -736,7 +725,7 @@ window.CreativeView = (function () {
         return cls;
     }
 
-    // При группировке столбец группы показывается всегда, даже если его убрали из списка столбцов.
+    // при группировке столбец группы всегда виден, даже если его убрали из списка
     function headerCols(result) {
         const list = result.cols.slice();
         if (result.groupKey) {
@@ -807,8 +796,6 @@ window.CreativeView = (function () {
         }
     }
 
-    // ---------- панель настройки ----------
-
     function fieldOptions(selected, filter) {
         return FIELDS.filter(f => fieldAllowed(f.key) && (!filter || filter(f))).map(f => {
             const g = GROUPS.find(item => item.id === f.group);
@@ -829,7 +816,7 @@ window.CreativeView = (function () {
             <p class="cr-note">Даты — ДД.ММ.ГГГГ. Условия проверяются по каждому вылету до группировки.</p>`;
     }
 
-    // Всплывающее меню «Фильтры»: маршруты, статусы рейсов, условия.
+    // Всплывающее меню "Фильтры": маршруты, статусы рейсов, условия.
     function renderFilterPop() {
         const pop = document.getElementById('cr-filter-pop');
         if (!pop) return;
@@ -859,7 +846,7 @@ window.CreativeView = (function () {
             </div>`;
     }
 
-    // Выдвижная панель «Столбцы»: выбранные (порядок) и каталог данных.
+    // Выдвижная панель "Столбцы": выбранные (порядок) и каталог данных.
     function renderPanel() {
         renderFilterPop();
         const panel = document.getElementById('cr-panel');
@@ -907,7 +894,7 @@ window.CreativeView = (function () {
         `;
     }
 
-    // Улетевшие скрыты по умолчанию для будущих периодов — это не «фильтр»; фильтр — когда убраны открытые или закрытые.
+    // улетевшие скрыты по умолчанию в будущих периодах, это не фильтр; фильтр - когда убраны открытые или закрытые
     function statusFiltered() {
         return !(layout.status.open && layout.status.closed);
     }
@@ -920,7 +907,7 @@ window.CreativeView = (function () {
         return `${f(b.from) || '…'} – ${f(b.to) || '…'}`;
     }
 
-    // Активные фильтры чипами под панелью: видно, что отфильтровано, и убирается в один клик.
+    // активные фильтры чипами под панелью, сбрасываются в один клик
     function renderChips() {
         const box = document.getElementById('cr-chips');
         if (!box) return;
@@ -1006,8 +993,6 @@ window.CreativeView = (function () {
         renderTable();
     }
 
-    // ---------- изменения ----------
-
     function changed(opts) {
         const o = opts || {};
         if (!o.keepTemplate) activeRef = '';
@@ -1020,7 +1005,7 @@ window.CreativeView = (function () {
         renderTable();
     }
 
-    // Счётчики на кнопках «Фильтры» и «Столбцы» без перерисовки всей панели (не сбивает ввод).
+    // счетчики на кнопках без перерисовки всей панели, иначе сбивается ввод
     function updateBadges() {
         const nFilters = (layout.routeType !== 'all' ? 1 : 0) + layout.conds.length
             + (statusFiltered() ? 1 : 0);
@@ -1302,7 +1287,7 @@ window.CreativeView = (function () {
             }
         });
 
-        // Клик мимо всплывающих меню закрывает их (на document вешаем один раз).
+        // клик мимо меню закрывает их; обработчик вешаем на document один раз
         if (!docBound) {
         docBound = true;
         document.addEventListener('pointerdown', (event) => {
@@ -1355,8 +1340,6 @@ window.CreativeView = (function () {
         }, true);
     }
 
-    // ---------- Excel ----------
-
     async function exportExcel() {
         if (!hasPerm('export_excel')) {
             toast('Выгрузка недоступна для вашего профиля', 'error');
@@ -1381,7 +1364,7 @@ window.CreativeView = (function () {
             if (key === '__count' || (f && f.type !== 'text' && f.type !== 'date')) return v;
             return String(v);
         };
-        // В Excel подписи прежние (без замены «ЗПК» на «Занято»): состав выгрузки не меняем.
+        // в Excel подписи как раньше, без замены ЗПК на Занято: состав выгрузки не меняем
         const aoa = [cols.map(k => (FIELD_BY_KEY[k] && FIELD_BY_KEY[k].xl) || colLabel(k))];
         if (layout.totals) aoa.push(cols.map((key, i) => { const v = result.totals[key]; return i === 0 && (v == null || v === '') ? 'Итого' : cellOut(key, v); }));
         result.rows.forEach(r => aoa.push(cols.map(key => cellOut(key, r.values[key]) + (key === 'date' && r.ctx && typeof DelayedFlights !== 'undefined' ? DelayedFlights.xlSuffix(r.ctx.code, r.ctx.date) : ''))));
@@ -1420,8 +1403,6 @@ window.CreativeView = (function () {
             toast('Ошибка выгрузки', 'error');
         }
     }
-
-    // ---------- вход ----------
 
     function create(panel) {
         loadState();

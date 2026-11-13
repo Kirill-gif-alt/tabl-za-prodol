@@ -1,8 +1,8 @@
 // Журнал действий пользователей (локально + shared/activity.json)
 window.ActivityLog = (function () {
     const LOCAL_KEY = 'krasavia_activity_v1';
-    const MAX_EVENTS = 2000;   // как в общем файле (shared-storage.js)
-    const MAX_TAB_EVENTS = 300;   // смены вкладок хранятся только здесь и не вытесняют остальные записи
+    const MAX_EVENTS = 2000;   // как в shared-storage.js
+    const MAX_TAB_EVENTS = 300;   // смены вкладок только здесь, они не вытесняют остальные записи
 
     const ACTION_LABELS = {
         login: 'Вход',
@@ -26,7 +26,7 @@ window.ActivityLog = (function () {
         profile_save: 'Сохранение профилей'
     };
 
-    // Цветовая группа значка действия (сами цвета — в css/ux-journal.css, классы jr-t-*).
+    // цветовая группа значка действия; цвета в css/ux-journal.css (классы jr-t-*)
     const ACTION_TONE = {
         login: 'in', logout: 'out', tab: 'tab', flight: 'view', export: 'export',
         data_load: 'load', import: 'load', costs_upload: 'load',
@@ -38,8 +38,8 @@ window.ActivityLog = (function () {
     const PERIOD_TEXT = { 1: 'сегодня', 7: '7 дней', 30: '30 дней', 0: 'всё время' };
     const MONTHS_GEN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
     const WEEKDAYS = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
-    const BATCH = 250;         // строк за раз: дальше — кнопка «Показать ещё»
-    const LONG_DETAIL = 70;    // с такой длины текст деталей может не влезть в 2 строки
+    const BATCH = 250;         // строк за раз, дальше кнопка Показать ещё
+    const LONG_DETAIL = 70;    // с такой длины детали могут не влезть в 2 строки
 
     const TAB_LABELS = {
         today: 'Сегодня',
@@ -87,7 +87,7 @@ window.ActivityLog = (function () {
         }
     }
 
-    // Список от новых к старым: не больше MAX_EVENTS записей, из них смен вкладок не больше MAX_TAB_EVENTS.
+    // от новых к старым; не больше MAX_EVENTS, из них вкладок не больше MAX_TAB_EVENTS
     function trimEvents(list) {
         let tabs = 0;
         const out = [];
@@ -110,7 +110,7 @@ window.ActivityLog = (function () {
             .map(x => x.e));
     }
 
-    // Несколько вызовов подряд при старте ждут одну загрузку, а не качают файл каждый раз.
+    // вызовы при старте ждут одну загрузку, файл не качаем каждый раз
     let loadingAll = null;
 
     function loadAll(force) {
@@ -145,7 +145,7 @@ window.ActivityLog = (function () {
             } catch (e) { console.warn('ActivityLog.loadAll', e); }
         }
 
-        // Пока ждали сеть, log() мог дописать событие в cache — сохраняем и его.
+        // пока ждали сеть, log() мог дописать в cache - это событие тоже сохраняем
         const before = cache;
         cache = mergeEvents(cache || [], mergeEvents(local, shared));
         const same = before && before.length === cache.length && (!cache.length || (before[0].id === cache[0].id && before[before.length - 1].id === cache[cache.length - 1].id));
@@ -157,8 +157,8 @@ window.ActivityLog = (function () {
         return cache;
     }
 
-    // Запись в общий файл идёт по одной: повтор с тем же последним событием ждёт текущую,
-    // а с новым событием встаёт в очередь за ней.
+    // запись в общий файл по одной: повтор с тем же последним событием ждёт текущую
+    // с новым событием встаёт в очередь за ней
     let pushing = null;
     let pushingHead = '';
 
@@ -297,7 +297,7 @@ window.ActivityLog = (function () {
         return text || label;
     }
 
-    // Имя пользователя: берём самое свежее из записей (список идёт от новых к старым).
+    // имя берём из самой свежей записи (список от новых к старым)
     function getUniqueProfiles(events) {
         const map = new Map();
         events.forEach(e => {
@@ -306,10 +306,8 @@ window.ActivityLog = (function () {
         return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], 'ru'));
     }
 
-    // ---------- отбор записей ----------
-
-    // Период — календарные дни, как «7 дней» на других вкладках: сегодня и ещё N−1 прошлых, с полуночи.
-    // Не «последние N×24 часа»: иначе первый день окна обрезан по времени и не совпадает с подписью дня в списке.
+    // период - календарные дни: сегодня и N-1 прошлых, с полуночи
+    // не последние N*24 часа: первый день обрежется по времени и не совпадёт с подписью
     function periodStart(days) {
         if (!(days > 0)) return 0;
         const d = new Date();
@@ -318,7 +316,7 @@ window.ActivityLog = (function () {
         return d.getTime();
     }
 
-    // Строка для поиска считается один раз на запись (записи живут в кэше, а поиск набирается по буквам).
+    // строку для поиска считаем один раз на запись (поиск набирается по буквам)
     const hayCache = new WeakMap();
     function hayOf(e) {
         let h = hayCache.get(e);
@@ -333,9 +331,9 @@ window.ActivityLog = (function () {
         return h;
     }
 
-    // Один проход по журналу: подходящие записи + числа для подписей.
-    //   inPeriod — сколько записей за выбранный период (до остальных фильтров);
-    //   byUser/noUser — числа у имён: период, действие и поиск, но без выбора человека (чтобы остальные не обнулялись).
+    // один проход: подходящие записи и числа для подписей
+    // inPeriod - записей за период, до остальных фильтров
+    // byUser/noUser - числа у имён: период, действие и поиск без выбора человека, чтобы не обнулялись
     function analyze(events, filters) {
         const { profileId, action, days, query } = filters;
         const custom = days === -1;
@@ -364,8 +362,6 @@ window.ActivityLog = (function () {
         return { filtered, times, byUser, noUser, inPeriod };
     }
 
-    // ---------- подписи ----------
-
     function actionLabel(action) {
         return ACTION_LABELS[action] || 'Другое действие';
     }
@@ -387,7 +383,7 @@ window.ActivityLog = (function () {
         return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
     }
 
-    // «Сегодня», «Вчера», «25 октября, суббота» (с годом, если он не текущий).
+    // Сегодня, Вчера, 25 октября, суббота (год, если не текущий)
     function dayLabel(t, nowD) {
         if (t !== t) return 'Без даты';
         const d = new Date(t);
@@ -404,9 +400,7 @@ window.ActivityLog = (function () {
         return n + ' ' + pluralRu(n, 'запись', 'записи', 'записей');
     }
 
-    // ---------- состояние вкладки ----------
-    // Живёт на контейнере: фоновое обновление вкладки перерисовывает журнал, но фильтры,
-    // раскрытые детали и число выведенных строк при этом не сбрасываются.
+    // состояние живёт на контейнере: фон перерисовывает журнал, фильтры, детали и число строк не сбрасываются
     function getView(container) {
         if (!container._jr) {
             container._jr = {
@@ -420,8 +414,6 @@ window.ActivityLog = (function () {
         }
         return container._jr;
     }
-
-    // ---------- вёрстка ----------
 
     function rowHtml(e, t, v) {
         const name = e.profileName || e.profileId || '—';
@@ -437,9 +429,8 @@ window.ActivityLog = (function () {
         </tr>`;
     }
 
-    // Строки [from, to) списка. Каждый день — своя секция (<tbody>) с разделителем и числом записей за день:
-    // так разделитель «прилипает» только на время прокрутки своего дня.
-    // cont — строки, продолжающие уже выведенный день (при «Показать ещё»), groups — новые секции.
+    // строки [from, to) списка; каждый день - своя секция tbody с разделителем, он липнет только в свой день
+    // cont - строки продолжают уже выведенный день (Показать ещё), groups - новые секции
     function rowsHtml(v, from, to) {
         const nowD = new Date();
         let cont = '';
@@ -535,8 +526,8 @@ window.ActivityLog = (function () {
         const badge = container.querySelector('#stats-total-badge');
         if (!badge) return;
         const period = v.filters.days === -1 ? CustomPeriod.label('journal') : (PERIOD_TEXT[v.filters.days] || PERIOD_TEXT[0]);
-        // «Из» — сколько записей подходит под условия (их число совпадает с чипом «Все»), а не всё за период:
-        // иначе при скрытых переходах по вкладкам выходит «показано 40 из 120», хотя скрывать больше нечего.
+        // "Из" - сколько подходит под условия (совпадает с чипом Все), а не всё за период
+        // иначе при скрытых переходах выходит 'показано 40 из 120', хотя скрывать нечего
         const n = v.list.length;
         const hidden = v.inPeriod - n;
         badge.textContent = `Показано ${v.shown} из ${n} ${pluralRu(n, 'записи', 'записей', 'записей')} за ${period}`;
@@ -552,7 +543,7 @@ window.ActivityLog = (function () {
         foot.innerHTML = `<button type="button" class="jr-btn" data-jr-next>Показать ещё ${Math.min(BATCH, rest)}</button><span class="jr-foot-note">Осталось записей: ${rest}</span>`;
     }
 
-    // Пустой список: что именно сузило выбор — период, пользователь, действие или поиск.
+    // пустой список: что сузило выбор - период, пользователь, действие или поиск
     function emptyHtml(events, f, v, byUserName) {
         let hint = '';
         let fix = '';
@@ -567,7 +558,7 @@ window.ActivityLog = (function () {
             if (f.profileId) parts.push({ key: 'profileId', text: `пользователь «${byUserName}»` });
             if (f.action) parts.push({ key: 'action', text: `действие «${f.action === '!tab' ? 'Все, кроме переходов по вкладкам' : actionLabel(f.action)}»` });
             if (f.query) parts.push({ key: 'query', text: `поиск «${f.query}»` });
-            // Фильтр виноват, если без него записи находятся.
+            // фильтр виноват, если без него записи находятся
             const culprits = parts.filter(p => analyze(events, Object.assign({}, f, { [p.key]: '' })).filtered.length > 0);
             const names = (culprits.length ? culprits : parts).map(p => p.text).join(', ');
             hint = culprits.length
@@ -581,10 +572,10 @@ window.ActivityLog = (function () {
         return `<div class="jr-empty-title">${title}</div><div class="jr-empty-hint">${escHtml(hint)}</div>${fix}`;
     }
 
-    // Кнопка «ещё» нужна только там, где текст реально не помещается в 2 строки (зависит от ширины окна).
+    // кнопка ещё - только там, где текст не влезает в 2 строки (зависит от ширины)
     function measureClamps(container) {
         const list = container.querySelector('#jr-list');
-        if (!list || container.hidden || !list.clientWidth) return;   // вкладка скрыта — измерять нечего (сделаем при показе)
+        if (!list || container.hidden || !list.clientWidth) return;   // вкладка скрыта - мерить нечего, сделаем при показе
         const els = list.querySelectorAll('.jr-det[data-long]');
         const flags = [];
         for (const el of els) flags.push(el.classList.contains('is-open') || el.scrollHeight > el.clientHeight + 1);
@@ -642,7 +633,7 @@ window.ActivityLog = (function () {
         if (top) list.scrollTop = top;
     }
 
-    // ---------- события (один набор обработчиков на всю вкладку) ----------
+    // один набор обработчиков на всю вкладку
 
     function setFilters(container, patch) {
         const v = getView(container);
@@ -740,7 +731,7 @@ window.ActivityLog = (function () {
         });
     }
 
-    // Каркас строится один раз; потом обновляются только подписи, чипы и список (поле поиска не теряет фокус).
+    // каркас строим один раз, потом обновляем подписи, чипы и список (поле поиска не теряет фокус)
     function ensureShell(container, v) {
         if (container.querySelector('.jr-page')) return;
         container.innerHTML = shellHtml();
@@ -752,14 +743,14 @@ window.ActivityLog = (function () {
             v.ro = new ResizeObserver(() => {
                 if (container.hidden) return;
                 clearTimeout(v.resizeTimer);
-                v.resizeTimer = setTimeout(() => measureClamps(container), 120);   // ширина изменилась — «ещё» нужно не везде
+                v.resizeTimer = setTimeout(() => measureClamps(container), 120);   // ширина изменилась - кнопка ещё нужна не везде
             });
             v.ro.observe(list);
         }
     }
 
-    // Скрытая вкладка «замораживается» (не перерисовывается), поэтому при возврате смотрим сами:
-    // если за это время в журнале появились записи — покажем их, иначе только пересчитаем кнопки «ещё».
+    // скрытая вкладка не перерисовывается, при возврате смотрим сами
+    // новые записи показываем, иначе только пересчитываем кнопки ещё
     function onShown(container) {
         const v = getView(container);
         clearTimeout(v.resizeTimer);
@@ -774,10 +765,10 @@ window.ActivityLog = (function () {
         const seq = (container._statsSeq = (container._statsSeq || 0) + 1);
         const v = getView(container);
         if (state) Object.assign(v.filters, state);
-        // Журнал перечитываем при открытии вкладки и по кнопке «Обновить»; смена фильтра работает с тем, что уже загружено.
+        // журнал перечитываем при открытии и по кнопке Обновить; смена фильтра - по уже загруженному
         const events = await loadAll(!container._statsLoaded);
         container._statsLoaded = true;
-        if (seq !== container._statsSeq) return;   // пока читали журнал, запущена более новая отрисовка
+        if (seq !== container._statsSeq) return;   // пока читали журнал, запущена новая отрисовка
         bindOnce(container);
         ensureShell(container, v);
         paint(container, v, events);
@@ -792,7 +783,7 @@ window.ActivityLog = (function () {
 })();
 
 async function createStatsView(container) {
-    // Уже нарисованный журнал не гасим «Загрузкой»: фоновое обновление вкладки не должно сбрасывать фильтры и прокрутку.
+    // уже нарисованный журнал не гасим загрузкой: фон не должен сбрасывать фильтры и прокрутку
     if (!container.querySelector('.jr-page')) container.innerHTML = '<div class="stats-loading">Загрузка журнала…</div>';
     await ActivityLog.renderInto(container);
 }

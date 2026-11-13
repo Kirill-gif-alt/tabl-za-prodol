@@ -5,7 +5,7 @@ window.FlightComments = (function () {
     const RETRY_FIRST_MS = 15000;
     const RETRY_MAX_MS = 120000;
     let cache = { version: 1, updatedAt: null, comments: {} };
-    // Есть комментарии, которые ещё не попали в общий файл (нет связи, папка закрыта на запись): запись повторяется сама.
+    // комментарии, не попавшие в общий файл (нет связи, папка закрыта), пишем повторно
     let unsynced = false;
     let inflight = 0;
     let retryTimer = null;
@@ -17,7 +17,7 @@ window.FlightComments = (function () {
         return fl && d ? `${fl}|${d}` : '';
     }
 
-    // Слияние по каждому рейсу: остаётся более свежая запись (удаление — запись с пустым текстом).
+    // слияние по рейсу: побеждает свежая запись; удаление - запись с пустым текстом
     function mergeComments(a, b) {
         const out = { ...(a && typeof a === 'object' ? a : {}) };
         Object.entries(b && typeof b === 'object' ? b : {}).forEach(([k, v]) => {
@@ -27,8 +27,7 @@ window.FlightComments = (function () {
         return out;
     }
 
-    // Файл мог быть восстановлен из резервной копии (restoredAt): записи старше этого момента, оставшиеся
-    // в кэше браузера, не должны вернуть ошибочное содержимое обратно.
+    // файл восстановлен из бэкапа (restoredAt): записи старше этой метки из кэша браузера не возвращаем
     function newerThan(map, since) {
         if (!since) return map;
         const out = {};
@@ -66,7 +65,7 @@ window.FlightComments = (function () {
                 comments: merged
             };
         }
-        // Прошлый сеанс не успел записать комментарии в общий файл — дописываем сейчас.
+        // прошлый сеанс не успел записать, дописываем сейчас
         if (local && local.unsynced) {
             unsynced = true;
             scheduleRetry(1500);
@@ -84,8 +83,8 @@ window.FlightComments = (function () {
         return !!String(get(flight, date) || '').trim();
     }
 
-    // Время последней правки комментария: страница запоминает его при показе и передаёт в set(opts.base),
-    // чтобы заметить, что за это время комментарий уже изменил кто-то другой.
+    // время последней правки: страница запоминает его при показе и передает в set(opts.base)
+    // чтобы заметить, что комментарий успел поменять кто-то другой
     function updatedAtOf(flight, date) {
         const k = commentKey(flight, date);
         return (k && cache.comments[k]?.updatedAt) || '';
@@ -95,8 +94,8 @@ window.FlightComments = (function () {
         if (typeof SharedStorage === 'undefined' || typeof SharedStorage.updateJsonFile !== 'function') {
             return Promise.resolve({ ok: false, readFailed: true });
         }
-        // Перечитать общий файл → слить со своим → записать «только если файл не менялся с прочтения».
-        // Комментарии, которые другие успели добавить между чтением и записью, не теряются (при расхождении — заново).
+        // перечитываем файл, сливаем со своим и пишем, только если файл не менялся с чтения
+        // чужие комментарии между чтением и записью не теряем; при расхождении повтор
         return SharedStorage.updateJsonFile(FILE, (cur) => {
             if (mutateExtra) {
                 const stop = mutateExtra(cur);
@@ -110,7 +109,7 @@ window.FlightComments = (function () {
     }
 
     function markSynced(data) {
-        if (data && data.comments) cache.comments = mergeComments(newerThan(cache.comments, data.restoredAt), data.comments);   // заодно видим чужие комментарии
+        if (data && data.comments) cache.comments = mergeComments(newerThan(cache.comments, data.restoredAt), data.comments);   // заодно подтягиваем чужие комментарии
         if (!inflight) { unsynced = false; retryMs = RETRY_FIRST_MS; }
         saveLocal();
     }
@@ -133,9 +132,8 @@ window.FlightComments = (function () {
         }, ms || retryMs);
     }
 
-    // Результат: false — рейс не распознан; { ok: true, shared } — комментарий сохранён (shared — и в общем файле);
-    // { ok: false, conflict: { text, author, updatedAt } } — пока вы правили, комментарий изменил другой человек:
-    // ничего не записано, чужой текст показан, свой остаётся у вас в окне.
+    // false - рейс не распознан; { ok: true, shared } - сохранено (shared: и в общем файле)
+    // { ok: false, conflict } - комментарий поменял другой, ничего не записано, свой текст остается в окне
     async function set(flight, date, text, author, opts) {
         const k = commentKey(flight, date);
         if (!k) return false;
@@ -149,12 +147,12 @@ window.FlightComments = (function () {
             updatedAt: now,
             author: author || (typeof ProfileAuth !== 'undefined' ? ProfileAuth.getCurrentProfile()?.name : '') || ''
         };
-        const base = opts && typeof opts.base === 'string' ? opts.base : null;   // null — не проверяем
+        const base = opts && typeof opts.base === 'string' ? opts.base : null;   // null - не проверяем
         const prevUnsynced = unsynced;
         cache.comments[k] = entry;
         cache.updatedAt = now;
         unsynced = true;
-        saveLocal();   // на этом компьютере комментарий сохранён сразу, что бы ни случилось с общим файлом
+        saveLocal();   // на этом компьютере сохраняем сразу, что бы ни было с общим файлом
 
         let conflict = null;
         inflight++;
@@ -163,7 +161,7 @@ window.FlightComments = (function () {
             res = await pushShared((cur) => {
                 conflict = null;
                 const theirs = cur && cur.comments && cur.comments[k];
-                // Комментарий к этому рейсу после того, как вы его открыли, изменил другой человек, и текст у него иной.
+                // комментарий поменял другой после того, как открыли, и текст у него другой
                 if (base !== null && theirs && String(theirs.updatedAt || '') > base && String(theirs.text || '') !== entry.text) {
                     conflict = theirs;
                     return true;
@@ -175,7 +173,7 @@ window.FlightComments = (function () {
         }
 
         if (conflict) {
-            // Ничего не записано: возвращаем прежнее состояние и показываем чужую запись.
+            // ничего не пишем: возвращаем прежнее состояние и показываем чужую запись
             cache.comments[k] = conflict;
             unsynced = prevUnsynced;
             saveLocal();
@@ -206,7 +204,7 @@ window.FlightComments = (function () {
             tr.classList.toggle('has-flight-comment', hasC);
             const cell = tr.querySelector('td.col-comment');
             if (!cell) return;
-            // Ячейка уже в нужном состоянии (окно таблицы перерисовывается при каждой прокрутке) — не трогаем.
+            // ячейка уже в нужном состоянии (окно таблицы перерисовывается при прокрутке), не трогаем
             const state = hasC ? '1|' + (get(fl, d) || 'Есть комментарий') : '0';
             if (cell.dataset.cm === state) return;
             cell.dataset.cm = state;

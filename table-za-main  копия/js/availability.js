@@ -1,4 +1,4 @@
-// Парсинг загрузки по сегментам (RepRaidAvailSeg / «загрузка таб»)
+// парсинг загрузки по сегментам (RepRaidAvailSeg, загрузка таб)
 
 function readCsvText(file) {
     return new Promise((resolve, reject) => {
@@ -14,21 +14,18 @@ function isAircraftConfig(val) {
     return /^(AN4|AN6|AT5|AT7|YK2|ATR|AN-|AT-)/.test(s) || s.includes('/');
 }
 
-/**
- * Время из файла загрузки: «08:45», «8:45», «+1 08:45», «+108:45»
- * (+N = прилёт на N-й следующий календарный день; в UI показываем только HH:MM)
- */
+// время: 08:45, 8:45, +1 08:45, +108:45
+// +N - прилёт на N-й следующий день; в UI только HH:MM
 function looksLikeTime(val) {
     const s = String(val || '').trim();
     return /^(?:\+\d+\s*)?\d{1,2}:\d{2}(?::\d{2})?$/.test(s);
 }
 
-/** Убрать префикс +N и нормализовать в HH:MM */
+// убираем +N, приводим к HH:MM
 function normalizeTimeStr(val) {
     const s = String(val || '').trim();
     if (!s) return '';
-    // один match: «08:45», «+1 08:45», «+108:45» (движок сам отрежет +N).
-    // Приставка «+N» ленивая: в «+112:45» часы — «12», а не «2» (жадная брала бы «+11» и оставляла «2:45»).
+    // приставка +N ленивая: в +112:45 часы 12, а не 2 (жадная съела бы +11)
     const m = s.match(/^(?:\+\d*?\s*)?(\d{1,2}):(\d{2})(?::\d{2})?$/);
     if (!m) return '';
     const hh = parseInt(m[1], 10);
@@ -37,7 +34,7 @@ function normalizeTimeStr(val) {
     return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
 }
 
-/** Минуты от полуночи; без времени → 9999 (в конец дня при сортировке) */
+// минуты от полуночи; без времени 9999, чтобы уходили в конец дня
 function timeToMinutes(val) {
     const raw = String(val || '');
     if (raw.length === 5 && raw[2] === ':') {
@@ -50,7 +47,7 @@ function timeToMinutes(val) {
     return parseInt(s.slice(0, 2), 10) * 60 + parseInt(s.slice(3, 5), 10);
 }
 
-let availabilityKeepClosed = false;   // loadAvailabilityFiles: закрытые строки нужны до слияния файлов
+let availabilityKeepClosed = false;   // закрытые строки нужны до слияния файлов (loadAvailabilityFiles)
 
 function isSalesStatusOpen(status) {
     const s = String(status || '').toLowerCase().trim();
@@ -68,13 +65,13 @@ function parseSegmentField(seg) {
 }
 
 function getRouteFromRow(row) {
-    if (row.segRoute) return row.segRoute;   // участок доп. посадки, ушедший в другой рейс (segment-split.js)
+    if (row.segRoute) return row.segRoute;   // участок, ушедший в другой рейс (segment-split.js)
     const route = String(row[3] || '').trim();
     if (route) return route.toUpperCase();
     return parseSegmentField(row[2]).route;
 }
 
-// Что показать в столбце «Маршрут»: у рейса с посадками — сам участок («TGP-THX»), а не весь маршрут.
+// в столбце Маршрут у рейса с посадками сам участок (TGP-THX), а не весь маршрут
 function getRouteLabel(row) {
     const route = getRouteFromRow(row);
     if (route.split('-').length < 3) return route;
@@ -86,7 +83,7 @@ function getFlightRowKey(row) {
     const date = row[1];
     const fl = cleanFlight(row[0]);
     const route = getRouteFromRow(row);
-    // У рейса с посадками маршрут у всех участков один («KCY-TGP-THX») — различаем их по участку («1-2»).
+    // у участков с посадками общий маршрут (KCY-TGP-THX), различаем по участку (1-2)
     if (date && fl && route && route.split('-').length >= 3) {
         const seg = parseSegmentField(row[2]);
         return `${date}|${fl}|${route}|${seg.legs || seg.route}`;
@@ -114,7 +111,7 @@ function getSalesDetailsForRow(row) {
     return salesDetails[k] || [];
 }
 
-/** Вр. вылета / прилёта — индексы 11, 12 (после status) */
+// вр. вылета и прилёта - индексы 11 и 12 (после status)
 function getDepTime(row) {
     if (!row) return '';
     const t = row[11];
@@ -137,7 +134,7 @@ function formatRouteDisplay(route) {
     return r;
 }
 
-// Участок словами: «Красноярск → Подкаменная Тунгуска → Туруханск». Код, которого нет в справочнике, остаётся кодом.
+// участок словами: Красноярск -> Подкаменная Тунгуска -> Туруханск; нет в справочнике - остаётся код
 function formatRouteCities(route) {
     const r = String(route || '').trim().toUpperCase();
     if (!r) return '';
@@ -171,8 +168,8 @@ function buildFirstSalesRowByKey(rows) {
     for (const r of rows) {
         const k = getSalesLookupKey(r);
         if (!k) continue;
-        // У вылета с посадками продажи, выручка, расходы и субсидия — на основном (сквозном) участке,
-        // а не на том, что случайно стоит первым в файле или при сортировке.
+        // у вылета с посадками продажи, выручка, расходы и субсидия на сквозном участке
+        // не на том, что первым в файле или при сортировке
         const cur = map.get(k);
         if (!cur || (cur.segShare && !r.segShare)) map.set(k, r);
     }
@@ -184,17 +181,11 @@ function shouldAttachSalesToRowCached(row, firstByKey) {
     return firstByKey.get(key) === row;
 }
 
-/**
- * Row layout (stable indices for rest of app):
- * [0]flight [1]date [2]segment [3]route [4]config
- * [5]total [6]free [7]totalSeg [8]avs [9]totalAv [10]status
- * [11]depTime [12]arrTime
- */
-/**
- * Прочитать поле времени: «08:45» / «+1 08:45» /
- * либо «+1» и следующее поле «08:45» (сдвиг столбцов).
- * @returns {{ time: string, next: number }}
- */
+// индексы строки, стабильные для всего сайта:
+// [0]flight [1]date [2]segment [3]route [4]config [5]total [6]free [7]totalSeg [8]avs
+// [9]totalAv [10]status [11]depTime [12]arrTime
+// поле времени: 08:45, +1 08:45, либо +1 и следующее поле 08:45 (сдвиг столбцов)
+// @returns {{ time: string, next: number }}
 function readTimeField(chunk, idx) {
     const cur = chunk[idx];
     if (looksLikeTime(cur)) {
@@ -207,8 +198,8 @@ function readTimeField(chunk, idx) {
     return { time: normalizeTimeStr(cur), next: idx + 1 };
 }
 
-// Буква после цифр номера («KV-203S», «KV-203D», «KV-204М»; она зависит от дня недели, латинская или кириллическая,
-// любой регистр) — рейс задержан и вылетает позже. Возвращает букву заглавной или ''.
+// буква после номера (KV-203S, KV-203D, KV-204М) - рейс задержан, вылетает позже
+// буква зависит от дня недели, латиница или кириллица, любой регистр; вернём заглавную или пусто
 function delayedFlightLetter(raw) {
     const m = /^KV-\s*\d+\s*([A-Za-zА-Яа-яЁё])$/.exec(String(raw || '').trim());
     return m ? m[1].toUpperCase() : '';
@@ -223,7 +214,7 @@ function parseAvailabilityChunk(chunk) {
     let segment, route, status, config, total, free, totalSeg, avs, totalAv, dep = '', arr = '';
     const col4IsConfig = isAircraftConfig(chunk[4]);
 
-    // Новый формат: статус + вр.вылета + вр.прилёта + конфигурация + AU…
+    // новый формат: статус, вр. вылета, вр. прилёта, конфигурация, AU...
     // [2]seg [3]route [4]status [5]dep [6]arr [7]config [8]total [9]free [10]totSeg [11]avs [12]totAv
     if (!col4IsConfig && looksLikeTime(chunk[5]) && chunk.length >= 12) {
         segment = chunk[2];
@@ -241,7 +232,7 @@ function parseAvailabilityChunk(chunk) {
         avs = chunk[i++];
         totalAv = chunk[i++];
     } else if (!col4IsConfig && chunk.length >= 11) {
-        // Старый: статус + config + AU (без времён)
+        // старый: статус, config, AU (без времён)
         segment = chunk[2];
         route = String(chunk[3] || '').trim().toUpperCase();
         status = chunk[4];
@@ -252,7 +243,7 @@ function parseAvailabilityChunk(chunk) {
         avs = chunk[9];
         totalAv = chunk[10];
     } else if (looksLikeTime(chunk[4]) && (isAircraftConfig(chunk[6]) || isAircraftConfig(chunk[7]))) {
-        // Без статуса: dep, arr, config… (arr может быть «+1 08:45» или «+1»+время)
+        // без статуса: dep, arr, config... (arr может быть +1 08:45 или +1 и время отдельно)
         segment = chunk[2];
         route = String(chunk[3] || '').trim().toUpperCase();
         status = '';
@@ -282,11 +273,11 @@ function parseAvailabilityChunk(chunk) {
 
     if (!route) route = parseSegmentField(segment).route;
     const rec = [flight, date, segment, route, config, total, free, totalSeg, avs, totalAv, status, dep, arr];
-    // Признак задержки — отдельный элемент r[13] = буква: свойства массива в снимке (JSON) теряются, индексы остаются.
+    // признак задержки - буква в r[13]: свойства массива в JSON-снимке теряются, индексы остаются
     const delayLetter = delayedFlightLetter(chunk[0]);
     if (delayLetter) rec[13] = delayLetter;
     if (status && !isSalesStatusOpen(status)) {
-        // При слиянии двух файлов «загрузка таб» закрытая строка нового файла должна перекрыть открытую строку старого.
+        // при слиянии закрытая строка нового файла перекрывает открытую строку старого
         if (!availabilityKeepClosed) return null;
         rec.closedRow = true;
     }
@@ -311,10 +302,10 @@ function parseAvailabilityLine(line) {
     return records;
 }
 
-/** Лимит строк загрузки — защита от чрезмерного потребления памяти */
+// лимит строк загрузки, чтобы не съесть всю память
 const MAX_AVAILABILITY_ROWS = 120000;
 
-/** Крупный CSV загрузки: отдаём UI каждые N строк */
+// крупный CSV загрузки: отдаём UI каждые N строк
 async function parseAvailabilityTextAsync(text, onProgress) {
     const lines = String(text || '').split(/\r?\n/);
     const rows = [];
@@ -383,9 +374,8 @@ function collectSalesByDealDateForFlightDate(baseFlight, flyDateStr, flightCode)
             if (!salesByDealDate[deal]) salesByDealDate[deal] = { count: 0, totalFare: 0, paid: 0, paidSum: 0 };
             const d = salesByDealDate[deal];
             d.count++;
-            // totalFare и paid — для среднего тарифа (платные билеты, детский пересчитан), paidSum — выручка (по факту оплаты):
-            // так же, как в таблицах (getSalesAggForKey / getRevenueForRow).
-            // Только оплаченные взрослые билеты, как в таблицах.
+            // totalFare и paid - для среднего тарифа (детские пересчитаны), paidSum - выручка по факту оплаты
+            // как в таблицах (getSalesAggForKey, getRevenueForRow); тариф только по оплаченным взрослым
             const adj = sale.adjustedFare || sale.fare || 0;
             const adult = typeof FareGrid !== 'undefined' && FareGrid.isAdultPaid ? FareGrid.isAdultPaid(sale) : adj > 0;
             if (adult) { d.totalFare += adj; d.paid++; }
@@ -402,7 +392,7 @@ function isLoadTabDirName(name) {
     return l.includes('загрузка таб') || l.includes('загрузкатаб');
 }
 
-/** Сортировка: дата, затем время вылета */
+// Сортировка: дата, затем время вылета
 function compareRowsByDateThenDep(a, b, dir = 'asc') {
     const sign = dir === 'desc' ? -1 : 1;
     const da = typeof compareDateStr === 'function'

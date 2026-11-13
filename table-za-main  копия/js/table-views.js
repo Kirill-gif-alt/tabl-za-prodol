@@ -1,5 +1,5 @@
-// js\table-views.js - таблицы «Динамика продаж», «Экономическая таблица», «ПКЗ».
-// Globals on purpose: no bundler; onclick and other files call by name.
+// таблицы Динамика продаж, Экономическая таблица, ПКЗ
+// глобальные функции специально: без сборщика, onclick и другие файлы зовут по имени
 
 function anyPairLegExtraCols() {
     return !!(pairColVisibility.avgFare || pairColVisibility.lastFare
@@ -16,7 +16,7 @@ function countPairLegExtraCols() {
     return n;
 }
 
-// Галочки столбцов «Экономической таблицы»: две подписанные группы, как и столбцы самой таблицы.
+// галочки столбцов Экономической таблицы, две группы как в самой таблице
 const PAIR_COL_GROUPS = [
     {
         label: 'На каждое направление',
@@ -53,11 +53,9 @@ function buildPairColTogglesHtml() {
         </div>`).join('');
 }
 
-// ---------- общие части панелей «Динамики продаж» и «Экономической таблицы» ----------
-
 const TABLE_STATUS_ORDER = ['open', 'all', 'closed', 'full', 'attention'];
 
-// Сколько вылетов под каждым фильтром (для цифр на кнопках). Считается один раз на отрисовку.
+// число вылетов под каждым фильтром для цифр на кнопках, один раз на отрисовку
 function countRowsByStatus(rows, todayStart) {
     const res = {};
     TABLE_STATUS_ORDER.forEach(st => { res[st] = (rows || []).filter(r => flightRowMatchesStatusFilter(r, todayStart, st)).length; });
@@ -103,7 +101,7 @@ function buildSpecBookingsToggleHtml(label) {
     </label>`;
 }
 
-// Панель «Экономической таблицы»: ряд 1 — фильтры, порядок, поиск; ряд 2 — все галочки двумя подписанными группами.
+// панель Экономической таблицы: ряд 1 - фильтры, порядок, поиск; ряд 2 - все галочки
 function buildPairPanelHtml(base, foundCount, totalCount, counts) {
     const chips = buildStatusChipsHtml(counts, [
         { status: 'open', label: 'Открытые', cls: 'filter-btn-open', title: 'Рейсы, которые ещё не улетели и открыты для продажи' },
@@ -171,8 +169,6 @@ function buildTableFilterPanel(base, foundCount, totalCount, hasExpectedLoad = t
     `;
 }
 
-// ---------- «Динамика продаж»: карточки сверху и одна полоса управления ----------
-
 function dynSalesStampText() {
     if (typeof lastSalesUpdate === 'undefined' || !lastSalesUpdate) return '';
     const d = new Date(lastSalesUpdate);
@@ -185,8 +181,8 @@ function dynFlightsGenitive(n) {
     return n % 10 === 1 && n % 100 !== 11 ? 'вылета' : 'вылетов';
 }
 
-// Три простые карточки: ближайший вылет, кто отстаёт от ожидаемого, сколько продано. Считаются по рейсу целиком,
-// продажи — по показанным строкам (как строка итогов в таблице).
+// три карточки: ближайший вылет, кто отстаёт от ожидаемого, сколько продано
+// по рейсу целиком; продажи - по показанным строкам, как итоги в таблице
 function buildDynCardsHtml(base, rowsAll, sums, todayStart) {
     const card = (label, main, sub, title) => `<div class="dyn-card"${title ? ` title="${escAttr(title)}"` : ''}>
         <div class="dyn-card-label">${escHtml(label)}</div>
@@ -263,7 +259,7 @@ function bindTableControls(cont, base, targetDate, rerenderFn) {
     cont.querySelectorAll('.filter-btn').forEach(btn => {
         btn.onclick = () => {
             tableFilterStatus = btn.dataset.status;
-            tableFilterChosen = true;   // дальше этот выбор запоминается, а не заменяется значением по умолчанию
+            tableFilterChosen = true;   // выбор запоминаем, не подменяем значением по умолчанию
             if (typeof SessionStore !== 'undefined') SessionStore.saveUiSession();
             render();
         };
@@ -316,9 +312,8 @@ function bindTableControls(cont, base, targetDate, rerenderFn) {
     }
 }
 
-// Для Excel: на экране у «Динамики продаж» и «Экономической таблицы» шапка переделана (общие подписи, «Занято, %»
-// рядом с «Продано мест»), а файл остаётся прежним: те же подписи, строки шапки и порядок столбцов.
-// container._xlHead — прежняя шапка, её кладёт отрисовка таблицы. Работаем с копией, экранная таблица не меняется.
+// для Excel: прежняя шапка из container._xlHead (её кладёт отрисовка), подписи и порядок столбцов те же
+// работаем с копией, экранная таблица не меняется
 function prepareTableForExport(container, table, isLive) {
     const legacy = container && container._xlHead;
     if (!legacy || !table || !table.tHead) return table;
@@ -327,15 +322,15 @@ function prepareTableForExport(container, table, isLive) {
     tmp.innerHTML = legacy;
     if (!tmp.tHead) return table;
     t.replaceChild(tmp.tHead, t.tHead);
-    // «Динамика продаж»: «Занято, %» на экране стоит после «Продано мест», в файле — перед «Комментарием», как раньше.
+    // занято, %: на экране после Продано мест, в файле перед Комментарием
     Array.from(t.tBodies[0] ? t.tBodies[0].rows : []).forEach((tr) => {
         const zpk = tr.querySelector('td.col-zpk');
         const note = tr.querySelector('td.col-comment');
         if (zpk && note) tr.insertBefore(zpk, note);
     });
     if (isLive) {
-        // Выгрузка читает видимый текст (innerText), поэтому копия живой таблицы стоит там же, но за краем и невидимая.
-        // Убрать её после выгрузки: см. addExportButtonToTable.
+        // выгрузка читает innerText, поэтому копия таблицы стоит за краем экрана и невидимая
+        // убрать после выгрузки (addExportButtonToTable)
         t.setAttribute('aria-hidden', 'true');
         t.style.cssText = 'position:absolute;left:-99999px;top:0;opacity:0;pointer-events:none';
         container.appendChild(t);
@@ -363,7 +358,7 @@ function selectFlight(base,targetDate=null){
         });
     }
 
-    // Без перехода между вкладками — работаем только в текущей
+    // без перехода: работаем только в текущей вкладке
     if (currentTab === 'table' && typeof actuallyRenderTable === 'function') {
         actuallyRenderTable(flight, targetDate);
     } else if (currentTab === 'pair' && typeof actuallyRenderPairTable === 'function') {
@@ -371,7 +366,7 @@ function selectFlight(base,targetDate=null){
     } else if (currentTab === 'pkz' && typeof actuallyRenderPkzTable === 'function') {
         actuallyRenderPkzTable(flight, targetDate);
     }
-    // main / data / rms — только запоминаем рейс, вкладку не меняем
+    // main / data / rms - только запоминаем рейс, вкладку не меняем
 }
 
 function actuallyRenderTable(base,targetDate=null){
@@ -390,10 +385,9 @@ function actuallyRenderTable(base,targetDate=null){
     }
     if (!showExpectedLoadColumn && tableSort.by === 'delta') tableSort = { by: 'date', dir: 'asc' };
 
-    // === ФИЛЬТРЫ И СОРТИРОВКА ===
     let rows = [...(groupedData[base] || [])];
 
-    // Убираем битые строки (без даты или номера рейса)
+    // убираем битые строки: без даты или номера рейса
     rows = rows.filter(row => row[1] && row[0]);
 
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
@@ -414,7 +408,7 @@ function actuallyRenderTable(base,targetDate=null){
     const totalCount = groupedData[base]?.length || 0;
     const sums = rows.length ? sumUniqueSalesForRows(rows) : { tSum: 0, ySum: 0, d2Sum: 0, d7Sum: 0, d14Sum: 0, d30Sum: 0 };
 
-    // Заголовок, карточки и полоса управления. Цифры на кнопках — по всем вылетам рейса, карточки — по нему же.
+    // цифры на кнопках по всем вылетам рейса; карточки тоже по рейсу
     const rowsAll = (groupedData[base] || []).filter(row => row[1] && row[0]);
     const statusCounts = countRowsByStatus(rowsAll, todayStart);
     ttl.innerHTML = `
@@ -448,7 +442,7 @@ function actuallyRenderTable(base,targetDate=null){
                 rows: tableHtmlCache.rows,
                 rowHeight: 40,
                 scrollIndex: scrollDateIndex,
-                // Отметка «!» комментария — по текущим комментариям, а не из кэша строк.
+                // отметка ! у комментария - по текущим комментариям, не по кэшу строк
                 onPaint() { if (typeof FlightComments !== 'undefined') FlightComments.markRows(cont); }
             });
         } else {
@@ -463,7 +457,8 @@ function actuallyRenderTable(base,targetDate=null){
         return;
     }
 
-    // дата, день, [маршрут], тип, кресла, [спец. брони], продано, занято %, [ждали, разница] — дальше шесть столбцов продаж и комментарий
+    // столбцы до продаж: дата, день, [маршрут], тип, кресла, [спец. брони], продано, занято %,
+    // [ждали, разница]; дальше шесть столбцов продаж и комментарий
     const colsBeforeSales = 2 + (hasSegments ? 1 : 0) + 1 + 2 + (showBook ? 1 : 0) + 1 + (showExpectedLoadColumn ? 2 : 0);
     const rs2 = ' rowspan="2"';
     const expectedHead = showExpectedLoadColumn
@@ -474,7 +469,7 @@ function actuallyRenderTable(base,targetDate=null){
     const staleNow = salesReadyNow && typeof getStaleSalesInfo === 'function' ? getStaleSalesInfo() : null;
     const sn = (v) => salesReadyNow ? formatNum(v || 0) : '—';
     const snRecent = (v) => (salesReadyNow && !staleNow) ? formatNum(v || 0) : '—';
-    // Итоговая строка в шапке: подпись слева, суммы под столбцами продаж (значения те же, что считал прежний вид).
+    // итоговая строка в шапке: подпись слева, суммы под столбцами продаж
     const salesSumRow = `<tr class="table-sales-sum-row dyn-sum-row">
         <th colspan="${colsBeforeSales}" class="dyn-sum-label">${escHtml(sumLabel)}</th>
         <th class="table-head-sum-cell table-head-sum-today">${snRecent(sums.tSum)}</th>
@@ -505,7 +500,7 @@ function actuallyRenderTable(base,targetDate=null){
         <th class="col-sales-cum">За 30 дней</th>
     </tr>${salesSumRow}</thead><tbody>`;
 
-    // Вид для Excel остаётся прежним (его читает выгрузка): те же подписи и порядок столбцов, что были до переделки.
+    // legacy-шапка для Excel, её читает выгрузка; подписи и столбцы не трогать
     const legacyBefore = colsBeforeSales - 1;
     const legacyExpected = showExpectedLoadColumn ? '<th title="Ожидаемая загрузка.xlsx">Ожидаемая</th><th title="Без файла — «—», не ноль">Δ к ожидаемой</th>' : '';
     const legacyHead = `<thead><tr>
@@ -562,9 +557,9 @@ function actuallyRenderTable(base,targetDate=null){
         const ac=getAircraftType(row[4]);
         let expectedCells = '';
         if (showExpectedLoadColumn) {
-            // Ожидаемая и Δ — как в RMS и на графплане (сдвиг на дату среза продаж, не больше кресел в продаже).
+            // ожидаемая и Δ как в RMS и на графплане: сдвиг на дату среза продаж, не больше кресел в продаже
             const rm=getRowMetrics(row,base);
-            // У улетевшего рейса ожидаемой нет, как и раньше.
+            // у улетевшего рейса ожидаемой нет
             const evR=rm.flew?null:rm.evR, delta=rm.flew?null:rm.delta, deltaCls=rm.deltaCls;
             const deltaCell=delta!==null?`<span class="${deltaCls}">${delta>0?'+':''}${delta}</span>`:'—';
             expectedCells = `<td class="font-semibold">${evR!==null?evR:'—'}</td><td class="font-semibold">${deltaCell}</td>`;
@@ -662,7 +657,6 @@ function actuallyRenderPairTable(selectedBase, targetDate = null) {
         return tableSort.dir === 'asc' ? va - vb : vb - va;
     });
 
-    // Цифры на кнопках фильтров — сколько строк «туда-обратно» под каждым из них (так же, как строки в таблице).
     const statusCounts = {};
     TABLE_STATUS_ORDER.forEach((st) => {
         statusCounts[st] = st === tableFilterStatus
@@ -680,7 +674,7 @@ function actuallyRenderPairTable(selectedBase, targetDate = null) {
         return;
     }
 
-    // сортировка date+dep уже в entries через getDataPairEntries
+    // date+dep уже отсортированы в getDataPairEntries
     const showBook = !!showSpecBookings;
     // base: Места · [Спец. брони] · Загр. · ЗПК
     const legBaseCols = showBook ? 4 : 3;
@@ -733,7 +727,7 @@ function actuallyRenderPairTable(selectedBase, targetDate = null) {
 
     const segmentHead = hasSegments ? `<th rowspan="${headRowSpan}">Маршрут</th>` : '';
 
-    // Вид для Excel остаётся прежним (его читает выгрузка): строка «Пара рейсов» и подписи только на экране.
+    // строка 'Пара рейсов' и подписи - только на экране, в файл не попадают
     const legacyHead = `<thead>
             <tr class="pair-head-main">
                 <th rowspan="${headRowSpan}" class="col-date">Дата</th>
@@ -760,7 +754,7 @@ function actuallyRenderPairTable(selectedBase, targetDate = null) {
         </thead>`;
     cont._xlHead = legacyHead;
 
-    // Шапка на экране: все ячейки сплошные, без зазоров; над столбцами пары — своя общая подпись.
+    // шапка на экране сплошная, без зазоров; над столбцами пары своя общая подпись
     const pairColKeys = [showTotalRev && 'totalRev', showSubsidy && 'subsidy', showTotalExp && 'totalExp', showFin && 'fin'].filter(Boolean);
     const pairGrpFirst = (k) => (pairColKeys[0] === k ? ' pair-grp-first' : '');
     const pairColTh = (k, cls, text) => (pairColKeys.includes(k)
@@ -829,7 +823,7 @@ function actuallyRenderPairTable(selectedBase, targetDate = null) {
             }
             const splitStart = legCls === 'pair-leg-in' ? ' pair-split-start' : '';
             const legSalesBase = getBaseFlight(m.flightBase);
-            // порядок: ср. тариф → посл. тариф → выручка → расходы
+            // порядок: ср. тариф -> посл. тариф -> выручка -> расходы
             const extras = [];
             if (showAvg) extras.push({ val: m.avg, cls: '' });
             if (showLast) extras.push({ val: m.last, cls: '' });
@@ -873,7 +867,7 @@ function actuallyRenderPairTable(selectedBase, targetDate = null) {
         const outSubOn = !outM.empty && !!outM.subsidized;
         const inSubOn = !inM.empty && !!inM.subsidized;
         const subLegs = (outSubOn ? 1 : 0) + (inSubOn ? 1 : 0);
-        // на ногу: (сумма из файла / 2) × 1000; по паре — сумма двух ног
+        // на ногу: (сумма из файла / 2) × 1000; по паре - сумма двух ног
         const pairSubsidyRub = (outM.subsidyOneWay || 0) + (inM.subsidyOneWay || 0);
         const finN = (totalRevN - totalExpN) + pairSubsidyRub;
         const totalRevCell = showTotalRev ? `
@@ -945,8 +939,8 @@ function bindTableRowDelegation(cont) {
         }
     };
 
-    // Одинарный клик — выделение ячеек и карточка рейса (если показана кнопкой ▤); детализация — по двойному клику.
-    // В «Экономической таблице» клик по ячейке «туда» или «обратно» показывает в карточке именно этот рейс.
+    // одинарный клик - выделение и карточка рейса (если открыта кнопкой), детали - по двойному
+    // в Экономической таблице клик по ячейке туда или обратно показывает этот рейс в карточке
     cont.addEventListener('click', (e) => {
         if (typeof FlightCard === 'undefined' || !FlightCard.isOpen || !FlightCard.isOpen()) return;
         if (e.target.closest('input, button, a, select, textarea, .table-cols-toggle-btn')) return;
@@ -973,7 +967,7 @@ function bindTableRowDelegation(cont) {
         if (row) openDetail(row.dataset.flightBase, row.dataset.date, row.dataset.flightCode);
     });
 
-    // С клавиатуры: Enter или Пробел на строке — как двойной клик
+    // с клавиатуры: Enter или Пробел как двойной клик
     cont.addEventListener('keydown', (e) => {
         if (e.key !== 'Enter' && e.key !== ' ') return;
         const row = e.target;
@@ -1091,7 +1085,7 @@ function createPkzView(c) {
     }
 }
 
-/** ПКЗ из NAV — ручной ввод (позже из файла), key: date|flight */
+// ПКЗ из NAV, ручной ввод (позже из файла), ключ date|flight
 const PKZ_NAV_STORE_KEY = 'krasavia_pkz_nav_v1';
 
 let pkzNavMapCache = { raw: null, map: {} };
@@ -1130,7 +1124,7 @@ function pkzNavKey(dateStr, flightCode) {
     return `${dateStr}|${cleanFlight(flightCode || '')}`;
 }
 
-// Строка вылета (для типа ВС), если вызывающий её не передал.
+// строка вылета для типа ВС, если вызывающий её не передал
 function findFlightRowForPkz(dateStr, flightCode) {
     const code = cleanFlight(flightCode || '');
     const base = typeof getBaseFlight === 'function' ? getBaseFlight(code) : code;
@@ -1138,7 +1132,7 @@ function findFlightRowForPkz(dateStr, flightCode) {
     return rows.find(r => r && r[1] === dateStr && cleanFlight(r[0]) === code) || rows.find(r => r && r[1] === dateStr) || null;
 }
 
-// ПКЗ из NAV: ручное значение для вылета (таблица «ПКЗ») → правило справочника (период + направление + тип ВС).
+// ПКЗ из NAV: сначала ручное значение из таблицы ПКЗ, потом правило справочника (период + направление + тип ВС)
 function getPkzNavValue(dateStr, flightCode, row) {
     if (typeof SharedOverrides !== 'undefined') {
         const v = SharedOverrides.getPkzNav(dateStr, flightCode);
@@ -1156,7 +1150,7 @@ function getPkzNavValue(dateStr, flightCode, row) {
 
 function setPkzNavValue(dateStr, flightCode, value) {
     if (typeof ProfileAuth !== 'undefined' && !ProfileAuth.hasPermission('edit_pkz_nav')) return;
-    // Запись только через SharedOverrides (общий файл pkz-nav.json); отдельной записи в localStorage здесь нет.
+    // пишем только через SharedOverrides (pkz-nav.json), в localStorage здесь не пишем
     if (typeof SharedOverrides !== 'undefined') SharedOverrides.setPkzNav(dateStr, flightCode, value);
 }
 
@@ -1173,7 +1167,7 @@ function bindSubsidyInputs(cont) {
             if (typeof ProfileAuth !== 'undefined' && !ProfileAuth.hasPermission('edit_subsidy')) return;
             const raw = inp.value.trim();
             await SharedOverrides.setSubsidy(inp.dataset.flight, inp.dataset.date, raw === '' ? '' : raw);
-            // Субсидия меняет проверку рейсов: обновить «!» на других вкладках и счётчик в шапке.
+            // субсидия меняет проверку рейсов: обновляем ! на других вкладках и счётчик в шапке
             if (typeof FlightChecks !== 'undefined') FlightChecks.refreshViews();
             const host = document.getElementById('pair-table-container');
             const base = currentFlight;
@@ -1197,7 +1191,7 @@ function bindPkzNavInputs(cont) {
     cont.querySelectorAll('.pkz-nav-input').forEach((inp) => {
         if (inp.dataset.bound) return;
         inp.dataset.bound = '1';
-        // не запускать выделение / открытие карточки
+        // не запускать выделение и карточку рейса
         ['click', 'mousedown', 'dblclick'].forEach((ev) => {
             inp.addEventListener(ev, (e) => e.stopPropagation());
         });
@@ -1241,7 +1235,7 @@ function actuallyRenderPkzTable(base, targetDate = null) {
     if (!cont || !ttl) return;
     if (tableSort.by === 'dtd') tableSort = { by: 'date', dir: 'asc' };
 
-    // Число вылетов — в горизонте ПКЗ (столько строк в таблице), а не всех вылетов рейса в файле: раньше «81 · горизонт 10 дн.» при пяти строках.
+    // число вылетов считаем в горизонте ПКЗ, как строк в таблице, а не по всему файлу
     const flightCount = (groupedData[base] || []).filter(r => r[1] && isPkzHorizonDate?.(r[1])).length;
     ttl.innerHTML = `
         <span class="table-flight-code">${escHtml(base)}</span>
@@ -1310,7 +1304,7 @@ function actuallyRenderPkzTable(base, targetDate = null) {
         const fd = parseLocalDate(date);
         const flew = fd ? fd < todayStart : false;
         const denom = seatsOnSale;
-        const pct = (denom > 0) ? Math.round(free / denom * 100) : null;   // нет кресел в продаже — прочерк, как в «Динамике продаж»
+        const pct = (denom > 0) ? Math.round(free / denom * 100) : null;   // нет кресел в продаже - прочерк, как в Динамике продаж
         const route = getRouteFromRow(row);
         const showRoute = shouldShowRouteForRow(row, routeCounts);
         const ac = getAircraftType(row[4]);

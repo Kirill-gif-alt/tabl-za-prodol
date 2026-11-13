@@ -1,15 +1,15 @@
-// Настройки оформления — по вкладкам, per profile
+// настройки оформления по вкладкам, на каждый профиль
 window.ThemeSettings = (function () {
     const STORAGE_PREFIX = 'krasavia_theme_';
     let previewTimer = null;
     let formBuilt = false;
     let pendingTabOrder = null;
     let pendingTabNames = null;
-    // Цвета таблиц, выбранные пользователем вручную (не пресетом).
+    // цвета таблиц, выбранные вручную (не пресетом)
     const TABLE_COLOR_KEYS = ['dataOut', 'dataIn', 'dataCardHead', 'pairOutBg', 'pairInBg'];
     let manualKeys = new Set();
 
-    // Меню настроек — по смыслу: оформление, работа, безопасность. Цвета отдельных вкладок — один пункт с выбором вкладки.
+    // меню по смыслу: оформление, работа, безопасность; цвета вкладок - один пункт с выбором вкладки
     const NAV = [
         { group: 'Оформление', items: [
             { id: 'general', label: 'Тема и основные цвета', hint: 'Готовая тема или свои цвета шапки, кнопок, фона и текста. Сохраняется для вашего профиля.' },
@@ -192,7 +192,7 @@ window.ThemeSettings = (function () {
             if (!raw) return { ...DEFAULTS };
             const saved = JSON.parse(raw);
             const theme = { ...DEFAULTS, ...saved };
-            // Тема сохранена до появления цветов новых вкладок — берём их из её же цветов, а не из светлого шаблона.
+            // тема сохранена до появления цветов новых вкладок: берём из её же цветов, а не из светлого шаблона
             const has = (k) => Object.prototype.hasOwnProperty.call(saved, k);
             const dark = hexLuminance(theme.bg || DEFAULTS.bg) < 0.25;
             const derive = {
@@ -264,7 +264,7 @@ window.ThemeSettings = (function () {
             const val = t[f.key] || DEFAULTS[f.key];
             if (val) root.style.setProperty(f.css, val);
         });
-        // Пять цветов таблиц красят, только если пользователь сам выставил их вручную (t.manual); пресет и значения по умолчанию их не включают.
+        // пять цветов таблиц красим, только если их выставил сам пользователь (t.manual)
         const manual = Array.isArray(t.manual) ? t.manual : [];
         [
             ['dataOut', 'th-data-out'], ['dataIn', 'th-data-in'], ['dataCardHead', 'th-data-head'],
@@ -316,7 +316,7 @@ window.ThemeSettings = (function () {
 
     function reset() {
         try { localStorage.removeItem(getStorageKey()); } catch { /* ignore */ }
-        // Порядок и названия вкладок не трогаем: сбрасываются только цвета.
+        // порядок и названия вкладок не трогаем, сбрасываются только цвета
         manualKeys = new Set();
         apply(DEFAULTS, true);
         return { ...DEFAULTS };
@@ -435,12 +435,11 @@ window.ThemeSettings = (function () {
         }
         if (sectionId === 'excel') renderExcelFolders(container);
         if (sectionId === 'params') renderParams(container);
-        // «Сбросить цвета» — только в разделах оформления.
+        // кнопка "Сбросить цвета" только в разделах оформления
         const resetBtn = document.getElementById('profile-settings-reset');
         if (resetBtn) resetBtn.hidden = !(sectionId === 'general' || sectionId === 'colors');
     }
 
-    // ---------- Параметры расчётов (только администратор) ----------
     let paramsFilter = '';
 
     function renderParams(container) {
@@ -505,7 +504,7 @@ window.ThemeSettings = (function () {
         });
     }
 
-    // Значения полей «Параметров расчётов» из формы; скрытые поиском параметры не трогаем.
+    // значения из формы; скрытые поиском параметры не трогаем
     function collectParams(wrap) {
         const vals = {};
         Params.defs().forEach(d => { vals[d.key] = d.value; });
@@ -520,7 +519,7 @@ window.ThemeSettings = (function () {
         return { vals, empty };
     }
 
-    // Есть ли в форме параметров несохранённые правки.
+    // есть ли несохранённые правки в форме
     function paramsEdited(wrap) {
         if (!wrap || typeof Params === 'undefined') return false;
         return Array.from(wrap.querySelectorAll('[data-param]')).some(inp => {
@@ -530,11 +529,11 @@ window.ThemeSettings = (function () {
         });
     }
 
-    // Общий путь для «Сохранить параметры» и нижней «Сохранить». Возвращает false, если сохранять нельзя.
+    // общий путь для двух кнопок "Сохранить"; false, если сохранять нельзя
     async function saveParamsFrom(wrap, container) {
         const { vals, empty } = collectParams(wrap);
         const st = wrap.querySelector('#theme-params-status');
-        // Пустое поле не сбрасываем молча к значению по умолчанию — просим заполнить.
+        // пустое поле не сбрасываем молча в дефолт, просим заполнить
         if (empty) { if (typeof showToast === 'function') showToast(`Заполните: «${empty}»`, 'error'); if (st) st.textContent = ''; return false; }
         if (st) st.textContent = 'Сохраняю…';
         const res = await Params.save(vals);
@@ -587,7 +586,7 @@ window.ThemeSettings = (function () {
     }
 
     function bindFormEvents(container) {
-        // Форма пересобирается («Сбросить»), а контейнер тот же — обработчики вешаем один раз.
+        // форма пересобирается при "Сбросить", контейнер тот же: обработчики вешаем один раз
         if (container.dataset.eventsBound) return;
         container.dataset.eventsBound = '1';
         container.addEventListener('click', (e) => {
@@ -839,7 +838,7 @@ window.ThemeSettings = (function () {
         }
         fillSalesRoutes(body, prof);
         fillSalesRanges(body, prof);
-        // Пункты «только для администратора» — в меню только у него.
+        // пункты для админа, остальным скрыты
         const isAdmin = !!(prof && prof.isAdmin);
         body.querySelectorAll('.theme-section-nav [data-admin-only]').forEach(el => { el.hidden = !isAdmin; });
         if (!isAdmin && body.querySelector('.theme-section-panel[data-section="salesAdmin"].active, .theme-section-panel[data-section="params"].active')) showSection(body, 'general');
@@ -852,11 +851,11 @@ window.ThemeSettings = (function () {
         if (!modal || !body) return;
         pendingTabOrder = typeof TabOrder !== 'undefined' ? TabOrder.getEditableTabs() : null;
         pendingTabNames = null;
-        // Раздел «Вкладки» мог остаться открытым с прошлого раза — перерисовать с сохранёнными данными.
+        // раздел "Вкладки" мог остаться открытым: перерисовываем с сохранёнными данными
         const tabsOpen = body.querySelector('.theme-section-panel[data-section="tabs"].active');
         if (tabsOpen) showSection(body, 'tabs');
         buildFormOnce(body);
-        // Форма строится один раз — цвета в ней заполняем заново: после смены профиля там были бы чужие.
+        // форма строится один раз, цвета заполняем заново: после смены профиля там остались бы чужие
         updateInputsFromTheme(body, load());
         manualKeys = new Set(load().manual || []);
         syncAdminSettings(body);
@@ -864,7 +863,7 @@ window.ThemeSettings = (function () {
         modal.classList.add('open');
     }
 
-    // Закрыли без «Сохранить» — убрать предпросмотр, вернуть сохранённые цвета.
+    // закрыли без сохранения - убираем предпросмотр, возвращаем сохранённые цвета
     function closeModal() {
         const modal = document.getElementById('profile-settings-modal');
         if (!modal || !modal.classList.contains('open')) return;
@@ -877,7 +876,7 @@ window.ThemeSettings = (function () {
         apply(load(), false);
         if (typeof TabOrder !== 'undefined') TabOrder.apply();
         document.getElementById('profile-settings-btn')?.addEventListener('click', openModal);
-        // Esc закрывает настройки, как и остальные окна.
+        // esc закрывает, как остальные окна
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && document.getElementById('profile-settings-modal')?.classList.contains('open')) closeModal();
         });
@@ -889,7 +888,7 @@ window.ThemeSettings = (function () {
         document.getElementById('profile-settings-save')?.addEventListener('click', async () => {
             const bodyEl = document.getElementById('profile-settings-body');
             if (!saveSalesRanges(bodyEl)) return;
-            // Правки «Параметров расчётов» (только администратор) сохраняем тем же путём, что и «Сохранить параметры».
+            // правки параметров (только админ) сохраняем тем же путём, что и "Сохранить параметры"
             const pWrap = bodyEl && bodyEl.querySelector('#theme-params-wrap');
             const pProf = typeof ProfileAuth !== 'undefined' ? ProfileAuth.getCurrentProfile() : null;
             if (pWrap && pProf && pProf.isAdmin && paramsEdited(pWrap)) {

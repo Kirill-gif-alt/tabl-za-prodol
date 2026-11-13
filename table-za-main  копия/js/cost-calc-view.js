@@ -1,5 +1,5 @@
-// Вкладка «Расчёт расходов»: маршрут + ВС + субсидия + доход → расходы и фин. рез. туда+обратно.
-// В файле сумма на пару; здесь × 1000 без деления на 2. Экономическая таблица не меняется.
+// расчет расходов: маршрут, ВС, субсидия и доход дают расходы и фин. рез. туда-обратно
+// в файле сумма на пару, здесь × 1000 без деления на 2; экономическая таблица не меняется
 
 const COST_CALC_STORE = 'krasavia_cost_calc_v1';
 
@@ -29,7 +29,7 @@ function parseCostCalcRevenue(raw) {
     const s = String(raw || '').trim().replace(/\s/g, '').replace(',', '.');
     if (s === '') return null;
     const n = parseFloat(s);
-    // Не число или нереально огромное («1e999») — как пустое поле: на экране не должно быть «Infinity» и «1e+21».
+    // не число или огромное (1e999) - считаем пустым полем, иначе на экране Infinity и 1e+21
     return !isFinite(n) || Math.abs(n) > 1e13 ? null : n;
 }
 
@@ -51,8 +51,8 @@ function createCostCalcView(c) {
     refreshCostCalc();
 }
 
-// Загрузка файла себестоимости и субсидий (кнопка в «Отчётах»): выбор файла → разбор → общий снимок для всех ПК.
-// Кто может загрузить файл расходов: правка справочника субсидий (запись в общий справочник) или загрузка данных (только эта сессия).
+// загрузка файла себестоимости и субсидий (кнопка в "Отчетах"): выбор файла, разбор, общий снимок для всех ПК
+// грузить может тот, кто правит справочник субсидий (он общий), или у кого право загрузки данных (только эта сессия)
 function costsUploadAccess() {
     if (typeof ProfileAuth === 'undefined') return { ok: true, local: false };
     const shared = !!(typeof SubsidyRef !== 'undefined' && SubsidyRef.canEdit && SubsidyRef.canEdit());
@@ -78,7 +78,7 @@ function uploadCostsFile() {
                 const form = document.getElementById('cost-calc-form');
                 if (form) form.dataset.built = '';
                 refreshCostCalc();
-                // Записываем в справочник («Суммы субсидии и себестоимость») — он общий для всех и главнее файлов.
+                // пишем в справочник "Суммы субсидии и себестоимость": он общий и важнее файлов
                 let saved = false;
                 if (typeof SubsidyRef !== 'undefined' && SubsidyRef.canEdit && SubsidyRef.canEdit() && RouteCosts.pivotEntries) {
                     const entries = RouteCosts.pivotEntries();
@@ -97,7 +97,7 @@ function uploadCostsFile() {
             }
         });
         inp.addEventListener('cancel', () => { inp.remove(); resolve(false); });
-        // Браузеры без события cancel: после закрытия диалога окно получает фокус.
+        // в браузерах без события cancel: после закрытия диалога окно получает фокус
         window.addEventListener('focus', () => {
             setTimeout(() => {
                 if (inp.isConnected && !(inp.files && inp.files.length)) { inp.remove(); resolve(false); }
@@ -115,14 +115,14 @@ function costCalcFlightsWord(n) {
 
 const COST_CALC_MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
 
-// Рубли для экрана: ноль — «0 ₽», а не прочерк. Знак минус — настоящий («−»).
+// рубли для экрана: ноль - "0 ₽", не прочерк; минус настоящий (-)
 function costCalcMoney(n) {
     if (n == null || isNaN(n)) return '';
     const v = Math.round(Number(n));
     return (v < 0 ? '−' : '') + formatNum(Math.abs(v)) + ' ₽';
 }
 
-// То же, но у прибыли стоит «+».
+// то же, но у прибыли плюс
 function costCalcSigned(n) {
     const v = Math.round(Number(n));
     return (v > 0 ? '+' : '') + costCalcMoney(v);
@@ -140,7 +140,7 @@ function costCalcKpiRow(title, expenses, subsidy, revenue, subsidized, compact) 
     const fin = revenue == null || noExp ? null : (revenue - expenses + (subsidy || 0));
     const finR = fin == null ? null : Math.round(fin);
     const finCls = finR == null ? '' : (finR > 0 ? ' cost-calc-pos' : (finR < 0 ? ' cost-calc-neg' : ''));
-    // Плитка: подпись, крупное значение, пояснение мелким серым. Если значения нет — понятный текст вместо прочерка.
+    // плитка: подпись, значение, мелкое пояснение; нет значения - текст вместо прочерка
     const cell = (cls, label, val, hint, none) => `<div class="cost-calc-kpi ${cls}${none ? ' cost-calc-kpi-none' : ''}">
                     <span class="cost-calc-kpi-label">${label}</span>
                     <span class="cost-calc-kpi-val">${val}</span>
@@ -171,7 +171,6 @@ function costCalcKpiRow(title, expenses, subsidy, revenue, subsidized, compact) 
         </div>`;
 }
 
-// ---------- Данные сайта по маршруту: сколько мест в самолёте и по каким билетам продаём ----------
 let costCalcMemo = null;
 
 function costCalcCityKey(name) {
@@ -185,14 +184,14 @@ function costCalcMedian(list) {
     return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
 }
 
-// Места одного рейса по типу ВС из настроек (запасной вариант, когда рейсов этого типа на сайте нет).
+// места рейса по типу ВС из настроек, запасной вариант, если рейсов этого типа на сайте нет
 function costCalcParamSeats(acKey) {
     if (typeof PV === 'undefined') return null;
     const v = acKey === 'atr72' ? PV.ATR72_CAPACITY : acKey === 'yak42' ? PV.YAK42_CAPACITY : acKey === 'atr42' ? PV.DEFAULT_AIRCRAFT_CAPACITY : null;
     return v > 0 ? v : null;
 }
 
-// Всё, что сайт знает про маршрут: рейсы, места по типам ВС, оплаченные билеты, предельные тарифы справочника.
+// рейсы, места по типам ВС, оплаченные билеты и предельные тарифы из справочника
 function costCalcRouteData(fromKey, toKey) {
     const gd = typeof groupedData !== 'undefined' ? groupedData : null;
     const sd = typeof salesDetails !== 'undefined' ? salesDetails : null;
@@ -247,7 +246,7 @@ function costCalcRouteData(fromKey, toKey) {
         });
         data.limits.sort((x, y) => x - y);
     }
-    // Сетка тарифов: классы, которые реально есть на рейсах маршрута. Цена класса на пару рейсов — среднее «туда» и «обратно».
+    // классы, которые есть на рейсах маршрута; цена класса на пару - среднее туда и обратно
     if (codes.length && typeof FareGrid !== 'undefined' && FareGrid.ladderFor) {
         const pick = { there: null, back: null };
         codes.forEach((code) => {
@@ -259,7 +258,7 @@ function costCalcRouteData(fromKey, toKey) {
             if (!code) return;
             let lad = [];
             try { lad = FareGrid.ladderFor(code) || []; } catch { lad = []; }
-            // Меньше 500 ₽ — тариф не в рублях (международная сетка), такие не берём.
+            // меньше 500 ₽ - тариф не в рублях (международная сетка), такие не берем
             lad.forEach((l) => { if (l && l.price >= 500) (byCls[l.cls] = byCls[l.cls] || []).push(l.price); });
         });
         data.grid = Object.keys(byCls)
@@ -273,7 +272,7 @@ function costCalcRouteData(fromKey, toKey) {
 // Мест в самолёте по типу.
 const COST_CALC_TYPE_SEATS = { atr42: 46, atr72: 72, yak42: 120, an24: 48, an26: 42 };
 
-// Места одного рейса: { n, src } — по типу самолёта, иначе из данных сайта, иначе из настроек; null, если неизвестно.
+// места рейса: { n, src } - по типу ВС, иначе из данных сайта, иначе из настроек; null, если неизвестно
 function costCalcSeatsOne(data, acKey) {
     if (COST_CALC_TYPE_SEATS[acKey]) return { n: COST_CALC_TYPE_SEATS[acKey], src: 'type' };
     if (data.seats[acKey] > 0) return { n: data.seats[acKey], src: 'site' };
@@ -306,7 +305,7 @@ function costCalcVerdict(expenses, subsidy, revenue) {
         </div>`;
 }
 
-// Таблица: по какому билету сколько мест занять на пару рейсов, чтобы не уйти в минус.
+// таблица: по какому тарифу сколько мест занять на пару рейсов, чтобы не уйти в минус
 function costCalcNeedTable(expenses, subsidy, acKey, data) {
     const need = Math.max(0, Math.round(expenses - (subsidy || 0)));
     const head = (sub) => `<div class="cost-calc-block-head"><h3>Сколько мест занять и по какому билету, чтобы не уйти в минус</h3><span class="cost-calc-block-sub">${sub}</span></div>`;
@@ -317,7 +316,7 @@ function costCalcNeedTable(expenses, subsidy, acKey, data) {
     const one = costCalcSeatsOne(data, acKey);
     const total = one ? one.n * 2 : null;
 
-    // Цены: тарифы из сетки тарифов маршрута, иначе предельные тарифы справочника. Придуманных цен не показываем.
+    // цены: из сетки тарифов маршрута, иначе предельные из справочника; придуманных цен не показываем
     const avg = data.fareN ? data.fareSum / data.fareN : null;
     const avgTxt = avg ? ` Средний проданный взрослый билет на маршруте: ${costCalcMoney(avg)} (по ${formatNum(data.fareN)} билетам).` : '';
     let rows = [], priceNote = '';
@@ -337,7 +336,7 @@ function costCalcNeedTable(expenses, subsidy, acKey, data) {
             return `<section class="cost-calc-block card">${head('')}
                 <p class="cost-calc-block-empty"><b>Таблицу показать не из чего:</b> ${why}. Не знаем и число мест в этом самолёте: рейсов этого типа на маршруте нет, а в настройках оно не задано. Загрузите продажи в «Отчётах» или внесите тариф маршрута в справочник тарифов.</p></section>`;
         }
-        // Цен нет — показываем наоборот: какой средний билет нужен при каждой загрузке.
+        // цен нет - показываем обратное: какой средний билет нужен при каждой загрузке
         const back = [50, 60, 70, 80, 90, 100].map((pct) => {
             const seats = Math.ceil(total * pct / 100);
             return `<tr><td><b>${pct}%</b></td><td class="cost-calc-num"><b>${formatNum(seats)}</b> ${seatWord(seats)}</td>
@@ -352,7 +351,7 @@ function costCalcNeedTable(expenses, subsidy, acKey, data) {
         </section>`;
     }
 
-    // Тарифы, при которых мест в паре рейсов не хватит, не показываем.
+    // тарифы, при которых мест на пару рейсов не хватит, скрываем
     const fit = total ? rows.filter(r => Math.ceil(need / r.price) <= total) : rows;
     const hidden = rows.length - fit.length;
     if (!fit.length) {
@@ -396,7 +395,7 @@ function costCalcNeedTable(expenses, subsidy, acKey, data) {
     </section>`;
 }
 
-// Список самолётов маршрута: «Як-42 · 114 мест», если число мест известно.
+// список ВС маршрута: "Як-42 · 114 мест", если число мест известно
 function costCalcAcOptions(route, keep) {
     const data = costCalcRouteData(route.fromKey, route.toKey);
     return RouteCosts.listAircraft(route.fromKey, route.toKey).map((a) => {
@@ -413,7 +412,7 @@ function refreshCostCalc() {
     costCalcMemo = null;
 
     if (typeof RouteCosts === 'undefined' || !RouteCosts.loaded) {
-        // Кнопка — тот же обработчик и то же правило, что у «Отчёты» → «Выгрузки» → «Себестоимость и субсидии».
+        // кнопка и право такие же, как в Отчеты - Выгрузки - Себестоимость и субсидии
         const upAccess = costsUploadAccess();
         const canUploadCosts = typeof uploadCostsFile === 'function' && upAccess.ok;
         form.innerHTML = '';
@@ -445,7 +444,7 @@ function refreshCostCalc() {
     const acOpts = costCalcAcOptions(route, ac);
     const formSig = routes.map(r => r.id).join(',') + '|' + ac + '|' + acOpts;
     if (form.dataset.built === formSig && form.childElementCount) {
-        // Форма та же, но файл расходов мог обновиться — пересчитываем цифры.
+        // форма та же, но файл расходов мог обновиться, пересчитываем
         if (typeof paintCostCalcResult === 'function') paintCostCalcResult(loadCostCalcState());
         return;
     }
@@ -533,7 +532,7 @@ function paintCostCalcResult(st) {
     const revenue = parseCostCalcRevenue(st.revenue);
 
     if (!q.found) {
-        // Расходы могут быть в файле только с другим значением субсидии — подсказываем, что переключить.
+        // расходы в файле могут быть только при другой субсидии - подсказываем, что переключить
         const other = RouteCosts.quote(fromKey, toKey, st.ac, !st.subsidized);
         const hint = other.found
             ? (st.subsidized
@@ -551,12 +550,12 @@ function paintCostCalcResult(st) {
     const data = costCalcRouteData(fromKey, toKey);
     const sub = !!st.subsidized;
     const krai = q.krai ? '<p class="cost-calc-note">Краевой маршрут: субсидия 0 при любом выборе.</p>' : '';
-    // Вывод словами, плитки и таблица «сколько мест занять» — по среднему за месяцы (или по единственной строке файла).
+    // вывод, плитки и таблица - по среднему за месяцы (или по единственной строке файла)
     const top = (title, exp, subs) => (exp == null ? '' : costCalcVerdict(exp, subs, revenue))
         + costCalcKpiRow(title, exp, subs, revenue, sub)
         + (exp == null ? '' : costCalcNeedTable(exp, subs, st.ac, data));
 
-    // Файл по месяцам: строка на каждый месяц и средняя за них. Старый файл — одна строка.
+    // файл по месяцам: строка на месяц и средняя; старый файл - одна строка
     if (q.months && q.months.length) {
         const have = q.months.filter(x => x.expenses != null);
         const avg = (k) => have.reduce((a, x) => a + x[k], 0) / have.length;

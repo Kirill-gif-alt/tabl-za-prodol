@@ -1,14 +1,7 @@
-// Выделение в таблицах (плашка кол-во / сумма / среднее). Глобальные функции: сборщика нет, вызываются по имени.
+// выделение в таблицах, плашка кол-во / сумма / среднее; глобальные функции без сборщика, зовутся по имени
 
-/**
- * Выделение в таблицах как в Excel:
- * — клик по заголовку столбца → весь столбец
- * — клик по первой ячейке строки (дата) → вся строка
- * — протягивание вниз → диапазон в одном столбце
- * — протягивание вправо/влево → диапазон в одной строке
- * — Ctrl+клик → добавить/убрать столбец, строку или ячейку
- * Снизу: кол-во / сумма / среднее по выделенным числам.
- */
+// выделение как в Excel: клик по заголовку - столбец, клик по дате - строка, протягивание - диапазон
+// Ctrl+клик добавляет и убирает столбец, строку или ячейку; снизу кол-во / сумма / среднее
 let _clearActiveTableSelection = null;
 function clearActiveTableSelection() {
     if (typeof _clearActiveTableSelection === 'function') _clearActiveTableSelection();
@@ -30,12 +23,12 @@ function initSelectionStatusBar() {
         document.body.appendChild(bar);
     }
 
-    /** @type {WeakMap<HTMLTableElement, Set<string>>} */
+    // @type {WeakMap<HTMLTableElement, Set<string>>}
     const selectedByTable = new WeakMap();
     let drag = null; // { table, mode: 'col'|'row'|'cell', r0, c0, additive }
     let activeTable = null;
 
-    // Ячейка с датой (09.10, 09.10.2026, «29.09/30.09», дата с номером доп. рейса) — не число, в сумму не идёт.
+    // ячейка с датой (09.10, 09.10.2026, 29.09/30.09, дата с номером доп. рейса) не число, в сумму не идет
     const DATE_CELL_RE = /(^|[^\d])(0[1-9]|[12]\d|3[01])\.(0[1-9]|1[0-2])(\.\d{4}|\/|\s|$)/;
 
     const parseNumsFromText = (text) => {
@@ -46,9 +39,9 @@ function initSelectionStatusBar() {
             .replace(/[₽%]/g, ' ')
             .replace(/\bкг\b/gi, ' ')
             .replace(/ЗАКРЫТ|УЛЕТЕЛ/gi, ' ')
-            // Минус в таблицах пишется по-разному: «−» (типографский), «–», «-». Минус — только перед числом:
-            // не между числами («40–45», «10 – 15» — диапазон) и не после буквы («KV-106» — номер рейса).
-            .replace(/(^|[^A-Za-zА-Яа-яЁё])(kv|кв)[\s-]*\d+/gi, '$1 ') // номер рейса — не число
+            // минус пишется по-разному: unicode minus, en dash, дефис; минус только перед числом
+            // не между числами (40-45, 10 - 15 - диапазон) и не после буквы (KV-106 - номер рейса)
+            .replace(/(^|[^A-Za-zА-Яа-яЁё])(kv|кв)[\s-]*\d+/gi, '$1 ') // номер рейса - не число
             .replace(/[\u2212\u2013\u2012\uFE63\uFF0D]/g, '-')
             .replace(/(\d)\s*-\s*(?=\d)/g, '$1 ')
             .replace(/([A-Za-zА-Яа-яЁё])-/g, '$1 ')
@@ -63,10 +56,10 @@ function initSelectionStatusBar() {
         return out;
     };
 
-    // Строки-распорки виртуальной прокрутки (tv-pad) — не данные.
+    // Строки-распорки виртуальной прокрутки (tv-pad) - не данные.
     const bodyRows = (table) => Array.from(table.tBodies?.[0]?.rows || []).filter(tr => !tr.classList.contains('tv-pad'));
 
-    // Номер ячейки строки, покрывающей логический столбец col (с учётом colspan); null — нет такой.
+    // Номер ячейки строки, покрывающей логический столбец col (с учётом colspan); null - нет такой.
     const cellAtCol = (tr, col) => {
         let acc = 0;
         for (let i = 0; i < tr.cells.length; i++) {
@@ -77,7 +70,7 @@ function initSelectionStatusBar() {
         return null;
     };
 
-    // Логический столбец ячейки шапки: в многорядной шапке объединённые ячейки (rowspan/colspan) сдвигают номера.
+    // логический столбец шапки: в многорядной шапке rowspan/colspan сдвигают номера
     const headerCol = (th) => {
         const thead = th.closest('thead');
         const taken = [];   // taken[row] = Set занятых столбцов
@@ -141,7 +134,7 @@ function initSelectionStatusBar() {
             const td = tr.cells[c];
             if (td) td.classList.add('tbl-sel', 'tbl-sel-cell');
         });
-        // подсветка заголовков столбцов, где выделены все числовые ячейки — все строки
+        // подсветка заголовков столбцов, где выделены все числовые ячейки - все строки
         const colCounts = {};
         set.forEach((key) => {
             const c = parseInt(key.split(':')[1], 10);
@@ -161,7 +154,7 @@ function initSelectionStatusBar() {
     const fmt = (n) => {
         const r = Math.round(n * 100) / 100;
         const s = Number.isInteger(r) ? String(r) : r.toFixed(2);
-        // Пробел между тысячами, запятая вместо точки (как везде на сайте).
+        // пробел между тысячами, запятая вместо точки, как на сайте
         return s.replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0').replace('.', ',');
     };
 
@@ -172,7 +165,7 @@ function initSelectionStatusBar() {
                 const el = document.getElementById(id);
                 return el && !el.classList.contains('is-hidden');
             });
-            // класс мог «залипнуть» — сбрасываем, если все панели закрыты
+            // класс мог залипнуть - сбрасываем, если все панели закрыты
             if (!anyOpen) {
                 document.body.classList.remove('pkz-detail-open');
                 return false;
@@ -186,7 +179,7 @@ function initSelectionStatusBar() {
     };
 
     const updateBar = (table) => {
-        // скрывать плашку только при открытой детализации (не если панели ещё нет в DOM)
+        // плашку скрываем только при открытой детализации, не если панели еще нет в DOM
         if (isDetailPanelOpen()) {
             bar.classList.remove('is-visible');
             return;
@@ -207,7 +200,7 @@ function initSelectionStatusBar() {
             const td = rows[parseInt(rs, 10)]?.cells[parseInt(cs, 10)];
             if (!td) return;
             const found = parseNumsFromText(td.textContent || '');
-            // одна ячейка — одно значение (первое число), чтобы % и «+3» не давали мусор
+            // одна ячейка - одно значение (первое число), чтобы % и +3 не давали мусора
             if (found.length) nums.push(found[0]);
         });
         if (nums.length < 1) {
@@ -311,7 +304,7 @@ function initSelectionStatusBar() {
         if (!th) return null;
         const table = th.closest(TABLE_SEL);
         if (!table || !th.closest('thead')) return null;
-        // для многорядных шапок: берём cellIndex; если colspan — выделяем все покрытые столбцы
+        // многорядные шапки: берем cellIndex; при colspan выделяем все покрытые столбцы
         const start = headerCol(th);
         const span = th.colSpan || 1;
         return { table, start, span, th };
@@ -319,7 +312,7 @@ function initSelectionStatusBar() {
 
     const isRowSelectorCell = (td) => {
         if (!td) return false;
-        // первая колонка (дата) — селектор строки; также col-date
+        // первая колонка (дата) - селектор строки; также col-date
         if (td.classList.contains('col-date')) return true;
         return td.cellIndex === 0;
     };
@@ -351,7 +344,7 @@ function initSelectionStatusBar() {
 
         const cell = resolveBodyCell(e.target);
         if (!cell) {
-            // клик вне таблицы — сброс
+            // клик вне таблицы - сброс
             if (!e.target.closest(TABLE_SEL) && !e.target.closest('.selection-status-bar')) {
                 if (activeTable) {
                     clearTable(activeTable);
@@ -364,7 +357,7 @@ function initSelectionStatusBar() {
 
         e.preventDefault();
         window.getSelection()?.removeAllRanges();
-        // Двойной щелчок раскрывает подробности строки (или выделяет слово): плашку суммы не показываем, первое выделение снимаем.
+        // двойной щелчок раскрывает подробности (или выделяет слово): плашку не показываем, первое выделение снимаем
         if (e.detail >= 2) {
             clearTable(cell.table);
             updateBar(null);
@@ -426,7 +419,7 @@ function initSelectionStatusBar() {
         drag = null;
     }, true);
 
-    // dblclick не блокируем — детализация продаж/КЗ открывается по двойному клику
+    // dblclick не блокируем, детализация продаж/КЗ по двойному клику
 
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && activeTable) {

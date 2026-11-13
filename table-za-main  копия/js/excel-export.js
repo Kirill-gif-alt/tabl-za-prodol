@@ -1,7 +1,7 @@
-// js\excel-export.js - выгрузки в Excel.
-// Globals on purpose: no bundler; onclick and other files call by name.
+// выгрузки в Excel
+// глобальные имена нарочно: без бандлера, onclick и другие файлы вызывают по имени
 
-/** Не давать Excel исполнять =cmd| и формулы из ячеек-текста. Числа не трогаем. */
+// иначе Excel исполнит =cmd| и формулы из текста; числа не трогаем
 function excelSafeCell(v) {
     if (v === null || v === undefined) return '';
     if (typeof v === 'number' && isFinite(v)) return v;
@@ -12,7 +12,7 @@ function excelSafeCell(v) {
     return v;
 }
 
-// Текст экрана → число с форматом ячейки: дата, проценты, «+3», «Σ 125». Иначе null (остаётся текстом).
+// текст с экрана -> число с форматом: дата, проценты, "+3", "Σ 125"; иначе null (остаётся текстом)
 function excelTypedCell(text) {
     let m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(text);
     if (m) {
@@ -73,7 +73,7 @@ function excelExportStamp() {
 
 async function loadStyledXlsx() {
     if (window.XLSXStyle) return window.XLSXStyle;
-    // Сначала обычная библиотека: цветная грузится поверх и возвращает window.XLSX на место.
+    // сначала обычная библиотека; цветная (XLSXStyle) грузится поверх и подменяет window.XLSX
     await loadPlainXlsx();
     if (window.XLSXStyle) return window.XLSXStyle;
     return new Promise(resolve => {
@@ -344,7 +344,7 @@ function excelSafeFilename(name) {
     return /\.xlsx$/i.test(clean) ? clean : clean + '.xlsx';
 }
 
-/** Одно имя на календарный день: вечерняя выгрузка заменяет утреннюю, завтра — новый файл. */
+// одно имя на день: вечерняя выгрузка заменяет утреннюю, завтра новый файл
 function excelDailyFilename(prefix, stampOrDate) {
     const raw = String(stampOrDate || '');
     const matched = raw.match(/(\d{2})\.(\d{2})\.(\d{4})/);
@@ -578,7 +578,7 @@ function excelAnnounceSaved(saved, fallback) {
 }
 
 async function excelWriteBook(sheetName, bodyRows, filename, options) {
-    // Сначала папка: разрешение на неё браузер даёт только сразу после клика, а библиотека может грузиться секунды.
+    // папку спрашиваем первой: браузер дает разрешение только сразу после клика, а библиотека грузится секунды
     const folder = await excelPrepareFolder(options && options.kind);
     if (!(await loadPlainXlsx())) {
         if (typeof showToast === 'function') showToast('Библиотека Excel не загружена', 'error');
@@ -594,8 +594,7 @@ async function excelWriteBook(sheetName, bodyRows, filename, options) {
     excelAnnounceSaved(saved, `Файл готов, дата выгрузки ${built.stamp}`);
 }
 
-// ==================== ЭКСПОРТ В EXCEL ====================
-// «Загрузка рейсов»: карточки маршрутов в ряд, как на экране, а не один общий список.
+// загрузка рейсов: карточки маршрутов в ряд, как на экране, а не один общий список
 
 function dataBoardExcelShowTimes() {
     return typeof dataShowLocalTimes !== 'undefined' && !!dataShowLocalTimes;
@@ -650,7 +649,7 @@ function dataBoardExcelLegSpec() {
     kinds.push('load');
     if (dataBoardExcelShowDaySales()) {
         labels.push('ЗА СУТКИ');
-        kinds.push('book');   // ширина — как у «Спец. брони»
+        kinds.push('book');   // ширина как у "Спец. брони"
     }
     labels.push('ЗПК');
     kinds.push('zpk');
@@ -815,7 +814,7 @@ function dataBoardExcelLegValues(row, closed, salesFirst) {
     if (showBooks) vals.push(m.bookings != null ? m.bookings : '—');
     vals.push(m.load != null ? m.load : '—');
     if (dataBoardExcelShowDaySales()) {
-        const ys = typeof getDataLegYesterday === 'function' ? getDataLegYesterday(row, salesFirst) : 0;   // как на экране: у вылета с посадками один раз
+        const ys = typeof getDataLegYesterday === 'function' ? getDataLegYesterday(row, salesFirst) : 0;   // как на экране: вылет с посадками один раз
         vals.push(ys || '—');
     }
     vals.push(closed ? 'ЗАКРЫТ' : (m.zpk != null ? `${m.zpk}%` : '—'));
@@ -856,7 +855,7 @@ function dataBoardPaintCard(lib, ws, merges, origin, card, spec, todayStart, max
             splitLeft: index === 0
         });
     });
-    // «Продажа за сутки»: строка «Итого за сутки» сразу под шапкой карточки — как на экране.
+    // продажа за сутки: строка "Итого за сутки" сразу под шапкой карточки, как на экране
     const off = dataBoardExcelShowDaySales() ? 1 : 0;
     const salesFirst = off ? getDataEntriesFirstSales(card.entries) : null;
     if (off) {
@@ -933,7 +932,7 @@ function buildDataBoardWorksheet(lib, pairs, todayStart) {
         if (index < prepared.length - 1) cursor += 1;
     });
     const lastCol = origins[origins.length - 1] + cardWidth - 1;
-    const sumRow = dataBoardExcelShowDaySales() ? 1 : 0;   // строка «Итого за сутки»
+    const sumRow = dataBoardExcelShowDaySales() ? 1 : 0;   // строка "Итого за сутки"
     const maxR = 3 + sumRow + maxEntries;
     dataBoardPaint(lib, ws, merges, 0, 0, 0, lastCol, `Дата выгрузки: ${stamp}`, 'FFFFFF', '012A4A', true, 'left', false, { quiet: true });
     prepared.forEach((card, index) => {
@@ -984,8 +983,8 @@ function exportDataBoardToExcel() {
     });
 }
 
-// «Отчёты» → «Выгрузки в Excel»: два файла — «Загрузка - КК» (краевые) и «Загрузка - Межрегионалка»
-// (межрегиональные и международные). Все направления, без поиска и фильтра типа вкладки.
+// Отчёты - Выгрузки: файлы "Загрузка - КК" (краевые) и "Загрузка - Межрегионалка" (межрег. и междунар.)
+// все направления, без поиска и фильтра вкладки
 async function exportDataBoardSplit() {
     if (typeof ProfileAuth !== 'undefined' && !ProfileAuth.guardPermission('export_excel', 'Выгрузка недоступна для вашего профиля')) return;
     if (typeof groupedData === 'undefined' || !Object.keys(groupedData).length) { showToast('Нет данных для выгрузки', 'error'); return; }
@@ -1007,9 +1006,9 @@ async function exportDataBoardSplit() {
     await exportDataBoardWorkbook(pairs.filter(p => !isKrai(p)), todayStart, 'Загрузка - Межрегионалка', true);
 }
 
-// История выгрузок «КК / Межрегионалка»: лист каждого дня хранится в браузере (IndexedDB), файл всегда один
-// и пересобирается целиком — старые вкладки сохраняют оформление (при чтении xlsx оно бы потерялось).
-const DATA_HIST_MAX = 30;   // вкладок в файле не больше 30 — самые старые уходят
+// история выгрузок КК / Межрегионалка: лист дня в браузере (IndexedDB), файл пересобирается целиком
+// старые вкладки сохраняют оформление (при чтении xlsx оно бы потерялось); до 30 вкладок, старые уходят
+const DATA_HIST_MAX = 30;
 
 function dataHistDb() {
     return new Promise((resolve, reject) => {
@@ -1020,11 +1019,11 @@ function dataHistDb() {
     });
 }
 
-// Вкладки хранятся в общей папке (shared/export-kk.json, export-mr.json) — один файл на всех администраторов;
-// нет доступа к общей папке — запасной путь: хранилище этого браузера.
+// вкладки в общей папке (shared/export-kk.json, export-mr.json), один файл на всех
+// нет доступа к папке - запасной путь: хранилище этого браузера
 const DATA_HIST_FILES = { 'Загрузка - КК': 'export-kk.json', 'Загрузка - Межрегионалка': 'export-mr.json' };
 
-// Лист в общую папку — в сжатом виде: одинаковые стили ячеек (их десятки на 15 тыс. ячеек) хранятся один раз.
+// лист в общей папке сжат: одинаковые стили ячеек (десятки на 15 тыс. ячеек) хранятся один раз
 function dataHistPack(ws) {
     const styles = [];
     const idx = new Map();
@@ -1057,7 +1056,7 @@ function dataHistUnpack(p) {
     return out;
 }
 
-// info.sharedFailed = true — общий файл есть в схеме, но не прочитался (тогда берём историю этого браузера).
+// info.sharedFailed = true: общий файл не прочитался, берём историю этого браузера
 async function dataHistLoad(key, info) {
     const shared = DATA_HIST_FILES[String(key).split(':').slice(1).join(':')];
     if (shared && typeof SharedStorage !== 'undefined' && SharedStorage.readJsonFileStrict) {
@@ -1082,11 +1081,11 @@ async function dataHistLoad(key, info) {
     } catch (e) { return {}; }
 }
 
-// Запись истории. Общий файл перед записью перечитывается и сливается по вкладкам: вкладка своей даты (ownTab)
-// заменяется своей, вкладки других людей остаются. Возвращает итоговый набор вкладок для файла Excel.
+// запись истории: общий файл перечитываем и сливаем по вкладкам; своя вкладка (ownTab) заменяется, чужие остаются
+// возвращает итоговый набор вкладок для файла Excel
 async function dataHistSave(key, map, ownTab, info) {
     const shared = DATA_HIST_FILES[String(key).split(':').slice(1).join(':')];
-    // В общую папку пишет только тот, у кого есть право share_data; остальные — только локально.
+    // в общую папку пишет только право share_data, остальные - только локально
     const mayShare = typeof ProfileAuth === 'undefined' || ProfileAuth.hasPermission('share_data');
     if (shared && mayShare && typeof SharedStorage !== 'undefined' && SharedStorage.updateJsonFile) {
         const ownPacked = ownTab && map[ownTab] ? dataHistPack(map[ownTab]) : null;
@@ -1123,7 +1122,7 @@ async function dataHistSave(key, map, ownTab, info) {
     return map;
 }
 
-// «16.10.26» → число для сортировки (ГГММДД).
+// "16.10.26" -> число для сортировки (ГГММДД)
 function dataHistOrder(name) {
     const m = String(name).match(/^(\d{2})\.(\d{2})\.(\d{2})$/);
     return m ? +(m[3] + m[2] + m[1]) : 0;
@@ -1146,7 +1145,7 @@ async function exportDataBoardWorkbook(pairs, todayStart, fileBase, history) {
     const wb = lib.utils.book_new();
     const fileDate = typeof getTodayDate === 'function' ? getTodayDate() : built.stamp;
     if (history) {
-        // Один файл, вкладка на каждый день выгрузки («15.10.26», «16.10.26»…); повторная выгрузка за день — заменяет её.
+        // один файл, вкладка на день ("15.10.26"...); повторная выгрузка за день заменяет её
         const d = new Date();
         const tab = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getFullYear()).slice(-2)}`;
         const key = (typeof excelProfileId === 'function' ? excelProfileId() : '') + ':' + fileBase;
@@ -1156,13 +1155,12 @@ async function exportDataBoardWorkbook(pairs, todayStart, fileBase, history) {
         map[tab] = built.ws;
         let names = Object.keys(map).sort((a, b) => dataHistOrder(a) - dataHistOrder(b));
         while (names.length > DATA_HIST_MAX) delete map[names.shift()];
-        // Общий файл перечитывается перед записью: вкладки, добавленные другим человеком за это время, остаются.
         map = await dataHistSave(key, map, tab, info);
-        // Новые вкладки слева: от свежих дат к старым.
+        // новые вкладки слева: от свежих к старым
         names = Object.keys(map).sort((a, b) => dataHistOrder(b) - dataHistOrder(a));
         names.forEach(n => lib.utils.book_append_sheet(wb, map[n], n));
         if (typeof excelSafeWorkbook === 'function') excelSafeWorkbook(wb);
-        // Первая вкладка (сегодня) открывается первой.
+        // первая вкладка (сегодня) открывается по умолчанию
         wb.Workbook = wb.Workbook || {};
         wb.Workbook.Views = [{ activeTab: 0 }];
         const saved = await excelSaveWorkbook(lib, wb, excelSafeFilename(`${fileBase}.xlsx`), folder);
@@ -1187,7 +1185,7 @@ function exportRmsToExcel() {
 
     const hasExpected = Object.keys(expectedLoadData).length > 0;
     const salesFileOn = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : !!(typeof dataLoadStatus !== 'undefined' && dataLoadStatus.sales);
-    const salesReady = salesFileOn && !(typeof getStaleSalesInfo === 'function' && getStaleSalesInfo());   // файл продаж старше 1 дня: нули ничего не значат, как на экране
+    const salesReady = salesFileOn && !(typeof getStaleSalesInfo === 'function' && getStaleSalesInfo());   // файл продаж старше 1 дня: нули ничего не значат (как на экране)
     const headers = ['Код рейса', 'Тип рейса', 'Направление', 'Дата вылета', 'Дней до вылета', 'ЗПК %', 'Загрузка', 'Остаток', 'Прогноз к вылету', 'Прогноз ЗПК %'];
     if (hasExpected) headers.push('Ожидаемая', 'Δ к ожидаемой');
     headers.push('Продано за 1–2 дн. (файл 14д)', 'Сегодня (файл 14д)', 'Ср. тариф по всем билетам', 'Уровень предупреждения', 'Причина');
@@ -1205,7 +1203,7 @@ function exportRmsToExcel() {
             f.free,
             f.remainder != null ? f.remainder : ''
         ];
-        const fc = typeof FlightInsights !== 'undefined' && !f.segShare ? FlightInsights.forecast(f.orig || f.base, f.date) : null;   // как на экране: у участка вылета с посадками прогноза нет
+        const fc = typeof FlightInsights !== 'undefined' && !f.segShare ? FlightInsights.forecast(f.orig || f.base, f.date) : null;   // как на экране: у участка с посадками прогноза нет
         row.push(fc && fc.source !== 'flown' ? fc.final : '', fc && fc.source !== 'flown' ? fc.lf : '');
         if (hasExpected) {
             row.push(f.evR !== null ? f.evR : '');
@@ -1274,7 +1272,7 @@ async function exportTableToExcel(tableElement, filename = 'КРАСАВИА_э�
                 const num = Number(text.replace(',', '.'));
                 if (isFinite(num)) return num;
             }
-            // «1 234» и «12 345 ₽» — тоже числа (иначе СУММ в Excel их пропускает).
+            // "1 234" и "12 345 ₽" тоже числа, иначе СУММ в Excel их пропускает
             const m = /^(-?\d{1,3}(?:[\s\u00a0\u202f]\d{3})+(?:[.,]\d+)?|-?\d+(?:[.,]\d+)?)(?:[\s\u00a0\u202f]*₽)?$/.exec(text);
             if (m && /\d[\s\u00a0\u202f]\d|₽/.test(text)) {
                 const num = Number(m[1].replace(/[\s\u00a0\u202f]/g, '').replace(',', '.'));
@@ -1310,8 +1308,8 @@ async function exportTableToExcel(tableElement, filename = 'КРАСАВИА_э�
     }
 }
 
-// Кнопка. В «Динамике продаж» и «Экономической таблице» она стоит на шапке страницы (место под неё — в slot),
-// в остальных таблицах — строкой над таблицей, вне прокручиваемой области: внутри неё закреплённая шапка таблицы её закрывала.
+// кнопка: в "Динамике продаж" и "Экономической таблице" на шапке страницы (место в slot), в остальных - строкой над таблицей
+// вне прокручиваемой области: закрепленная шапка внутри нее закрывала кнопку
 function addExportButtonToTable(container, kind) {
     const oldBtn = container.querySelector('.export-excel-btn');
     if (oldBtn) oldBtn.remove();
@@ -1331,13 +1329,13 @@ function addExportButtonToTable(container, kind) {
         const handle = container._tvHandle;
         const live = container.querySelector('table.data-table');
         const raw = (handle && typeof handle.getExportTable === 'function' && handle.getExportTable()) || live;
-        // На экране шапка и порядок столбцов другие; в файл они уходят прежние.
+        // на экране шапка и порядок столбцов другие; в файл уходят прежние
         const table = raw && typeof prepareTableForExport === 'function' ? prepareTableForExport(container, raw, raw === live) : raw;
         if (table) {
             const isPair = table.classList.contains('pair-table');
             const day = typeof getTodayDate === 'function' ? getTodayDate() : excelExportStamp();
             const done = exportTableToExcel(table, excelDailyFilename(`КРАСАВИА_${currentFlight || 'рейсы'}`, day), kind || (isPair ? 'pair' : 'table'));
-            // Копию живой таблицы, которую подготовили для выгрузки, убираем со страницы
+            // копию живой таблицы убираем со страницы после выгрузки
             if (table !== raw && table.parentNode) Promise.resolve(done).finally(() => table.remove());
         }
     };

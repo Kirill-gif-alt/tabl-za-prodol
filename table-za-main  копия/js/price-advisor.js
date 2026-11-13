@@ -1,15 +1,6 @@
-// Ценовой советник: какой класс (минимальный открытый тариф) держать на вылете, чтобы выручка была наибольшей.
-// Модель — из tools/price-model (отчёт команды RM, REPORT.md):
-//   • где цену выбирает RMS: все межрегиональные направления + Богучаны, Мотыгино, Кодинск;
-//   • субсидируемый рейс: тариф не выше предельного из «Справочника» → «Тарифы субсидии» (кроме дат коммерции);
-//   • лестница цен направления — по проданным билетам: класс (1-я буква кода тарифа) → тариф взрослого (без /CN, /IN, 0 ₽);
-//   • спрос в день: λ(p, t) = a(t)·exp(β·(p/p_ref − 1)), a(t) — кривая бронирований рейсов направления по архиву продаж,
-//     p_ref — медианный взрослый тариф направления, β — эластичность (СЦЕНАРИЙ: по данным пока не измерена, см. отчёт);
-//   • покупатель берёт самый дешёвый открытый класс, поэтому «цена» = «открыт минимальный класс k» (закрыть всё дешевле);
-//   • динамическое программирование по дням до вылета t и свободным креслам x:
-//       V_t(x) = max_k Σ_n P(N = n | λ(p_k, t)) · [p_k·min(n, x) + V_{t−1}(x − min(n, x))],  V_{−1} ≡ 0
-//     нижняя цена места b_t(x) = V_{t−1}(x) − V_{t−1}(x − 1) — дешевле продавать место (например, группе) невыгодно;
-//   • совет — в коридоре ±1 класс от нынешнего (пока эластичность не измерена экспериментом), не чаще раза в день.
+// ценовой советник: какой класс держать на вылете, чтобы выручка была наибольшей
+// цену выбирает RMS на межрегиональных и на Богучанах, Мотыгине, Кодинске; модель из tools/price-model (REPORT.md)
+// спрос λ(p,t)=a(t)*exp(beta*(p/p_ref-1)), beta пока не измерена (сценарий); DP по дням до вылета и креслам; совет +-1 класс, не чаще раза в день
 window.PriceAdvisor = (function () {
     const KRAI_IN_RMS = ['богучаны', 'мотыгино', 'кодинск'];
     const SETTINGS_KEY = 'krasavia_price_advisor';
@@ -21,7 +12,7 @@ window.PriceAdvisor = (function () {
         try {
             const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {};
             const beta = Number(s.beta);
-            // Своё значение — только если пользователь сам выбирал его в отчёте; иначе — значение администратора.
+            // свое значение только если пользователь сам выбрал в отчете, иначе значение администратора
             const corr = Number(s.corridor);
             return { beta: s.beta != null && beta < -0.2 && beta >= -6 ? beta : DEFAULTS.beta, corridor: s.corridor != null && corr >= 0 && corr <= 9 ? corr : DEFAULTS.corridor };
         } catch (e) { return { ...DEFAULTS }; }
@@ -41,7 +32,7 @@ window.PriceAdvisor = (function () {
             typeof getTodayDate === 'function' ? getTodayDate() : '',
             typeof Params !== 'undefined' ? Params.revision() : 0,
             typeof FareGrid !== 'undefined' ? FareGrid.revision() : 0,
-            // Потолок субсидии и коммерческие даты: справочник тарифов и периоды субсидии.
+            // потолок субсидии и коммерческие даты: справочник тарифов и периоды субсидии (для подписи кэша)
             typeof FareRefs !== 'undefined' && FareRefs.revision ? FareRefs.revision() : 0,
             typeof SubsidyRef !== 'undefined' && SubsidyRef.revision ? SubsidyRef.revision() : 0].join('|');
     }
@@ -58,7 +49,6 @@ window.PriceAdvisor = (function () {
         return String(typeof getFlightDirection === 'function' ? getFlightDirection(base(code)) || '' : '').replace(/\s+/g, ' ').trim();
     }
 
-    // RMS выбирает цену: межрегиональные + Богучаны, Мотыгино, Кодинск.
     function inScope(code) {
         const type = typeof getFlightRouteType === 'function' ? getFlightRouteType(base(code)) : '';
         if (type === 'interregional') return true;
@@ -66,7 +56,7 @@ window.PriceAdvisor = (function () {
         return cities.some(c => KRAI_IN_RMS.includes(String(c).toLowerCase().replace(/ё/g, 'е')));
     }
 
-    // Предельный тариф субсидии на вылет или null (рейс коммерческий, дата коммерции, исключение или потолок не задан).
+    // предельный тариф субсидии или null: коммерческий рейс, дата коммерции, исключение или потолка нет
     function capFor(code, date) {
         if (typeof FareRefs === 'undefined' || !FareRefs.match) return null;
         if (typeof FlightChecks !== 'undefined' && FlightChecks.isNeverSubsidized && FlightChecks.isNeverSubsidized(code)) return null;   // KV-247/248
@@ -120,11 +110,11 @@ window.PriceAdvisor = (function () {
             ladder.push({ cls, price: Math.round(median(byClass[cls])), n: byClass[cls].length });
         });
         ladder.sort((a, b) => a.price - b.price);
-        // Сетка тарифов из справочника (лайт/стандарт — цена класса, оптимум не смешивается); иначе — медианы продаж.
+        // сетка из справочника (лайт/стандарт - цена класса, оптимум не смешиваем); иначе медианы продаж
         const fg = typeof FareGrid !== 'undefined' ? FareGrid.ladderFor([...flights][0] || code) : [];
         if (fg.length >= 2) { ladder.length = 0; fg.forEach(l => ladder.push({ cls: l.cls, price: l.price, n: 0 })); }
         const uniq = ladder.filter((l, i) => !i || Math.round(l.price / 10) !== Math.round(ladder[i - 1].price / 10));
-        // Кривая бронирований по архиву продаж: средние продажи в день t на вылет (по всем вылетам рейсов направления).
+        // кривая бронирований по архиву: средние продажи в день t на вылет, по всем вылетам направления
         const acc = new Float64Array(PV.PA_HORIZON + 1);
         let deps = 0;
         if (typeof SalesArchive !== 'undefined' && SalesArchive.departuresFor) {
@@ -159,7 +149,7 @@ window.PriceAdvisor = (function () {
         return info;
     }
 
-    // Кривая бронирований — по архиву за год. Пока он не дочитан, совет считался бы по 2–3 месяцам и потом «прыгал».
+    // кривая по архиву за год; пока он не дочитан, совет считался бы по 2-3 месяцам и прыгал
     let histReady = false;
     let histLoading = null;
     function ensureHistory() {
@@ -182,7 +172,7 @@ window.PriceAdvisor = (function () {
         return settings().beta;
     }
 
-    // Пуассоновские вероятности P(N = n), n = 0..nMax (хвост — в последнюю ячейку).
+    // Пуассоновские вероятности P(N = n), n = 0..nMax (хвост - в последнюю ячейку).
     function poisson(lam, nMax) {
         const p = new Float64Array(nMax + 1);
         let term = Math.exp(-lam);
@@ -192,7 +182,7 @@ window.PriceAdvisor = (function () {
         return p;
     }
 
-    // DP для направления при C креслах и наборе цен (лестница под потолком). act[t][x] — индекс класса, V[t][x].
+    // DP для направления при C креслах и наборе цен (лестница под потолком). act[t][x] - индекс класса, V[t][x].
     function solve(info, prices, C, scale) {
         const c = cache();
         const beta = betaFor();
@@ -202,7 +192,7 @@ window.PriceAdvisor = (function () {
         const K = prices.length;
         const V = [];
         const act = [];
-        let prev = new Float64Array(C + 1);   // V_{t−1}, после вылета 0
+        let prev = new Float64Array(C + 1);   // V_{t-1}, после вылета 0
         for (let t = 0; t <= PV.PA_HORIZON; t++) {
             const cur = new Float64Array(C + 1);
             const ak = new Uint8Array(C + 1);
@@ -236,8 +226,8 @@ window.PriceAdvisor = (function () {
         return res;
     }
 
-    // Открытый сейчас класс — по последним продажам вылета: взрослые билеты за последний день продаж в файле
-    // (без окна «7 дней» и без «самого дешёвого»: дешёвый билет недельной давности — уже закрытый класс).
+    // открытый класс - по взрослым билетам за последний день продаж в файле
+    // без окна в 7 дней и без "самого дешевого": дешевый билет недельной давности уже закрыт
     function currentPrice(code, date) {
         const list = typeof getFlightSalesList === 'function' ? getFlightSalesList(date, code) : [];
         const paid = list.filter(isAdultPaid);
@@ -246,7 +236,7 @@ window.PriceAdvisor = (function () {
         const last = Math.max(...paid.map(t));
         const day = paid.filter(s => t(s) === last);
         const cls = [...new Set(day.map(s => String(s.basicFareStr || '').trim().charAt(0).toUpperCase()).filter(Boolean))];
-        const tail = day[day.length - 1];   // в файле продажи идут по времени — последний билет дня
+        const tail = day[day.length - 1];   // продажи в файле идут по времени, берем последний билет дня
         return { price: tail.adjustedFare || tail.fare, cls: String(tail.basicFareStr || '').trim().charAt(0).toUpperCase(), classes: cls, dealDate: tail.dealDate };
     }
 
@@ -269,12 +259,12 @@ window.PriceAdvisor = (function () {
         const dtd = Math.min(PV.PA_HORIZON, Math.max(dtd0, typeof observedFromDtd === 'function' ? observedFromDtd(date) : dtd0));
         if (!histReady) { ensureHistory(); return null; }
         const info0 = routeInfo(code);
-        // Уровни тарифов — по официальной сетке на дату вылета (периоды действия), иначе по продажам.
+        // уровни тарифов по официальной сетке на дату вылета, иначе по продажам
         const offL = typeof FareGrid !== 'undefined' && FareGrid.officialLadder ? FareGrid.officialLadder(direction(code) || base(code), date) : null;
         const info = offL && offL.ladder.length >= 2 ? Object.assign({}, info0, { ladder: offL.ladder }) : info0;
         if (!info.a || !info.pRef || info.ladder.length < 2) return null;
         const cap = capFor(code, date);
-        // Нынешний класс — по полной лестнице (до потолка): класс выше потолка — нарушение, а не «ближайший под потолком».
+        // нынешний класс ищем по полной лестнице: класс выше потолка - нарушение, а не ближайший под потолком
         const cp = currentPrice(code, date);
         let curFull = null;
         if (cp) {
@@ -291,9 +281,8 @@ window.PriceAdvisor = (function () {
         const free = Math.max(0, C - sold);
         if (free === 0) return { code, date, free: 0, dtd, dtdNow: dtd0, cap, action: 'closed', text: 'распродан — продажи закрыты' };
         const cc = Math.min(C, 150);
-        // Спрос этого вылета, а не среднего по направлению: кривую бронирований масштабируем так, чтобы при нынешней
-        // цене до вылета продалось столько, сколько даёт прогноз загрузки (тот же, что в карточке). Иначе рейс,
-        // который идёт лучше нормы, модель считала бы «средним» и советовала снижать.
+        // спрос этого вылета, не среднего по направлению: кривую масштабируем так, чтобы при нынешней цене продалось столько, сколько дает прогноз (как в карточке)
+        // иначе рейс, который идет лучше нормы, считался бы средним и совет был бы снизить
         const fc = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(code, date) : null;
         const fcOk = fc && fc.source !== 'flown' && fc.final != null;
         let scale = 1;
@@ -302,36 +291,36 @@ window.PriceAdvisor = (function () {
             let base0 = 0;
             const betaNow = betaFor();
             for (let t = 0; t <= dtd; t++) base0 += info.a[t] * Math.exp(betaNow * (pNow / info.pRef - 1));
-            // Прогноз не больше кресел: если он упёрся в кресла — спрос не меньше, берём верх интервала.
+            // прогноз упирается в кресла - спрос не меньше, берем верх интервала
             const want = Math.max(0, (fc.final >= C && fc.hiRaw != null ? Math.max(fc.final, fc.hiRaw) : fc.final) - sold);
             if (base0 > 0.2) scale = Math.max(0.25, Math.min(4, want / base0));
         }
         const { V, act } = solve(info, prices, cc, scale);
         const x = Math.min(free, cc);
         const kRaw = act[dtd][x];
-        // Открытый класс — по букве проданного билета, а не по ближайшей цене (иначе Q путается с G).
-        // Если в последний день продано несколько классов — открыт самый дорогой из них (дешёвые закрывали в течение дня).
-        // Открыт класс выше потолка — считаем «выше всех допустимых»: совет будет «снизить».
+        // открытый класс по букве проданного билета, не по ближайшей цене (иначе Q путаем с G)
+        // если в последний день продано несколько классов, открыт самый дорогой (дешевые закрыли за день)
+        // класс выше потолка считаем выше всех допустимых: совет будет снизить
         let kCur = null;
         if (curFull && !overCap) kCur = ladder.findIndex(l => l.cls === curFull.cls);
         if (kCur != null && kCur < 0) kCur = nearestIdx(prices, curFull.price);
         const corr = settings().corridor;
         let k = kRaw;
         if (kCur != null && corr < 9) k = Math.max(kCur - corr, Math.min(kCur + corr, kRaw));
-        if (overCap) k = kRaw;   // выше потолка нельзя — сразу в допустимое
-        // Цель продаж: последний билет — ближе к вылету, а не за месяц. Если по прогнозу (тот же, что в карточке)
-        // при нынешней цене рейс распродастся раньше чем за PV.PA_PACE_DAYS дн. до вылета — поднимаем хотя бы на класс.
+        if (overCap) k = kRaw;   // выше потолка нельзя - сразу в допустимое
+        // цель: последний билет ближе к вылету, а не за месяц
+        // если по прогнозу рейс распродастся раньше PV.PA_PACE_DAYS дн. до вылета, поднимаем хотя бы на класс
         let early = null;
         if (fc && fc.soldOutDtd != null && fc.soldOutDtd >= PV.PA_PACE_DAYS && free > 0 && kCur != null && kCur < prices.length - 1 && k <= kCur) {
             k = kCur + 1;
             early = fc.soldOutDtd;
         }
-        // Согласованность с прогнозом (как у подсказок решений): прогноз к вылету высокий — не снижать, низкий — не повышать.
+        // как у подсказок решений: прогноз высокий - не снижать, низкий - не повышать
         let guard = null;
         if (fcOk && kCur != null && !overCap) {
             if (k < kCur && fc.lf >= PV.ADVICE_FC_HIGH) { k = kCur; guard = `прогноз к вылету ${fc.lf}% — снижать не нужно`; }
             else if (k < kCur) {
-                // Продажи идут не хуже нормы и плана (файла ожидаемой загрузки) на этот день — снижать незачем.
+                // продажи не хуже нормы и плана на этот день - снижать незачем
                 const nm = typeof SalesAdvice !== 'undefined' ? SalesAdvice.norms(code, date) : null;
                 const gaps = nm ? [nm.ref, nm.exp].filter(v => v != null).map(v => nm.sold - v) : [];
                 if (gaps.length && gaps.every(d => d >= 0)) { k = kCur; guard = 'продажи не отстают от нормы и плана — снижать не нужно'; }
@@ -361,19 +350,19 @@ window.PriceAdvisor = (function () {
         const guardNote = a.guard ? ` · ${a.guard}` : '';
         const why = a.early != null ? ` · при нынешней цене распродастся за ${a.early} дн. до вылета — рано` : '';
         const now = a.curCls ? `сейчас продаётся ${a.curCls}${a.curDeal ? ` (продажи ${a.curDeal})` : ''}${a.overCap ? ' — выше потолка субсидии' : ''}; ` : '';
-        // Совет ограничен коридором — сказать, куда звала модель (иначе «нижняя цена места» выше совета выглядит противоречием).
+        // совет ограничен коридором: пишем, куда звала модель, иначе нижняя цена места выше совета выглядит противоречием
         const clamp = a.raw && a.raw.price !== a.price && !a.overCap && !a.guard && a.early == null ? ` · модель: ${a.raw.cls} (${rub(a.raw.price)}), ограничено шагом от нынешнего класса` : '';
-        // Нижняя цена места: сколько стоит одно свободное место для выручки рейса (дешевле его продавать невыгодно).
-        // Почти ноль — мест с запасом: лишнее место всё равно, скорее всего, улетит пустым.
+        // нижняя цена места: сколько стоит одно свободное место для выручки, дешевле продавать невыгодно
+        // почти ноль - мест с запасом, лишнее место скорее всего улетит пустым
         const low = a.ladder && a.ladder.length ? Math.min(...a.ladder.map(l => l.price)) : 0;
         const bidTxt = low && a.bid < low * 0.1 ? 'мест с запасом' : `нижняя цена места ${rub(a.bid)}`;
         return `${now}${what}${guardNote}${why}${clamp} · ${bidTxt}${capNote}`;
     }
 
-    // Включается в «Настройки» → «Параметры расчётов» → «Подсказки по тарифам» → «Ценовой советник».
+    // Настройки - Параметры расчетов - Подсказки по тарифам - Ценовой советник
     function canView() {
         if (PV.HINT_PRICE !== 1) return false;
-        // Включается в «Профилях» правом «Ценовой советник» (у администратора — всегда).
+        // право "Ценовой советник" в профилях (у администратора всегда)
         return typeof ProfileAuth === 'undefined' || !!(ProfileAuth.getCurrentProfile() || {}).isAdmin || ProfileAuth.hasPermission('price_advisor');
     }
 
@@ -401,7 +390,6 @@ window.PriceAdvisor = (function () {
         return out;
     }
 
-    // ---------- отчёт «Ценовой советник» («Отчёты» → «Модели» → «Подробно для аналитика») ----------
     let report = { sig: '', list: null, busy: false };
     let onlyChange = true;
 

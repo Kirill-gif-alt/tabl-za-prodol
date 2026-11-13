@@ -1,8 +1,8 @@
-// Диаграммы для «Отчёты» → «Решения»: полоса долей, горизонтальные столбики, колонки по неделям. Чистый HTML/CSS, без библиотек.
+// диаграммы для Отчеты - Решения: полоса долей, столбики, колонки по неделям; чистый HTML/CSS, без библиотек
 window.DecisionsViz = (function () {
     function esc(v) { return escHtml(v); }
 
-    // Полоса долей: items = [{ label, value, cls }], cls — dv-pos / dv-neg / dv-unk / dv-na / dv-wait.
+    // Полоса долей: items = [{ label, value, cls }], cls - dv-pos / dv-neg / dv-unk / dv-na / dv-wait.
     function stack(title, items) {
         const total = items.reduce((a, i) => a + i.value, 0);
         if (!total) return '';
@@ -41,12 +41,12 @@ window.DecisionsViz = (function () {
 
     // Компактная строка решения; по двойному клику раскрываются подробности. tone: pos / neg / unk / wait / na.
     const TONE = { pos: 'ПОМОГЛО', neg: 'НАВРЕДИЛО', lpos: 'СКОРЕЕ ПОМОГЛО', lneg: 'СКОРЕЕ НАВРЕДИЛО', wpos: 'ЧУТЬ ПОМОГЛО', wneg: 'ЧУТЬ НАВРЕДИЛО', flat: 'БЕЗ ЭФФЕКТА', unk: 'МАЛО ДАННЫХ', wait: 'ЖДЁМ ИТОГА', ser: 'В СЕРИИ', na: 'МАЛО ДАННЫХ' };
-    // Фильтры сгруппированы: «Помогло» = ПОМОГЛО, СКОРЕЕ ПОМОГЛО и ЧУТЬ ПОМОГЛО; «Навредило» — аналогично.
+    // фильтр "Помогло" = ПОМОГЛО, СКОРЕЕ ПОМОГЛО, ЧУТЬ ПОМОГЛО; "Навредило" аналогично
     const GROUP = { pos: 'good', lpos: 'good', wpos: 'good', neg: 'bad', lneg: 'bad', wneg: 'bad', flat: 'flat', unk: 'na', wait: 'wait', ser: 'ser', na: 'na' };
     const TONE_ORDER = ['good', 'bad', 'flat', 'unk', 'wait', 'ser', 'na'];
     const TONE_FILTER = { good: 'Помогло', bad: 'Навредило', flat: 'Без заметного эффекта', unk: 'Мало данных', wait: 'Ждём итога', ser: 'В серии', na: 'Мало данных' };
 
-    // Раскрытые строки помним по ключу: список перерисовывается (данные, расчёт денег), а открытое закрываться не должно.
+    // раскрытые строки помним по ключу: список перерисовывается, открытое не должно закрываться
     const openKeys = new Set();
 
     function plainRow(c) {
@@ -70,7 +70,7 @@ window.DecisionsViz = (function () {
         return `<div class="dp-strip">${items.map(i => `<div><small>${esc(i.label)}</small><span class="${i.cls || ''}">${i.value}</span></div>`).join('')}</div>`;
     }
 
-    // Полоска с нулём: lo / mid / hi в рублях, fmt — форматтер.
+    // Полоска с нулём: lo / mid / hi в рублях, fmt - форматтер.
     function rangeBar(lo, mid, hi, fmt) {
         const mn = Math.min(lo, 0), mx = Math.max(hi, 0);
         const span = (mx - mn) || 1;
@@ -91,7 +91,7 @@ window.DecisionsViz = (function () {
             <button type="button" class="dp-all" data-dp-all="1">Раскрыть все</button></div>`;
     }
 
-    // Список: первые PAGE строк сразу, остальные по кнопке «Показать ещё» (без перерисовки).
+    // список: первые PAGE строк сразу, остальные по кнопке "Показать еще" (без перерисовки)
     const PAGE = 80;
     function list(rows, cur) {
         const sel = cur ? rows.filter(r => (GROUP[r.tone] || r.tone) === cur) : rows;

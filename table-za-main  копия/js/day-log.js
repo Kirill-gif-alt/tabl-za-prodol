@@ -1,22 +1,12 @@
-// Ежедневный журнал продаж по вылетам (shared/history/daylog-ГГГГ-ММ.json, месяц — по ДАТЕ ВЫЛЕТА).
-// Строится из живых билетов (salesDetails) и накапливается: ранние продажи выпадают из окна выгрузки,
-// а в журнале остаются — по каждому «дню до вылета» (dtd): сколько билетов какого класса и по какой сумме.
-//   { version: 1, updatedAt, flights: { 'дд.мм.гггг|KV-101': { s: кресел|0, d: { '<dtd>': {
-//       k: { V: [число, сумма], K: [...] }   — взрослые платные по классам бронирования
-//       z: нулевые (цена 0)   g: групповые (заказ от PV.GROUP_MIN билетов, любой тариф)
-//       o: прочие платные (детские, младенцы, льготные)   cut: 1 — день среза данных, мог быть неполным
-//       (z, g, o, cut — только если не ноль)
-//       p: платных билетов всех видов (с группами и детскими)   r: выручка по ним, ₽ (по фактическому тарифу) } } } } }
-// День сделки = дата вылета минус dtd. По журналу строятся «продажи по дням» (daysFor) и средний тариф в карточке рейса,
-// а расчёт рублей по решениям (decision-money.js) берёт из него дни, которых уже нет в файле продаж.
-// Без ФИО, PNR и дат рождения — только счётчики и суммы. Пишет только публикующий (share_data), в простое, порциями,
-// не чаще раза на новые данные. Читается лениво (ensureMonths) — теми, у кого есть право.
+// ежедневный журнал продаж по вылетам (shared/history/daylog-ГГГГ-ММ.json, месяц по дате вылета)
+// по dtd: k - взрослые по классам V/K, z - нулевые, g - группы, o - прочие платные, p, r - выручка
+// ранние продажи выпадают из файла, в журнале остаются; без ФИО и PNR, пишет публикующий в простое
 window.SalesDayLog = (function () {
     const DONE_KEY = 'krasavia_daylog_done';
-    const KEEP_RATIO = 0.8;   // новый вылет с числом билетов < 80% от записанного — обрезанная выгрузка, старое не трогаем
+    const KEEP_RATIO = 0.8;   // новый вылет с числом билетов < 80% от записанного - обрезанная выгрузка, старое не трогаем
     const MAX_DTD = 365;
 
-    const store = Object.create(null);   // 'дд.мм.гггг|KV-101' → запись вылета из загруженных файлов
+    const store = Object.create(null);   // ключ 'дд.мм.гггг|KV-101' - запись вылета из загруженных файлов
     const loadedMonths = new Set();
     const inflight = new Map();
     let rev = 0;
@@ -39,14 +29,14 @@ window.SalesDayLog = (function () {
         return t ? formatDateRu(new Date(t)) : '';
     }
 
-    // Читать может любой вошедший: в журнале нет ФИО, PNR и дат рождения, только счётчики и суммы.
+    // читать может любой вошедший: в журнале только счётчики и суммы, без ФИО, PNR и дат рождения
     function canUse() {
         if (typeof ProfileAuth === 'undefined' || !ProfileAuth.getCurrentProfile) return false;
         return !!ProfileAuth.getCurrentProfile();
     }
 
-    // Окно файла продаж: от самой ранней до самой поздней даты сделки в нём (мс). Дни внутри окна берутся из файла,
-    // за его пределами — из журнала. Считается один раз на загрузку данных.
+    // окно файла продаж: от ранней до поздней даты сделки (мс); внутри окна дни из файла, за ним из журнала
+    // считается один раз на загрузку данных
     let winMemo = { ref: null, epoch: -1, win: null };
     function fileWindow() {
         const sd = typeof salesDetails !== 'undefined' ? salesDetails : null;
@@ -67,7 +57,7 @@ window.SalesDayLog = (function () {
         return win;
     }
 
-    // Окно файла в «днях до вылета» для вылета date: { lo, hi } или null.
+    // окно файла в днях до вылета для вылета date: { lo, hi } или null
     function windowDtd(date, win) {
         const fly = parseLocalDate(date);
         if (!fly || !win) return null;
@@ -75,10 +65,8 @@ window.SalesDayLog = (function () {
         return { lo: Math.round((f - win.to) / 86400000), hi: Math.round((f - win.from) / 86400000) };
     }
 
-    // ---------- построение ----------
-
-    // Запись вылета из живых билетов. Чистая функция: ничего не читает и не пишет, кроме salesDetails и среза данных.
-    // seats — число кресел в продаже (если известно), иначе 0.
+    // запись вылета из живых билетов; чистая функция, читает только salesDetails и срез данных
+    // seats - кресла в продаже, если известно, иначе 0
     function build(date, code, seats) {
         const fly = parseLocalDate(date);
         const list = typeof getFlightSalesList === 'function' ? getFlightSalesList(date, code) : [];
@@ -122,18 +110,16 @@ window.SalesDayLog = (function () {
         return n;
     }
 
-    // Билетов в записи; lo..hi — только дни из этого диапазона dtd (окно файла продаж).
+    // Билетов в записи; lo..hi - только дни из этого диапазона dtd (окно файла продаж).
     function flightCount(rec, lo, hi) {
         let n = 0;
         Object.keys((rec && rec.d) || {}).forEach(t => { if (lo == null || (+t >= lo && +t <= hi)) n += dayCount(rec.d[t]); });
         return n;
     }
 
-    // Слияние записей одного вылета. Возвращает { rec, changed }. win — окно файла продаж в dtd этого вылета { lo, hi } (или null).
-    // По каждому dtd: нового нет — старое; старое помечено cut (день был неполным) — новое; иначе новое,
-    // кроме случая, когда в окне файла новых билетов < 80% от старых (обрезанный файл) — тогда старое.
-    // Дни внутри окна, которых в новом файле нет (все билеты возвращены), убираются; крайний ранний день окна не уменьшаем
-    // (файл мог начаться с середины дня).
+    // слияние записей одного вылета, возвращает { rec, changed }; win - окно файла в dtd { lo, hi } или null
+    // по dtd: нового нет - старое; старое с cut (день неполный) - новое; иначе новое, но не если новых меньше 80%
+    // пропавшие в окне дни убираем (билеты вернули); крайний ранний день не трогаем, файл мог начаться посреди дня
     function mergeFlight(prev, next, win) {
         if (!prev || !prev.d) return { rec: next, changed: true };
         const lo = win ? win.lo : null;
@@ -157,8 +143,6 @@ window.SalesDayLog = (function () {
         return { rec: changed ? { s, d } : prev, changed };
     }
 
-    // ---------- чтение ----------
-
     function readMonth(month) {
         if (loadedMonths.has(month)) return Promise.resolve();
         if (inflight.has(month)) return inflight.get(month);
@@ -170,13 +154,13 @@ window.SalesDayLog = (function () {
     async function readMonth0(month) {
         if (typeof SharedStorage === 'undefined') return;
         const r = await SharedStorage.readJsonFileStrict(`history/daylog-${month}.json`).catch(() => ({ ok: false }));
-        if (!r.ok) return;   // нет доступа — не помечаем, перечитаем позже
+        if (!r.ok) return;   // нет доступа - не помечаем, перечитаем позже
         loadedMonths.add(month);
         const f = r.data && r.data.flights;
         if (f && typeof f === 'object') Object.keys(f).forEach(k => { if (f[k] && f[k].d) store[k] = f[k]; });
     }
 
-    // Догрузить месяцы ['ГГГГ-ММ', …]: только у тех, у кого есть право. Промис — когда все прочитаны (true — что-то загрузили).
+    // догрузить месяцы ['ГГГГ-ММ', ...], только при праве; промис - когда все прочитаны (true - что-то загрузили)
     function ensureMonths(months) {
         if (!canUse()) return Promise.resolve(false);
         const need = (months || []).filter(m => /^\d{4}-\d{2}$/.test(m) && !loadedMonths.has(m));
@@ -184,7 +168,7 @@ window.SalesDayLog = (function () {
         return Promise.all(need.map(m => readMonth(m).catch(() => null))).then(() => {
             const got = need.some(m => loadedMonths.has(m));
             if (got) rev++;
-            return got;   // true — что-то прочиталось (не прочиталось — повторять сразу нечего)
+            return got;   // true - что-то прочиталось; если нет, повторять сразу нечего
         });
     }
 
@@ -200,9 +184,9 @@ window.SalesDayLog = (function () {
         return formatDateRu(d);
     }
 
-    // Продажи вылета по дням сделки из журнала: [{ deal, dtd, n, a, r, ra, c, g, p }], по возрастанию даты.
-    // n — билетов, a — взрослых платных, ra — их выручка, r — выручка по всем платным (null — день записан старым видом),
-    // c — { класс: билетов } у взрослых платных, g — в группах, p — платных всех видов.
+    // продажи вылета по дням сделки из журнала, по возрастанию даты: [{ deal, dtd, n, a, r, ra, c, g, p }]
+    // n - билетов, a - взрослых платных, ra - их выручка, r - выручка всех платных (null - день старого вида)
+    // c - { класс: билетов } у взрослых платных, g - в группах, p - платных всех видов
     function daysFor(date, code) {
         const rec = flight(date, code);
         if (!rec || !rec.d) return [];
@@ -216,9 +200,9 @@ window.SalesDayLog = (function () {
         }).sort((x, y) => y.dtd - x.dtd);
     }
 
-    // «Билеты» для расчёта рублей: дни сделок вне окна файла продаж, восстановленные из журнала. У каждого — средний тариф дня
-    // (по классу взрослых и общий для прочих платных), так что число билетов и сумма по дню сходятся с настоящими.
-    // Пусто, если журнала нет или он записан старым видом (без выручки по всем платным).
+    // билеты для расчёта рублей: дни вне окна файла продаж, восстановленные из журнала
+    // средний тариф дня по классу взрослых, общий для прочих платных; билеты и сумма сходятся с настоящими
+    // пусто, если журнала нет или он старого вида (без выручки по всем платным)
     function syntheticTickets(date, code) {
         const rec = flight(date, code);
         if (!rec || !rec.d) return [];
@@ -249,8 +233,8 @@ window.SalesDayLog = (function () {
         return out;
     }
 
-    // Взрослые платные по дням сделки: свежие данные из файла продаж + более старые дни из журнала.
-    // [{ dtd, a, ra }] по убыванию dtd (от раннего дня к позднему).
+    // взрослые платные по дням: свежие из файла продаж, старые из журнала
+    // [{ dtd, a, ra }] по убыванию dtd, от раннего дня к позднему
     function adultDays(date, code) {
         const wd = windowDtd(date, fileWindow());
         const byDtd = Object.create(null);
@@ -279,10 +263,8 @@ window.SalesDayLog = (function () {
         return (months || []).every(m => loadedMonths.has(m));
     }
 
-    // ---------- запись ----------
-
     const pause = () => new Promise(r => setTimeout(r, 6));
-    // Порции по ~8 мс: интерфейс остаётся отзывчивым, пока журнал собирается в фоне.
+    // порции по ~8 мс, чтобы интерфейс не висел, пока журнал собирается в фоне
     function makeYield() {
         let t = performance.now();
         return async () => { if (performance.now() - t > 8) { await pause(); t = performance.now(); } };
@@ -307,9 +289,9 @@ window.SalesDayLog = (function () {
     }
 
     async function mergeAndWrite0(file, additions, tick) {
-        // Строгое чтение: файл не прочитался (ошибка, нет доступа) — не перезаписываем журнал.
-        // Запись «только если файл не менялся с прочтения»: вылеты, которые другой ПК добавил между чтением и записью,
-        // не теряются (при расхождении журнал перечитывается и сливается заново).
+        // не прочитали (ошибка, нет доступа) - журнал не перезаписываем
+        // запись только если файл не менялся с чтения: вылеты другого ПК между чтением и записью не теряются
+        // при расхождении журнал перечитываем и сливаем заново
         let merged = null;
         const res = await SharedStorage.updateJsonFile(file, async (remote) => {
             const flights = remote && remote.flights && typeof remote.flights === 'object' ? { ...remote.flights } : {};
@@ -322,9 +304,9 @@ window.SalesDayLog = (function () {
                 if ((++i & 31) === 0) await tick();
             }
             merged = flights;
-            return changed ? { version: 1, updatedAt: new Date().toISOString(), flights } : false;   // нечего добавлять — файл не трогаем
+            return changed ? { version: 1, updatedAt: new Date().toISOString(), flights } : false;   // нечего добавлять - файл не трогаем
         }).catch(() => ({ ok: false }));
-        // Что есть в файле (с нашими слияниями) — доступно и для чтения в этой сессии.
+        // что есть в файле, со нашими слияниями, доступно для чтения в этой сессии
         if (merged) Object.keys(merged).forEach(k => { if (merged[k] && merged[k].d) store[k] = merged[k]; });
         return !!(res.ok || res.aborted);
     }
@@ -338,7 +320,7 @@ window.SalesDayLog = (function () {
         try { if (localStorage.getItem(DONE_KEY) === token) return true; } catch (e) { /* ignore */ }
         if (!(await SharedStorage.canWrite())) return false;
 
-        // Кресла вылетов — из строк рейсов (если есть).
+        // Кресла вылетов - из строк рейсов (если есть).
         const seatsOf = Object.create(null);
         const tick = makeYield();
         const bases = Object.keys(groupedData || {});
@@ -380,14 +362,14 @@ window.SalesDayLog = (function () {
         return ok;
     }
 
-    // Записать журнал по текущим данным. Только у публикующего, не чаще раза на новые данные, порциями.
+    // записать журнал по текущим данным; только публикующий, не чаще раза на новые данные, порциями
     function capture() {
         if (running) return running;
         running = capture0().catch(e => { console.warn('SalesDayLog.capture', e); return false; }).finally(() => { running = null; });
         return running;
     }
 
-    // В простое — после публикации данных и после входа (как SalesArchive.captureSoon).
+    // в простое, после публикации и входа (как SalesArchive.captureSoon)
     function captureSoon() {
         whenIdle(() => { capture(); }, 40000);
     }

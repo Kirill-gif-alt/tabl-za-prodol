@@ -1,5 +1,5 @@
-// js\sales-report.js - детализация продаж рейса и норма продаж.
-// Globals on purpose: no bundler; onclick and other files call by name.
+// детализация продаж рейса и норма продаж
+// глобалы намеренно: без сборщика, onclick и другие файлы зовут по имени
 
 function closeTableSalesPanel() {
     const ids = ['table-sales-panel', 'pair-sales-panel', 'pkz-detail-panel'];
@@ -50,7 +50,7 @@ function openSalesReportForFlight(flightBase, flyDate, flightCode) {
         openPkzReportForFlight(flightBase, flyDate, flightCode);
         return;
     }
-    // На графплане / данных / RMS — не уводим на другую вкладку
+    // на графплане, данных и RMS вкладку не переключаем
     if (currentTab !== 'table' && currentTab !== 'pair') {
         currentFlight = cleanFlight(flightCode || flightBase) || flightBase;
         lastSelectedDate = flyDate;
@@ -80,7 +80,7 @@ function openSalesReportForFlight(flightBase, flyDate, flightCode) {
     });
 }
 
-// Детализация справа от таблицы: таблица остаётся на всю высоту, граница перетаскивается.
+// детализация справа, таблица на всю высоту, границу тянем мышью
 const SIDE_DETAIL_KEY = 'krasavia_side_detail_px';
 
 function openSideDetail(panel) {
@@ -121,7 +121,7 @@ function openSideDetail(panel) {
 function openPkzReportForFlight(flightBase, flyDate, flightCode) {
     if (!flightBase || !flyDate) return;
     const code = cleanFlight(flightCode || flightBase) || flightBase;
-    // Только на вкладке ПКЗ открываем панель; иначе просто запоминаем рейс
+    // панель открываем только на вкладке ПКЗ, иначе просто запоминаем рейс
     if (currentTab !== 'pkz') {
         currentFlight = code;
         lastSelectedDate = flyDate;
@@ -187,30 +187,24 @@ function buildOnHandByDtd(flyDateStr, flightCode) {
     return { onHand, maxDtd: maxD, total: run };
 }
 
-// ---------- Норма продаж: тот же рейс, тот же день недели ----------
-// Норма — средний темп продаж других вылетов этого рейса в тот же день недели (серая линия).
-// • На каждом «дне до вылета» t учитываются только вылеты, у которых этот день уже прошёл:
-//   улетевшие — целиком, будущие — только до даты среза продаж. Раньше будущий вылет входил
-//   с «продано на сегодня» как с итогом и занижал норму у дня вылета.
-// • Продажи считаются в доле от кресел и пересчитываются на кресла этого вылета, поэтому
-//   ATR-42, ATR-72 и Як-42 можно усреднять вместе.
-// • Берутся вылеты в пределах ±8 недель (без смешивания сезонов); если на сегодняшний день
-//   до вылета так набирается меньше 2 вылетов — весь период данных.
+// норма: тот же рейс и день недели, вылеты ±8 недель (сезоны не смешиваем; меньше 2 - весь период)
+// на дне до вылета берем вылеты, у которых он уже прошел; будущие - только до даты среза
+// в долях от кресел, пересчет на кресла вылета: ATR-42, ATR-72 и Як-42 усредняем вместе
 let salesCutoffCache = { ref: null, sig: '', time: 0 };
-const salesDealDayMs = new Map();   // «дд.мм.гггг» → начало дня, мс
+const salesDealDayMs = new Map();   // ключ "дд.мм.гггг", значение - начало дня в мс
 
-// Дата среза продаж: последний день, за который есть сделки (не дата на часах компьютера).
+// дата среза: последний день со сделками, не системная дата
 function salesDataCutoffTime() {
     const ref = typeof salesDetails !== 'undefined' ? salesDetails : null;
-    // Зовётся тысячи раз (на каждый вылет когорты): быстрый ключ — эпоха данных; число рейсов в объекте продаж
-    // (он заполняется постепенно при загрузке CSV) пересчитываем, только когда сменилась эпоха.
+    // зовется тысячи раз: быстрый ключ - эпоха данных
+    // число рейсов в объекте продаж пересчитываем только при смене эпохи (растет при загрузке CSV)
     const epoch = typeof dataEpoch === 'number' ? dataEpoch : 0;
     const quiet = !!(typeof window !== 'undefined' && window.ingestQuiet);
     const now = Date.now();
     if (salesCutoffCache.ref === ref && salesCutoffCache.time) {
         if (!quiet && salesCutoffCache.epoch === epoch) return salesCutoffCache.time;
-        // Во время загрузки зовётся десятки тысяч раз, а сам подсчёт рейсов в продажах небыстрый: проверяем не чаще
-        // раза в 0,2 с. Посчитанное в это время после загрузки всё равно пересчитывается (в подписи признак загрузки).
+        // при загрузке зовется десятки тысяч раз, подсчет медленный: проверяем не чаще раза в 0,2 с
+        // после загрузки все равно пересчитывается (в подписи признак загрузки)
         if (quiet && salesCutoffCache.quiet && now - salesCutoffCache.at < 200) return salesCutoffCache.time;
     }
     const sig = `${Object.keys(ref || {}).length}|${typeof lastSalesUpdate !== 'undefined' && lastSalesUpdate ? new Date(lastSalesUpdate).getTime() : 0}|${quiet ? 1 : 0}`;
@@ -220,7 +214,7 @@ function salesDataCutoffTime() {
         salesCutoffCache.at = now;
         return salesCutoffCache.time;
     }
-    // Во время загрузки зовётся сотни раз по всем билетам: каждую дату сделки разбираем один раз.
+    // при загрузке зовется сотни раз по всем билетам, дату сделки разбираем один раз
     if (salesDealDayMs.size > 20000) salesDealDayMs.clear();
     let max = 0, last, lastMs = 0;
     Object.keys(ref || {}).forEach(k => {
@@ -246,7 +240,7 @@ function salesDataCutoffTime() {
     return time;
 }
 
-// С какого «дня до вылета» продажи по вылету уже известны (0 — вылет состоялся).
+// с какого "дня до вылета" известны продажи (0 - вылет состоялся)
 function observedFromDtd(flyDateStr) {
     const fd = parseLocalDate(flyDateStr);
     if (!fd) return 0;
@@ -264,8 +258,8 @@ function collectSameWeekdayCohort(baseFlight, flyDateStr, flightCode) {
     const seen = new Set();
     rows.forEach(row => {
         const dtStr = row[1];
-        // Участок доп. посадки другого рейса (KV-173 KJA-TGP в KV-171): его билеты не этого рейса — в норму не берём.
-        // Остальные участки вылета с посадками (segShare) тоже пропускаем: у вылета один основной (сквозной) участок, его загрузка и кресла.
+        // участок доп. посадки другого рейса (KV-173 KJA-TGP в KV-171) в норму не берем
+        // остальные участки с посадками (segShare) тоже пропускаем, нужен основной (сквозной) участок
         if (!dtStr || dtStr === flyDateStr || seen.has(dtStr) || row.segKey || row.segShare) return;
         const dt = parseLocalDate(dtStr);
         if (!dt || dt.getDay() !== dow) return;
@@ -283,7 +277,7 @@ function collectSameWeekdayCohort(baseFlight, flyDateStr, flightCode) {
             dayGap: Math.round(Math.abs(dt.getTime() - flyDt.getTime()) / 86400000)
         });
     });
-    // Улетевшие вылеты, которых уже нет в файлах, — из архива (sales-archive.js).
+    // улетевшие, которых нет в файлах, берем из архива (sales-archive.js)
     if (typeof SalesArchive !== 'undefined') {
         SalesArchive.departuresFor(code).forEach(a => {
             if (a.date === flyDateStr || seen.has(a.date) || !(a.seats > 0)) return;
@@ -302,14 +296,14 @@ function collectSameWeekdayCohort(baseFlight, flyDateStr, flightCode) {
             });
         });
     }
-    // Один и тот же порядок при каждой загрузке (архив отдаёт вылеты не по порядку): сначала ближние даты.
+    // порядок всегда один: архив отдает не по порядку, сначала ближние даты
     dates.sort((a, b) => (a.dayGap - b.dayGap) || (parseLocalDate(a.date) - parseLocalDate(b.date)));
-    // Праздники и каникулы не смешиваются с обычными днями (календарь событий в «Справочнике»).
+    // праздники и каникулы отдельно от обычных дней (календарь в "Справочнике")
     return typeof CalendarEvents !== 'undefined' ? CalendarEvents.filterCohort(dates, flyDateStr) : dates;
 }
 
-// Загрузка (файл «загрузка таб») точнее файла продаж: в продажах бывают незакрытые возвраты и обмены.
-// Кривую продаж масштабируем так, чтобы она кончалась на загрузке; форма (когда покупали) остаётся.
+// загрузка точнее файла продаж: там бывают незакрытые возвраты и обмены
+// кривую масштабируем под загрузку, форма (когда покупали) остается
 function anchorCurveToLoad(curve, load) {
     if (!curve || !(load > 0) || !(curve.total > 0) || curve.total === load) return curve;
     const k = load / curve.total;
@@ -318,14 +312,14 @@ function anchorCurveToLoad(curve, load) {
     return { onHand, maxDtd: curve.maxDtd, total: load, salesTotal: curve.total, anchored: true };
 }
 
-// Кривая продаж вылета: из текущего файла продаж, а если вылет уже выпал из него — из архива.
+// кривая продаж: из текущего файла, если вылета там уже нет - из архива
 function departureCurve(dateStr, code) {
     if (getFlightSalesList(dateStr, code).length) return buildOnHandByDtd(dateStr, code);
     const archived = typeof SalesArchive !== 'undefined' ? SalesArchive.curveFor(dateStr, code) : null;
     return archived || buildOnHandByDtd(dateStr, code);
 }
 
-// Норма по когорте на каждом дне до вылета: среднее, разброс и число вылетов.
+// норма по когорте на каждом дне до вылета: среднее, разброс, число вылетов
 function weekdayNormSeries(cohort, dtds, targetSeats) {
     const curves = cohort.filter(c => c.seats > 0).map(c => ({ ...c, curve: anchorCurveToLoad(departureCurve(c.date, c.code), c.load) }));
     const avgSeats = curves.length ? curves.reduce((a, c) => a + c.seats, 0) / curves.length : 0;
@@ -334,7 +328,7 @@ function weekdayNormSeries(cohort, dtds, targetSeats) {
         const lfs = [];
         curves.forEach(c => {
             const v = weekdayNormValueAt(c, t);
-            // Не больше 100%: билетов бывает больше кресел из-за возвратов и обменов.
+            // не больше 100%, билетов может быть больше кресел (возвраты, обмены)
             if (v != null) lfs.push(Math.min(1, v / c.seats));
         });
         if (lfs.length < PV.WEEKDAY_NORM_MIN_N || !scale) return { n: lfs.length, value: null, lo: null, hi: null, lf: null };
@@ -347,8 +341,8 @@ function weekdayNormSeries(cohort, dtds, targetSeats) {
             lf: Math.round(mean * 100)
         };
     });
-    // Накопленные продажи к вылету не убывают: на ближних днях учтено меньше вылетов (только те, у кого день прошёл),
-    // и среднее по ним могло «проседать». Линия нормы — не ниже, чем днём раньше.
+    // накопленная норма не убывает: на ближних днях учтено меньше вылетов, среднее могло просесть
+    // линия не ниже, чем днем раньше
     let mv = -Infinity;
     let ml = -Infinity;
     let mh = -Infinity;
@@ -362,7 +356,7 @@ function weekdayNormSeries(cohort, dtds, targetSeats) {
     return { points, curves };
 }
 
-// Сколько билетов было продано на вылете за t дней до вылета; null — этот день ещё не наступил.
+// билетов продано за t дней до вылета; null - день еще не наступил
 function weekdayNormValueAt(c, t) {
     if (t < c.observedFrom) return null;
     const oh = c.curve.onHand[t];
@@ -384,7 +378,7 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
     const ownLoad = ownRow ? (typeof getSoldFromRow === 'function' ? getSoldFromRow(ownRow) : (parseInt(ownRow[6], 10) || 0)) : 0;
     const thisCurve = anchorCurveToLoad(buildOnHandByDtd(flyDateStr, code), ownLoad);
     const asOf = typeof getDaysUntil === 'function' ? getDaysUntil(flyDateStr) : null;
-    // Ось кончается на последнем дне, за который есть продажи (дата среза), а не на дате компьютера.
+    // ось до даты среза, не до даты компьютера
     const axisMin = Math.max(asOf === null ? 0 : Math.max(0, asOf), observedFromDtd(flyDateStr));
     const lookback = Math.min(180, Math.max(1, parseInt(period, 10) || 30));
     const hi = Math.min(180, axisMin + lookback);
@@ -404,7 +398,7 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
     let caption = 'Кривая за 14 дней: накоплено билетов к моменту «N дней до вылета». Данные только за последние 14 дней продаж.';
     const dowName = typeof getDayOfWeek === 'function' ? getDayOfWeek(flyDateStr) : '';
 
-    // «Обычно к этому дню» — по нынешним продажам: норма по тем же дням недели (вылеты ±8 недель).
+    // обычно к этому дню: норма по тем же дням недели, вылеты ±8 недель
     {
         const cohortAll = collectSameWeekdayCohort(baseFlight, flyDateStr, code);
         const targetRow = typeof getFlightRowForDate === 'function' ? getFlightRowForDate(baseFlight, flyDateStr, code) : null;
@@ -442,7 +436,7 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
     if (typeof getExpectedLoad === 'function' && typeof getCapacityFromAircraft === 'function') {
         const cap = getCapacityFromAircraft(typeof getAircraftType === 'function' ? getAircraftType(aircraftCode) : aircraftCode);
         const wk = typeof getWeekForExpectedLoad === 'function' ? getWeekForExpectedLoad(flyDateStr) : 1;
-        // Файл ожидаемой считает от вместимости ВС: больше кресел в продаже ждать нельзя — как в RMS и «Динамике продаж» (metrics.js).
+        // ожидаемая из файла считается от вместимости ВС, больше кресел не ждем (как в RMS, metrics.js)
         const seatsEv = ownRow && typeof getSeatsOnSale === 'function' ? getSeatsOnSale(ownRow) : 0;
         const pts = dtds.map(t => {
             const ev = getExpectedLoad(cap, baseFlight, t, wk);
@@ -451,10 +445,8 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
         if (pts.some(v => v !== null)) expectedData = pts;
     }
 
-    // Вывод простыми словами: сколько продано и сравнение с обычным темпом и с планом (файл ожидаемой).
-    //   Продано 4 · за 18 дн. до вылета
-    //   Обычно к этому дню 11 — на 7 меньше
-    //   По плану 5 — на 1 меньше
+    // сколько продано и сравнение с обычным темпом и планом (файл ожидаемой)
+    // пример: "Продано 4 за 18 дн.", "обычно 11 - на 7 меньше", "по плану 5 - на 1 меньше"
     const refVal = refData && refData.length ? refData[refData.length - 1] : null;
     const expVal = expectedData && expectedData.length ? expectedData[expectedData.length - 1] : null;
     const diffText = (d) => (d > 0 ? `на ${d} больше` : (d < 0 ? `на ${Math.abs(d)} меньше` : 'столько же'));
@@ -472,7 +464,7 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
         lines.push({ label: 'По плану к этому дню', value: expVal, d, title: 'Из файла ожидаемой загрузки — сколько должно быть продано к этому дню' });
         if (mainDelta == null) mainDelta = d;
     }
-    // Данные продаж не сегодняшние — так и пишем: иначе «за 13 дн.» спорит с «DTD 7» в шапке карточки.
+    // данные не сегодняшние, пишем об этом, иначе "за 13 дн." спорит с "DTD 7" в шапке
     let dataNote = '';
     if (asOf != null && axisMin > Math.max(0, asOf) && typeof salesDataCutoffTime === 'function') {
         const cd = new Date(salesDataCutoffTime());
@@ -489,7 +481,7 @@ function buildFlightDtdBookingSeries(baseFlight, flyDateStr, flightCode, period,
     return { dtds, thisData, refData, refBand, normInfo, refLabel, caption, verdictHtml, verdictCls, expectedData };
 }
 
-// Таблица под графиком: из каких вылетов посчитана норма.
+// таблица под графиком: из каких вылетов норма
 function buildWeekdayNormTableHtml(dtdCurve) {
     const info = dtdCurve && dtdCurve.normInfo;
     if (!info || !info.curves.length) return '';
@@ -567,15 +559,15 @@ function bindFlightCommentBox(root) {
             return;
         }
         if (saved.conflict) {
-            // Пока вы правили, комментарий изменил другой человек. Ничего не записано, ваш текст остался в окне.
+            // комментарий поменял другой человек, пока правили; ничего не записано, текст остается в окне
             const c = saved.conflict;
-            box.dataset.commentBase = c.updatedAt;   // следующее нажатие «Сохранить» запишет ваш вариант
+            box.dataset.commentBase = c.updatedAt;   // следующее "Сохранить" запишет текущий текст
             if (st) st.textContent = `Комментарий уже изменил(а) ${c.author || 'другой пользователь'}: «${c.text.slice(0, 200)}». Ваш текст не потерян — проверьте и нажмите «Сохранить» ещё раз`;
             if (typeof showToast === 'function') showToast('Комментарий к рейсу только что изменил другой пользователь', 'error');
             return;
         }
         box.dataset.commentBase = FlightComments.updatedAtOf(fl, dt);
-        // Не записался в общую папку — комментарий остаётся на этом компьютере; причину уже показало сообщение об ошибке.
+        // не записан в общую папку - остается на этом компьютере; причину показывает сообщение об ошибке
         if (st) st.textContent = saved.shared ? 'Сохранено' : 'Сохранено только на этом компьютере';
         if (saved.shared && typeof showToast === 'function') showToast('Комментарий сохранён');
         ['table-container', 'pkz-table-container'].forEach(id => {
@@ -586,7 +578,7 @@ function bindFlightCommentBox(root) {
 
 let lastSalesReportArgs = null;
 
-// Перерисовать открытую детализацию продаж (после отметки или догрузки архива).
+// перерисовать открытую детализацию (после отметки или догрузки архива)
 function refreshOpenSalesReport() {
     const a = lastSalesReportArgs;
     if (!a) return;
@@ -594,7 +586,7 @@ function refreshOpenSalesReport() {
     if (!host || !host.isConnected || !host.innerHTML.trim()) return;
     const panel = host.closest('.is-hidden');
     if (panel) return;
-    // Сохраняем то, что пользователь мог трогать: набранный комментарий, раскрытые блоки, прокрутку.
+    // сохраняем набранный комментарий, раскрытые блоки и прокрутку
     const box = host.querySelector('.sd-comment');
     const ta = host.querySelector('.flight-comment-input');
     const keep = {
@@ -696,20 +688,20 @@ function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode)
             cumulative,
             daily,
             dtd,
-            expectedAtPoint: expAtPoint !== null ? Math.ceil(seats > 0 ? Math.min(expAtPoint, seats) : expAtPoint) : null   // не больше кресел в продаже, как в RMS
+            expectedAtPoint: expAtPoint !== null ? Math.ceil(seats > 0 ? Math.min(expAtPoint, seats) : expAtPoint) : null   // не больше кресел, как в RMS
         };
     });
 
     const dtdCurve = buildFlightDtdBookingSeries(baseFlight, flyDateStr, salesFlight, period, aircraftCode);
     const comment = typeof FlightComments !== 'undefined' ? FlightComments.get(salesFlight, flyDateStr) : '';
     const metricsRow = flightRow && typeof getRowMetrics === 'function' ? getRowMetrics(flightRow, baseFlight) : null;
-    const expR = finalExpectedLoad !== null ? Math.ceil(seats > 0 ? Math.min(finalExpectedLoad, seats) : finalExpectedLoad) : null;   // не больше кресел в продаже, как в RMS
+    const expR = finalExpectedLoad !== null ? Math.ceil(seats > 0 ? Math.min(finalExpectedLoad, seats) : finalExpectedLoad) : null;
     const deltaNow = metricsRow && metricsRow.delta != null ? metricsRow.delta : null;
     const pct = seats > 0 ? Math.round(loadPax / seats * 100) : null;
     const chip = (label, value, extra) => `<span class="sd-kpi"><span class="sd-kpi-label">${label}</span><strong>${value}</strong>${extra || ''}</span>`;
     const periodBtn = (n) => `<button type="button" class="sd-period-btn sales-period-btn${period === n ? ' sd-on' : ''}" data-period="${n}">${n}</button>`;
 
-    // Продажи по тарифам: лестница цен — что продаётся, по какой цене и когда в последний раз.
+    // продажи по тарифам: лестница цен, по какой цене и когда последний раз продали
     const fareRows = (() => {
         const list = typeof getFlightSalesList === 'function' ? getFlightSalesList(flyDateStr, salesFlight) : [];
         const cut = typeof salesDataCutoffTime === 'function' ? salesDataCutoffTime() : Date.now();
@@ -828,8 +820,8 @@ function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode)
 
     setTimeout(() => {
         if (typeof Chart === 'undefined') return;
-        // Один график на оси дат: столбики — билеты за день, линии — накоплено, норма и ожидаемая
-        // (норма и ожидаемая считаются по «дням до вылета» и переносятся на дату).
+        // один график на оси дат: столбики - билеты за день, линии - накоплено, норма, ожидаемая
+        // норма и ожидаемая считаются по дням до вылета и переносятся на дату
         const n = cumulativeData.length;
         const tickStep = n <= 12 ? 1 : n <= 24 ? 2 : n <= 45 ? 3 : n <= 90 ? 5 : 7;
         const labels = cumulativeData.map(d => d.label);
@@ -887,7 +879,7 @@ function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode)
                 },
                 scales: {
                     y1: { position: 'left', beginAtZero: true, title: { display: true, text: 'накоплено' }, ticks: { color: '#334155' }, grid: { color: 'rgba(148,163,184,0.25)' } },
-                    // Ось «за день» выше максимума в 3 раза: столбики внизу и не закрывают линии.
+                    // ось "за день" в 3 раза выше максимума, чтобы столбики не закрывали линии
                     y: { position: 'right', beginAtZero: true, suggestedMax: maxDaily * 3, title: { display: true, text: 'за день' }, ticks: { stepSize: 1, color: '#64748b' }, grid: { display: false } },
                     x: {
                         ticks: {
@@ -905,5 +897,5 @@ function buildFlightSalesReportFor(baseFlight, flyDateStr, resultId, flightCode)
     }, 80);
 }
 
-// После отметки за сегодня — перерисовать открытую детализацию (кнопки и маркеры).
+// после отметки перерисовать открытую детализацию
 document.addEventListener('krasavia:mark', () => refreshOpenSalesReport());

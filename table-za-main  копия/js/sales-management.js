@@ -1,10 +1,6 @@
-// Вкладка «Управление продажами»: своя таблица на номер рейса.
-// Отметки и запомненные даты лежат в shared/sales-management.json. Их видят все, у кого есть эта вкладка:
-// страница перечитывает файл каждые 30 минут. Запись проходит, если папка приложения подключена.
-// «С» у строк и столбцов не сдвигается само. «По» у строк растёт до позднего вылета.
-// Столбцы заполнения кончаются сегодня: слева сегодня, вправо более ранние дни. Завтра новый день встаёт слева.
-// Вылет, который ещё не улетел, повторяет загрузку: перенос даты убирает старую строку, тип ВС берётся свежий.
-// Улетевшие вылеты остаются как были.
+// вкладка "Управление продажами", таблица на номер рейса; запись только если папка приложения подключена
+// столбцы заполнения: слева сегодня, вправо более ранние дни; "По" у строк растёт до позднего вылета
+// не улетевший вылет повторяет загрузку, улетевшие не трогаем
 window.SalesManagement = (function () {
     const FILE = 'sales-management.json';
     const LOCAL_KEY = 'krasavia_sales_mgmt_v1';
@@ -103,7 +99,7 @@ window.SalesManagement = (function () {
         return !!(src && (Object.prototype.hasOwnProperty.call(src, 'enabledRoutes') || src.routesUpdatedAt));
     }
 
-    // Файл восстановили из резервной копии (restoredAt): всё старше этого момента в копии браузера не возвращаем.
+    // restoredAt: записи старше этого момента из копии браузера не берем
     function trimRestored(local, since) {
         if (!since || !local) return local;
         const out = { ...local };
@@ -296,7 +292,7 @@ window.SalesManagement = (function () {
         return items.size ? { items, from, to } : null;
     }
 
-    // Не улетевшие вылеты в пределах дат загрузки сверяются с ней: лишние уходят, тип ВС переписывается.
+    // не улетевшие вылеты сверяем с расписанием: лишние уходят, тип ВС переписываем
     function syncWithLive(map) {
         if (!liveSchedule || !map || typeof compareDateStr !== 'function') return false;
         const today = startOfToday();
@@ -307,7 +303,7 @@ window.SalesManagement = (function () {
             if (compareDateStr(item.date, liveSchedule.from) < 0 || compareDateStr(item.date, liveSchedule.to) > 0) return;
             const live = liveSchedule.items.get(id);
             if (!live) {
-                // Исходная дата задержанного рейса остаётся в истории (строка скрыта, от неё идут отметки).
+                // исходная дата задержанного рейса: строку скрываем, отметки от нее остаются
                 if (typeof DelayedFlights !== 'undefined' && DelayedFlights.movedTo(item.code, item.date)) return;
                 delete map[id];
                 changed = true;
@@ -482,11 +478,11 @@ window.SalesManagement = (function () {
         routesDirty = false;
         historyDirty = false;
         holdEnds = false;
-        // Слияние с тем, что сейчас в общем файле; зовётся заново, если файл успели изменить до нашей записи.
+        // слияние с текущим общим файлом; перезовем, если файл поменяли до записи
         const build = (remote) => {
             const since = remote && remote.restoredAt ? String(remote.restoredAt) : '';
             if (since) {
-                // Файл восстановлен из копии: свои более старые отметки/маршруты/диапазоны не возвращаем.
+                // после восстановления из копии свои старые отметки, маршруты и диапазоны не возвращаем
                 Object.keys(cache.marks).forEach(key => {
                     const m = cache.marks[key];
                     if (!batch.has(key) && !dirty.has(key) && m && String(m.updatedAt || '') < since) delete cache.marks[key];
@@ -574,8 +570,8 @@ window.SalesManagement = (function () {
                 departures: cache.departures || {}
             };
         };
-        // Перечитать общий файл → слить → записать «только если файл не менялся с прочтения».
-        // Не удалось прочитать файл — не пишем: иначе общие данные затёрлись бы своей устаревшей копией.
+        // перечитать общий файл, слить, писать только если с прочтения его не меняли
+        // не смогли прочитать - не пишем, иначе затрем общие данные устаревшей копией
         let ok = false;
         if (typeof SharedStorage !== 'undefined' && typeof SharedStorage.updateJsonFile === 'function') {
             const res = await SharedStorage.updateJsonFile(FILE, (remote) => build(remote));
@@ -606,7 +602,7 @@ window.SalesManagement = (function () {
         updateSaveStatus();
         clearTimeout(persistTimer);
         persistTimer = setTimeout(() => {
-            // Обнуляем: иначе hasPending() навсегда true и фоновая подгрузка чужих отметок не идёт.
+            // обнуляем, иначе hasPending() всегда true и чужие отметки не подгружаются в фоне
             persistTimer = null;
             persistChain = persistChain.then(() => persistNow()).catch(() => {});
         }, 400);
@@ -726,18 +722,15 @@ window.SalesManagement = (function () {
         ].join(':');
     }
 
-    // ---------- Отметки: у каждого автора свой файл ----------
-    // shared/sales-marks/ГГГГ-ММ/<автор>.json (месяц — по дате проверки): { author, marks: { ключ: { s, at } } }.
-    // Каждый пишет только свой файл, поэтому одновременные отметки разных людей не затирают друг друга.
-    // s = 'none' — человек снял свою отметку (чужие остаются). Старые отметки из sales-management.json
-    // читаются как раньше и показываются вместе с новыми; новые туда больше не пишутся.
-    // В ячейке до трёх авторов: самый новый слева.
+    // shared/sales-marks/ГГГГ-ММ/<автор>.json: { author, marks: { ключ: { s, at } } }, месяц по дате проверки
+    // свой файл у каждого автора, поэтому одновременные отметки не затирают друг друга; s = 'none' - свою отметку сняли
+    // старые отметки из sales-management.json читаем, новые туда не пишем; в ячейке до трех авторов, новый слева
     const MARKS_DIR = 'sales-marks';
     const PENDING_KEY = 'krasavia_sm_pending_v2';
     const MAX_AUTHORS = 3;
-    let people = {};            // месяц → slug → { author, marks }
+    let people = {};            // месяц -> slug -> { author, marks }
     let peopleRev = 0;
-    let pending = readPending(); // 'ключ|slug' → { key, slug, author, s, at } — ещё не подтверждено в файле
+    let pending = readPending(); // 'ключ|slug' -> { key, slug, author, s, at } - ещё не подтверждено в файле
     let peopleTimer = null;
     let peopleRetryMs = 10000;
     let entriesCache = { rev: '', map: new Map() };
@@ -780,7 +773,7 @@ window.SalesManagement = (function () {
         return `${MARKS_DIR}/${month}/${slug}.json`;
     }
 
-    // Необязательные «Класс до» / «Класс после» — только у повышения/снижения, одна буква класса.
+    // необязательные "Класс до" / "Класс после": только для повышения/снижения, одна буква класса
     function cleanCls(v) {
         const t = String(v == null ? '' : v).trim().toUpperCase();
         return /^[A-Z]$/.test(t) ? t : '';
@@ -803,7 +796,7 @@ window.SalesManagement = (function () {
         return out;
     }
 
-    // Ключ той же ячейки на исходной дате задержанного рейса («KV-203|12.11.2026|10.11.2026» → «…|11.11.2026|…»).
+    // ключ ячейки на исходной дате задержанного рейса: KV-203|12.11.2026|10.11.2026 -> ...|11.11.2026|...
     function originKeyOf(key) {
         if (typeof DelayedFlights === 'undefined') return '';
         const p = key.split('|');
@@ -812,9 +805,8 @@ window.SalesManagement = (function () {
         return o ? `${p[0]}|${o}|${p[2]}` : '';
     }
 
-    // Отметки ячейки: [{ status, author, updatedAt, clsFrom?, clsTo? }], самая новая первой, ВСЕ авторы.
-    // Ограничение «до трёх» — только для показа в ячейке (getMarks); журнал решений, карточка и «своя отметка» видят всех:
-    // иначе решение первого человека пропадало бы из отчёта, когда трое других отметили «без изменений» позже.
+    // отметки ячейки [{ status, author, updatedAt, clsFrom?, clsTo? }], новые первыми, все авторы
+    // в ячейке показываем до трех (getMarks); журнал решений и карточка видят всех, иначе решение пропадет из отчета
     function cellEntries(key) {
         const rev = markRevision();
         if (entriesCache.rev !== rev) entriesCache = { rev, map: new Map() };
@@ -831,7 +823,7 @@ window.SalesManagement = (function () {
             if (ex.clsTo) entry.clsTo = ex.clsTo;
             by.set(id, entry);
         };
-        // Задержанный рейс: отметки исходной даты показываются у новой (файлы не меняются, только чтение).
+        // задержанный рейс: отметки исходной даты показываем у новой, файлы не трогаем
         const origin = originKeyOf(key);
         [key, origin].forEach(k => {
             if (!k) return;
@@ -852,13 +844,13 @@ window.SalesManagement = (function () {
         return list;
     }
 
-    // Отметки ячейки для показа (в таблице и Excel), новая первой, не больше трёх авторов.
+    // для таблицы и Excel: новая первой, не больше трех авторов
     function getMarks(flight, dep, check) {
         const key = markKey(flight, dep, check);
         return key ? cellEntries(key).slice(0, MAX_AUTHORS) : [];
     }
 
-    // Самая новая отметка ячейки (для чипов, «Творческой», RMS).
+    // самая новая отметка: чипы, "Творческая", RMS
     function getMark(flight, dep, check) {
         return getMarks(flight, dep, check)[0] || null;
     }
@@ -883,7 +875,7 @@ window.SalesManagement = (function () {
             Object.keys((f && f.marks) || {}).forEach(k => { if (has(k)) found.add(k); });
         }));
         pending.forEach(p => { if (has(p.key)) found.add(p.key); });
-        // Ячейка одна на дату проверки: ключ исходной даты сводится к ключу новой (в нём отметки обеих дат).
+        // одна ячейка на дату проверки: ключ исходной даты сводим к новому ключу, в нем отметки обеих дат
         const keys = new Set();
         found.forEach(k => keys.add(`${fl}|${d1}|${k.split('|')[2]}`));
         const out = [];
@@ -893,14 +885,14 @@ window.SalesManagement = (function () {
         return out.sort((a, b) => ((parseLocalDate(a.check) || 0) - (parseLocalDate(b.check) || 0)) || (String(a.updatedAt) < String(b.updatedAt) ? -1 : 1));
     }
 
-    // Все отметки по всем вылетам (журнал решений в «Отчётах»): [{ flight, dep, check, status, author, updatedAt }].
+    // все отметки по всем вылетам для журнала решений: [{ flight, dep, check, status, author, updatedAt }]
     function allMarks() {
         const keys = new Set(Object.keys(cache.marks || {}));
         Object.values(people).forEach(files => Object.values(files).forEach(f => {
             Object.keys((f && f.marks) || {}).forEach(k => keys.add(k));
         }));
         pending.forEach(p => keys.add(p.key));
-        // Отметки исходной даты задержанного рейса относятся к его новому вылету.
+        // отметки исходной даты относим к новому вылету задержанного рейса
         const moved = new Set();
         keys.forEach(key => {
             const q = key.split('|');
@@ -916,9 +908,9 @@ window.SalesManagement = (function () {
         return out;
     }
 
-    // Дешёвый счётчик изменений отметок (для подписи кэша таблиц).
+    // счетчик изменений отметок, для подписи кэша таблиц
     let markRev = 0;
-    // Зовётся на каждую ячейку: число старых отметок считаем один раз на объект (он не меняется на месте — только заменяется).
+    // вызывается на каждую ячейку: число старых отметок считаем один раз на объект, объект только заменяется
     let marksCountMemo = { marks: null, n: 0 };
     function markRevision() {
         const marks = cache.marks || null;
@@ -926,19 +918,19 @@ window.SalesManagement = (function () {
         return rawMarkRevision() + ':' + (typeof DelayedFlights !== 'undefined' ? DelayedFlights.revision() : 0);
     }
 
-    // Версия самих отметок (без карты задержанных рейсов: та сама на неё опирается).
+    // версия отметок без карты задержанных рейсов (карта сама от нее зависит)
     function rawMarkRevision() {
         const marks = cache.marks || null;
         if (marksCountMemo.marks !== marks) marksCountMemo = { marks, n: marks ? Object.keys(marks).length : 0 };
         return markRev + ':' + peopleRev + ':' + pending.size + ':' + marksCountMemo.n;
     }
 
-    // Был ли у рейса вылет в этот день (история вылетов) — для поиска исходной даты задержанного рейса.
+    // был ли вылет рейса в этот день, нужно для поиска исходной даты задержанного рейса
     function hadDeparture(code, date) {
         return !!(cache.departures && cache.departures[operatingCode(code) + '|' + date]);
     }
 
-    // Метка версии истории вылетов (дёшево: на каждую ячейку).
+    // метка версии истории вылетов, дешевая, вызывается на каждую ячейку
     function departureCount() {
         return loadedAt + ':' + (cache.updatedAt || '');
     }
@@ -954,7 +946,7 @@ window.SalesManagement = (function () {
     }
 
     function stamp(key) {
-        // Время отметки не раньше уже стоящих в ячейке: «новая слева» не зависит от часов на ПК.
+        // время отметки не раньше уже стоящих в ячейке, чтобы "новая слева" не зависела от часов на ПК
         let at = new Date().toISOString();
         cellEntries(key).forEach(e => {
             if (String(e.updatedAt) >= at) at = new Date(Date.parse(e.updatedAt) + 1).toISOString();
@@ -980,7 +972,7 @@ window.SalesManagement = (function () {
         return setOwn(key, status, author || profileName(), extra);
     }
 
-    // Снять только свою отметку: отметки других людей в ячейке остаются.
+    // снимаем только свою отметку, чужие остаются
     function clearMark(flight, dep, check, author) {
         if (!canEdit()) return false;
         if (typeof salesCheckIsToday !== 'function' || !salesCheckIsToday(check)) return false;
@@ -997,10 +989,8 @@ window.SalesManagement = (function () {
         }, ms);
     }
 
-    // Записать свои неподтверждённые отметки: прочитать свой файл, добавить, записать.
-    // Не удалось прочитать — не пишем (иначе можно стереть свои прошлые отметки), повторяем позже.
-    // Запись и чтение файлов отметок идут строго по очереди: иначе медленная запись
-    // могла лечь поверх более новой, а опрос — вернуть старое содержимое своего файла.
+    // пишем свои неподтвержденные отметки: читаем свой файл, добавляем, пишем; не прочитали - не пишем, повторим позже
+    // запись и чтение файлов отметок идут по очереди, иначе медленная запись ляжет поверх более новой
     let peopleChain = Promise.resolve();
     function inPeopleQueue(fn) {
         const run = peopleChain.then(fn, fn);
@@ -1012,7 +1002,7 @@ window.SalesManagement = (function () {
         return inPeopleQueue(persistPeopleNow);
     }
 
-    // Сообщение о неудачной записи отметок — не чаще раза в минуту (повторы идут сами, пока связи нет).
+    // сообщение об ошибке записи не чаще раза в минуту; повторы идут сами, пока нет связи
     let marksFailToastAt = 0;
     let marksHadFailure = false;
 
@@ -1028,8 +1018,8 @@ window.SalesManagement = (function () {
         for (const [file, items] of groups) {
             const month = file.split('/')[1];
             const slug = items[0][1].slug;
-            // Свой файл: прочитать, добавить отметки, записать «только если файл не менялся с прочтения»
-            // (один и тот же человек может работать с двух компьютеров). Не удалось прочитать — не пишем.
+            // свой файл: читаем, добавляем, пишем только если не менялся; тот же человек может работать с двух ПК
+            // не прочитали - не пишем
             let payload = null;
             const res = await SharedStorage.updateJsonFile(file, (cur) => {
                 const remote = cur && typeof cur === 'object' ? cur : {};
@@ -1065,7 +1055,7 @@ window.SalesManagement = (function () {
         }
     }
 
-    // Месяцы, за которые нужны отметки: от начала столбцов до сегодня (не больше четырёх: 90 дней журнала решений).
+    // месяцы для отметок: от начала столбцов до сегодня, не больше четырех (журнал решений - 90 дней)
     function neededMonths() {
         const out = [];
         const today = typeof parseLocalDate === 'function' ? parseLocalDate(columnTodayStr()) : null;
@@ -1078,7 +1068,7 @@ window.SalesManagement = (function () {
         return out;
     }
 
-    // Прочитать файлы отметок всех авторов. onlyCurrent — только текущий месяц (частый опрос).
+    // файлы отметок всех авторов; onlyCurrent - только текущий месяц (для частого опроса)
     function loadPeople(onlyCurrent) {
         return inPeopleQueue(() => loadPeopleNow(onlyCurrent));
     }
@@ -1106,7 +1096,7 @@ window.SalesManagement = (function () {
                 changed = true;
             }
         }
-        // Своё неподтверждённое: если в файле уже то же или новее — подтверждено.
+        // свое неподтвержденное: если в файле уже то же или новее, считаем подтвержденным
         let confirmed = false;
         pending.forEach((p, id) => {
             const f = (people[monthOfKey(p.key)] || {})[p.slug];
@@ -1188,7 +1178,7 @@ window.SalesManagement = (function () {
         const flights = [];
         map.forEach((items, table) => {
             const route = typeof getFlightDirection === 'function' ? getFlightDirection(table) : table;
-            // Исходную дату задержанного рейса не дублируем: её отметки показаны в строке новой даты.
+            // исходную дату задержанного рейса не дублируем, ее отметки видны в строке новой даты
             const shown = typeof DelayedFlights !== 'undefined' ? items.filter(item => !DelayedFlights.movedTo(item.code, item.date)) : items;
             if (!shown.length) return;
             const departures = shown.map(item => {
@@ -1211,7 +1201,7 @@ window.SalesManagement = (function () {
             flights.push({ code: table, route, departures, checks });
         });
         flights.sort((a, b) => (parseInt(a.code.slice(3), 10) || 0) - (parseInt(b.code.slice(3), 10) || 0));
-        // Историю вылетов в общий файл пишет только тот, кто вправе править УП.
+        // историю вылетов в общий файл пишет только тот, у кого есть право править УП
         if (changed && canEdit()) {
             historyDirty = true;
             schedulePersist();
@@ -1392,7 +1382,7 @@ function salesMarkExportText(mark, colored) {
     return status.short + (mark.author ? ' — ' + mark.author : '');
 }
 
-// Фамилия для ячейки из нескольких отметок: «Табалюк М.А.» → «Табалюк».
+// фамилия для ячейки с несколькими отметками: "Табалюк М.А." -> "Табалюк"
 function salesShortAuthor(author) {
     const name = String(author || '').trim();
     return name.split(/\s+/)[0] || name;
@@ -1409,7 +1399,7 @@ function salesEntriesTitle(list) {
     return list.map(m => `${SalesManagement.STATUSES[m.status].label}${m.author ? ' · ' + m.author : ''}`).join('\n');
 }
 
-// Содержимое ячейки: одна отметка — как раньше; несколько — части своих цветов, новая слева.
+// одна отметка - как обычно; несколько - части своих цветов, новая слева
 function salesCellInner(list) {
     if (!list.length) return '';
     if (list.length === 1) return salesEsc(salesCellText(list[0]));
@@ -1463,12 +1453,12 @@ function placeSalesPopover(anchor) {
     pop.hidden = false;
     const height = pop.offsetHeight || 220;
     if (top + height > window.innerHeight - 8) top = Math.max(8, rect.top - height - 6);
-    // Не помещается ни снизу, ни сверху — прижимаем к краю экрана: окно не выше экрана (прокрутка внутри),
-    // кнопки «Готово» закреплены внизу окна.
+    // не влезает ни снизу, ни сверху: прижимаем к краю экрана, окно не выше экрана (прокрутка внутри)
+    // кнопка "Готово" всегда внизу окна
     top = Math.max(8, Math.min(top, window.innerHeight - Math.min(height, window.innerHeight - 16) - 8));
     pop.style.left = left + 'px';
     pop.style.top = top + 'px';
-    // Окно выросло (появились «Класс до / после») — снова прижимаем к экрану, чтобы «Готово» не ушла вниз.
+    // окно выросло (появились классы до/после): снова прижимаем, чтобы "Готово" не ушла вниз
     if (!pop._fitObserver && typeof ResizeObserver !== 'undefined') {
         pop._fitObserver = new ResizeObserver(() => {
             if (pop.hidden) return;
@@ -1487,7 +1477,7 @@ function openSalesPopover(td) {
     const flight = td.dataset.flight;
     const dep = td.dataset.dep;
     const check = td.dataset.check;
-    // «Своя» отметка — под именем профиля или под последней ручной подписью.
+    // своя подпись: имя профиля или последняя ручная подпись
     let customSig = '';
     try { customSig = localStorage.getItem(SALES_SIG_KEY) || ''; } catch { /* ignore */ }
     let mark = SalesManagement.getOwnMark(flight, dep, check);
@@ -1530,7 +1520,7 @@ function openSalesPopover(td) {
     }, 0);
 }
 
-// Отметка из окна УП: журнал действий и событие для карточки рейса, RMS и отчётов (как у быстрой отметки).
+// отметка из окна УП: журнал действий и событие для карточки, RMS и отчетов, как быстрая отметка
 function salesAnnounceMark(flight, dep, status) {
     if (typeof ActivityLog !== 'undefined') {
         ActivityLog.log('sales_mark', `${flight} ${dep}: ${status ? SalesManagement.STATUSES[status].label : 'снята'}`);
@@ -1538,13 +1528,13 @@ function salesAnnounceMark(flight, dep, status) {
     document.dispatchEvent(new CustomEvent('krasavia:mark', { detail: { code: flight, date: dep, status } }));
 }
 
-// «Класс до / после» (необязательно): только для повышения/снижения и только если у вылета есть лестница тарифов.
+// классы до/после необязательны: только для повышения/снижения и если у вылета есть лестница тарифов
 function fillSalesPopoverClasses(flight, dep, mark) {
     const box = document.getElementById('sm-pop-cls');
     if (!box) return;
     let ladder = [];
     try { ladder = typeof FareGrid !== 'undefined' ? FareGrid.ladderFor(flight, dep) || [] : []; } catch { ladder = []; }
-    // Выбор подкласса вручную — по праву профиля; без него класс определяется по продажам сам.
+    // подкласс выбираем вручную по праву профиля, иначе класс определяется по продажам
     const canPick = typeof ProfileAuth === 'undefined' || ProfileAuth.hasPermission('pick_class');
     box.dataset.has = ladder.length && canPick ? '1' : '';
     const fill = (id, value) => {
@@ -1607,7 +1597,7 @@ function applySalesPopover(closeAfter) {
     } catch { /* ignore */ }
     repaintSalesCell(flight, dep, check);
     salesAnnounceMark(flight, dep, status);
-    if (typeof updateHeaderStatus === 'function') updateHeaderStatus(); // счётчик «☀» в шапке
+    if (typeof updateHeaderStatus === 'function') updateHeaderStatus();
     const clearBtn = document.getElementById('sm-pop-clear');
     if (clearBtn) clearBtn.hidden = false;
     if (closeAfter) closeSalesPopover();
@@ -1651,7 +1641,7 @@ function ensureSalesPopover() {
         if (statusBtn) {
             pop.querySelectorAll('[data-status]').forEach(btn => btn.classList.toggle('sm-status-on', btn === statusBtn));
             syncSalesPopoverClasses();
-            // Повышение/снижение: отметка сохраняется сразу, окно остаётся открытым для необязательных классов.
+            // повышение/снижение: отметка сохраняется сразу, окно открыто для классов
             const keepOpen = !document.getElementById('sm-pop-cls').hidden;
             applySalesPopover(!keepOpen);
             return;
@@ -1685,8 +1675,8 @@ function ensureSalesPopover() {
             applySalesPopover(true);
         }
     });
-    // Подпись применяется по «Готово» / Enter / кнопке статуса, а не на каждую букву:
-    // иначе «П», «Пе», «Пет»… превращаются в отдельных авторов.
+    // подпись применяем по "Готово", Enter или кнопке статуса, а не на каждую букву
+    // иначе "П", "Пе", "Пет" станут отдельными авторами
     pop.addEventListener('change', (event) => {
         if (event.target.id === 'sm-pop-cls-from' || event.target.id === 'sm-pop-cls-to') applySalesPopover(false);
     });
@@ -1708,7 +1698,7 @@ function salesQueryEscape(value) {
     return text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
-// Открыть «Управление продажами» на рейсе (из сводки): выбрать рейс и показать вылет в карточке.
+// открыть на рейсе из сводки: выбираем рейс и показываем вылет в карточке
 function openSalesManagementFor(code, date) {
     const base = typeof SalesManagement.baseCode === 'function' ? SalesManagement.baseCode(code) : code;
     salesFlightPick = base || code;
@@ -1769,8 +1759,8 @@ function renderSalesFlightList() {
     fillSalesWaiting(host, flights);
 }
 
-// Сколько дней вперёд считать «ждут»: тот же выбор «Вперёд на», что на странице «Сегодня» (запоминается на профиль).
-// Иначе у человека с выбором 7 дней на «Сегодня» было бы «26 вылетов ждут», а в сумме по маршрутам — 45.
+// сколько дней вперед считать "ждут": тот же выбор "Вперед на", что на "Сегодня" (хранится в профиле)
+// иначе при выборе 7 дней на "Сегодня" будет 26 вылетов ждут, а по маршрутам в сумме 45
 const SALES_AHEAD_OPTIONS = [3, 5, 7, 10, 15, 20, 30];
 function salesAheadDays() {
     if (typeof TodayView !== 'undefined' && typeof TodayView.aheadDays === 'function') return TodayView.aheadDays();
@@ -1782,7 +1772,7 @@ function salesAheadDays() {
     return undefined;
 }
 
-// «Ждут: N» у маршрута — вылеты с подсказкой решения и без отметки за сегодня. Считается порциями (общий расчёт с «Сегодня»).
+// ждут у маршрута: вылеты с подсказкой решения и без отметки за сегодня; считаем порциями, общий расчет с "Сегодня"
 let salesWaitSeq = 0;
 function fillSalesWaiting(host, flights) {
     if (typeof SalesAdvice === 'undefined' || typeof PV === 'undefined') return;
@@ -1843,7 +1833,7 @@ function renderSalesGrid() {
         return `<th class="sm-check-head${isToday ? ' sm-check-today' : ''}" data-check="${salesAttr(date)}" title="${salesAttr(date)}"><span class="sm-check-date">${salesEsc(salesShortDate(date))}</span><span class="sm-check-dow">${salesEsc(dow)}</span>${tag}</th>`;
     }).join('');
     const editable = SalesManagement.canEdit();
-    // Администратор отмечает вылеты для вкладки «Запрос на понижение» (галочка у номера рейса).
+    // администратор отмечает вылеты для "Запрос на понижение" галочкой у номера рейса
     const lrOn = typeof LowerRequest !== 'undefined' && LowerRequest.canUse();
     if (lrOn && !salesLrReady) { salesLrReady = true; LowerRequest.ensureLoaded().then(() => renderSalesGrid()); }
     const body = flight.departures.map(dep => {
@@ -1854,7 +1844,7 @@ function renderSalesGrid() {
             let title = list.length
                 ? salesEntriesTitle(list)
                 : (canCell ? 'Не проверен — нажмите, чтобы отметить' : (dep.flown ? 'Рейс уже выполнен' : 'Отметить можно только сегодня'));
-            // Пустая ячейка «сегодня» у вылета в ближайшие 15 дней — подсказка решения (только подсветка).
+            // пустая ячейка сегодня у вылета в ближайшие 15 дней: только подсветка подсказки
             let inner = salesCellInner(list);
             if (!list.length && !dep.flown && salesCheckIsToday(check) && typeof SalesAdvice !== 'undefined') {
                 const adv = SalesAdvice.forDeparture(dep.code, dep.date, undefined, 'sales');
@@ -1947,7 +1937,7 @@ function scrollSalesGridToDate(host) {
     const frozen = salesFrozenWidth(host);
     const delta = (picked.head.getBoundingClientRect().left - host.getBoundingClientRect().left - frozen) / zoom;
     host.scrollLeft = Math.max(0, host.scrollLeft + delta);
-    // Вниз — к первой строке, которая ещё не вылетела: улетевшие остаются выше.
+    // прокрутка к первой невылетевшей строке, улетевшие остаются выше
     const tr = host.querySelector('tbody tr:not(.sm-row-flew)');
     const thead = host.querySelector('thead');
     if (tr && thead) host.scrollTop = Math.max(0, tr.offsetTop - thead.offsetHeight - 30);
@@ -1974,7 +1964,7 @@ function currentSalesViewStamp() {
         SalesManagement.revision(),
         flights,
         SalesManagement.canEdit && SalesManagement.canEdit() ? '1' : '0',
-        typeof salesAheadDays === 'function' ? salesAheadDays() : ''   // «Вперёд на» с «Сегодня» меняет счётчики «ждут»
+        typeof salesAheadDays === 'function' ? salesAheadDays() : ''   // выбор "Вперед на" на "Сегодня" меняет счетчики ждут
     ].join('|');
 }
 
@@ -2036,8 +2026,8 @@ function startSalesSharedSync() {
 
 startSalesSharedSync();
 
-// Чужие отметки — раз в минуту, пока открыты «Управление продажами» или RMS (читаются только
-// файлы отметок за текущий месяц — несколько небольших файлов).
+// чужие отметки раз в минуту, пока открыты "Управление продажами" или RMS
+// читаем только файлы текущего месяца, их немного
 const SALES_MARKS_POLL_MS = 60 * 1000;
 setInterval(() => {
     if (document.hidden || typeof SalesManagement === 'undefined' || !SalesManagement.loadPeople) return;
@@ -2049,7 +2039,7 @@ setInterval(() => {
     }).catch(() => {});
 }, SALES_MARKS_POLL_MS);
 
-// Отметка изменилась (своя из RMS/карточки или чужая из файла) — перерисовать таблицу, если она открыта.
+// отметка изменилась (своя из RMS, карточки или чужая из файла): перерисовываем таблицу, если открыта
 document.addEventListener('krasavia:mark', () => {
     if (typeof currentTab === 'undefined' || currentTab !== 'sales') return;
     if (salesPopoverOpen()) {
@@ -2059,7 +2049,6 @@ document.addEventListener('krasavia:mark', () => {
     if (document.getElementById('sm-grid')) renderSalesGrid();
     const list = document.getElementById('sm-flight-list');
     if (list && list.querySelector('.sm-wait')) {
-        // Счётчик «ждут» у маршрутов обновляется после отметки.
         const all = SalesManagement.listFlights();
         fillSalesWaiting(list, all.filter(flight => salesFlightMatches(flight, salesSearchQuery.trim())));
     }
@@ -2116,7 +2105,7 @@ function createSalesManagementView(panel) {
         renderSalesFlightList();
         salesSnapToToday = true;
         renderSalesGrid();
-        // Карточка рейса (если открыта) показывает ближайший невыполненный вылет выбранного рейса.
+        // если карточка открыта, ведем ее на ближайший невылетевший вылет рейса
         const next = document.querySelector('#sm-grid tr[data-card-flight]:not(.sm-row-flew)');
         if (next && typeof FlightCard !== 'undefined') FlightCard.maybeOpen(next.dataset.cardFlight, next.dataset.cardDate);
     });
@@ -2134,7 +2123,6 @@ function createSalesManagementView(panel) {
             if (typeof FlightCard !== 'undefined') FlightCard.maybeOpen(td.dataset.flight, td.dataset.dep);
             return;
         }
-        // Клик по дате / номеру / маршруту вылета — карточка рейса.
         const row = event.target.closest('tr[data-card-flight]');
         if (row && event.target.closest('.sm-freeze') && typeof FlightCard !== 'undefined') {
             FlightCard.maybeOpen(row.dataset.cardFlight, row.dataset.cardDate);
@@ -2154,7 +2142,7 @@ function createSalesManagementView(panel) {
             showToast('Сегодняшней даты в столбцах нет — показана ближайшая');
         }
     });
-    // Плашки обозначений сворачиваются; выбор запоминается на этом компьютере.
+    // плашки обозначений сворачиваются, выбор запоминается на этом ПК
     const legendBtn = document.getElementById('sm-legend-btn');
     const legendBox = document.getElementById('sm-legend');
     const setLegend = (open, save) => {
@@ -2364,8 +2352,8 @@ function buildSalesIndexSheet(lib, entries, stamp, colored) {
 }
 
 function salesFlightWorksheet(lib, flight, stamp, colored) {
-    // Отметки ячеек заранее: у даты столько подстолбцов, сколько максимум человек отметили в этот день
-    // (1–3, только в цветной выгрузке). Одна отметка — подстолбцы объединены, как обычный столбец.
+    // подстолбцов у даты столько, сколько максимум людей отметили в этот день (1-3, только в цветной выгрузке)
+    // одна отметка - подстолбцы объединяем, как обычный столбец
     const marksAt = flight.departures.map(dep => flight.checks.map(check => SalesManagement.getMarks(dep.code, dep.date, check)));
     const widths = flight.checks.map((check, k) => colored
         ? Math.max(1, ...marksAt.map(row => row[k].length))
@@ -2423,7 +2411,7 @@ function salesFlightWorksheet(lib, flight, stamp, colored) {
                 if (w > 1) cellMerges.push({ s: { r, c: c0 }, e: { r, c: c0 + w - 1 } });
                 return;
             }
-            // Несколько отметок: новая слева, у каждой свой цвет.
+            // несколько отметок: новая слева, у каждой свой цвет
             list.forEach(m => { row.push(salesEntryText(m, true)); kind.push(m.status); });
             const last = list[list.length - 1].status;
             for (let j = list.length; j < w; j++) { row.push(''); kind.push(last); }
@@ -2444,7 +2432,7 @@ function salesFlightWorksheet(lib, flight, stamp, colored) {
     ws['!cols'] = cols;
     ws['!rows'] = legend.rows.map(() => ({ hpt: 18 })).concat([{ hpt: 20 }, { hpt: 22 }, { hpt: 18 }]);
     ws['!merges'] = [{ s: { r: stampRow, c: 0 }, e: { r: stampRow, c: 4 } }];
-    // Заголовок даты и день недели — над всеми подстолбцами даты.
+    // заголовок даты и день недели над всеми подстолбцами даты
     widths.forEach((w, k) => {
         if (w < 2) return;
         [stampRow + 1, stampRow + 2].forEach(r => ws['!merges'].push({ s: { r, c: starts[k] }, e: { r, c: starts[k] + w - 1 } }));

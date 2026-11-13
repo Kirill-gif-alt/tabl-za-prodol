@@ -1,11 +1,6 @@
-// Стили карточки рейса для отдельного окна (FlightCard, режим «в отдельном окне»).
-// Окно открывается пустым (about:blank), и подключить в него styles.css напрямую нельзя: на file:// Chrome этого не даёт.
-// Поэтому правила карточки (.flight-card, .fc-*, .pm-*, .mode-*, .sm-st-*, .vd-*, .booking-curve-verdict*, .filter-btn — вместе
-// с тёмной темой и @media) лежат здесь:
-//  • FLIGHT_CARD_WINDOW_CSS — встроенная копия из styles.css и css/*.css. Нужна для file:// и для первого показа окна.
-//  • FLIGHT_CARD_WINDOW_CSS_BUILD(тексты таблиц) — строит такой же набор правил из текста styles.css. На http(s) окно сразу
-//    после открытия подменяет копию свежим набором, так что новые правила карточки попадают в окно без правки этого файла.
-// Копию обновляют тем же кодом (выбор правил по префиксам классов); без обновления копия работает на file:// по состоянию на её дату.
+// стили карточки рейса для отдельного окна (FlightCard, режим "в отдельном окне")
+// окно открывается пустым, styles.css туда не подключить (на file:// не работает), поэтому правила здесь
+// копия встроена для file:// и первого показа; на http(s) окно подменяет её на свежий набор из styles.css
 window.FLIGHT_CARD_WINDOW_CSS = [
     "* { box-sizing: border-box; }",
     "body.fc-window-body { margin: 0; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: var(--text, #012a4a); background: var(--surface, #fff); }",
@@ -153,11 +148,11 @@ window.FLIGHT_CARD_WINDOW_CSS = [
 
 window.FLIGHT_CARD_WINDOW_CSS_BUILD = (function () {
     function buildCardCss(sheetTexts) {
-        // Классы карточки: по префиксам. Лишнее (шапка, чипы таблиц, окно сравнения моделей) — в SKIP.
+        // классы карточки по префиксам; лишнее (шапка, чипы, окно сравнения моделей) - в SKIP
         const PREFIX = /^(fc-|pm-|mode-|sm-st-|vd-|booking-curve-verdict|flight-card|filter-btn$)/;
         const SKIP = /^(flight-card-toggle|flight-card-pinned|flight-card-open|fc-row-problem|fc-flag|pm-chip|pm-pop|mlw)/;
     
-        // Разбор таблицы стилей на правила; вложенность только через @media.
+        // разбор стилей на правила; вложенность только через @media
         function parse(source) {
             const out = [];
             function block(text, wrap) {
@@ -223,7 +218,7 @@ window.FLIGHT_CARD_WINDOW_CSS_BUILD = (function () {
             return cls.every(c => known.has(c) && !SKIP.test(c)) && cls.some(c => c !== 'no-cmix');
         }
     
-        // Окно: базовые правила и сообщение внизу окна (flash).
+        // окно: базовые правила и сообщение внизу (flash)
         const lines = [
             "* { box-sizing: border-box; }",
             "body.fc-window-body { margin: 0; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: var(--text, #012a4a); background: var(--surface, #fff); }",

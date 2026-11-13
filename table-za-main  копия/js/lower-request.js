@@ -1,7 +1,6 @@
-// Вкладка «Запрос на понижение» (только администратор). В «Управлении продажами» администратор отмечает рейсы галочкой —
-// они попадают сюда, сгруппированные по направлениям. Цифры считаются сами (загрузка, дни до вылета, тариф сейчас,
-// ожидаемая и аналогичные дни с отклонениями); «Просим согласовать» (места и тариф) и любую ячейку можно править.
-// Таблицу можно скопировать (в письмо) или выгрузить в Excel. Хранится в shared/lower-requests.json — одна на всех администраторов.
+// вкладка "Запрос на понижение" (только админ): рейсы с галочкой из УП, сгруппированные по направлениям
+// цифры считаем сами: загрузка, дни до вылета, тариф сейчас, ожидаемая, аналоги; "Просим согласовать" и ячейки правим
+// таблица копируется в письмо или в Excel; хранится в shared/lower-requests.json, одна на всех админов
 window.LowerRequest = (function () {
     const FILE = 'lower-requests.json';
     const WD = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
@@ -24,9 +23,7 @@ window.LowerRequest = (function () {
         return a === 1 && b !== 11 ? 'место' : (a >= 2 && a <= 4 && (b < 12 || b > 14) ? 'места' : 'мест');
     }
 
-    // ---------- хранение ----------
-
-    // Возвращает true, если содержимое списка изменилось.
+    // возвращает true, если список изменился
     async function load() {
         if (typeof SharedStorage === 'undefined') { loaded = true; return false; }
         const before = JSON.stringify(store.items);
@@ -39,10 +36,10 @@ window.LowerRequest = (function () {
         return changedNow;
     }
 
-    // Отметки, которые не удалось записать в общий файл: остаются в списке, пока запись не пройдёт.
+    // отметки, не записанные в общий файл, остаются в списке, пока запись не пройдет
     const unsynced = {};
 
-    // Записи идут строго по очереди: иначе две быстрые правки читают один и тот же файл и затирают друг друга.
+    // записи строго по очереди, иначе две правки читают один файл и затирают друг друга
     let saveChain = Promise.resolve();
     let pending = 0;
     let lrRev = 0;
@@ -56,19 +53,19 @@ window.LowerRequest = (function () {
     }
 
     async function saveNow(mutate) {
-        // Файл перечитывается перед записью и проверяется после: правки другого администратора не теряются.
+        // файл перечитываем перед записью и проверяем после, чтобы не потерять чужие правки
         const by = (typeof ProfileAuth !== 'undefined' && (ProfileAuth.getCurrentProfile() || {}).name) || '';
         let items = null;
         const res = typeof SharedStorage !== 'undefined' && SharedStorage.updateJsonFile
             ? await SharedStorage.updateJsonFile(FILE, (cur) => {
-                items = cur && cur.items && typeof cur.items === 'object' ? cur.items : { ...store.items };   // файла ещё нет — начинаем с того, что уже есть на экране
+                items = cur && cur.items && typeof cur.items === 'object' ? cur.items : { ...store.items };   // файла еще нет - берем то, что на экране
                 mutate(items);
                 Object.keys(unsynced).forEach(k => { if (!(k in items)) items[k] = unsynced[k]; });
                 return { version: 1, updatedAt: new Date().toISOString(), by, items };
             })
             : { ok: false };
         if (items) store = { version: 1, items };
-        else mutate(store.items);   // файл не прочитался: правка остаётся только здесь
+        else mutate(store.items);   // файл не прочитан, правка остается только тут
         rowsMemo = null;
         const ok = !!res.ok;
         if (ok) Object.keys(unsynced).forEach(k => delete unsynced[k]);
@@ -92,21 +89,19 @@ window.LowerRequest = (function () {
             if (on) items[key] = { ...(items[key] && !items[key].deleted ? items[key] : {}), code, date, at };
             else delete items[key];
         };
-        apply(store.items);   // список меняется сразу, запись в общий файл идёт следом
+        apply(store.items);   // список меняем сразу, запись в файл потом
         rowsMemo = null;
         if (host && !host.hidden) render();
         return save(apply);
     }
 
-    // ---------- цифры по вылету ----------
-
     function dirOf(code) {
         const d = typeof getFlightDirection === 'function' ? String(getFlightDirection(typeof getBaseFlight === 'function' ? getBaseFlight(code) : code) || '') : '';
-        // Пробелы ставим только вокруг тире между городами («Кызыл - Улан-Удэ» → «Кызыл – Улан-Удэ»); дефис внутри названия («Горно-Алтайск», «KV-999») не трогаем.
+        // пробелы только вокруг тире между городами; дефис внутри названия (Горно-Алтайск, KV-999) не трогаем
         return d.replace(/\s*[—–]\s*|\s+-\s+/g, ' – ').replace(/\s+/g, ' ').trim() || code;
     }
 
-    // Порядок: пары «туда — обратно» рядом (101, 102; 301, 302), нечётный раньше чётного.
+    // порядок: туда-обратно парами рядом (101, 102; 301, 302), нечетный раньше четного
     function orderOf(code) {
         const m = String(code || '').match(/(\d+)\s*$/);
         if (!m) return [1e9, 0, 0];
@@ -118,7 +113,7 @@ window.LowerRequest = (function () {
         try { return typeof FareGrid !== 'undefined' ? FareGrid.ladderFor(code, date) : []; } catch (e) { return []; }
     }
 
-    // Расчёт строки тяжёлый (нормы, лестница тарифов, цена): считаем один раз, пока не изменились данные и день.
+    // расчет строки тяжелый (нормы, лестница, цена): кэш, пока не сменились данные и день
     const autoCache = new Map();
     let autoSig = '';
     function dataSig() {
@@ -169,7 +164,7 @@ window.LowerRequest = (function () {
         };
     }
 
-    // Просьбы по подклассам: [{ places, cls }, …]. Старые записи (places/cls у самого рейса) читаются как одна просьба.
+    // просьбы по подклассам: [{ places, cls }, ...]; старые записи (places/cls у рейса) - одна просьба
     function asksOf(it) {
         if (Array.isArray(it.asks)) return it.asks;
         return it.places != null || it.cls ? [{ places: it.places, cls: it.cls || '' }] : [];
@@ -209,15 +204,13 @@ window.LowerRequest = (function () {
         return row.auto[col];
     }
 
-    // ---------- отображение ----------
-
     // Одна таблица на все направления: нумерация сквозная.
     function numbered(rows) {
         rows.forEach((r, i) => { r.n = i + 1; });
         return rows;
     }
 
-    // Маршруты идут подряд (строки уже отсортированы): каждому — своя плашка над строками.
+    // маршруты идут подряд, у каждого своя плашка над строками
     function groupsOf(rows) {
         const g = [];
         rows.forEach(r => { const last = g[g.length - 1]; if (last && last.dir === r.dir) last.rows.push(r); else g.push({ dir: r.dir, rows: [r] }); });
@@ -264,7 +257,7 @@ window.LowerRequest = (function () {
             </section>`;
     }
 
-    // Правка рейса применяется сразу: перерисовывается одна строка, запись в файл идёт в фоне.
+    // правка применяется сразу, перерисовываем одну строку, запись в файл в фоне
     function patch(key, fn) {
         const apply = items => { const it = items[key]; if (it && !it.deleted) { fn(it); it.at = new Date().toISOString(); } };
         apply(store.items);
@@ -275,7 +268,7 @@ window.LowerRequest = (function () {
 
     function renderRow(key) {
         const act = document.activeElement;
-        if (host && act && host.contains(act) && typeof act.blur === 'function') act.blur();   // снятие фокуса может само вызвать правку этой строки
+        if (host && act && host.contains(act) && typeof act.blur === 'function') act.blur();   // blur может сам вызвать правку этой строки
         const tr = host && [...host.querySelectorAll('tr[data-lr-row]')].find(x => x.dataset.lrRow === key);
         const row = rowsOf().find(r => r.key === key);
         if (!tr || !row) { render(); return; }
@@ -285,7 +278,7 @@ window.LowerRequest = (function () {
         if (tr.isConnected) tr.replaceWith(box.firstElementChild);
     }
 
-    // Копия просьб вылета, дополненная пустыми до индекса i включительно.
+    // копия просьб вылета, дополненная пустыми до индекса i
     function asksCopy(it, i) {
         const a = asksOf(it).map(x => ({ ...x }));
         while (a.length <= i) a.push({ places: null, cls: '' });
@@ -295,7 +288,7 @@ window.LowerRequest = (function () {
     function setAsks(it, a) {
         it.asks = a;
         delete it.places; delete it.cls;
-        if (it.over) delete it.over.ask;   // место и тариф поменялись — текст собирается заново
+        if (it.over) delete it.over.ask;   // место или тариф поменялись, текст собираем заново
     }
 
     function onChange(e) {
@@ -321,7 +314,7 @@ window.LowerRequest = (function () {
         }
     }
 
-    // Текст и HTML для письма: одна таблица, маршрут — плашкой над своими строками.
+    // текст и HTML для письма: одна таблица, маршрут плашкой над своими строками
     function tablesFor(rows) {
         numbered(rows);
         const groups = groupsOf(rows);
@@ -394,11 +387,11 @@ window.LowerRequest = (function () {
 
     function refresh() { if (host && loaded) load().then(changed => { if (changed && !host.hidden) render(); }); }
 
-    // Отметки подгружаются заранее, чтобы галочки в «Управлении продажами» стояли сразу.
+    // отметки грузим заранее, чтобы галочки в УП стояли сразу
     function ensureLoaded() { return loaded ? Promise.resolve() : load(); }
 
-    // Что просят согласовать по вылету (для отчёта «Запросы на снижение»): { places, fare, parts } или null, если места не вписаны.
-    // fare — средний по просьбам тариф подкласса (цена из лестницы тарифов), null — подкласс не выбран или цены нет.
+    // что просят согласовать по вылету (для отчета "Запросы на снижение"): { places, fare, parts } или null, если места не вписаны
+    // fare - средний тариф подкласса по просьбам (цена из лестницы), null, если подкласс не выбран или цены нет
     function askFor(code, date) {
         const it = store.items[keyOf(code, date)];
         if (!it || it.deleted) return null;

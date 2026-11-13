@@ -1,23 +1,10 @@
-// «Отчёты» → «Запросы на снижение»: что администратор просил снизить и что ему согласовали.
-// Запрос = отметка «Обратить внимание» (attn) в «Управлении продажами», поставленная администратором. Дата запроса = день отметки.
-// Согласовано = в день запроса или в течение 2 дней после него (D, D+1, D+2) на этом вылете у любого автора стоит «Снижение» (down). Следующий день ещё не прошёл — «ждём ответа»,
-// прошёл — «не согласовано». Перенесённые рейсы: отметки исходной даты уже приходят от SalesManagement.allMarks() на новую дату.
-//
-// Файл продаж помнит ~14 дней, поэтому отчёт ведёт собственную общую историю — shared/lowreq-report.json (за всё время):
-//   { version: 1, updatedAt, by, items: { 'KV-101|26.11.2026|12.11.2026': {
-//       code, dep, check, author, markAt, first,
-//       snap: { sold, seats, dtd, avg, exp: { '14','7','3','0' }, es: { … 'file'|'norm' }, expRev, src, at, late }   — «на момент запроса», пишется ОДИН раз
-//       fact: { '14': n, '7': n, '3': n, '0': n }        — сколько стало к сроку; пишется, когда день срока закончился, и больше не меняется
-//       revFinal, revAt                                  — итоговая выручка по билетам после вылета
-//       ask: { places, fare, cls, at }                   — что вписано в «Запрос на понижение» (js/lower-request.js)
-//       est: { places, fare, final, at }                 — оценка «что согласовали» по продажам после снижения (когда ask не вписан)
-//       over: { agree, places, fare, by, at }            — ручная правка (администратор или право edit_sales_mgmt); общая для всех } } }
-// Пишет в фоне профиль с правом share_data (как архив и журнал продаж): в простое, не чаще раза на новые данные, порциями,
-// слиянием через SharedStorage.updateJsonFile — чужое не теряется, уже записанное не перезаписывается. Читают все с доступом к разделу.
+// отчёт "Запросы на снижение" (Отчёты): что админ просил снизить и что согласовали
+// запрос = отметка attn, дата запроса = день отметки; согласовано = down на D..D+2 у любого автора, иначе ждём ответа или не согласовано
+// общая история shared/lowreq-report.json, ключ 'рейс|вылет|запрос'; snap пишем один раз, fact по срокам 14/7/3/0
 window.LowReqReport = (function () {
     const FILE = 'lowreq-report.json';
     const HZ = [14, 7, 3, 0];
-    const PERIODS = [30, 60, 90, 0];   // 0 — за всё время
+    const PERIODS = [30, 60, 90, 0];   // 0 - за всё время
     const VIEW_KEY = 'krasavia_lowrep_view';
     const DONE_KEY = 'krasavia_lowrep_done';
     const STALE_MS = 45000;
@@ -40,8 +27,6 @@ window.LowReqReport = (function () {
     let editKey = '';
     let draft = null;
     const asked = new Set();
-
-    // ---------- мелочи ----------
 
     function esc(v) { return escHtml(v); }
     function toast(m, t) { if (typeof showToast === 'function') showToast(m, t); }
@@ -68,13 +53,11 @@ window.LowReqReport = (function () {
         const cur = ProfileAuth.getCurrentProfile && ProfileAuth.getCurrentProfile();
         return !!(cur && (cur.isAdmin || ProfileAuth.canAccessTab('sales') || ProfileAuth.canAccessTab('reports')));
     }
-    // Править ответ: администратор или профиль с правом «Управление продажами — менять» (у администратора право есть всегда).
+    // править: админ или право edit_sales_mgmt (у админа есть всегда)
     function canEditRows() { return hasPerm('edit_sales_mgmt'); }
     function canExport() { return hasPerm('export_excel'); }
     function canWriteShared() { return typeof ProfileAuth !== 'undefined' && ProfileAuth.hasPermission('share_data'); }
     function available() { return typeof SalesManagement !== 'undefined' && SalesManagement.allMarks && typeof SharedStorage !== 'undefined'; }
-
-    // ---------- общий файл ----------
 
     async function loadStore(force) {
         if (storeLoading) return storeLoading;
@@ -97,8 +80,8 @@ window.LowReqReport = (function () {
         return (p && p.name) || '';
     }
 
-    // Слияние добавок в содержимое файла. Правило: то, что уже зафиксировано, не перезаписывается
-    // (snap, значения fact по срокам, revFinal); ask и est обновляются, пока не итоговые. Возвращает true, если что-то изменилось.
+    // слияние добавок: зафиксированное (snap, fact, revFinal) не перезаписываем
+    // ask и est обновляем, пока не итоговые; возвращает true, если что-то изменилось
     function applyPatch(items, p) {
         let it = items[p.key];
         let changed = false;
@@ -142,9 +125,7 @@ window.LowReqReport = (function () {
         return run;
     }
 
-    // ---------- запросы из отметок ----------
-
-    // Подписи авторов-администраторов в отметках: у профиля «Администратор» подпись «Лобанов К.И.» (SalesManagement.authorSignature).
+    // подпись админа в отметках - 'Лобанов К.И.' (SalesManagement.authorSignature)
     function adminSet() {
         const out = new Set();
         const sig = (n) => norm(typeof SalesManagement !== 'undefined' && SalesManagement.authorSignature ? SalesManagement.authorSignature(n) : n);
@@ -165,13 +146,13 @@ window.LowReqReport = (function () {
         const t = dayNum(today());
         const cands = new Map();
         const downs = new Map();
-        let from = null;   // самая ранняя дата проверки среди прочитанных отметок: раньше неё отметки не читаются
+        let from = null;   // отметки раньше этой даты не читаем
         SalesManagement.allMarks().forEach(m => {
             const cd = dayNum(m.check);
             if (cd != null && (from == null || cd < from)) from = cd;
             if (m.status === 'attn' && adm.set.has(norm(m.author))) {
                 const c = dayNum(m.check);
-                if (c == null || c > t) return;   // отметка на будущую дату — запросом станет в свой день
+                if (c == null || c > t) return;   // отметка на будущую дату станет запросом в свой день
                 const k = keyOf(m.flight, m.dep, m.check);
                 const prev = cands.get(k);
                 if (!prev || String(m.updatedAt || '') < String(prev.markAt || '')) cands.set(k, { key: k, code: m.flight, dep: m.dep, check: m.check, author: m.author || '', markAt: m.updatedAt || '' });
@@ -185,7 +166,7 @@ window.LowReqReport = (function () {
         return deriveMemo;
     }
 
-    // Ответ по правилу: «Снижение» в день запроса или в течение 2 дней после него (D…D+2) от любого автора.
+    // ответ: down в день запроса или за 2 дня после него (D..D+2), у любого автора
     function autoResult(code, dep, check, downs) {
         const c = dayNum(check);
         const hit = (downs.get(code + '|' + dep) || [])
@@ -195,7 +176,7 @@ window.LowReqReport = (function () {
         return { res: dayNum(today()) <= c + 2 ? 'wait' : 'no', down: null };
     }
 
-    // ---------- цифры по вылету (источники: живые билеты, журнал продаж по дням, архив) ----------
+    // цифры по вылету: живые билеты, журнал продаж по дням, архив
 
     function expectedFileOn() {
         return typeof hasExpectedFileLoaded === 'function' ? hasExpectedFileLoaded() : (typeof expectedLoadData !== 'undefined' && Object.keys(expectedLoadData || {}).length > 0);
@@ -215,7 +196,7 @@ window.LowReqReport = (function () {
         return { base, row, arch, seats, ac, load: row ? getSoldFromRow(row) : 0 };
     }
 
-    // Продано нарастающим итогом по дням до вылета: архив (улетевшие) или живые билеты + журнал по дням вне окна файла.
+    // нарастающим итогом по дням до вылета: архив для улетевших, иначе живые билеты + журнал вне окна файла
     function curveOf(date, code, meta) {
         const fly = dayNum(date);
         const flown = fly < dayNum(today());
@@ -244,7 +225,7 @@ window.LowReqReport = (function () {
         let revKnown = true;
         const days = typeof SalesDayLog !== 'undefined' && SalesDayLog.daysFor ? SalesDayLog.daysFor(date, code) : [];
         days.forEach(d => {
-            if (list.length && win && d.dtd >= wlo && d.dtd <= whi) return;   // этот день есть в файле продаж
+            if (list.length && win && d.dtd >= wlo && d.dtd <= whi) return;   // день уже есть в файле продаж
             if (by[d.dtd]) return;
             by[d.dtd] = { n: d.n, r: d.r == null ? 0 : d.r };
             if (d.r == null) revKnown = false;
@@ -263,7 +244,8 @@ window.LowReqReport = (function () {
         }
         let total = run;
         if (!(total > 0)) return null;
-        // Как на сайте: кривая масштабируется к загрузке из файла загрузки рейсов (в продажах бывают незакрытые возвраты и обмены).
+        // как на сайте: масштаб по загрузке из файла загрузки
+        // в продажах бывают незакрытые возвраты и обмены
         if (meta.load > 0 && total !== meta.load) {
             const k = meta.load / total;
             const o2 = Object.create(null);
@@ -274,18 +256,18 @@ window.LowReqReport = (function () {
         return { onHand, maxDtd, total, rev: revKnown ? Math.round(revSum) : null, src: usedLog ? 'log' : 'live', whi };
     }
 
-    // Продано к сроку T дней до вылета; null — этих данных нет (а не «ноль»).
+    // продано к сроку T дней до вылета; null - данных нет, а не ноль
     function soldAt(curve, T) {
         if (!curve) return null;
         if (T > curve.maxDtd) {
-            if (curve.src === 'live' && curve.whi != null && T > curve.whi) return null;   // дни раньше окна файла продаж неизвестны
+            if (curve.src === 'live' && curve.whi != null && T > curve.whi) return null;   // раньше окна файла продаж не знаем
             return 0;
         }
         const v = curve.onHand[T];
         return v == null ? null : v;
     }
 
-    // Средний тариф взрослых платных билетов, проданных к концу дня запроса.
+    // средний тариф взрослых платных, проданных к концу дня запроса
     function avgAdultAt(date, code, dtdCheck) {
         if (typeof SalesDayLog === 'undefined' || !SalesDayLog.adultDays) return null;
         let a = 0;
@@ -294,7 +276,7 @@ window.LowReqReport = (function () {
         return a > 0 && ra > 0 ? Math.round(ra / a) : null;
     }
 
-    // Норма «обычно к этому дню» (по тем же дням недели) на сроках 14 / 7 / 3 / 0.
+    // норма 'обычно к этому дню' по тем же дням недели на сроках 14 / 7 / 3 / 0
     function normAt(code, date, meta) {
         if (typeof collectSameWeekdayCohort !== 'function' || typeof weekdayNormSeries !== 'function') return null;
         try {
@@ -308,7 +290,7 @@ window.LowReqReport = (function () {
         } catch (e) { return null; }
     }
 
-    // Ожидаемая загрузка по срокам: из файла «ожидаемая загрузка» (не больше кресел в продаже), иначе норма «обычно к этому дню».
+    // ожидаемая по срокам: из файла (не больше кресел в продаже), иначе норма
     function expAt(code, date, meta) {
         const exp = {};
         const es = {};
@@ -330,7 +312,8 @@ window.LowReqReport = (function () {
         return { exp, es };
     }
 
-    // Значения «на момент запроса» — фиксируются один раз. null — данных нет совсем (запись не делаем, повторим позже).
+    // значения на момент запроса, фиксируем один раз
+    // null - данных нет совсем: запись не пишем, повторим позже
     function buildSnap(code, dep, check, curve0) {
         const meta = metaOf(code, dep);
         const fly = dayNum(dep);
@@ -339,7 +322,7 @@ window.LowReqReport = (function () {
         const dtdCheck = fly - chk;
         const curve = curve0 !== undefined ? curve0 : curveOf(dep, code, meta);
         let sold = null;
-        if (fly - now === dtdCheck && meta.row) sold = meta.load;   // запрос найден в день отметки: загрузка ровно та, что на сайте
+        if (fly - now === dtdCheck && meta.row) sold = meta.load;   // в день отметки берём загрузку ровно как на сайте
         else if (curve) sold = soldAt(curve, dtdCheck);
         if (sold == null) return null;
         const avg = avgAdultAt(dep, code, dtdCheck);
@@ -353,7 +336,7 @@ window.LowReqReport = (function () {
         };
     }
 
-    // Оценка «что согласовали»: билеты взрослых платных, проданные после дня «Снижения» дешевле среднего тарифа на момент запроса.
+    // оценка 'что согласовали': взрослые платные после дня снижения, дешевле среднего тарифа на момент запроса
     function estimateAfter(dep, code, downCheck, avgBefore) {
         const dc = dayNum(downCheck);
         let places = 0;
@@ -374,7 +357,7 @@ window.LowReqReport = (function () {
             places++;
             sum += price;
         }
-        // Дни, которых уже нет в файле продаж, — по журналу (средний тариф дня).
+        // дней, которых нет в файле продаж, берём из журнала (средний тариф дня)
         if (typeof SalesDayLog !== 'undefined' && SalesDayLog.adultDays) {
             SalesDayLog.adultDays(dep, code).forEach(d => {
                 if (!(d.a > 0)) return;
@@ -394,8 +377,6 @@ window.LowReqReport = (function () {
         if (typeof LowerRequest === 'undefined' || !LowerRequest.askFor) return null;
         try { return LowerRequest.askFor(code, dep); } catch (e) { return null; }
     }
-
-    // ---------- строки отчёта ----------
 
     let memo = { sig: '', rows: [] };
     const liveSnaps = new Map();
@@ -421,7 +402,7 @@ window.LowReqReport = (function () {
         const over = it && it.over ? it.over : null;
         let res = auto.res;
         if (over && over.agree != null) res = over.agree ? 'yes' : 'no';
-        // Значения на момент запроса: записанные; запрос ещё не записан и сегодняшний — считаем так же, как запишем.
+        // записанные значения; если запрос ещё не записан, считаем так же, как запишем
         let snap = it && it.snap ? it.snap : null;
         let meta = null;
         let curve;
@@ -443,21 +424,21 @@ window.LowReqReport = (function () {
                     live = true;
                 }
             }
-            if (dtdNow === T) live = true;   // день срока ещё идёт: число пока не итоговое
+            if (dtdNow === T) live = true;   // день срока идёт, число пока не итоговое
             return { T, exp, fact, passed, live };
         });
-        // Выручка по билетам: после вылета — зафиксированная итоговая.
+        // выручка: после вылета берём зафиксированную итоговую
         let curRev = it && it.revFinal != null ? it.revFinal : null;
         if (curRev == null) { lazy(); curRev = curve ? curve.rev : null; }
-        // Текущая загрузка: после вылета — итоговая (записанная или из архива), до вылета — нынешняя.
+        // загрузка: после вылета итоговая (записанная или из архива), до вылета нынешняя
         lazy();
         let curSold = null;
         if (dtdNow < 0) curSold = it && it.fact && it.fact[0] != null ? it.fact[0] : (meta.arch ? (meta.arch.sold || meta.arch.t || null) : null);
         if (curSold == null) curSold = meta.row ? meta.load : (curve ? curve.total : null);
         const curSeats = meta.seats || (snap && snap.seats) || null;
-        // Что согласовали: вписанное в «Запрос на понижение», иначе оценка по продажам после снижения.
+        // что согласовали: из 'Запроса на понижение', иначе оценка по продажам после снижения
         let autoWhat = null;
-        const ask = askOf(c.code, c.dep) || (it && it.ask) || null;   // вживую из «Запроса на понижение», иначе записанное
+        const ask = askOf(c.code, c.dep) || (it && it.ask) || null;
         if (auto.res === 'yes') {
             if (ask && ask.places > 0) autoWhat = { places: ask.places, fare: ask.fare != null ? ask.fare : null, est: false };
             else {
@@ -496,7 +477,7 @@ window.LowReqReport = (function () {
             if (seen.has(k)) return;
             const it = store.items[k];
             if (!it || !it.code || !it.dep || !it.check) return;
-            // Отметку «Обратить внимание» сняли (дата в пределах прочитанных отметок, а отметки нет) — запроса больше нет.
+            // отметку сняли (дата внутри прочитанного окна, отметки нет): запроса больше нет
             const ck = dayNum(it.check);
             if (d.from != null && ck != null && ck >= d.from) return;
             out.push(buildRow({ key: k, code: it.code, dep: it.dep, check: it.check, author: it.author || '', markAt: it.markAt || '' }, it, d));
@@ -527,8 +508,6 @@ window.LowReqReport = (function () {
         return t;
     }
 
-    // ---------- фоновая запись ----------
-
     const pause = () => new Promise(r => setTimeout(r, 6));
     function makeYield() {
         let t = performance.now();
@@ -544,12 +523,12 @@ window.LowReqReport = (function () {
         return `${today()}|${at}|${(typeof allData !== 'undefined' && allData ? allData.length : 0)}|${SalesManagement.markRevision ? SalesManagement.markRevision() : ''}`;
     }
 
-    // Нужна ли по записи работа: нет значений на момент запроса, не записан факт по закончившемуся сроку, нет итоговой выручки или оценки.
+    // работа нужна, если нет значений на момент запроса, факта по прошедшему сроку, итоговой выручки или оценки
     function needsWork(it, dtdNow) {
         if (!it || !it.snap) return true;
         for (const T of HZ) if (dtdNow < T && (!it.fact || it.fact[T] == null)) return true;
         if (dtdNow < 0) return it.revFinal == null || !!(it.est && !it.est.final);
-        return true;   // вылет впереди: вписанные места и оценка могут измениться
+        return true;   // вылет впереди, места и оценка ещё могут меняться
     }
 
     let running = null;
@@ -558,7 +537,7 @@ window.LowReqReport = (function () {
         if (!available() || typeof ProfileAuth === 'undefined' || !canWriteShared()) return false;
         if (typeof groupedData === 'undefined' || !groupedData || !Object.keys(groupedData).length) return false;
         if (typeof salesDetails === 'undefined' || !Object.keys(salesDetails || {}).length) return false;
-        // Нет свежего файла продаж — цифры на момент запроса и факт по срокам были бы неверными.
+        // без свежего файла продаж не пишем: цифры будут неверные
         if (typeof hasSalesFileLoaded === 'function' && !hasSalesFileLoaded()) return false;
         if (typeof getStaleSalesInfo === 'function' && getStaleSalesInfo()) return false;
         const token = dataToken();
@@ -568,12 +547,12 @@ window.LowReqReport = (function () {
         const d = derive();
         if (!d.known) return false;
         const r0 = await SharedStorage.readJsonFileStrict(FILE).catch(() => ({ ok: false }));
-        if (!r0.ok) return false;   // файл не прочитался — не пишем
+        if (!r0.ok) return false;   // файл не прочитался - не пишем
         const items = r0.data && r0.data.items && typeof r0.data.items === 'object' ? r0.data.items : {};
         store.items = items; store.loaded = true; store.at = Date.now();
         const now = dayNum(today());
         const tick = makeYield();
-        // Работа: запросы из отметок + уже записанные, у которых что-то наступило.
+        // к работе: запросы из отметок и записанные, у которых что-то наступило
         const work = new Map();
         d.cands.forEach(c => { if (!items[c.key] || needsWork(items[c.key], dayNum(c.dep) - now)) work.set(c.key, c); });
         Object.keys(items).forEach(k => {
@@ -581,7 +560,7 @@ window.LowReqReport = (function () {
             if (work.has(k) || !it || !it.code) return;
             if (needsWork(it, dayNum(it.dep) - now)) work.set(k, { key: k, code: it.code, dep: it.dep, check: it.check, author: it.author || '', markAt: it.markAt || '' });
         });
-        // Журнал продаж и архив нужных месяцев (улетевшие и старые запросы восстанавливаются оттуда).
+        // журнал и архив нужных месяцев; улетевшие и старые запросы восстанавливаем оттуда
         const months = [...new Set([...work.values()].map(c => monthOf(c.dep)).filter(Boolean))];
         try { if (typeof SalesDayLog !== 'undefined') await SalesDayLog.ensureMonths(months); } catch (e) { /* без журнала */ }
         try { if (typeof SalesArchive !== 'undefined') await SalesArchive.ensureMonths(months); } catch (e) { /* без архива */ }
@@ -602,7 +581,7 @@ window.LowReqReport = (function () {
                 const s = buildSnap(c.code, c.dep, c.check, curve);
                 if (s) { p.snap = s; touched = true; }
             }
-            // Факт по сроку записываем, когда день срока закончился (dtdNow < T): число уже не изменится.
+            // факт по сроку пишем, когда день срока прошёл (dtdNow < T): число уже не меняется
             HZ.forEach(T => {
                 if (dtdNow >= T || (it && it.fact && it.fact[T] != null)) return;
                 lazy();
@@ -640,8 +619,6 @@ window.LowReqReport = (function () {
     }
     function captureSoon() { whenIdle(() => { capture(); }, 40000); }
 
-    // ---------- правка вручную ----------
-
     async function saveOver(key, over) {
         const r = rows().find(x => x.key === key);
         const base = r ? { key, code: r.code, dep: r.dep, check: r.check, author: r.author } : null;
@@ -663,8 +640,6 @@ window.LowReqReport = (function () {
         rev++;
         return true;
     }
-
-    // ---------- вид ----------
 
     function stateOf(res) { return res === 'yes' ? { cls: 'yes', text: 'Да' } : (res === 'no' ? { cls: 'no', text: 'Нет' } : { cls: 'wait', text: 'Ждём ответа' }); }
 
@@ -699,7 +674,7 @@ window.LowReqReport = (function () {
         </div></td></tr>`;
     }
 
-    // «Что просили / что согласовали»: просили — из «Запроса на понижение»; согласовано — пометка (или значения, если их правили / считали по продажам).
+    // что просили - из 'Запроса на понижение'; согласовано - пометка, или значения, если правили или считали по продажам
     function askParts(r) {
         const asked = r.ask ? 'просили: ' + whatText({ places: r.ask.places, fare: r.ask.fare, est: false }) : '';
         let agreed = '';
@@ -753,7 +728,7 @@ window.LowReqReport = (function () {
         if (!lrReady && typeof LowerRequest !== 'undefined' && LowerRequest.ensureLoaded) {
             LowerRequest.ensureLoaded().then(() => { lrReady = true; memo.sig = ''; if (document.querySelector('.lrr-card') && lastRerender) lastRerender(); }).catch(() => { lrReady = true; });
         }
-        // Журнал продаж и архив месяцев вылетов — для выручки и значений, которых уже нет в файле продаж.
+        // журнал и архив по месяцам вылетов: для выручки и значений, которых нет в файле продаж
         const months = [...new Set(rows().map(r => monthOf(r.dep)).filter(Boolean))].filter(m => !asked.has(m));
         if (months.length) {
             months.forEach(m => asked.add(m));
@@ -762,11 +737,11 @@ window.LowReqReport = (function () {
                 typeof SalesArchive !== 'undefined' ? SalesArchive.ensureMonths(months).catch(() => false) : false
             ]).then(([a, b]) => { if ((a || b) && document.querySelector('.lrr-card') && lastRerender) { memo.sig = ''; lastRerender(); } });
         }
-        // Публикующий дописывает общий файл сразу при открытии (не чаще раза на новые данные).
+        // публикующий дописывает общий файл при открытии, не чаще раза на новые данные
         if (canWriteShared() && Date.now() - lastTry > 60000) { lastTry = Date.now(); capture(); }
     }
 
-    // Таблица занимает почти всю высоту окна (до низа экрана); обе строки шапки закреплены.
+    // таблица до низа окна; обе строки шапки закреплены
     function fitTable(sc) {
         const top = sc.getBoundingClientRect().top;
         sc.style.maxHeight = Math.max(320, Math.round(window.innerHeight - top - 24)) + 'px';
@@ -780,7 +755,7 @@ window.LowReqReport = (function () {
         if (!available()) return '<p class="rp-note">Отчёт недоступен.</p>';
         prepare(rerender);
         const sc0 = document.querySelector('.lrr-card .rp-scroll');
-        const keep = sc0 ? sc0.scrollTop : 0;   // новые сверху: при открытии вверху, при перерисовке позиция сохраняется
+        const keep = sc0 ? sc0.scrollTop : 0;   // новые сверху; при перерисовке держим прокрутку
         setTimeout(() => {
             const sc = document.querySelector('.lrr-card .rp-scroll');
             if (!sc) return;
@@ -823,8 +798,6 @@ window.LowReqReport = (function () {
                 ${list.some(r => r.approx) ? '<p class="lrr-foot"><span class="lrr-apx">примерно</span> — запрос найден позже, цифры восстановлены по истории продаж</p>' : ''}
             </section></div>`;
     }
-
-    // ---------- события ----------
 
     function saveView() { try { localStorage.setItem(VIEW_KEY, JSON.stringify({ period, show })); } catch (e) { /* ignore */ } }
 
@@ -885,7 +858,7 @@ window.LowReqReport = (function () {
         return false;
     }
 
-    // Двойной щелчок: по номеру рейса — карточка рейса; по строке — правка.
+    // двойной клик: по номеру рейса - карточка, по строке - правка
     function handleDblClick(event) {
         const code = event.target.closest && event.target.closest('[data-lrr-code]');
         if (code) {
@@ -922,7 +895,7 @@ window.LowReqReport = (function () {
         }, 600);
     });
 
-    // Данные для Excel: все строки текущего отбора в том же виде, что на экране.
+    // для Excel: строки текущего отбора, как на экране
     function exportData() {
         const list = filtered();
         return {

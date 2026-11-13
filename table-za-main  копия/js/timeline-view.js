@@ -1,5 +1,5 @@
-// js\timeline-view.js - графический план полётов.
-// Globals on purpose: no bundler; onclick and other files call by name.
+// графплан полетов
+// глобалы намеренно: без сборщика, onclick и другие файлы зовут по имени
 
 const TIMELINE_SCROLL_OFFSET = 400;
 const TIMELINE_AC_ORDER = ['ATR-42', 'ATR-72', 'Ан-24', 'Ан-26', 'Як-42'];
@@ -30,7 +30,7 @@ const TIMELINE_DAY_MIN = 24 * 60;
 const TIMELINE_COMPACT_COL_PX = 118;
 const TIMELINE_MIN_BLOCK_MIN = 20;
 const TIMELINE_HUB_UTC = 7;
-/** Смещение от UTC. Прилёт в файле часто местный у пункта назначения. Ось графика — Красноярск (UTC+7). */
+// смещение от UTC; прилет в файле часто местный у пункта назначения; ось - Красноярск (UTC+7)
 const TIMELINE_AIRPORT_UTC = {
     KJA: 7, ABA: 7, KYZ: 7, KEJ: 7, NOZ: 7, RGK: 7, TOF: 7,
     NSK: 7, IAA: 7, HTG: 7, DKS: 7, THX: 7, MJY: 7, KCY: 7,
@@ -115,7 +115,7 @@ let timelineSuppressClick = false;
 
 function selectFlightFromTimeline(flight, date) {
     if (timelineSuppressClick) return;
-    // Графплан: не переключаем вкладку, только запоминаем рейс
+    // вкладку не переключаем, только запоминаем рейс
     const base = getBaseFlight(flight);
     if (!isValidFlightBase(base)) return;
     currentFlight = base;
@@ -392,7 +392,7 @@ function timelineBlockForMeta(meta) {
     if (ends?.to && arrMin != null && arrMin < TIMELINE_DAY_MIN) {
         arrMin = timelineToHubMin(arrMin, ends.to);
     }
-    // Ранний вылет с востока (01:30 местного = 23:30 предыдущего дня по Красноярску) — к началу шкалы.
+    // ранний вылет с востока (01:30 местного = 23:30 вчера по Красноярску) уходит в начало шкалы
     const untimed = depMin == null || depMin >= TIMELINE_DAY_MIN;
     if (untimed) return { untimed: true };
     if (depMin < 0) depMin = 0;
@@ -571,7 +571,7 @@ function buildTimelineHtml() {
             if (window.networkMapFilter && typeof NetworkMap !== 'undefined' && NetworkMap.flightMatchesFilter
                 && !NetworkMap.flightMatchesFilter(fl, row)) return;
             const dk = `${date}\x1f${fl}`;
-            // У вылета с посадками плашка показывает основной (сквозной) участок: его загрузка — та же, что в таблицах.
+            // у вылета с посадками плашка про основной (сквозной) участок, загрузка как в таблицах
             if (metaByDateFlight[dk] && metaByDateFlight[dk].row.segShare && !row.segShare) {
                 delete metaByDateFlight[dk];
                 flightSeen[date].delete(fl);
@@ -607,7 +607,7 @@ function buildTimelineHtml() {
                     if (!allDates.includes(date)) allDates.push(date);
                 }
             } else {
-                // если позже встретился более ранний вылет (сегменты) — берём минимальное время
+                // если позже встретился более ранний вылет (сегменты), берем минимум
                 const depStr = typeof getDepTime === 'function' ? getDepTime(row) : '';
                 const arrStr = typeof getArrTime === 'function' ? getArrTime(row) : '';
                 const depMin = typeof timeToMinutes === 'function' ? timeToMinutes(depStr || row[11]) : 9999;
@@ -722,11 +722,11 @@ function buildTimelineHtml() {
         const dow = getDayOfWeek(date);
         const hint = expanded ? 'Двойной клик — свернуть' : 'Двойной клик — сетка 2 ч';
         const dateLabel = String(date).slice(0, 5);
-        // Праздник / каникулы / своё событие из календаря — цветная точка и название в подсказке.
+        // праздник, каникулы или событие календаря: цветная точка и название в подсказке
         const calKey = typeof CalendarEvents !== 'undefined' ? (CalendarEvents.on(date)[0] || null) : null;
         const calName = calKey ? CalendarEvents.label(date) : '';
         const calDot = calKey ? `<span class="cal-dot cal-dot-${escAttr(calKey.type)}" aria-label="${escAttr(calName)}"></span>` : '';
-        // Одна строка «чт 08.10» и число рейсов: в две-три строки дата обрезалась по высоте.
+        // одна строка "чт 08.10" и число рейсов: в две-три строки дата обрезается по высоте
         gridParts.push(`<div class="${headCls}${timelineIsWeekend(date) ? ' timeline-date-head-weekend' : ''}" style="grid-column:${col};grid-row:1;height:${headerH}px" data-date="${escAttr(date)}" title="${escAttr(date + ' · ' + dow + (isToday ? ' · сегодня' : '') + (calName ? ' · ' + calName : '') + ' · рейсов: ' + flights.length + ' · ' + hint)}">
             <span class="timeline-date-line">${calDot}<span class="timeline-dow">${escHtml(dow)}</span><span class="timeline-date">${escHtml(dateLabel)}</span>${flights.length ? `<span class="timeline-count">${flights.length}</span>` : ''}</span>
             ${expanded ? renderTimelineHourScale() : ''}
@@ -788,7 +788,7 @@ function buildTimelineHtml() {
                         : '';
                     inner = untimedHtml + ganttHtml || inner;
                     if (date === getTodayDate() && ganttHtml) {
-                        // Линия «сейчас» по оси Красноярска (UTC+7), как и блоки рейсов.
+                        // линия "сейчас" по оси Красноярска (UTC+7), как блоки рейсов
                         const now = new Date();
                         const hubMin = ((now.getUTCHours() + TIMELINE_HUB_UTC) % 24) * 60 + now.getUTCMinutes();
                         inner += `<span class="timeline-now-line" style="left:${(hubMin / TIMELINE_DAY_MIN) * 100}%" title="Сейчас"></span>`;

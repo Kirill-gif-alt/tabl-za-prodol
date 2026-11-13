@@ -39,7 +39,7 @@ window.PerfCache = (function () {
     function getBaseFlightMemo(flight) {
         const key = String(flight || '');
         if (baseFlightCache.has(key)) return baseFlightCache.get(key);
-        // Справочник рейсов (flight-registry.js): свои доп. номера и рейсы важнее встроенных правил.
+        // справочник рейсов (flight-registry.js) важнее встроенных правил: свои доп. номера и рейсы
         const reg = window.FLIGHT_EXTRA_BASE;
         if (reg && reg[key]) return memoSet(baseFlightCache, key, reg[key], MEMO_CACHE_MAX);
         let n = parseInt(key.replace('KV-', ''), 10) || 0;
@@ -60,7 +60,7 @@ window.PerfCache = (function () {
         return memoSet(baseFlightCache, key, result, MEMO_CACHE_MAX);
     }
 
-    // Справочник рейсов изменился — базовые номера пересчитать.
+    // справочник изменился - пересчитываем базовые номера
     function clearFlightCaches() {
         baseFlightCache.clear();
     }
@@ -91,7 +91,7 @@ window.PerfCache = (function () {
         return cloneMemoDate(dt);
     }
 
-    // Время даты «ДД.ММ.ГГГГ» (полночь) числом — без копии Date, для частых сравнений; null — не дата.
+    // дата ДД.ММ.ГГГГ как число (полночь), без копии Date; null - не дата
     function dateTsMemo(dateStr) {
         if (!dateStr) return null;
         const key = String(dateStr);
@@ -187,21 +187,21 @@ window.PerfCache = (function () {
             };
         }
         st.count++;
-        // Средний и последний тариф — только по оплаченным взрослым билетам (FareGrid.isAdultPaid): младенец с местом за 300 ₽,
-        // детский и льготный билеты тариф не сдвигают. Выручка (paidSum) идёт по всем оплаченным билетам.
+        // средний и последний тариф только по оплаченным взрослым (FareGrid.isAdultPaid)
+        // младенец с местом за 300 ₽, детский и льготный тариф не сдвигают; выручка (paidSum) по всем оплаченным
         const adult = typeof FareGrid !== 'undefined' && FareGrid.isAdultPaid
             ? FareGrid.isAdultPaid({ basicFareStr, adjustedFare: adj, fare: nf })
             : (adj || nf || 0) > 0;
         const v = adj || nf || 0;
         if (adult) { st.paidCount++; st.fareSum += v; }
-        st.paidSum += nf || 0;    // фактически оплачено: это идёт в выручку
+        st.paidSum += nf || 0;    // фактически оплачено - идёт в выручку
         if (dealDate === today) {
             salesTodayKpi.sales++;
             salesTodayKpi.revenue += nf || 0;
             if (adult) { salesTodayKpi.adultN++; salesTodayKpi.adultSum += v; }   // для среднего тарифа в шапке
         }
         const ts = dateTsMemo(dealDate) || 0;
-        // Последний тариф — последний оплаченный взрослый (0 ₽, служебные, детские и младенческие билеты его не затирают), как без кэша.
+        // последний тариф - последний оплаченный взрослый (0 ₽, служебные, детские и младенческие не затирают), то же, что без кэша
         if (adult && ts >= st.lastDealTs) {
             st.lastDealTs = ts;
             st.lastFare = v;

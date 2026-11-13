@@ -1,9 +1,7 @@
-// Поиск рейса: по номеру (101, кв101, KV-301 — доп. номер ведёт к основному) и по городам маршрута
-// («абак», «томск стреж», «абакан, томск»).
-// • Поле на панели «Динамики продаж», «Экономики», «ПКЗ»: подсказки прямо под полем.
-// • Ctrl+K на любой вкладке: окно поиска по центру — недавние рейсы и совпадения.
-//   Enter — открыть на текущей вкладке (или в «Динамике продаж»), Shift+Enter — в «Экономической таблице».
-// Английская раскладка тоже понимается: «f,fr» → «абак».
+// поиск рейса по номеру (101, кв101, KV-301 - доп. номер ведёт к основному) и по городам (абак, томск стреж)
+// поле на панелях таблиц - подсказки под полем; Ctrl+K на любой вкладке - окно поиска
+// Enter - открыть на текущей вкладке (или в Динамике продаж), Shift+Enter - в Экономической таблице
+// английская раскладка тоже: f,fr = абак
 window.FlightSearch = (function () {
     const RECENT_KEY = 'krasavia_recent_flights_';
     const RECENT_MAX = 8;
@@ -41,8 +39,6 @@ window.FlightSearch = (function () {
         return typeof TabOrder !== 'undefined' && TabOrder.labelOf ? TabOrder.labelOf(tab) : ({ table: 'Динамика продаж', pair: 'Экономическая таблица', pkz: 'ПКЗ' }[tab] || tab);
     }
 
-    // ---------- справочник рейсов для поиска ----------
-
     function ts(d) {
         if (typeof PerfCache !== 'undefined' && PerfCache.dateTsMemo) return PerfCache.dateTsMemo(d);
         const x = typeof parseLocalDate === 'function' ? parseLocalDate(d) : null;
@@ -59,7 +55,7 @@ window.FlightSearch = (function () {
             const rows = (typeof groupedData !== 'undefined' && groupedData[code]) || [];
             const extras = [...new Set(rows.map(r => cleanFlight(r[0])).filter(c => c && c !== code))]
                 .sort((a, b) => (parseInt(num(a), 10) || 0) - (parseInt(num(b), 10) || 0));
-            // Ближайший вылет: дата и загрузка — чтобы видеть, тот ли это рейс, не открывая.
+            // ближайший вылет: дата и загрузка, чтобы понять, тот ли рейс, не открывая
             let next = null;
             rows.forEach(r => {
                 const t = ts(r[1]);
@@ -88,7 +84,7 @@ window.FlightSearch = (function () {
         return list;
     }
 
-    // Счёт совпадения: номер важнее города, точное — важнее начала, начало слова — важнее середины.
+    // совпадение: номер важнее города; точное важнее начала, начало слова важнее середины
     function scoreOf(f, terms) {
         let total = 0;
         for (const t of terms) {
@@ -111,7 +107,7 @@ window.FlightSearch = (function () {
         return total;
     }
 
-    // «KV-247», «kv 247», «кв247» → «247».
+    // KV-247, kv 247, кв247 -> 247
     function stripPrefix(q) {
         return q.replace(/(^|\s)(kv|кв|rd)\s*(?=\d)/g, '$1').trim();
     }
@@ -125,7 +121,7 @@ window.FlightSearch = (function () {
         };
         let used = q;
         let res = run(q);
-        // Набрано в английской раскладке («f,frfy» → «абакан»). Запятую раскладки берём до чистки.
+        // набрано в английской раскладке (f,frfy = абакан); запятую берём до чистки
         if (!res.length && /[a-z\[\];',.`]/.test(String(query).toLowerCase())) {
             used = stripPrefix(norm(toRu(String(query).toLowerCase())));
             res = run(used);
@@ -138,8 +134,6 @@ window.FlightSearch = (function () {
     function find(code) {
         return index().find(f => f.code === code) || null;
     }
-
-    // ---------- недавние ----------
 
     function recent() {
         try {
@@ -161,9 +155,7 @@ window.FlightSearch = (function () {
         } catch (e) { /* ignore */ }
     }
 
-    // ---------- открыть рейс ----------
-
-    // tab: 'here' — текущая вкладка, если на ней выбирают рейс, иначе «Динамика продаж»; или имя вкладки.
+    // tab: 'here' - текущая вкладка, если на ней выбирают рейс, иначе Динамика продаж; или имя вкладки
     function open(code, tab) {
         const f = find(code) || { code };
         const base = f.code;
@@ -181,13 +173,11 @@ window.FlightSearch = (function () {
         }
     }
 
-    // ---------- строки списка ----------
-
     function hl(text, q) {
         const s = String(text || '');
         const terms = stripPrefix(norm(q)).split(' ').filter(t => t && !/^\d+$/.test(t));
         if (!terms.length) return esc(s);
-        // Подсветка начала слов, совпавших с запросом (без учёта регистра и «ё»).
+        // подсветка начала слов, совпавших с запросом, без учёта регистра и ё
         const lower = s.toLowerCase().replace(/ё/g, 'е');
         const marks = new Array(s.length).fill(false);
         terms.forEach(t => {
@@ -227,8 +217,6 @@ window.FlightSearch = (function () {
             ${aside || ''}
         </div>`;
     }
-
-    // ---------- поле с подсказками ----------
 
     function closeDropdown() {
         if (!dropdown) return;
@@ -312,7 +300,7 @@ window.FlightSearch = (function () {
         if (on) on.scrollIntoView({ block: 'nearest' });
     }
 
-    // Подключить поле поиска (панель таблиц). onPick(code) — открыть рейс.
+    // подключаем поле поиска (панель таблиц); onPick(code) открывает рейс
     function attach(input, onPick) {
         if (!input || input.dataset.fsBound) return;
         input.dataset.fsBound = '1';
@@ -347,8 +335,6 @@ window.FlightSearch = (function () {
         if (dropdown && !(e.target && e.target.nodeType === 1 && dropdown.el.contains(e.target))) placeDropdown();
     }, true);
 
-    // ---------- окно Ctrl+K ----------
-
     function paletteTabs() {
         return ['table', 'pair', 'pkz'].filter(canOpen);
     }
@@ -382,7 +368,7 @@ window.FlightSearch = (function () {
             + '<span><kbd>↑</kbd><kbd>↓</kbd> выбрать</span>';
     }
 
-    // Открыто другое окно (настройки, профили, сводка, увеличенный график, вход) — поиск не открываем поверх.
+    // другое окно открыто (настройки, профили, сводка, график, вход) - поиск не открываем поверх
     function otherModalOpen() {
         return !!document.querySelector('.profile-admin-modal.open, #chart-expand-modal.open, .chart-expand-modal.open, #login-overlay.open');
     }
@@ -422,7 +408,7 @@ window.FlightSearch = (function () {
             palette.list.querySelectorAll('.fs-item').forEach(n => n.classList.toggle('fs-on', parseInt(n.dataset.fsI, 10) === i));
         });
         input.addEventListener('input', () => { palette.active = 0; renderPalette(); });
-        // Клавиши ловит всё окно: даже если фокус ушёл с поля, Esc и стрелки работают, а Tab не уводит за окно.
+        // клавиши ловит всё окно: Esc и стрелки работают, даже если фокус ушёл с поля; Tab не уводит за окно
         ov.addEventListener('keydown', (e) => {
             e.stopPropagation();
             if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyK' || /^[kKлЛ]$/.test(e.key))) { e.preventDefault(); closePalette(); return; }
@@ -454,7 +440,7 @@ window.FlightSearch = (function () {
         if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === 'k' || e.key === 'K' || e.key === 'л' || e.key === 'Л' || e.code === 'KeyK')) {
             const loggedIn = typeof ProfileAuth === 'undefined' || (ProfileAuth.getCurrentProfile && ProfileAuth.getCurrentProfile());
             const hasData = typeof groupedData !== 'undefined' && groupedData && Object.keys(groupedData).length;
-            // Поиск недоступен профилю (нет таблиц) — сочетание остаётся браузеру.
+            // поиск недоступен профилю без таблиц - сочетание остаётся браузеру
             if (!loggedIn || !hasData || (!palette && !paletteTabs().length)) return;
             e.preventDefault();
             if (palette) closePalette();

@@ -1,12 +1,8 @@
-// Ценовые решения из «Управления продажами» на графиках и отметка в один клик.
-// • Маркеры ▲ повышение, ▼ снижение, ! внимание на графиках продаж рейса (плагин Chart.js).
-// • Эффект решения: продажи за 3 дня до и 3 дня после (день отметки — в «после»),
-//   с поправкой на норму по дню недели (sales-report.js). Пока окно «после» не закончилось
-//   или норма не построена — честно пишем, что данных мало.
-// • Быстрая отметка за сегодня (RMS, карточка рейса, детализация «Динамики»): те же права
-//   и тот же файл, что в «Управлении продажами».
+// ценовые решения из Управления продажами: ▲ повышение, ▼ снижение, ! внимание, на графиках (Chart.js)
+// эффект: продажи за 3 дня до и после (день отметки - в "после"), с поправкой на норму дня недели (sales-report.js)
+// пока окно "после" не закончилось или нормы нет - пишем, что данных мало; быстрая отметка - те же права и файл
 window.PriceMarks = (function () {
-    // «3 дня», «5 дней» — окно решения из «Параметров расчётов».
+    // окно решения "3 дня", "5 дней" - из параметров расчётов
     function winDays() { const n = PV.DECISION_WINDOW; const m10 = n % 10, m100 = n % 100; return n + ' ' + (m10 === 1 && m100 !== 11 ? 'день' : (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? 'дня' : 'дней')); }
 
     const GLYPH = { up: '▲', down: '▼', attn: '!' };
@@ -31,8 +27,8 @@ window.PriceMarks = (function () {
         return typeof SalesManagement !== 'undefined' && typeof SalesManagement.marksFor === 'function';
     }
 
-    // Решения по вылету (без «проверено без изменений»). Одно решение, отмеченное двумя людьми, — одна запись
-    // (как в отчёте «Решения»): иначе в карточке оно шло бы дважды, а на графике рисовалось бы два маркера.
+    // решения по вылету, без "проверено без изменений"
+    // решение, которое отметили двое, - одна запись (как в отчёте "Решения"), иначе дважды в карточке и два маркера
     function decisions(code, flyDate) {
         if (!available()) return [];
         const out = [];
@@ -51,9 +47,9 @@ window.PriceMarks = (function () {
         return out;
     }
 
-    // Противоположные решения на одной ячейке (один вылет, одна дата проверки) от разных людей: в итог идёт последнее
-    // по времени отметки, остальные помечаются overlap («перекрыто») — иначе одни и те же билеты шли бы в итог дважды.
-    // list: [{ code|flight, dep, check, status, at }] — r.overlap ставится на месте.
+    // противоположные решения одной ячейки от разных людей: в итог идёт последнее по времени, остальные overlap
+    // иначе одни и те же билеты попадут в итог дважды
+    // list: [{ code|flight, dep, check, status, at }], r.overlap ставится прямо в list
     function markOverlaps(list) {
         const key = r => [r.code || r.flight, r.dep, r.check].join('|');
         const last = new Map();
@@ -62,7 +58,7 @@ window.PriceMarks = (function () {
         return list;
     }
 
-    // Через сколько дней после этой отметки следующее решение «снизить/повысить» по вылету (null — его нет).
+    // дней до следующего решения по вылету после этой отметки, null - нет
     function nextDecisionGap(code, flyDate, check) {
         let best = null;
         decisions(code, flyDate).forEach(x => {
@@ -84,8 +80,6 @@ window.PriceMarks = (function () {
         return da && db ? Math.round((da.getTime() - db.getTime()) / 86400000) : null;
     }
 
-    // ---------- эффект решения ----------
-
     function windowStats(list, flyDate, dtdFrom, dtdTo) {
         let n = 0;
         let sum = 0;
@@ -97,18 +91,18 @@ window.PriceMarks = (function () {
             const v = s.adjustedFare || s.fare || 0;
             if (v > 0) { sum += v; paid++; }
         });
-        // avg — средний оплаченный тариф (для показа); perTicket — выручка на один билет, включая билеты за 0 ₽:
-        // по нему считается выручка «без решения», иначе нулевые билеты занижали бы итог решения на ровном месте.
+        // avg - средний оплаченный тариф, для показа; perTicket - выручка на билет, включая билеты за 0 ₽
+        // по нему считаем выручку без решения, иначе нулевые билеты занизят итог
         return { n, sum, avg: paid ? Math.round(sum / paid) : null, perTicket: n ? sum / n : null };
     }
 
-    // Норма продаж за окно дней до вылета [dtdTo..dtdFrom] на кресла этого вылета.
+    // норма продаж за окно дней до вылета [dtdTo..dtdFrom] на кресла этого вылета
     function normPickup(base, code, flyDate, dtdFrom, dtdTo) {
         if (typeof collectSameWeekdayCohort !== 'function' || typeof weekdayNormSeries !== 'function') return null;
         const row = typeof getFlightRowForDate === 'function' ? getFlightRowForDate(base, flyDate, code) : null;
         const seats = row && typeof getSeatsOnSale === 'function' ? getSeatsOnSale(row) : 0;
-        // Оба дня окна — у одних и тех же вылетов: только те, у кого и конец окна уже наступил
-        // (иначе разность двух средних по разным наборам вылетов врёт).
+        // оба дня окна берём у одних и тех же вылетов: только у тех, у кого конец окна уже наступил
+        // иначе разность двух средних по разным наборам врёт
         const cohort = collectSameWeekdayCohort(base, flyDate, code)
             .filter(c => c.dayGap <= (typeof PV.WEEKDAY_NORM_WINDOW_DAYS === 'number' ? PV.WEEKDAY_NORM_WINDOW_DAYS : 56))
             .filter(c => !(c.observedFrom > Math.max(0, dtdTo)));
@@ -117,7 +111,7 @@ window.PriceMarks = (function () {
         return { value: Math.max(0, pts[1].value - pts[0].value), n: Math.min(pts[0].n, pts[1].n) };
     }
 
-    // Вылет уже выпал из файла продаж — число билетов по дням берём из архива кривых (без тарифов).
+    // вылет выпал из файла продаж, билеты по дням берём из архива кривых (без тарифов)
     function curveStats(curve, dtdFrom, dtdTo) {
         const val = (t) => (t > curve.maxDtd ? 0 : (curve.onHand[t] != null ? curve.onHand[t] : curve.total));
         return { n: Math.max(0, val(dtdTo) - val(dtdFrom + 1)), avg: null };
@@ -135,26 +129,24 @@ window.PriceMarks = (function () {
         const cutoff = typeof salesDataCutoffTime === 'function' ? salesDataCutoffTime() : Date.now();
         const lastAfterDay = parseLocalDate(flyDate);
         if (lastAfterDay) lastAfterDay.setDate(lastAfterDay.getDate() - afterTo);
-        // Последний день окна «после» должен быть целиком в данных: день среза может быть неполным.
+        // последний день окна "после" должен быть целиком в данных, день среза может быть неполным
         const complete = !!(lastAfterDay && lastAfterDay.getTime() < cutoff);
         const nb = normPickup(base, code, flyDate, d + PV.DECISION_WINDOW, d + 1);
         const na = normPickup(base, code, flyDate, d, afterTo);
         const effect = complete && nb && na ? (after.n - na.value) - (before.n - nb.value) : null;
-        // Рубли по решениям не считаются: выручка за окно зависит от состава билетов (группы, дети, семейства тарифов)
-        // сильнее, чем от самого решения. Решение судится по билетам против нормы.
+        // рубли по решениям не считаем: выручка зависит от состава билетов (группы, дети, семейства тарифов) сильнее решения
+        // судим по билетам против нормы
         if (mark.status === 'up') return upEffect(base, code, flyDate, d, stats, before, nb, nextDecisionGap(code, flyDate, mark.check));
         return { dtd: d, before, after, normBefore: nb, normAfter: na, complete, effect };
     }
 
-    // Повышение судится по итогу вылета, а не по 3 дням: дороже продают медленнее — это нормально, места продаются
-    // ближе к вылету. Плохо только если рейс в итоге недобрал. Сравнение — выручка с решения до вылета против того,
-    // что было бы без повышения: обычный добор с этого дня (норма по дню недели, с поправкой на темп до решения),
-    // по старому тарифу, не больше свободных на тот момент мест. Рейс заполнился (от 95%) — места не потеряны.
-    // Есть следующее решение (gap дней спустя) — «после» только до него: его день и дальше — уже следующего решения (как в рублях).
+    // повышение судим по итогу вылета, не по 3 дням: дороже продают медленнее, места продаются ближе к вылету
+    // сравниваем выручку с решения до вылета и обычный добор без повышения (норма дня недели, старый тариф, свободные места)
+    // рейс заполнился (от 95%) - места не потеряли; плохо только если недобрал; "после" до следующего решения
     function upEffect(base, code, flyDate, d, stats, before, nb, gap) {
         const endDtd = gap != null ? Math.max(0, d - gap + 1) : 0;
         const afterAll = stats(d, endDtd);
-        const afterDep = endDtd > 0 ? stats(d, 0) : afterAll;   // до вылета — для свободных мест на момент решения
+        const afterDep = endDtd > 0 ? stats(d, 0) : afterAll;   // до вылета - для свободных мест на момент решения
         const naAll = normPickup(base, code, flyDate, d, endDtd);
         const fly = parseLocalDate(flyDate);
         const cutoff = typeof salesDataCutoffTime === 'function' ? salesDataCutoffTime() : Date.now();
@@ -170,24 +162,24 @@ window.PriceMarks = (function () {
             seats = row && typeof getSeatsOnSale === 'function' ? getSeatsOnSale(row) : 0;
             sold = row && typeof getSoldFromRow === 'function' ? getSoldFromRow(row) : 0;
         }
-        // Вылет уже выпал из таблицы загрузки — кресла и итог из архива продаж.
+        // вылет выпал из таблицы загрузки - кресла и итог из архива продаж
         if (!(seats > 0) && typeof SalesArchive !== 'undefined' && SalesArchive.entryFor) {
             const ae = SalesArchive.entryFor(flyDate, code);
             if (ae && ae.s > 0) { seats = ae.s; sold = ae.sold || 0; }
         }
-        // Кресел не знаем — не знаем, были ли свободные места: не судим (иначе «потеряли» билеты на полном рейсе).
+        // кресел не знаем, не судим: иначе на полном рейсе выйдут "потерянные" билеты
         if (!(seats > 0)) return { dtd: d, before, after: afterAll, normBefore: nb, normAfter: naAll, complete, effect: null, finalLf: null, untilDeparture: true, untilNext, expected: null };
         const finalLf = flown && seats > 0 ? sold / seats : null;
         const freeAtDecision = seats > 0 ? Math.max(0, seats - Math.max(0, sold - afterDep.n)) : null;
         let expected = naAll && nb ? Math.max(0, naAll.value + (before.n - nb.value) / 2) : null;
         if (expected != null && freeAtDecision != null) expected = Math.min(expected, freeAtDecision);
-        if (expected != null && finalLf != null && finalLf >= 0.95) expected = afterAll.n;   // заполнился — мест не потеряли
+        if (expected != null && finalLf != null && finalLf >= 0.95) expected = afterAll.n;   // заполнился - мест не потеряли
         const effect = complete && expected != null ? Math.round((afterAll.n - expected) * 10) / 10 : null;
         return { dtd: d, before, after: afterAll, normBefore: nb, normAfter: naAll, complete, effect, finalLf, untilDeparture: true, untilNext, expected };
     }
 
-    // Итог решения — один для карточки рейса и для журнала решений.
-    // worked: true / false, null — вывод делать рано (мало продаж) или не с чем сравнить.
+    // итог решения один для карточки и журнала решений
+    // worked: true / false, null - вывод рано (мало продаж) или не с чем сравнить
     function judge(e, status) {
         if (!e || !e.complete) return e && e.untilDeparture
             ? (e.untilNext ? { cls: 'wait', text: 'итог — когда пройдут дни до следующего решения', short: 'ждём', worked: null } : { cls: 'wait', text: 'итог повышения — после вылета', short: 'ждём вылета', worked: null })
@@ -205,7 +197,7 @@ window.PriceMarks = (function () {
             : { cls: 'neg', text: e.effect < 0 ? `хуже обычного ${signedN(e.effect)}` : 'без изменений', short: 'не сработало', worked: false };
     }
 
-    // Дробные числа билетов — с запятой и без хвоста вида 0,30000000000000004.
+    // дробные билеты с запятой, без хвоста вида 0,30000000000000004
     function fmtN(v) {
         return String(Math.round(Number(v) * 10) / 10).replace('.', ',');
     }
@@ -214,7 +206,7 @@ window.PriceMarks = (function () {
         return (n > 0 ? '+' : (n < 0 ? '−' : '')) + fmtN(Math.abs(n));
     }
 
-    // «1 билет», «2 билета», «5 билетов»; у дробного числа — всегда «билета» («0,5 билета», «5,5 билета»).
+    // 1 билет, 2 билета, 5 билетов; у дробного всегда "билета" (0,5 билета, 5,5 билета)
     function ticketWord(n) {
         const v = Math.round(Number(n) * 10) / 10;
         return Number.isInteger(v) ? pluralRu(v, 'билет', 'билета', 'билетов') : 'билета';
@@ -232,7 +224,7 @@ window.PriceMarks = (function () {
         return `${fmtN(n)} ${ticketWord(n)}`;
     }
 
-    // Понятное описание: сколько продали до и после решения, сколько обычно, и вывод.
+    // понятное описание: продано до и после решения, сколько обычно, и вывод
     function effectLines(e, status) {
         if (!e) return [];
         const usual = (x) => (x ? ` (обычно ${fmtN(x.value)})` : '');
@@ -247,7 +239,7 @@ window.PriceMarks = (function () {
         if (!e.complete) verdict = e.untilDeparture ? 'Итог повышения будет после вылета: важно, заполнится ли рейс' : `Итог будет, когда пройдут ${winDays()} после решения`;
         else if (e.effect == null) verdict = 'Сравнить не с чем: мало прошлых вылетов в этот день недели';
         else {
-            // Тот же вывод, что в отчёте «Решения» → «По билетам» (допуск 10% у повышения, «рано судить» при малых продажах).
+            // тот же вывод, что в отчёте "Решения" - "По билетам" (допуск 10% у повышения, "рано судить" при малых продажах)
             const j = judge(e, status);
             verdict = `${j.worked === true ? 'Помогло' : (j.worked === false ? 'Навредило' : 'Пока вывода нет')}: ${j.text}`;
         }
@@ -255,7 +247,7 @@ window.PriceMarks = (function () {
         return lines;
     }
 
-    // Блок «Ценовые решения» под графиками.
+    // Блок "Ценовые решения" под графиками.
     function decisionsHtml(base, code, flyDate) {
         const list = decisions(code, flyDate);
         if (!list.length) return '';
@@ -320,13 +312,11 @@ window.PriceMarks = (function () {
     };
     if (typeof Chart !== 'undefined' && Chart.register) Chart.register(plugin);
 
-    // ---------- отметка в один клик ----------
-
     function canMark() {
         return available() && SalesManagement.canEdit();
     }
 
-    // Улетевший вылет не отмечаем — как и в таблице «Управления продажами».
+    // улетевший вылет не отмечаем, как в таблице Управления продажами
     function flown(flyDate) {
         return available() && SalesManagement.isFlownDate && SalesManagement.isFlownDate(flyDate);
     }
@@ -355,9 +345,9 @@ window.PriceMarks = (function () {
         return ok;
     }
 
-    // Отметка сразу нескольким вылетам («Сегодня» → «Проверено без изменений»): та же запись putMark на каждый вылет,
-    // автор — текущий профиль. В журнал действий — одна строка на всю пачку (иначе каждая запись гнала бы журнал в общую папку),
-    // событие krasavia:mark — одно. items: [{ code, date }]. Возвращает, сколько отмечено.
+    // отметка сразу многим вылетам ("Сегодня" - "Проверено без изменений"): putMark на каждый, автор - текущий профиль
+    // в журнал действий одна строка на пачку, иначе каждая запись гоняла бы журнал в общую папку; событие krasavia:mark одно
+    // items: [{ code, date }], возвращает, сколько отмечено
     function setMany(items, status) {
         if (!canMark()) {
             if (typeof showToast === 'function') showToast('Нет права ставить отметки «Управления продажами»', 'error');
@@ -378,7 +368,7 @@ window.PriceMarks = (function () {
         return done.length;
     }
 
-    // Чип сегодняшней отметки: кнопка для тех, кто может отмечать, иначе просто метка.
+    // чип сегодняшней отметки: кнопка, если можно отмечать, иначе просто метка
     function chipHtml(code, flyDate) {
         if (!available()) return '';
         const m = todayMark(code, flyDate);
@@ -390,10 +380,9 @@ window.PriceMarks = (function () {
         return `<button type="button" class="pm-chip${st ? ' sm-st-' + st : ''}" data-pm-code="${esc(code)}" data-pm-date="${esc(flyDate)}" title="${esc(title + ' — нажмите, чтобы отметить (или клавиши 1–4 на строке)')}">${text}</button>`;
     }
 
-    // Кнопки отметки (карточка рейса, детализация).
     const SHORT = { keep: 'Без изм.', attn: '! Вним.', down: '▼ Сниж.', up: '▲ Повыш.' };
 
-    // Кнопки отметки за сегодня — компактно, в одну строку (карточка рейса, детализация, окно выбора).
+    // кнопки за сегодня в одну строку: карточка рейса, детализация, окно выбора
     function buttonsHtml(code, flyDate) {
         if (!canMark() || flown(flyDate)) return '';
         const own = available() && SalesManagement.getOwnMark ? SalesManagement.getOwnMark(code, flyDate, getTodayDate()) : todayMark(code, flyDate);
@@ -457,7 +446,7 @@ window.PriceMarks = (function () {
         }
     }, true);
 
-    // Клавиши 1–4 на строке с чипом (RMS): отметка без мыши.
+    // Клавиши 1-4 на строке с чипом (RMS): отметка без мыши.
     document.addEventListener('keydown', (e) => {
         if (e.ctrlKey || e.altKey || e.metaKey) return;
         const st = KEY_STATUS[e.key];

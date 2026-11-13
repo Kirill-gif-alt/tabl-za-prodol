@@ -1,17 +1,6 @@
-// Проверки рейсов на ошибки в продажах. Проверяются только субсидированные рейсы:
-// межрегиональный рейс, у которого в «Экономической таблице» есть сумма субсидии (ручная правка,
-// иначе сумма из файла расходов и периодов субсидий). Краевые рейсы не субсидированные.
-// KV-247/248 Томск — Стрежевой считаются рейсами без субсидии, хотя есть в файле субсидий:
-// не проверяются и нигде в проверках не показываются (NEVER_SUBSIDIZED).
-// Рейсы-исключения из справочника (fare-refs.js) тоже не проверяются.
-// Правила:
-//   child50_subsidy    — продан детский тариф со скидкой 50% (код тарифа …/CN50);
-//   fare_above_subsidy — продан билет дороже предела из справочника субсидированных тарифов (fare-refs.js).
-//   На коммерческих датах проверки нет: там своя лестница тарифов, в том числе дешевле субсидированного,
-//   и те же коды классов (MSTOW, GSTOW…) — совпадение кода ошибкой не является.
-// modeBadge — режим даты вылета «субсидия / коммерция» для меток в таблицах и на Графплане.
-// Значок «!» ставится у рейса в «Загрузке рейсов», «Экономической таблице» и «Динамике продаж»,
-// полный список — во вкладке «Отчёты», счётчик — в шапке.
+// ошибки в продажах, только субсидированные межрегиональные рейсы (не коммерческие даты)
+// KV-247/248 и исключения из fare-refs.js не проверяем (NEVER_SUBSIDIZED)
+// child50_subsidy - детский тариф CN50; fare_above_subsidy - дороже предела из fare-refs.js
 window.FlightChecks = (function () {
     const RULES = {
         child50_subsidy: { title: 'Детский тариф −50% на субсидированном рейсе', short: 'Детский −50%' },
@@ -29,13 +18,13 @@ window.FlightChecks = (function () {
         return NEVER_SUBSIDIZED.has(base);
     }
 
-    // Админ включает и выключает проверку каждому профилю в «Управлении профилями» → «Функции».
+    // включает админ для профиля: "Управление профилями" -> "Функции"
     function enabled() {
         return typeof ProfileAuth === 'undefined' || typeof ProfileAuth.featureOn !== 'function' || ProfileAuth.featureOn('flight_checks');
     }
 
-    // Ребёнок — только код тарифа …/CNnn (или возраст до 12 лет, если в продажах есть дата рождения).
-    // Младенцы (…/INnn, …/IDnn) детским тарифом не считаются.
+    // ребёнок - код тарифа .../CNnn, или возраст до 12 лет, если есть дата рождения
+    // младенцы (.../INnn, .../IDnn) детьми не считаем
     function childPercent(sale) {
         const m = /\/CN(\d{1,2})\b/i.exec(String(sale && sale.basicFareStr || ''));
         return m ? parseInt(m[1], 10) : null;
@@ -53,7 +42,7 @@ window.FlightChecks = (function () {
         return childPercent(sale) === 50;
     }
 
-    // Вылеты с продажами; пересчитывается только после загрузки данных.
+    // вылеты с продажами; пересчитываем только после загрузки данных
     function candidates() {
         const epoch = typeof dataEpoch === 'number' ? dataEpoch : 0;
         const details = typeof salesDetails !== 'undefined' ? salesDetails : null;
@@ -80,12 +69,12 @@ window.FlightChecks = (function () {
         return map;
     }
 
-    // Субсидия проверяется по текущим правкам: правка в «Экономической таблице» сразу меняет результат.
+    // субсидия по текущим правкам: правка в экономической таблице сразу меняет результат
     function subsidyInfo(c) {
         if (isNeverSubsidized(c.code)) {
             return { subsidized: false, excluded: true, source: 'без субсидии', amount: 0 };
         }
-        // Рейс, исключённый в справочнике, не считается субсидированным.
+        // исключение в справочнике - не субсидированный
         if (typeof FareRefs !== 'undefined' && FareRefs.isExcluded && FareRefs.isExcluded(c.code, c.date)) {
             return { subsidized: false, excluded: true, source: 'исключён в справочнике', amount: 0 };
         }
@@ -96,13 +85,13 @@ window.FlightChecks = (function () {
         }
         const econ = typeof RouteCosts !== 'undefined' && RouteCosts.lookup ? RouteCosts.lookup(c.row, c.code, c.date) : null;
         const amount = econ ? (Number(econ.subsidyOneWay) || 0) : 0;
-        // Коммерческая дата — у маршрута есть субсидия в файле, но на эту дату по периодам её нет.
+        // коммерческая дата: у маршрута субсидия в файле есть, а по периодам на эту дату нет
         const commercial = !!(inter && econ && econ.commercial && !econ.krai && Number(econ.subsidyAmt) > 0);
         return { subsidized: inter && amount > 0, commercial, source: 'файл субсидий', amount };
     }
 
     function stateOf(c) {
-        // Сначала дата: закрытый, но уже улетевший рейс — «Улетел», а не «до вылета».
+        // сначала дата: закрытый и уже улетевший рейс - "Улетел", а не "до вылета"
         const d = parseLocalDate(c.date);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -134,7 +123,7 @@ window.FlightChecks = (function () {
         return Math.round(paid) > Math.round(limitFor(sale, ref));
     }
 
-    // Суммы пределов видит только тот, кому админ дал право на справочник.
+    // суммы пределов видит только тот, кому дан доступ к справочнику
     function canSeeRefs() {
         return typeof FareRefs !== 'undefined' && FareRefs.canView();
     }
@@ -226,7 +215,7 @@ window.FlightChecks = (function () {
         return out.slice();
     }
 
-    // Субсидированные рейсы с продажами до вылета, для которых в справочнике нет тарифа.
+    // субсидированные рейсы с продажами до вылета без тарифа в справочнике
     function missingRefs() {
         const codes = new Set();
         candidates().forEach(c => {
@@ -236,7 +225,7 @@ window.FlightChecks = (function () {
         return [...codes].sort((a, b) => (parseInt(a.slice(3), 10) || 0) - (parseInt(b.slice(3), 10) || 0));
     }
 
-    // Справочники ведутся по базовому номеру: доп. рейс KV-301 = KV-101.
+    // справочники по базовому номеру: доп. рейс KV-301 это KV-101
     function baseCode(code) {
         return typeof getBaseFlight === 'function' ? getBaseFlight(code) : code;
     }
@@ -252,10 +241,9 @@ window.FlightChecks = (function () {
         return /\/(IN|ID)\d/i.test(String(sale && sale.basicFareStr || ''));
     }
 
-    // Подсказки для пустого справочника: предел — самый дорогой из ходовых оплаченных взрослых тарифов
-    // (не меньше 10% билетов) на субсидированных датах рейса; коммерческие даты не учитываются.
-    // Дешевле предела бывают другие тарифы — это не ошибка, поэтому берётся не самый частый, а «потолок».
-    // Админ подтверждает подсказку одним кликом; сам справочник ничего не заполняет.
+    // подсказка для пустого справочника: предел - самый дорогой ходовой оплаченный взрослый тариф (не меньше 10%)
+    // на субсидированных датах, коммерческие не учитываем; дешевле предела бывают и другие тарифы, берём потолок
+    // админ подтверждает кликом, справочник сам не заполняется
     function suggestRefs() {
         const missing = new Set(missingRefs());
         if (!missing.size) return [];
@@ -327,7 +315,7 @@ window.FlightChecks = (function () {
                 above,
                 maxPaid,
                 departures: merged.dates.size,
-                // Надёжно: билетов хватает и дороже предела — единичные выбросы (меньше 5%).
+                // надёжно: билетов достаточно, дороже предела не больше 5%
                 enough: merged.total >= PV.CHECKS_SUGGEST_MIN && above <= merged.total * 0.05
             };
         };
@@ -337,7 +325,7 @@ window.FlightChecks = (function () {
             if (done.has(code) || !stats.has(code)) return;
             done.add(code);
             const other = pairCode(code);
-            // Пара туда-обратно одной записью, если предел у них получается одинаковый.
+            // пара туда-обратно одной записью, если пределы одинаковые
             if (other && missing.has(other) && stats.has(other) && !done.has(other)) {
                 const a = summarize([code]);
                 const b = summarize([other]);
@@ -354,9 +342,9 @@ window.FlightChecks = (function () {
         return out.sort((a, b) => (parseInt(a.flights[0].slice(3), 10) || 0) - (parseInt(b.flights[0].slice(3), 10) || 0));
     }
 
-    // Режим даты вылета на межрегиональном рейсе: 'subsidy' — на эту дату субсидия есть, 'commercial' — субсидии нет
-    // (дата вне периодов субсидии, маршрута нет в файле субсидий, рейс без субсидии или исключён в справочнике).
-    // null — рейс не межрегиональный (краевой и т.п.): метка не нужна. Проверки ошибок (issuesFor) этот режим не меняют.
+    // режим даты межрегионального рейса: subsidy - субсидия на дату есть, commercial - нет
+    // (вне периодов, нет маршрута в файле субсидий, без субсидии или исключён); null - краевой, метка не нужна
+    // проверки (issuesFor) режим не меняет
     let modeCache = { token: '', map: new Map() };
     function modeInfo(code, date, row) {
         const fl = cleanFlight(code);
@@ -370,7 +358,7 @@ window.FlightChecks = (function () {
         if (typeof getFlightRouteType === 'function' && getFlightRouteType(fl) === 'interregional') {
             const r = row || (typeof getFlightRowForDate === 'function' ? getFlightRowForDate(getBaseFlight(fl), date, fl) : null);
             const sub = subsidyInfo({ code: fl, date, row: r });
-            // route — маршрут в файле субсидий есть, но на эту дату её нет (для подсказки).
+            // route: маршрут есть в файле субсидий, но на дату её нет (для подсказки)
             res = sub.subsidized && !sub.excluded ? { mode: 'subsidy', route: true } : { mode: 'commercial', route: !!sub.commercial };
         }
         modeCache.map.set(key, res);
@@ -419,7 +407,7 @@ window.FlightChecks = (function () {
         });
     }
 
-    // Счётчик в шапке: число рейсов с ошибкой, которые ещё не улетели.
+    // счётчик в шапке: рейсы с ошибкой, которые ещё не улетели
     function headerChip() {
         if (!enabled()) return null;
         const flights = new Set(list().filter(i => i.state !== 'Улетел').map(i => i.code + '|' + i.date));
@@ -432,7 +420,7 @@ window.FlightChecks = (function () {
         return chip;
     }
 
-    // После правки справочника или субсидии: пересчитать значки в открытых таблицах и шапке.
+    // после правки справочника или субсидии пересчитываем значки в открытых таблицах и шапке
     function refreshViews() {
         if (typeof invalidateTabPanelState === 'function') invalidateTabPanelState();
         if (typeof updateHeaderStatus === 'function') updateHeaderStatus();

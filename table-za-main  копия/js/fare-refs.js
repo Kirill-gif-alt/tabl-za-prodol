@@ -1,22 +1,18 @@
-// Справочник субсидированных тарифов: предельный тариф на субсидированных рейсах.
-// Билет дороже предела — ошибка (проверка в flight-checks.js). Дешевле — можно, в том числе детские.
-// Детский предел необязателен: если не задан, детский билет сравнивается со взрослым пределом.
-// Вторая разновидность записи — исключение (mode: 'exclude'): рейс не считается субсидированным
-// и не проверяется. KV-247/248 исключены в самой проверке (flight-checks.js) и здесь не хранятся.
-// Хранится в shared/subsidy-fares.json (видят все ПК) и копией в браузере. Правит тот, у кого право
-// edit_fare_refs (у админа есть всегда, другим он выдаёт в «Управлении профилями»).
+// предельный тариф на субсидированных рейсах: дороже - ошибка (flight-checks.js), дешевле можно
+// детский предел необязателен, без него детский сверяем со взрослым; mode: 'exclude' - рейс не считается субсидированным
+// хранится в shared/subsidy-fares.json и копией в браузере; правит тот, у кого право edit_fare_refs
 window.FareRefs = (function () {
     const FILE = 'subsidy-fares.json';
     const LOCAL_KEY = 'krasavia_subsidy_fares_v1';
     const MAX_ENTRIES = 500;
-    // Записи, которые есть в справочнике без правки админом. Сейчас таких нет.
+    // записи по умолчанию, без правки админом; сейчас их нет
     const DEFAULT_ENTRIES = [];
 
     let cache = null;
     let rev = 0;
     let sawRemote = false;
 
-    // Только базовый номер: доп. рейс (KV-301, KV-355…) — тот же рейс под другим номером.
+    // только базовый номер: доп. рейс (KV-301, KV-355...) - тот же рейс под другим номером
     function cleanCode(v) {
         let code = typeof cleanFlight === 'function' ? cleanFlight(v) : String(v || '').trim();
         if (typeof getBaseFlight === 'function' && /^KV-\d{1,6}$/.test(code)) code = getBaseFlight(code);
@@ -60,7 +56,7 @@ window.FareRefs = (function () {
             fareCode: mode === 'limit' ? cleanText(e.fareCode, 30).toUpperCase() : '',
             adult,
             child: mode === 'limit' ? cleanMoney(e.child) : null,
-            // Периодов у тарифа нет: даты субсидии берутся из «Периодов субсидии».
+            // у тарифа нет периодов, даты берём из "Периодов субсидии"
             from: '',
             to: '',
             note: cleanText(e.note, 200),
@@ -85,7 +81,7 @@ window.FareRefs = (function () {
         return out;
     }
 
-    // Файл восстановили из резервной копии (restoredAt): записи браузера старше этого момента не возвращаем.
+    // файл восстановлен из копии (restoredAt): записи браузера старше этого момента не возвращаем
     function newerThan(st, since) {
         if (!since) return st;
         const ok = (t) => String(t || '') >= String(since);
@@ -94,7 +90,7 @@ window.FareRefs = (function () {
         return { ...st, entries: st.entries.filter(e => ok(e.updatedAt)), deleted };
     }
 
-    // Слияние двух копий: по каждой записи — самая свежая, удалённые (deleted: id → время) не возвращаются.
+    // слияние двух копий: по каждой записи берём свежую, удалённые (deleted: id -> время) не воскресают
     function mergeStores(a, b) {
         const deleted = { ...(a.deleted || {}) };
         Object.keys(b.deleted || {}).forEach(id => {
@@ -117,7 +113,7 @@ window.FareRefs = (function () {
         return normalizeStore({ entries: DEFAULT_ENTRIES });
     }
 
-    // Текущий справочник; до первой загрузки — только записи по умолчанию.
+    // Текущий справочник; до первой загрузки - только записи по умолчанию.
     function store() {
         if (!cache) cache = mergeStores(normalizeStore(null), defaultsStore());
         return cache;
@@ -143,13 +139,13 @@ window.FareRefs = (function () {
         const local = newerThan(readLocal(), remote && remote.restoredAt);
         const before = JSON.stringify(store().entries);
         cache = mergeStores(mergeStores(remote || normalizeStore(null), local), defaultsStore());
-        // Версия растёт, только если справочник правда поменялся: иначе таблицы зря перерисуются.
+        // версия растёт, только если справочник поменялся, иначе таблицы зря перерисуются
         if (JSON.stringify(cache.entries) !== before) rev++;
         return cache;
     }
 
-    // Изменение: перечитать общий файл, применить одно действие, записать. Так правки двух людей не затирают друг друга.
-    // Файл перечитывается перед записью и проверяется после (общий помощник SharedStorage.updateJsonFile).
+    // правка: перечитать общий файл, применить одно действие, записать; так правки двух людей не затрут друг друга
+    // файл перечитывается перед записью и проверяется после (SharedStorage.updateJsonFile)
     async function apply(mutate) {
         let next = null;
         const build = (data) => {
@@ -166,7 +162,7 @@ window.FareRefs = (function () {
         let shared = false;
         if (typeof SharedStorage !== 'undefined' && typeof SharedStorage.updateJsonFile === 'function') {
             const res = await SharedStorage.updateJsonFile(FILE, build);
-            // Общий файл раньше читался, а сейчас нет — не записываем, иначе можно затереть чужие записи.
+            // общий файл читался раньше, сейчас нет - не пишем, иначе затрём чужие записи
             if (res.readFailed && sawRemote) return { ok: false, error: 'Не удалось прочитать общий справочник — попробуйте ещё раз' };
             shared = !!res.ok;
         }
@@ -181,7 +177,7 @@ window.FareRefs = (function () {
         return typeof ProfileAuth !== 'undefined' && ProfileAuth.hasPermission('edit_fare_refs');
     }
 
-    // Видеть справочник (и суммы пределов в проверке) — с правом просмотра или правки.
+    // Видеть справочник (и суммы пределов в проверке) - с правом просмотра или правки.
     function canView() {
         return canEdit() || (typeof ProfileAuth !== 'undefined' && ProfileAuth.hasPermission('view_fare_refs'));
     }
@@ -201,7 +197,7 @@ window.FareRefs = (function () {
         return res.ok ? { ok: true, shared: res.shared, entry: n } : res;
     }
 
-    // Один предел на рейс: другие записи этих же рейсов заменяются новой.
+    // один предел на рейс: старые записи этого рейса заменяем новой
     function putOne(entries, deleted, n) {
         const now = new Date().toISOString();
         for (let i = entries.length - 1; i >= 0; i--) {
@@ -238,8 +234,8 @@ window.FareRefs = (function () {
         });
     }
 
-    // Запись для рейса (по базовому номеру). Даты не смотрятся: проверка и так идёт только по
-    // субсидированным датам из «Периодов субсидии». Если записей несколько — самая свежая.
+    // запись для рейса по базовому номеру, даты не смотрим: проверка и так идёт по датам из "Периодов субсидии"
+    // если записей несколько - берём самую свежую
     function find(code, mode) {
         const fl = cleanCode(code);
         if (!fl) return null;

@@ -1,8 +1,7 @@
-// js\core-utils.js - extracted from script.js, logic unchanged.
-// Globals on purpose: no bundler; onclick and other files call by name.
+// общие утилиты страницы; функции глобальные намеренно, сборщика нет
 
-// Chrome/Edge до 111 (например, 109 на Windows 7) не знают color-mix(): такие цвета у них становятся прозрачными.
-// Метка на <html> включает запасные цвета в styles.css (.no-cmix …).
+// Chrome/Edge до 111 (например, 109 на Windows 7) не знают color-mix(), цвета становятся прозрачными
+// метка на html включает запасные цвета в styles.css (.no-cmix)
 try {
     if (typeof CSS !== 'undefined' && CSS.supports && !CSS.supports('color', 'color-mix(in srgb, red 50%, white)')) {
         document.documentElement.classList.add('no-cmix');
@@ -17,11 +16,9 @@ function escAttr(s) {
     return typeof Security !== 'undefined' ? Security.escapeAttr(s) : String(s || '');
 }
 
-// ── Действия из разметки ──
-// Страница запрещает браузеру выполнять код, записанный внутри разметки (onclick="…"): тогда текст, попавший в таблицы
-// вместе с данными (из файла, из общей папки, из внешней системы), не сможет ничего выполнить и никуда отправить.
-// Поэтому кнопка только называет действие: data-act="имя" (нажатие) или data-act-change="имя" (смена значения),
-// параметры — в data-arg и data-arg2. Вызываются только функции из этих двух списков.
+// действия из разметки: data-act - клик, data-act-change - смена значения
+// страница запрещает код в разметке, поэтому текст из данных (файл, общая папка) ничего не выполнит
+// параметры в data-arg и data-arg2; вызываются только функции из двух списков в этом файле
 const UI_CLICK_ACTIONS = {
     switchMainTab: (el) => switchMainTab(el.dataset.arg),
     restoreLastData: () => restoreLastData(),
@@ -55,7 +52,7 @@ const UI_CHANGE_ACTIONS = {
     onTimelineSlotPxChange: (el) => onTimelineSlotPxChange(el)
 };
 
-// Срабатывает раньше обработчиков, навешанных на таблицы и панели, — как срабатывал код в самой кнопке.
+// срабатывает раньше обработчиков таблиц и панелей (как onclick в самой кнопке)
 function runUiActions(event, attr, actions) {
     for (let el = event.target; el && el.nodeType === 1; el = el.parentElement) {
         const name = el.getAttribute(attr);
@@ -66,7 +63,7 @@ function runUiActions(event, attr, actions) {
 }
 document.addEventListener('click', (e) => {
     runUiActions(e, 'data-act', UI_CLICK_ACTIONS);
-    // Поле ПКЗ в таблице: нажатие по нему не должно доходить до строки (она открывает рейс).
+    // клик по полю ПКЗ не должен доходить до строки, она открывает рейс
     if (e.target.closest && e.target.closest('.pkz-nav-cell')) e.stopPropagation();
 }, true);
 document.addEventListener('change', (e) => runUiActions(e, 'data-act-change', UI_CHANGE_ACTIONS), true);
@@ -101,8 +98,8 @@ function isValidCalendarDate(y, m0, d) {
     return dt.getFullYear() === y && dt.getMonth() === m0 && dt.getDate() === d;
 }
 
-// Библиотека Excel (SheetJS, 0,9 МБ) грузится при первом чтении или выгрузке Excel,
-// а не при каждом открытии сайта: разбор такого скрипта на слабом ПК занимает секунды.
+// SheetJS (0,9 МБ) грузим при первом чтении или выгрузке Excel, не при каждом открытии сайта
+// разбор такого скрипта на слабом ПК занимает секунды
 let plainXlsxJob = null;
 function loadPlainXlsx() {
     if (window.XLSXPlain) return Promise.resolve(window.XLSXPlain);
@@ -135,7 +132,7 @@ function parseLocalDate(dateStr) {
     return new Date(y, m, d);
 }
 
-// Активные Chart.js-инстансы (уничтожаем при перерисовке)
+// активные Chart.js-инстансы, уничтожаем при перерисовке
 const activeCharts = {};
 
 function destroyChart(id) {
@@ -248,7 +245,7 @@ function applyChartRuLocale() {
     applyChartThemeColors();
 }
 
-// Подписи осей и легенд графиков — цветом текста темы (в тёмной теме тёмные подписи не читались).
+// подписи осей и легенд цветом темы; в тёмной теме тёмные подписи не читались
 function applyChartThemeColors() {
     if (typeof Chart === 'undefined' || typeof getComputedStyle !== 'function') return;
     const cs = getComputedStyle(document.documentElement);
@@ -261,7 +258,7 @@ function applyChartThemeColors() {
 function showToast(message, type = 'success') {
     const container = document.getElementById('toast-container');
     if (!container) return;
-    // не копить десятки toast
+    // не копим десятки toast
     while (container.children.length >= 4) container.firstElementChild.remove();
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
@@ -298,7 +295,7 @@ function parseDealDateTime(str) {
 }
 
 const VIEW_ZOOM = { main: 1, table: 1, pkz: 1, pair: 1, costs: 1, data: 1, rms: 1, home: 1, sales: 1, creative: 1, reports: 1, heli: 1 };
-// Масштаб общий для всех вкладок и запоминается в браузере.
+// масштаб общий для всех вкладок, запоминается в браузере
 const VIEW_ZOOM_KEY = 'krasavia_view_zoom';
 (function restoreViewZoom() {
     let z = 1;
@@ -307,19 +304,18 @@ const VIEW_ZOOM_KEY = 'krasavia_view_zoom';
     Object.keys(VIEW_ZOOM).forEach(k => { VIEW_ZOOM[k] = z; });
 })();
 let dataBoardZoom = VIEW_ZOOM.data;
-/** Спец. брони (AV SSP Seg) — галочка на данных / динамике / экономике / ПКЗ */
+// Спец. брони (AV SSP Seg) - галочка на данных / динамике / экономике / ПКЗ
 let dataShowSpecBookings = false;
 let dataShowDaySales = false;
 let showSpecBookings = false;
-/** Время местное (вылет/прилёт) на «Загрузка рейсов» */
+// время местное (вылет/прилёт) на "Загрузка рейсов"
 let dataShowLocalTimes = false;
 
-/** Масштаб в шапке — один на все вкладки */
 function syncGlobalZoomUi(tabKey) {
     const tab = tabKey || (typeof currentTab !== 'undefined' ? currentTab : 'main');
     const label = document.getElementById('global-zoom-val');
     if (label) label.textContent = `${Math.round((VIEW_ZOOM[tab] || 1) * 100)}%`;
-    // На вкладках, где масштаб не действует («Сегодня», «Запрос на понижение», «Журнал действий»), кнопки скрыты.
+    // на вкладках без масштаба (Сегодня, Запрос на понижение, Журнал действий) кнопки скрыты
     const wrap = document.getElementById('global-zoom-wrap');
     if (wrap) wrap.style.display = Object.prototype.hasOwnProperty.call(VIEW_ZOOM, tab) ? '' : 'none';
 }
@@ -328,7 +324,7 @@ function setViewZoom(tabKey, delta) {
     const tab = tabKey || (typeof currentTab !== 'undefined' ? currentTab : 'main');
     const cur = VIEW_ZOOM[tab] ?? 1;
     const next = Math.min(1.6, Math.max(0.55, Math.round((cur + delta) * 100) / 100));
-    // Один масштаб на все вкладки: меняем сразу везде, в том числе на уже открытых.
+    // меняем сразу везде, в том числе на уже открытых вкладках
     Object.keys(VIEW_ZOOM).forEach(k => { VIEW_ZOOM[k] = next; });
     dataBoardZoom = next;
     try { localStorage.setItem(VIEW_ZOOM_KEY, String(next)); } catch (e) { /* ignore */ }
@@ -357,7 +353,7 @@ function applyViewZoom(tabKey) {
         return;
     }
 
-    // Вкладки без своей таблицы (Отчёты, Расчёт расходов) — масштаб на содержимое вкладки.
+    // вкладки без своей таблицы (Отчёты, Расчёт расходов): масштаб на содержимое
     const target = document.querySelector(`[data-zoom-target="${tab}"]`)
         || document.querySelector(`#tab-panel-${tab} .table-page-body`)
         || document.querySelector(`#tab-panel-${tab} .rp-body`);
@@ -384,7 +380,7 @@ const MAX_WEEK = 52;
 
 function parseDateStr(str){if(!str)return null;const c=String(str).replace(/[^0-9]/g,'');if(c.length!==8)return null;const d=parseInt(c.slice(0,2),10),m=parseInt(c.slice(2,4),10)-1,y=parseInt(c.slice(4),10);if(!isValidCalendarDate(y,m,d))return null;return new Date(y,m,d)}
 function calculateAgeAtFly(b,f){const br=parseDateStr(b),fl=parseDateStr(f);if(!br||!fl)return null;let a=fl.getFullYear()-br.getFullYear();const md=fl.getMonth()-br.getMonth();if(md<0||(md===0&&fl.getDate()<br.getDate()))a--;return a}
-// Возраст пассажира на дату вылета: готовый признак ageAtFly (он есть и в общем снимке без дат рождения) или расчёт по дате рождения.
+// возраст на дату вылета: ageAtFly (есть и в общем снимке без дат рождения) или расчёт по дате рождения
 function saleAgeAtFly(s){if(!s)return null;if(typeof s.ageAtFly==='number')return s.ageAtFly;if(s.birthDate&&s.flyDate)return calculateAgeAtFly(s.birthDate,s.flyDate);return null}
 function extractDiscountPercent(s){if(!s)return 0;s=String(s).toUpperCase().trim();let m=s.match(/CN(\d{1,2})/);if(m)return parseInt(m[1],10);m=s.match(/\/(\d{2})$/);if(m)return parseInt(m[1],10);if((s.includes('LOW')||s.includes('CN')||s.includes('CHILD'))&&(m=s.match(/(\d{2})$/)))return parseInt(m[1],10);return 0}
 function getAdjustedFare(paid,basic,birth,fly){if(!paid||paid<=0)return paid;const d=extractDiscountPercent(basic);const age=calculateAgeAtFly(birth,fly);return(age!==null&&age<12&&d>0)?Math.round((paid*100)/(100-d)):paid}
@@ -412,8 +408,8 @@ function renderTableEmptyState(cont, title, hint, icon = '📭') {
         </div>`;
 }
 
-// Окно как диалог: aria-modal, фокус внутрь при открытии, Tab по кругу, возврат фокуса при закрытии.
-// openClass — класс «открыто» на modal; onClose — закрыть по Esc (если окно не закрывает себя само).
+// окно как диалог: aria-modal, фокус внутрь, Tab по кругу, при закрытии фокус возвращаем
+// openClass - класс "открыто" на modal; onClose - закрытие по Esc, если окно само не закрывается
 function enhanceModalA11y(modal, panel, openClass, onClose) {
     if (!modal || !panel || modal._a11yBound) return;
     modal._a11yBound = true;
@@ -463,7 +459,7 @@ function enhanceModalA11y(modal, panel, openClass, onClose) {
     });
 }
 
-// Таблицы с сотнями остановок Tab (графплан, «Загрузка рейсов»): Tab выходит из таблицы, стрелки ходят по плашкам и строкам.
+// таблицы с сотнями остановок Tab (Графплан, "Загрузка рейсов"): Tab выходит из таблицы, стрелки ходят по строкам
 (function () {
     const HOSTS = { 'timeline-content': '.timeline-chip', 'data-board-track': 'tr[tabindex="0"]' };
     const ARROWS = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
@@ -478,7 +474,7 @@ function enhanceModalA11y(modal, panel, openClass, onClose) {
         if (!t.matches(sel)) return;
         const list = host.querySelectorAll(sel);
         if (e.key === 'Tab') {
-            // переносим фокус на край таблицы: обычное действие Tab уведёт дальше
+            // переносим фокус на край таблицы, обычный Tab уведёт дальше
             const edge = e.shiftKey ? list[0] : list[list.length - 1];
             if (edge && edge !== t) edge.focus({ preventScroll: true });
             return;
@@ -494,7 +490,7 @@ function enhanceModalA11y(modal, panel, openClass, onClose) {
     });
 })();
 
-// Числовой ключ даты «ДД.ММ.ГГГГ» запоминается: сортировки сравнивают одни и те же строки тысячи раз.
+// числовой ключ даты ДД.ММ.ГГГГ кэшируем: сортировка сравнивает одни и те же строки тысячи раз
 const dateKeyCache = new Map();
 function dateKeyNum(s) {
     let v = dateKeyCache.get(s);
@@ -522,8 +518,8 @@ function normalizeDate(d){d=String(d||'').replace(/[^0-9.]/g,'');if(d.length===8
 let CACHED_TODAY = null;
 let CACHED_YESTERDAY = null;
 
-// Что меняет норму, прогноз и подсказки без новых данных: архив продаж, календарь событий, обученная модель.
-// Добавляется в подписи кэшей (RMS, «Сегодня», подсказки, сводка), чтобы они пересчитывались.
+// что меняет норму и прогноз без новых данных: архив продаж, календарь событий, обученная модель
+// добавляется в подписи кэшей (RMS, Сегодня, подсказки, сводка), чтобы они пересчитывались
 function analyticsRevision() {
     return [typeof SalesArchive !== 'undefined' && SalesArchive.revision ? SalesArchive.revision() : 0,
         typeof CalendarEvents !== 'undefined' && CalendarEvents.revision ? CalendarEvents.revision() : 0,
@@ -531,7 +527,7 @@ function analyticsRevision() {
         typeof Params !== 'undefined' ? Params.revision() : 0].join('.');
 }
 
-// «1 вылет», «3 вылета», «7 вылетов»: pluralRu(n, 'вылет', 'вылета', 'вылетов').
+// "1 вылет", "3 вылета", "7 вылетов": pluralRu(n, 'вылет', 'вылета', 'вылетов').
 function pluralRu(n, one, few, many) {
     const a = Math.abs(n) % 100;
     const b = a % 10;

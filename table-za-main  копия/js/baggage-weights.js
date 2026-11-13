@@ -1,15 +1,15 @@
-// Справочник багажа из Весовые.xlsx и расчёт ПКЗ (кг)
+// багаж из Весовые.xlsx и расчет ПКЗ, кг
 let baggageWeightsData = {};
-/** key: "dd.mm.yyyy|KV-101" → count of children ages 2–12 from Дети.csv */
+// key: "dd.mm.yyyy|KV-101" -> число детей 2-12 лет из Дети.csv
 let childrenByFlightDate = {};
 let childrenFileCount = 0;
 
-// Старый формат: A/B — города, D–O — багаж по месяцам (янв–дек)
+// старый формат: A/B - города, D-O - багаж по месяцам (янв-дек)
 const BAGGAGE_MONTH_COL_DO = { 1: 3, 2: 4, 3: 5, 4: 6, 5: 7, 6: 8, 7: 9, 8: 10, 9: 11, 10: 12, 11: 13, 12: 14 };
-// Актуальный формат (Весовые.о): A — «Красноярск-Байкит», B–M — багаж (1–12)
+// актуальный формат (Весовые.о): A - "Красноярск-Байкит", B-M - багаж по месяцам (1-12)
 const BAGGAGE_MONTH_COL_BM = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11, 12: 12 };
 const BAGGAGE_HUB = 'Красноярск';
-/** Дети 2–12 лет: PV.CHILD_WEIGHT_FIXED_KG + багаж по маршруту */
+// дети 2-12 лет: PV.CHILD_WEIGHT_FIXED_KG + багаж по маршруту
 
 const BAGGAGE_SECTION_MARKERS = new Set([
     'краевые',
@@ -96,8 +96,8 @@ function parseCombinedRouteLabel(routeStr) {
     const raw = String(routeStr || '').trim();
     if (!raw || isBaggageHeaderCell(raw)) return null;
 
-    // «Кызыл - Улан-Удэ»: пробелы вокруг тире. Нельзя менять все дефисы на тире —
-    // иначе Улан-Удэ / Улан-Батор / Горно-Алтайск режутся на части.
+    // разделитель: пробелы вокруг тире ("Кызыл - Улан-Удэ")
+    // нельзя менять все дефисы на тире, иначе Улан-Удэ, Улан-Батор, Горно-Алтайск порежутся на части
     if (/\s[—–-]\s/.test(raw) || /[—–]/.test(raw)) {
         if (typeof parseDirectionCities === 'function') {
             const cities = parseDirectionCities(raw);
@@ -270,7 +270,7 @@ function getChildrenCountFromFile(dateStr, flight) {
     return childrenByFlightDate[k] || 0;
 }
 
-// Файл «Дети» покрывает только свои даты: границы считаем по его ключам (один раз на загрузку).
+// файл "Дети" покрывает только свои даты: границы считаем по его ключам, один раз на загрузку
 let childrenRangeCache = { src: null, n: -1, lo: 0, hi: 0 };
 function isDateInChildrenFile(dateStr) {
     if (!(childrenFileCount > 0)) return false;
@@ -298,10 +298,10 @@ function parseChildrenCsvText(text) {
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         if (!line || !line.trim()) continue;
-        // skip header / period lines
+        // пропускаем шапку и строки периода
         if (i < 4 && !/^\d+[;,]/.test(line.trim())) continue;
 
-        // Format: №;FIO;category;gender;birth;flight;flyDate;...
+        // формат: №;FIO;category;gender;birth;flight;flyDate;...
         const cols = line.split(';');
         if (cols.length < 7) continue;
 
@@ -317,7 +317,7 @@ function parseChildrenCsvText(text) {
         if (typeof calculateAgeAtFly === 'function') {
             age = calculateAgeAtFly(birth, fly);
         }
-        // Дети 2–12 включительно; младенцы <2 не считаем
+        // дети 2-12 включительно; младенцы до 2 не считаем
         if (age === null || age < PV.CHILD_AGE_MIN || age > PV.CHILD_AGE_MAX) continue;
 
         const k = childrenKey(fly, fl);
@@ -336,7 +336,7 @@ function findChildrenCsvFile(files) {
             return f;
         }
     }
-    // root of load folder
+    // файл в корне папки загрузки
     for (const f of list) {
         if (f.name.toLowerCase() === 'дети.csv') return f;
     }
@@ -392,10 +392,10 @@ function resolvePassengerSplit(totalPax, salesList, showSales, options = {}) {
     const total = Math.max(0, parseInt(totalPax, 10) || 0);
     if (!total) return { adults: 0, children: 0 };
 
-    // Приоритет: Дети.csv (точное число детей 2–12)
+    // приоритет: Дети.csv (точное число детей 2-12)
     if (options.dateStr && options.flight) {
         const fromFile = getChildrenCountFromFile(options.dateStr, options.flight);
-        // Файл — только для дат из его диапазона; за его пределами дети по билетам.
+        // файл только для дат из его диапазона; вне его дети по билетам
         if (isDateInChildrenFile(options.dateStr)) {
             const children = Math.min(fromFile, total);
             return { adults: total - children, children };
@@ -483,7 +483,7 @@ function calcCalculatedPkz(row, flightBase, options = {}) {
     return details ? details.pkzKg : null;
 }
 
-/** Ср. багаж на 1 пасс. из Весовых */
+// Ср. багаж на 1 пасс. из Весовых
 function formatAvgBaggageOnlyKg(details) {
     if (!details || details.baggageKg == null || isNaN(details.baggageKg)) return '—';
     const n = Number(details.baggageKg);
@@ -491,10 +491,8 @@ function formatAvgBaggageOnlyKg(details) {
     return text + ' кг';
 }
 
-/**
- * Багаж на рейс = ср. багаж (Весовые) × загрузка.
- * Не путать с КЗ (там р/к 75/80 + багаж × взрослые + (30 + багаж) × дети).
- */
+// багаж на рейс = ср. багаж (Весовые) × загрузка
+// не путать с КЗ: там р/к 75/80, багаж × взрослые, (30 + багаж) × дети
 function formatBaggageTimesLoadKg(details) {
     if (!details || details.baggageKg == null || isNaN(details.baggageKg)) return '—';
     const load = parseInt(details.totalPax, 10) || 0;
@@ -656,7 +654,7 @@ function bindPkzAdjustPanel(root) {
         else delete pkzEl.dataset.kzNum;
         syncVacancy(pkz);
 
-        // синхронизация строки таблицы, если открыта
+        // синхронизация строки таблицы, если панель открыта
         const date = panel.dataset.date;
         const flight = panel.dataset.flight;
         if (date && flight) {

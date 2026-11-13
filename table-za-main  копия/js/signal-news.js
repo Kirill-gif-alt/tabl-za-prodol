@@ -1,9 +1,6 @@
-// Метка «новое»: сигнал появился сегодня, а в прошлый раз (в последний прошлый день работы) его не было.
-// Сигналы: «требует внимания» (attention.js) и совет «Снизить / Повысить цену» (SalesAdvice, считает вкладка «Сегодня»).
-// Снимок сигналов по дням лежит в общей папке: shared/signals-days.json (последние 7 дней) — метка одинакова на всех компьютерах.
-// Пишет только тот, у кого право публиковать данные (share_data), в фоне и только когда снимок изменился; читают все после входа.
-// Если общая папка недоступна, снимок хранится в браузере (localStorage, 3 дня) — тогда на каждом компьютере свой.
-// В первый день работы меток нет. Вылет, который в прошлый раз ещё не попадал в окно подсчёта (окно сдвинулось), «новым» не считается.
+// метка "новое": сигнал появился сегодня, а раньше его не было (attention.js, советы снизить/повысить)
+// снимок по дням в shared/signals-days.json (7 дней), пишет тот, у кого share_data; иначе localStorage, 3 дня
+// в первый день меток нет; вылет, который выпал из окна подсчёта, "новым" не считаем
 window.SignalNews = (function () {
     const KEY = 'krasavia_signal_days_v1';
     const KEEP = 3;           // дней в запасном снимке (браузер)
@@ -16,7 +13,7 @@ window.SignalNews = (function () {
     let sharedTimer = 0;
 
     let advice = [];        // сегодняшние советы up/down: [{ code, date, status, dtd }]
-    let adviceAhead = 0;    // на сколько дней вперёд они посчитаны (0 — не считались)
+    let adviceAhead = 0;    // на сколько дней вперёд посчитаны, 0 - не считались
     let lastSaved = '';
     let memo = { al: null, sig: '', set: new Set(), base: false };
     let rev = 0;
@@ -50,14 +47,14 @@ window.SignalNews = (function () {
         return { d: best.d, gap: t - best.n, a: new Set(e.a || []), s: new Set(e.s || []), h: e.h || {} };
     }
 
-    // Принять сегодняшние советы от «Сегодня» (ahead — окно дней; 0, если подсказки выключены или недоступны).
+    // принять советы от "Сегодня" (ahead - окно дней, 0 если подсказки выключены или недоступны)
     function setAdvice(list, ahead) {
         advice = (list || []).filter(a => a && (a.status === 'up' || a.status === 'down'));
         adviceAhead = ahead || 0;
         rev++;
     }
 
-    // Новые за сегодня: Set «рейс|дата». Пересчёт — только когда сменились сигналы или день.
+    // новые за сегодня: Set "рейс|дата", пересчёт только когда сменились сигналы или день
     function fresh() {
         const al = typeof Attention !== 'undefined' ? Attention.list() : [];
         const sig = rev + '|' + today() + '|' + (typeof dataEpoch === 'number' ? dataEpoch : 0);
@@ -82,7 +79,7 @@ window.SignalNews = (function () {
     function hasBaseline() { return fresh().base; }
     function revision() { const m = fresh(); return m.sig + '|' + m.set.size; }
 
-    // Записать снимок за сегодня (перезаписывает сегодняшний, прошлые дни не трогает). Зовёт «Сегодня», когда всё посчитано.
+    // записать снимок за сегодня (прошлые дни не трогаем), зовёт "Сегодня" когда всё посчитано
     function record() {
         try {
             if (typeof Attention === 'undefined' || !today()) return;
@@ -115,7 +112,7 @@ window.SignalNews = (function () {
         return typeof ProfileAuth !== 'undefined' && ProfileAuth.hasPermission && ProfileAuth.hasPermission('share_data') && typeof SharedStorage !== 'undefined';
     }
 
-    // Запись в общий файл: в фоне, не чаще раза на изменение снимка; чужие дни не трогаем.
+    // запись в общий файл в фоне, не чаще раза на изменение; чужие дни не трогаем
     function publishSoon(entry) {
         if (!entry || !canPublish()) return;
         const day = today();
@@ -138,7 +135,7 @@ window.SignalNews = (function () {
         }, 3000);
     }
 
-    // Прочитать общий файл (в фоне, раз за день и после входа); onDone — перерисовать то, что показывает метки.
+    // читаем общий файл в фоне, раз в день и после входа; onDone - перерисовать метки
     function loadShared(onDone) {
         if (typeof SharedStorage === 'undefined' || remoteLoad || remoteLoadedDay === today()) return;
         remoteLoad = SharedStorage.readJsonFileStrict(FILE).then(r => {
@@ -147,8 +144,8 @@ window.SignalNews = (function () {
         }).catch(() => {}).finally(() => { remoteLoad = null; if (onDone) onDone(); });
     }
 
-    // После входа и после публикации данных, в простое: все читают общий файл (метка «новое» одинакова),
-    // а тот, кто публикует, досчитывает советы и пишет снимок дня без отрисовки «Сегодня».
+    // после входа и публикации, в простое: все читают общий файл, публикующий досчитывает советы и пишет снимок
+    // без отрисовки "Сегодня"
     function backgroundSoon() {
         const run = () => {
             loadShared(() => {

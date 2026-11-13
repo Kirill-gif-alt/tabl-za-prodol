@@ -1,4 +1,4 @@
-// Сохранение handle папки «Загрузка» (без автообновления продаж)
+// сохраняем handle папки "Загрузка" (без автообновления продаж)
 window.SalesSync = (function () {
     const IDB_NAME = 'krasavia_data_fs';
     const IDB_STORE = 'handles';

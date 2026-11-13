@@ -1,18 +1,18 @@
-// «Отчёты» → «Справочник»: периоды и суммы субсидии, себестоимость, ПКЗ из NAV (тарифы субсидии —
-// раздел из reports-view.js). Что видно и что можно менять — по правам, которые выдаёт админ.
+// Отчёты / Справочник: периоды и суммы субсидии, себестоимость, ПКЗ из NAV (тарифы субсидии в reports-view.js)
+// что видно и что меняем - по правам, которые выдаёт админ
 window.ReferenceView = (function () {
     const SECTION_KEY = 'krasavia_ref_section';
     let section = '';
     try { section = localStorage.getItem(SECTION_KEY) || ''; } catch (e) { /* ignore */ }
 
-    let periodEdit = null;   // { flights: [..], ranges: [{from,to}] } — открытая форма периодов
-    let amountEdit = null;   // запись суммы в форме ({} — новая)
-    let navEdit = null;      // правило ПКЗ в форме ({ id, from, to, direction, ac, value })
+    let periodEdit = null;   // форма периодов: { flights: [..], ranges: [{from,to}] }
+    let amountEdit = null;   // запись суммы в форме; {} - новая
+    let navEdit = null;      // правило ПКЗ в форме: { id, from, to, direction, ac, value }
     let amountFilter = '';
     let navFlight = '';      // фильтр по направлению
-    let navImp = null;       // загрузка из NAV: { files: [{ name, ac, known, winter, parsed, error }], busy } — окно предпросмотра
-    let calEdit = null;      // событие в форме ({ id, from, to, type, name, norm })
-    let flEdit = null;       // рейс в форме ({ id, code, from, to, back, extras, backExtras, type })
+    let navImp = null;       // загрузка из NAV, окно предпросмотра: { files: [{ name, ac, known, winter, parsed, error }], busy }
+    let calEdit = null;      // событие в форме: { id, from, to, type, name, norm }
+    let flEdit = null;       // рейс в форме: { id, code, from, to, back, extras, backExtras, type }
     let flFilter = '';
     let calYear = String(new Date().getFullYear());
 
@@ -43,8 +43,6 @@ window.ReferenceView = (function () {
         return isNaN(d) ? '' : d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     }
 
-    // ---------- права и разделы ----------
-
     const SECTIONS = [
         { id: 'check', label: 'Проверка полноты', view: () => typeof SubsidyRef !== 'undefined' && SubsidyRef.canView() },
         { id: 'fares', label: 'Тарифы субсидии', view: () => typeof FareRefs !== 'undefined' && FareRefs.canView() },
@@ -68,8 +66,6 @@ window.ReferenceView = (function () {
         return visibleSections().length > 0;
     }
 
-    // ---------- периоды субсидии ----------
-
     function flightNum(code) {
         return parseInt(String(code || '').replace(/[^0-9]/g, ''), 10) || 0;
     }
@@ -84,7 +80,7 @@ window.ReferenceView = (function () {
         return typeof getFlightDirection === 'function' ? getFlightDirection(code) : code;
     }
 
-    // Рейсы, для которых имеют смысл периоды: межрегиональные из данных и все, что уже есть в файле/справочнике.
+    // рейсы с периодами: межрегиональные из данных плюс всё из файла и справочника
     function periodFlights() {
         const set = new Set();
         Object.keys(window.FLIGHT_DIRECTIONS || {}).forEach(c => set.add(c));
@@ -94,7 +90,7 @@ window.ReferenceView = (function () {
         const file = typeof RouteCosts !== 'undefined' && RouteCosts.fileData ? RouteCosts.fileData().periodsByNum : {};
         Object.keys(file || {}).forEach(n => set.add('KV-' + n));
         Object.keys(typeof SubsidyRef !== 'undefined' ? SubsidyRef.periods() : {}).forEach(n => set.add('KV-' + n));
-        // Только базовые номера: доп. рейс (KV-301, KV-355…) — тот же рейс, у него свои периоды не ведутся.
+        // только базовые номера: доп. рейсы (KV-301, KV-355...) периодов не имеют
         const bases = new Set([...set].map(c => (/^KV-\d+$/.test(c) && typeof getBaseFlight === 'function' ? getBaseFlight(c) : c)));
         return [...bases].filter(c => {
             if (!/^KV-\d+$/.test(c)) return false;
@@ -121,7 +117,7 @@ window.ReferenceView = (function () {
         const can = SubsidyRef.canEdit();
         const ref = SubsidyRef.periods();
         const flights = periodFlights();
-        // Пары туда/обратно в одной строке, если периоды у них одинаковые.
+        // туда/обратно в одной строке, если периоды одинаковые
         const rows = [];
         const done = new Set();
         flights.forEach(code => {
@@ -195,7 +191,7 @@ window.ReferenceView = (function () {
         const nP = Object.keys(f.periodsByNum || {}).length;
         const nA = (f.costRows || []).length;
         if (!nP && !nA) return '';
-        // Всё из файлов уже в справочнике — большой блок не нужен, только короткая подсказка.
+        // всё уже в справочнике - только короткая подсказка
         const refP = SubsidyRef.periods();
         const refA = SubsidyRef.amounts();
         const leftP = Object.keys(f.periodsByNum || {}).filter(n => !refP[n]).length;
@@ -236,9 +232,7 @@ window.ReferenceView = (function () {
         periodEdit = { flights, ranges };
     }
 
-    // ---------- суммы субсидии и себестоимость ----------
-
-    // Форма суммы → запись справочника (или { error }).
+    // форма суммы -> запись справочника, или { error }
     function readAmountForm() {
         const val = (id) => document.getElementById(id)?.value ?? '';
         const entry = { from: val('ref-a-from'), to: val('ref-a-to'), ac: val('ref-a-ac'), subsidy: val('ref-a-sub'), cost: val('ref-a-cost') };
@@ -267,7 +261,7 @@ window.ReferenceView = (function () {
         return entry;
     }
 
-    // Предупреждения при вводе суммы (не запрещают сохранить): подозрительные цифры и то, что сайт сделает сам.
+    // предупреждения при вводе суммы, не мешают сохранить: странные цифры и что сайт сделает сам
     function amountWarnings(e) {
         const out = [];
         const num = (v) => { const x = parseFloat(String(v == null ? '' : v).replace(',', '.')); return isFinite(x) ? x : null; };
@@ -279,7 +273,7 @@ window.ReferenceView = (function () {
         if (sub != null && cost != null && sub > cost) out.push(`субсидия (${fmtK(sub)}) больше себестоимости (${fmtK(cost)})`);
         if (cost != null && cost > 0 && cost < 100) out.push(`себестоимость ${fmtK(cost)} тыс. ₽ за пару рейсов — слишком мало, вы не ошиблись в единицах (нужны тысячи рублей)?`);
         if (cost != null && cost > 15000) out.push(`себестоимость ${fmtK(cost)} тыс. ₽ за пару рейсов — слишком много, вы не ошиблись в единицах?`);
-        // Другие типы ВС этого же маршрута: себестоимость в разы другая / субсидия задана только у одного.
+        // другие типы ВС на этом маршруте: себестоимость в разы другая или субсидия только у одного
         const key = SubsidyRef.amountKey(e.from, e.to, e.ac);
         const same = RouteCosts.amountRows().filter(x => x.key !== key && SubsidyRef.amountKey(x.from, x.to, 'X') === SubsidyRef.amountKey(e.from, e.to, 'X') && x.cost > 0);
         if (cost > 0 && same.length) {
@@ -291,7 +285,7 @@ window.ReferenceView = (function () {
             if (withSub.length === same.length && !(sub > 0)) out.push('у других типов ВС этого маршрута субсидия есть, а здесь не задана');
             if (!withSub.length && sub > 0) out.push('у других типов ВС этого маршрута субсидии нет, а здесь задана');
         }
-        // По месяцам: месяц, сильно отличающийся от остальных, и нулевое число рейсов.
+        // по месяцам: месяц, сильно не похожий на остальные; нулевое число рейсов
         if (e.byMonth) {
             const ms = Object.keys(e.byMonth).map(m => ({ m: +m, v: e.byMonth[m] }));
             if (ms.length >= 2) {
@@ -317,7 +311,7 @@ window.ReferenceView = (function () {
         const q = amountFilter.trim().toLowerCase();
         const all = RouteCosts.amountRows();
         const list = q ? all.filter(e => `${e.from} ${e.to} ${e.acLabel}`.toLowerCase().includes(q)) : all;
-        // Новый формат (файл по месяцам): по каждому месяцу субсидия и себестоимость, затем среднее.
+        // новый формат, файл по месяцам: по месяцу субсидия и себестоимость, потом среднее
         const MN = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
         const months = (all.find(e => e.months && e.months.length) || {}).months || [];
         const pairCell = (sub, cost, n) => cost == null ? '<span class="rp-muted">нет данных</span>'
@@ -339,7 +333,7 @@ window.ReferenceView = (function () {
         const acs = Object.values(RouteCosts.acLabels ? RouteCosts.acLabels() : {});
         all.forEach(e => { if (!acs.includes(e.acLabel)) acs.push(e.acLabel); });
         const ae = amountEdit;
-        // Месяцы формы: у записи свои или, для нового маршрута, — из последнего файла.
+        // месяцы формы: свои у записи, для нового маршрута - из последнего файла
         const aeMonths = ae ? (ae.months && ae.months.length ? ae.months : months) : [];
         const aeKrai = !!(ae && ae.from && ae.to && RouteCosts.isKraiPair && RouteCosts.isKraiPair(ae.from, ae.to));
         if (can && ae) setTimeout(refreshAmountWarn, 0);
@@ -390,7 +384,7 @@ window.ReferenceView = (function () {
             </section>`;
     }
 
-    // ---------- ПКЗ из NAV: правила «период + тип ВС + направление» ----------
+    // ПКЗ из NAV: правило = период + тип ВС + направление
 
     function dataRows() {
         const out = [];
@@ -400,7 +394,7 @@ window.ReferenceView = (function () {
         return out;
     }
 
-    // Направления в одну сторону — по базовым рейсам из данных и из уже заведённых правил.
+    // направления в одну сторону: по базовым рейсам из данных и из правил
     function directionOptions() {
         const set = new Set();
         dataRows().forEach(r => {
@@ -423,7 +417,7 @@ window.ReferenceView = (function () {
         return [...set].sort((a, b) => a.localeCompare(b, 'ru'));
     }
 
-    // Сколько вылетов в загруженных данных получат каждое правило (с учётом более точных правил): { id: число }.
+    // сколько вылетов получит каждое правило (более точные в приоритете): { id: число }
     function pkzMatchCounts() {
         const out = {};
         dataRows().forEach(r => {
@@ -433,8 +427,6 @@ window.ReferenceView = (function () {
         });
         return out;
     }
-
-    // ---------- загрузка ПКЗ из выгрузок NAV ----------
 
     const NAV_ACS = ['Ан-24', 'Ан-26', 'ATR-42', 'ATR-72', 'Як-42'];
 
@@ -549,7 +541,7 @@ window.ReferenceView = (function () {
         }
     }
 
-    // Форма правила: запомнить введённое перед перерисовкой (смена направления показывает или прячет аэропорт).
+    // запоминаем введённое перед перерисовкой; смена направления прячет или показывает аэропорт
     function syncNavEdit() {
         if (!navEdit) return;
         const val = (id) => document.getElementById(id)?.value;
@@ -617,8 +609,6 @@ window.ReferenceView = (function () {
             </section>`;
     }
 
-    // ---------- справочник рейсов ----------
-
     function knownCities() {
         const set = new Set();
         const cfg = window.CITY_CLASSIFICATION || {};
@@ -635,7 +625,7 @@ window.ReferenceView = (function () {
     }
 
     function extrasOf(c) {
-        // Доп. номера, которые сейчас сводятся к этому рейсу (встроенные правила и справочник).
+        // доп. номера, сводящиеся к рейсу (встроенные правила и справочник)
         const out = [];
         if (typeof getBaseFlight === 'function' && window.FLIGHT_DIRECTIONS && typeof groupedData !== 'undefined' && groupedData[c]) {
             groupedData[c].forEach(r => {
@@ -648,7 +638,7 @@ window.ReferenceView = (function () {
         return out;
     }
 
-    // Доп. номера — сколько угодно: номер в поле и Enter (или «+»), лишний — крестиком.
+    // доп. номеров сколько угодно: номер в поле и Enter или +, лишний - крестиком
     function extrasEditor(side, list) {
         const id = side === 'out' ? 'ref-f-extras' : 'ref-f-bextras';
         return `<div class="ref-chips" data-extras-side="${side}">
@@ -664,7 +654,7 @@ window.ReferenceView = (function () {
             || '<span class="rp-muted">нет</span>';
     }
 
-    // Введённое в форме рейса — в flEdit, чтобы перерисовка (поиск по списку, обновление данных) его не стёрла.
+    // введённое в форме рейса держим в flEdit, иначе перерисовка (поиск, обновление данных) его сотрёт
     function syncFlEdit() {
         if (!flEdit) return;
         const v = (id) => document.getElementById(id);
@@ -694,7 +684,7 @@ window.ReferenceView = (function () {
         const input = document.getElementById(id + '-new');
         if (input && add) {
             input.value = '';
-            // Фокус возвращаем, только если номер добавили кнопкой или Enter — уход из поля (Tab, клик) не держим.
+            // фокус возвращаем только после кнопки или Enter; уход из поля не держим
             if (keepFocus) input.focus();
         }
     }
@@ -770,8 +760,6 @@ window.ReferenceView = (function () {
             </section>`;
     }
 
-    // ---------- календарь событий ----------
-
     function calendarHtml() {
         const can = CalendarEvents.canEdit();
         const all = CalendarEvents.list();
@@ -829,9 +817,8 @@ window.ReferenceView = (function () {
             </section>`;
     }
 
-    // ---------- проверка полноты (без ПКЗ) ----------
-    // На 60 дней вперёд: рейсы без периодов, маршруты без себестоимости, субсидированные вылеты без суммы
-    // субсидии, пересекающиеся периоды. Считается только при открытии раздела и в утренней сводке.
+    // проверка полноты на 60 дней: рейсы без периодов, маршруты без себестоимости, субсидия без суммы, пересечения
+    // считается при открытии раздела и в утренней сводке
 
     const CHECK_DAYS = 60;
     let checkMemo = { sig: '', res: null };
@@ -839,14 +826,14 @@ window.ReferenceView = (function () {
     function checkSig() {
         return [typeof dataEpoch === 'number' ? dataEpoch : 0, typeof getTodayDate === 'function' ? getTodayDate() : '',
             SubsidyRef.revision(), typeof allData !== 'undefined' && allData ? allData.length : 0,
-            // Ручные суммы субсидии и справочник рейсов тоже меняют пропуски.
+            // ручные суммы и справочник рейсов тоже меняют пропуски
             typeof SharedOverrides !== 'undefined' && SharedOverrides.subsidyRevision ? SharedOverrides.subsidyRevision() : 0,
             typeof FlightRegistry !== 'undefined' && FlightRegistry.revision ? FlightRegistry.revision() : 0].join('|');
     }
 
     function completeness() {
         const sig = checkSig();
-        // Файл расходов или периодов загрузили заново (кнопка в «Отчётах») — список пропусков пересчитывается.
+        // файл расходов или периодов загрузили заново - список пропусков пересчитываем
         const fd = typeof RouteCosts !== 'undefined' && RouteCosts.fileData ? RouteCosts.fileData() : null;
         const fileRows = fd ? fd.costRows : null;
         const filePeriods = fd ? fd.periodsByNum : null;
@@ -877,7 +864,7 @@ window.ReferenceView = (function () {
             if (econ.unitCost == null) add(noCost, rk, { from: econ.from, to: econ.to, ac: econ.ac }, code, r[1]);
             if (!inter || never(base)) return;
             if (!RouteCosts.periodSource(flightNum(base)) && !(RouteCosts.periodsFor(base) || []).length) {
-                // Туда и обратно — одной строкой.
+                // Туда и обратно - одной строкой.
                 const pair = pairCodes(base).filter(c => !RouteCosts.periodSource(flightNum(c)));
                 const key = (pair.length ? pair : [base]).join(' / ');
                 add(noPeriods, key, { base: key, codes: pair.length ? pair : [base] }, code, r[1]);
@@ -943,9 +930,8 @@ window.ReferenceView = (function () {
             </section>`;
     }
 
-    // ---------- Excel: выгрузка и загрузка справочника ----------
-    // Листы: «Тарифы», «Периоды», «Суммы», «ПКЗ» — только разделы, которые профиль видит.
-    // Загрузка добавляет и обновляет записи из файла; чего в файле нет — остаётся как было.
+    // листы Тарифы, Периоды, Суммы, ПКЗ - только разделы, которые профиль видит
+    // загрузка добавляет и обновляет записи из файла; чего в файле нет, остаётся как было
 
     const SHEETS = {
         fares: { name: 'Тарифы', head: ['Рейсы', 'Код тарифа', 'Предел, ₽', 'Детский предел, ₽', 'Комментарий'] },
@@ -970,7 +956,7 @@ window.ReferenceView = (function () {
         return styled || (typeof XLSX !== 'undefined' ? XLSX : null);
     }
 
-    // Лист «Суммы» в формате файла по месяцам: после средних — по два столбца на месяц («Июнь: субсидия», «Июнь: себестоимость»).
+    // лист Суммы по месяцам: после средних два столбца на месяц, 'Июнь: субсидия' и 'Июнь: себестоимость'
     const MONTHS_RU = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
     const monthCap = (m) => MONTHS_RU[m - 1][0].toUpperCase() + MONTHS_RU[m - 1].slice(1);
     function amountMonths() {
@@ -983,7 +969,7 @@ window.ReferenceView = (function () {
 
     function sheetRows(id) {
         if (id === 'fares') {
-            // Как на экране: рейсы без субсидии (KV-247/248) в справочник не попадают, даже если запись с ними есть в файле.
+            // рейсы без субсидии (KV-247/248) в справочник не попадают, даже если есть в файле
             return FareRefs.list().filter(e => e.mode === 'limit')
                 .map(e => ({ ...e, flights: e.flights.filter(f => !(typeof FlightChecks !== 'undefined' && FlightChecks.isNeverSubsidized && FlightChecks.isNeverSubsidized(f))) }))
                 .filter(e => e.flights.length)
@@ -1033,7 +1019,7 @@ window.ReferenceView = (function () {
         else toast('Справочник выгружен');
     }
 
-    // Дата из ячейки: «ДД.ММ.ГГГГ», «ГГГГ-ММ-ДД» или число Excel.
+    // дата из ячейки: ДД.ММ.ГГГГ, ГГГГ-ММ-ДД или число Excel
     function cellDate(v) {
         if (v == null || v === '') return '';
         if (typeof v === 'number' && v > 20000 && v < 80000) {
@@ -1060,7 +1046,7 @@ window.ReferenceView = (function () {
         return rows.slice(1).filter(r => r.some(c => String(c).trim() !== ''));
     }
 
-    // Разбор файла → что изменится. errors — строки, которые не поняли (с номером строки листа).
+    // разбор файла: что изменится; errors - строки, которые не поняли, с номером строки листа
     function planImport(lib, wb) {
         const plan = { fares: [], periods: {}, amounts: [], nav: [], errors: [], sheets: [] };
         const fares = viewSection('fares') && canEditSection('fares') ? readSheet(lib, wb, 'fares') : null;
@@ -1082,7 +1068,7 @@ window.ReferenceView = (function () {
                 const from = cellDate(r[1]);
                 const to = cellDate(r[2]);
                 if (!plan.periods[n]) plan.periods[n] = [];
-                if (!from && !to) return; // пустые даты — «коммерции нет»
+                if (!from && !to) return; // пустые даты - коммерции нет
                 if (!from || !to) { plan.errors.push(`Периоды, строка ${i + 2}: нужны обе даты`); return; }
                 plan.periods[n].push({ from, to });
             });
@@ -1090,7 +1076,6 @@ window.ReferenceView = (function () {
         const amounts = viewSection('amounts') && canEditSection('amounts') ? readSheet(lib, wb, 'amounts') : null;
         if (amounts) {
             plan.sheets.push('Суммы');
-            // Столбцы месяцев: «Июнь: субсидия» / «Июнь: себестоимость».
             const head = (lib.utils.sheet_to_json(wb.Sheets[SHEETS.amounts.name], { header: 1, raw: true, defval: '' })[0] || []).map(h => String(h || '').trim().toLowerCase());
             const mcols = {};
             head.forEach((h, i) => {
@@ -1184,8 +1169,7 @@ window.ReferenceView = (function () {
         rerender();
     }
 
-    // ---------- история изменений справочника ----------
-    let hist = null;   // null — закрыта; { loading } | { ok, items, versions } | { error }
+    let hist = null;   // null - закрыта; { loading } / { ok, items, versions } / { error }
 
     function histHtml() {
         const can = typeof SubsidyRef !== 'undefined' && (SubsidyRef.canEdit() || SubsidyRef.canEditPkz());
@@ -1232,8 +1216,6 @@ window.ReferenceView = (function () {
                 <input type="file" id="ref-xl-file" accept=".xlsx,.xls" hidden>` : ''}
             </div>`;
     }
-
-    // ---------- общий каркас ----------
 
     function html(faresHtml) {
         const list = visibleSections();
@@ -1287,7 +1269,7 @@ window.ReferenceView = (function () {
         if (typeof refreshCurrentView === 'function' && typeof currentTab !== 'undefined' && currentTab !== 'reports') refreshCurrentView();
     }
 
-    // Клик по кнопке справочника. true — обработано (rerender — перерисовать вкладку).
+    // клик по кнопке справочника; true - обработано, rerender перерисовывает вкладку
     function handleClick(btn, rerender) {
         const d = btn.dataset;
         if (typeof FareGrid !== 'undefined' && (btn.id === 'fg-save' || btn.id === 'fg-reset' || btn.id === 'fg-upload' || btn.id === 'fg-off-save')) { FareGrid.handleClick(btn, rerender); return true; }
@@ -1520,7 +1502,7 @@ window.ReferenceView = (function () {
         }
         // ПКЗ из NAV
         if (d.refnLoad != null) {
-            // Поле выбора файлов создаётся здесь же: таблица перерисовывается, пока открыто окно выбора.
+            // поле выбора файлов создаём здесь: таблица перерисовывается, пока открыто окно выбора
             const input = document.createElement('input');
             input.type = 'file';
             input.accept = '.xls,.xlsx';
@@ -1573,7 +1555,7 @@ window.ReferenceView = (function () {
     function handleChange(target, rerender) {
         if (typeof FareGrid !== 'undefined' && FareGrid.handleChange(target, rerender)) return true;
         if (target.id === 'ref-p-flight' && periodEdit) {
-            // Другой рейс — в форму его текущие периоды.
+            // другой рейс - в форму его текущие периоды
             const code = target.value;
             const other = pairCodes(code).find(c => c !== code);
             const withPair = !!other && document.getElementById('ref-p-pair')?.checked !== false;
@@ -1595,19 +1577,19 @@ window.ReferenceView = (function () {
         if (target.id === 'ref-n-filter') { navFlight = target.value || ''; rerender(); return true; }
         if (target.id === 'ref-c-year') { calYear = target.value || calYear; rerender(); return true; }
         if ((target.id === 'ref-f-extras-new' || target.id === 'ref-f-bextras-new') && flEdit) {
-            // Enter или уход из поля — номер добавляется в список.
+            // Enter или уход из поля добавляет номер в список
             if (target.value.trim()) extrasChange(target.id === 'ref-f-extras-new' ? 'out' : 'back', target.value, null, document.activeElement === target);
             return true;
         }
         if (target.id === 'ref-f-type' && flEdit) { syncFlEdit(); return true; }
         if (target.id === 'ref-f-code' && flEdit) {
-            // Номер туда ввели — обратный подставляем сам, если его не трогали.
+            // номер туда ввели - обратный подставим сами, если его не трогали
             const back = document.getElementById('ref-f-back');
             if (back && !back.value.trim()) back.value = FlightRegistry.suggestBack(target.value).replace('KV-', '');
             return true;
         }
         if ((target.id === 'ref-f-from' || target.id === 'ref-f-to') && flEdit) {
-            // Новый город — подсказка выбрать тип рейса (без перерисовки формы, чтобы не сбить ввод).
+            // новый город - подсказка выбрать тип рейса, без перерисовки формы (ввод не сбивается)
             const val = (id) => (document.getElementById(id)?.value ?? '').trim();
             const unknown = [val('ref-f-from'), val('ref-f-to')].filter(unknownCity);
             const box = document.getElementById('ref-f-warn');

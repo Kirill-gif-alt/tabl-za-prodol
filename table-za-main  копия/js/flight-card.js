@@ -1,15 +1,12 @@
-// Карточка рейса — панель справа: всё по вылету без перехода на другую вкладку.
-// Показывается и прячется только кнопкой ▤ рядом с именем в шапке. Пока она показана, клик по рейсу
-// на Графплане, в RMS и в «Загрузке рейсов» меняет её содержимое; скрыта — клики её не открывают.
-// Кнопка ⧉ — открыть карточку отдельным окном (например, на втором мониторе).
-// Включает админ в «Управлении профилями» → «Функции» (flight_card; у администратора включена сразу).
-// ←/→ — соседние даты этого рейса, ⇄ — обратный рейс.
+// карточка рейса: панель справа, всё по вылету; кнопка ▤ в шапке показывает и прячет
+// пока открыта, клики по рейсу на Графплане, в RMS и в "Загрузка рейсов" меняют её; ⧉ - отдельное окно
+// включает админ в Управлении профилями, Функции (flight_card); <-/-> соседние даты, ⇄ обратный рейс
 window.FlightCard = (function () {
     const SHOWN_KEY = 'krasavia_card_shown_';
     const MODE_KEY = 'krasavia_card_mode';
-    let state = null; // { code, date } — код рейса, как он летит в эту дату (например, KV-301)
+    let state = null; // { code, date } - код рейса, как он летит в эту дату (например, KV-301)
     let chart = null;
-    let fareChart = null;   // маленький график «Средний тариф по дням продаж»
+    let fareChart = null;   // маленький график "Средний тариф по дням продаж"
     let mode = readMode(); // 'page' | 'window'
     let popup = null;
 
@@ -39,12 +36,12 @@ window.FlightCard = (function () {
         return allowed() && shownSaved();
     }
 
-    // Пометка на странице «карточка включена»: по ней легенда таблицы «Динамика продаж» показывает фразу про двойной щелчок.
+    // класс на body; по нему легенда "Динамика продаж" показывает фразу про двойной щелчок
     function markOn() {
         document.body.classList.toggle('flight-card-on', isShown());
     }
 
-    // Кнопка ▤ рядом с именем: видна тем, кому админ включил карточку; нажали — показать, ещё раз — скрыть.
+    // кнопка видна, если админ включил карточку; первый клик - показать, второй - скрыть
     function syncToggle() {
         const chip = document.getElementById('profile-user-chip');
         let label = document.getElementById('flight-card-toggle');
@@ -81,7 +78,7 @@ window.FlightCard = (function () {
         markOn();
     }
 
-    // Последний выбранный рейс (currentFlight/lastSelectedDate) — чтобы карточка сразу была не пустой.
+    // последний выбранный рейс (currentFlight/lastSelectedDate), чтобы карточка не была пустой
     function pickFromSelection() {
         if (state) return;
         const fl = typeof currentFlight !== 'undefined' ? currentFlight : null;
@@ -116,8 +113,8 @@ window.FlightCard = (function () {
     function esc(v) { return escHtml(v); }
     function attr(v) { return typeof escAttr === 'function' ? escAttr(v) : String(v == null ? '' : v); }
 
-    // В какой строке данных этот вылет. Рейс может лететь под другим номером (KV-301 вместо KV-101)
-    // или обратный рейс — на следующий день (дата «07.10/08.10» в «Загрузке рейсов»).
+    // строка вылета в данных. Рейс может идти под другим номером (KV-301 вместо KV-101)
+    // или обратным, на следующий день (07.10/08.10 в "Загрузка рейсов")
     function resolve(code, date) {
         const fl = cleanFlight(code);
         const base = getBaseFlight(fl);
@@ -139,7 +136,7 @@ window.FlightCard = (function () {
         return row ? { code: cleanFlight(row[0]), date: row[1], row } : null;
     }
 
-    // Даты вылета этого направления по порядку (для ←/→), под любым номером рейса.
+    // даты направления по порядку для <-/->, под любым номером рейса
     function datesOf(code) {
         const base = getBaseFlight(code);
         const set = new Set();
@@ -154,8 +151,6 @@ window.FlightCard = (function () {
         const other = base === p.outbound ? p.inbound : p.outbound;
         return other && other !== base ? other : '';
     }
-
-    // ---------- где рисуем: панель на странице или отдельное окно ----------
 
     function popupAlive() {
         try {
@@ -193,8 +188,8 @@ window.FlightCard = (function () {
         if (local && !inPage) local.hidden = true;
     }
 
-    // На http(s) правила карточки берём из тех же таблиц стилей, что и у страницы (файлы уже в кэше браузера): оформление окна
-    // не отстаёт от styles.css. Встроенная копия остаётся для file:// и для первого показа; любая неудача — остаёмся на копии.
+    // на http(s) правила берём из тех же таблиц, что у страницы (файлы в кэше), окно не отстаёт от styles.css
+    // встроенная копия для file:// и первого показа; при любой неудаче остаёмся на ней
     function liveWindowCss(styleEl) {
         try {
             if (typeof window.FLIGHT_CARD_WINDOW_CSS_BUILD !== 'function' || typeof fetch !== 'function') return;
@@ -214,8 +209,8 @@ window.FlightCard = (function () {
             if (typeof showToast === 'function') showToast('Браузер не дал открыть окно — разрешите всплывающие окна для этого сайта', 'error');
             return false;
         }
-        // После F5 главной страницы окно с прошлого раза остаётся открытым: его документ создан
-        // старой страницей (на file:// он может быть недоступен) — пересоздаём окно и подключаем заново.
+        // после F5 окно остаётся открытым, но его документ создан старой страницей
+        // на file:// он может быть недоступен, поэтому окно пересоздаём
         const fresh = popup !== w;
         let doc = null;
         try { doc = w.document; doc.getElementById('flight-card'); } catch (e) { doc = null; }
@@ -235,21 +230,20 @@ window.FlightCard = (function () {
             doc.open();
             doc.write(`<!doctype html><html lang="ru" class="${attr(rootCls)}"${theme ? ` data-theme="${attr(theme)}"` : ''} style="${attr(rootStyle)}"><head><meta charset="utf-8"><title>КРАСАВИА · Карточка рейса</title></head><body class="fc-window-body"></body></html>`);
             doc.close();
-            // «Открыть вкладку» и «Сравнение моделей» выносят вперёд основное окно. Вызов opener.focus() должен идти из
-            // самого окна, где был клик (иначе Chrome может не поднять окно), поэтому в окно подключается свой файл
-            // (код внутри разметки страница запрещает — см. «Действия из разметки» в core-utils.js).
+            // Открыть вкладку и Сравнение моделей поднимают основное окно; opener.focus() зовём из окна клика, иначе Chrome может не поднять
+            // поэтому в окно подключаем свой файл: код в разметке страница запрещает (core-utils.js, "Действия из разметки")
             const focusJs = doc.createElement('script');
             focusJs.src = new URL('js/flight-card-window.js', document.baseURI).href;
             doc.head.appendChild(focusJs);
-            // Стили — встроенной копией: подключить styles.css в такое окно Chrome не даёт (см. flight-card-window-css.js).
+            // стили встроенной копией: styles.css в такое окно Chrome не подключит (flight-card-window-css.js)
             const style = doc.createElement('style');
             style.textContent = window.FLIGHT_CARD_WINDOW_CSS || '';
             doc.head.appendChild(style);
             liveWindowCss(style);
             doc.addEventListener('keydown', onKey);
-            // Окно закрыли — карточка возвращается на страницу (если она включена кнопкой ▤).
-            // Событие закрытия приходит не всегда, поэтому ещё и проверяем раз в секунду.
-            // Тема и цвета основной страницы (data-theme, переменные в style) копируются в окно сразу и при каждой смене.
+            // окно закрыли - карточка возвращается на страницу, если она включена
+            // событие закрытия приходит не всегда, поэтому ещё проверяем раз в секунду
+            // тема и цвета страницы (data-theme, переменные в style) копируются в окно сразу и при смене
             const syncRoot = () => {
                 try {
                     const src = document.documentElement;
@@ -271,8 +265,8 @@ window.FlightCard = (function () {
                 done = true;
                 clearInterval(watch);
                 if (rootWatch) rootWatch.disconnect();
-                // Окно закрыли сами (крестик браузера) — карточка возвращается на страницу и режим «страница» запоминается.
-                // Если окно закрыла сама карточка (✕, ▤, ⧉ в окне), popup уже обнулён — режим не трогаем.
+                // закрыли крестиком браузера - режим "страница" запоминаем
+                // если закрыла сама карточка, popup уже обнулён, режим не трогаем
                 const byUser = popup === w;
                 if (byUser) popup = null;
                 if (chart && chart.canvas && chart.canvas.ownerDocument === doc) chart = null;
@@ -287,7 +281,7 @@ window.FlightCard = (function () {
         return true;
     }
 
-    // Короткое сообщение внизу окна карточки: сообщения сайта (toast) показываются в основном окне, а оно может быть не на виду.
+    // короткое сообщение внизу окна: toast сайта идёт в основное окно, которое может быть не на виду
     let flashTimer = 0;
     function flash(text) {
         if (!popupAlive()) return;
@@ -335,7 +329,7 @@ window.FlightCard = (function () {
         return `<div class="fc-tile${cls ? ' ' + cls : ''}"><div class="fc-tile-label">${esc(label)}</div><div class="fc-tile-value">${value}</div>${sub ? `<div class="fc-tile-sub">${sub}</div>` : ''}</div>`;
     }
 
-    // Закреплённая карточка или окно без выбранного рейса.
+    // закреплённая карточка или окно без выбранного рейса
     function renderEmpty() {
         const panel = ensurePanel();
         panel.hidden = false;
@@ -350,7 +344,7 @@ window.FlightCard = (function () {
     // Прогноз к вылету, безубыточность, группы (flight-insights.js).
     const INSIGHTS_KEY = 'fc_insights_open';
 
-    // Открыт ли блок прогноза: в памяти, а localStorage — только чтобы помнить между сеансами.
+    // открыт ли блок прогноза: в памяти, в localStorage только чтобы помнить между сеансами
     let insightsState = null;
     function insightsOpen() {
         if (insightsState == null) {
@@ -359,7 +353,7 @@ window.FlightCard = (function () {
         return insightsState;
     }
 
-    // Ответ второй модели пришёл: обновляем только блок прогноза, график и остальное не перерисовываем.
+    // ответ второй модели: обновляем только блок прогноза, остальное не перерисовываем
     let mlHooked = false;
     function hookMl() {
         if (mlHooked || typeof MlForecast === 'undefined') return;
@@ -377,20 +371,20 @@ window.FlightCard = (function () {
         if (box.firstElementChild) el.replaceWith(box.firstElementChild);
     }
 
-    // Прогноз к вылету и группы — плиткой; блок сворачивается (по умолчанию свёрнут, видна одна строка-итог).
+    // прогноз и группы плиткой; по умолчанию свёрнут, видна одна строка-итог
     function insightsHtml(code, date) {
         if (typeof FlightInsights === 'undefined') return '';
         const FI = FlightInsights;
         const tiles = [];
         const summary = [];
         let advice = '';
-        // Вторая модель (машинное обучение): считается в фоне, плитка дорисуется, когда придёт ответ.
+        // вторая модель (ML) считается в фоне, плитка дорисуется по ответу
         hookMl();
         const ml = typeof MlForecast !== 'undefined' ? MlForecast.cardParts(code, date) : { tile: '', chip: '' };
         const f = FI.forecast(code, date);
         if (f && f.source !== 'flown') {
             const isModel = f.source === 'model';
-            // «8 из 10» — доля из параметров расчётов (PV.CONF_LEVEL), как в RMS и «Сегодня».
+            // 8 из 10 - доля из параметров (PV.CONF_LEVEL), как в RMS и "Сегодня"
             const confN = typeof PV !== 'undefined' && PV.CONF_LEVEL > 0 ? Math.round(PV.CONF_LEVEL * 10) : 8;
             const range = f.lo != null && f.hi != null && f.lo !== f.hi ? `${isModel ? `в ${confN} ${pluralRu(confN, 'случае', 'случаях', 'случаях')} из 10: ` : 'разброс '}${f.lo}–${f.hi}` : '';
             const histNote = (s) => (s.source === 'history'
@@ -398,7 +392,7 @@ window.FlightCard = (function () {
                 : 'по файлу ожидаемой загрузки');
             const errTxt = isModel && f.model.err ? `обычно ошибается на ±${String(f.model.err).replace('.', ',')}` : '';
             const src = isModel ? `модель прогноза: ${f.model.method}${errTxt ? ' · ' + errTxt : ''}` : histNote(f);
-            // Один прогноз. Из чего он сложен — в подсказке (без второго числа рядом).
+            // один прогноз; из чего сложен - в подсказке, без второго числа рядом
             const tip = isModel ? [
                 'Прогноз модели — тот же у всех сотрудников и во всех вкладках. Она учитывает продажи и их темп, вылеты в тот же день недели, файл ожидаемой загрузки, прошлый год, календарь и сама доучивается на каждом улетевшем вылете.',
                 f.lo != null ? `В ${confN} ${pluralRu(confN, 'случае', 'случаях', 'случаях')} из 10 итог будет от ${f.lo} до ${f.hi}.` : '',
@@ -415,11 +409,11 @@ window.FlightCard = (function () {
             </div>`);
             summary.push(`<span class="fc-ins-chip fc-ins-${tone || 'plain'}">${ml.tile ? 'модель 1' : 'прогноз'} ${f.final}/${f.seats} · ${f.lf}%</span>`);
             if (f.load >= f.seats) advice = '<div class="fc-advice fc-advice-up">✓ Уже распродан</div>';
-            // Подсказки по тарифу отключены (решение владельца) — остаётся только факт распродажи.
+            // подсказки по тарифу отключены по решению владельца, остался только факт распродажи
         }
         if (ml.tile) tiles.push(ml.tile);
         if (ml.chip) summary.push(ml.chip);
-        // Ценовой советник (межрегиональные + Богучаны, Мотыгино, Кодинск; потолок субсидии).
+        // ценовой советник: межрегиональные + Богучаны, Мотыгино, Кодинск; потолок субсидии
         if (typeof PriceAdvisor !== 'undefined' && PriceAdvisor.canView()) {
             let pa = null;
             try { pa = PriceAdvisor.advise(code, date); } catch (e) { pa = null; }
@@ -459,7 +453,7 @@ window.FlightCard = (function () {
         </div>`;
     }
 
-    // Что менялось с последней отрисовки: загрузка данных, новый день, обучение модели, параметры.
+    // что менялось с прошлой отрисовки: данные, новый день, обучение модели, параметры
     let renderedSig = '';
     function dataSig() {
         return [typeof dataEpoch === 'number' ? dataEpoch : 0, typeof getTodayDate === 'function' ? getTodayDate() : '',
@@ -486,11 +480,11 @@ window.FlightCard = (function () {
         const modeMark = typeof FlightChecks !== 'undefined' && FlightChecks.modeBadge ? FlightChecks.modeBadge(code, date, row) : '';
         const issues = typeof FlightChecks !== 'undefined' && FlightChecks.enabled() ? FlightChecks.issuesFor(code, date) : [];
         const comment = typeof FlightComments !== 'undefined' ? FlightComments.get(code, date) : '';
-        // Файл продаж старше суток: «продано за 1–2 дня» по нему не видно (как в RMS и на «Сегодня» — прочерк, а не ноль).
+        // файл продаж старше суток: "продано за 1-2 дня" не видно, как в RMS и "Сегодня" - прочерк, не ноль
         const staleSales = salesReady && typeof getStaleSalesInfo === 'function' ? getStaleSalesInfo() : null;
-        // У улетевшего рейса ожидаемой нет — как в «Динамике продаж» и на Графплане.
+        // у улетевшего рейса ожидаемой нет, как в "Динамике продаж" и на Графплане
         const showEv = !!m && !m.flew;
-        // Файла ожидаемой загрузки нет — плитки «Ожидаемая» и «Δ к ожидаемой» были бы пустыми, не показываем их.
+        // нет файла ожидаемой загрузки - плитки "Ожидаемая" и "Δ к ожидаемой" были бы пустыми
         const expReady = typeof hasExpectedFileLoaded === 'function' ? hasExpectedFileLoaded() : true;
         const dtdTxt = m && m.dtd != null ? (m.dtd < 0 ? 'улетел' : (m.dtd === 0 ? 'вылет сегодня' : `за ${m.dtd} дн.`)) : '';
         const status = m && m.closed ? 'закрыт' : '';
@@ -539,8 +533,8 @@ window.FlightCard = (function () {
         drawFare(panel, code, date);
     }
 
-    // «Средний тариф по дням продаж»: взрослые платные, по дням сделки — свежие данные из файла продаж и более ранние дни
-    // из журнала (js/day-log.js). Меньше трёх дней — график не показываем. Без подсказок и второй оси.
+    // средний тариф по дням продаж: взрослые платные; свежие дни из файла, более ранние из журнала (day-log.js)
+    // меньше трёх дней - график не показываем; без подсказок и второй оси
     function drawFare(panel, code, date) {
         if (fareChart) { try { fareChart.destroy(); } catch (e) { /* ignore */ } fareChart = null; }
         const wrap = panel.querySelector('[data-fc-part="fare-wrap"]');
@@ -549,7 +543,7 @@ window.FlightCard = (function () {
         const fly = parseLocalDate(date);
         const month = fly ? `${fly.getFullYear()}-${String(fly.getMonth() + 1).padStart(2, '0')}` : '';
         if (month && !SalesDayLog.monthsLoaded([month])) {
-            // Журнал месяца ещё не прочитан (фон после входа): дорисуем график, когда придёт, — карточку целиком не перерисовываем.
+            // журнал месяца ещё не прочитан: дорисуем график, когда придёт, карточку целиком не трогаем
             SalesDayLog.ensureMonths([month]).then(got => {
                 if (got && state && state.code === code && state.date === date && panel.isConnected) drawFare(panel, code, date);
             });
@@ -558,7 +552,7 @@ window.FlightCard = (function () {
         try { days = SalesDayLog.adultDays(date, code).filter(x => x.a > 0 && x.ra > 0); } catch (e) { days = []; }
         if (days.length < 3) { wrap.hidden = true; return; }
         wrap.hidden = false;
-        // Решения «снизить / повысить» — на ближайший день продаж к дню решения (в день решения продаж могло не быть).
+        // решения снизить / повысить ставим на ближайший день продаж (в день решения продаж могло не быть)
         const marks = typeof PriceMarks !== 'undefined' && fly ? PriceMarks.chartItems(code, date, mk => {
             const d = parseLocalDate(mk.check);
             if (!d) return -1;
@@ -588,7 +582,7 @@ window.FlightCard = (function () {
         });
     }
 
-    // «Прошлые решения»: три последние отметки «снизить / повысить» по этому рейсу (любая дата вылета), с итогом в рублях из отчёта «Решения».
+    // прошлые решения: три последние отметки по рейсу (любая дата вылета), итог в рублях из отчёта "Решения"
     function pastDecisionsHtml(base) {
         if (typeof DecisionsReport === 'undefined' || !DecisionsReport.recentForBase || !DecisionsReport.canView()) return '';
         let res = null;
@@ -680,7 +674,7 @@ window.FlightCard = (function () {
         const dates = datesOf(other);
         if (!dates.length) return;
         const target = parseLocalDate(state.date) || new Date();
-        // Та же дата или ближайшая следующая (обратный рейс часто на следующий день).
+        // та же дата или ближайшая следующая, обратный рейс часто на следующий день
         const next = dates.find(d => (parseLocalDate(d) || 0) >= target) || dates[dates.length - 1];
         open(other, next);
     }
@@ -688,7 +682,7 @@ window.FlightCard = (function () {
     function onClick(e) {
         const set = e.target.closest('[data-pm-set]');
         if (set && typeof PriceMarks !== 'undefined') {
-            // В отдельном окне общий обработчик страницы кнопки не видит — отмечаем отсюда.
+            // в отдельном окне обработчик страницы кнопку не видит, отмечаем здесь
             if (hostDoc() !== document && !PriceMarks.setToday(set.dataset.pmCode, set.dataset.pmDate, set.dataset.pmSet || null)) {
                 flash('Отметка не поставлена — причина показана в основном окне');
             }
@@ -718,7 +712,7 @@ window.FlightCard = (function () {
         else if (a === 'window') setMode('window');
         else if (a === 'dock') setMode('page');
         else if (a === 'ml-window') {
-            // Сравнение моделей — раздел «Отчёты» → «Модели» в основном окне: из карточки-окна выносим основное окно вперёд и говорим об этом.
+            // сравнение моделей - раздел "Отчёты" -> "Модели" в основном окне, его выносим вперёд
             if (typeof MlForecast !== 'undefined' && MlForecast.openModels() !== false && hostDoc() !== document) {
                 try { window.focus(); } catch (err) { /* ignore */ }
                 flash('Модели открыты в основном окне');
@@ -736,9 +730,8 @@ window.FlightCard = (function () {
         const t = e.target;
         if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
         if (e.ctrlKey || e.altKey || e.metaKey) return;
-        // Стрелки листают даты, только когда фокус в самой карточке (или в её окне) — таблицам не мешаем.
+        // стрелки листают даты только при фокусе в карточке (или её окне), таблицы не трогаем
         const inCard = t && t.closest && t.closest('#flight-card');
-        // Карточка в отдельном окне: стрелки — только когда нажаты в её окне, а не на основной странице.
         const inWin = t && t.ownerDocument && t.ownerDocument !== document;
         if (!inCard && !inWin) return;
         if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
@@ -747,18 +740,18 @@ window.FlightCard = (function () {
 
     document.addEventListener('keydown', onKey);
 
-    // Данные загрузили заново — карточка сама показывает новые числа (раньше оставались прежние, пока не кликнешь рейс).
-    // Проверка — одно сравнение строк раз в 2 секунды, и только пока карточка показана.
+    // данные перезагрузили - карточка сама покажет новые числа
+    // проверка раз в 2 с, и только пока карточка показана
     setInterval(() => {
         if (!state || document.hidden || window.ingestQuiet || !isShown()) return;
         if (dataSig() !== renderedSig) render();
     }, 2000);
 
-    // Отметка поставлена — обновить кнопки и маркеры в открытой карточке.
+    // Отметка поставлена - обновить кнопки и маркеры в открытой карточке.
     document.addEventListener('krasavia:mark', () => { if (state && isShown()) render(); });
 
-    // Вызывается из обработчиков клика (Графплан, RMS, «Загрузка рейсов»): карточку не открывает,
-    // только меняет содержимое, если она показана кнопкой ▤.
+    // вызывается из кликов на Графплане, в RMS, "Загрузка рейсов": карточку не открывает
+    // только меняет содержимое, если она открыта кнопкой ▤
     function maybeOpen(code, date) {
         if (!allowed()) return false;
         open(code, date);

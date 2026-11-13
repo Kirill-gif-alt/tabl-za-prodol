@@ -1,8 +1,6 @@
-// Вкладка «Отчёты»: выгрузки в Excel одной кнопкой.
-// «Загрузка рейсов» и «Управление продажами» — те же файлы, что кнопки на своих вкладках.
-// «Для экономистов» — факт кресел в продаже за прошлую неделю (пн–вс) и план загрузки
-// на следующую неделю (пн–вс), отдельно ВВЛ и МВЛ (см. getFlightLineType в cities.js).
-// План загрузки — ожидаемые пассажиры в день вылета из файла прогноза загрузки (0 дней до вылета).
+// вкладка "Отчёты": выгрузки в Excel одной кнопкой
+// для экономистов: факт кресел в продаже за прошлую неделю и план загрузки на следующую (пн-вс)
+// ВВЛ/МВЛ - getFlightLineType в cities.js; план - ожидаемые пассажиры в день вылета (0 дн. до вылета)
 window.ReportsView = (function () {
     const LINE_LABELS = { vvl: 'ВВЛ', mvl: 'МВЛ' };
     const ROUTE_LABELS = { krai: 'краевые', interregional: 'межрегиональные', unknown: 'не классифицированы' };
@@ -34,27 +32,23 @@ window.ReportsView = (function () {
         return n == null || isNaN(n) ? '—' : Number(n).toLocaleString('ru-RU', { maximumFractionDigits: 0 });
     }
 
-    // ---------- общие куски оформления (их берут и другие отчёты) ----------
-
-    // Значок «?»: полный текст по нажатию. Короткая фраза остаётся под заголовком.
+    // значок "?": полный текст по нажатию
     function helpHtml(full) {
         return `<details class="rp-help"><summary class="rp-help-btn" title="Пояснение" aria-label="Пояснение">?</summary><div class="rp-help-pop" role="note">${full}</div></details>`;
     }
 
-    // Строка заголовка отчёта: название, значок «?», справа — кнопка (например, «В Excel»).
-    // Название и текст подсказки — готовый HTML (экранировать должен вызывающий).
+    // заголовок отчёта: название, "?", справа кнопка (например, "В Excel")
+    // title и help - готовый HTML, экранирует вызывающий
     function headHtml(title, help, right) {
         return `<div class="rp-card-head"><div class="rp-card-heading"><h3 class="rp-card-title">${title}</h3>${help ? helpHtml(help) : ''}</div>${right || ''}</div>`;
     }
 
-    // Ряд сводных плиток: { label, value, sub, tone } — tone: bad (красный), warn (жёлтый) или пусто (серый).
+    // плитки: { label, value, sub, tone }; tone: bad - красный, warn - жёлтый, пусто - серый
     function tilesHtml(list) {
         const items = (list || []).filter(Boolean);
         if (!items.length) return '';
         return `<div class="rp-tiles">${items.map(t => `<div class="rp-tile${t.tone ? ' rp-tile-' + t.tone : ''}"><div class="rp-tile-label">${esc(t.label)}</div><div class="rp-tile-value">${esc(t.value)}</div>${t.sub ? `<div class="rp-tile-sub">${esc(t.sub)}</div>` : ''}</div>`).join('')}</div>`;
     }
-
-    // ---------- недели ----------
 
     function startOfDay(d) {
         const t = new Date(d.getTime());
@@ -83,8 +77,6 @@ window.ReportsView = (function () {
         return `${ru(w.from)} (пн) – ${ru(w.to)} (вс)`;
     }
 
-    // ---------- данные отчёта для экономистов ----------
-
     function lineOf(code) {
         return typeof getFlightLineType === 'function' ? getFlightLineType(code) : 'vvl';
     }
@@ -103,14 +95,14 @@ window.ReportsView = (function () {
         const ev = getExpectedLoad(cap, base, 0, wk);
         if (ev == null || isNaN(ev)) return null;
         const seats = typeof getSeatsOnSale === 'function' ? getSeatsOnSale(row) : 0;
-        return Math.ceil(seats > 0 ? Math.min(ev, seats) : ev);   // не больше кресел в продаже, как в RMS
+        return Math.ceil(seats > 0 ? Math.min(ev, seats) : ev);   // не больше кресел в продаже (как в RMS)
     }
 
-    // Один вылет (рейс + дата) считается один раз: у рейса из нескольких участков берётся первый,
-    // как для продаж (buildFirstSalesRowByKey), иначе кресла и рейсы задвоятся.
+    // вылет (рейс + дата) считаем один раз: первый участок, как в buildFirstSalesRowByKey
+    // иначе кресла и рейсы задвоятся
     function collectWeek(week, withPlan) {
         const out = [];
-        const picked = new Map();   // вылет → { row, base }: у вылета с посадками — основной (сквозной) участок
+        const picked = new Map();   // вылет -> { row, base }; с посадками - сквозной участок
         const fromT = week.from.getTime();
         const toT = week.to.getTime();
         Object.keys(groupedData || {}).forEach(base => {
@@ -122,7 +114,7 @@ window.ReportsView = (function () {
                 const t = d.getTime();
                 if (t < fromT || t > toT) return;
                 const code = cleanFlight(row[0]);
-                // Закрытые рейсы кресел в продаже не дают (как в RMS).
+                // закрытые рейсы кресел в продаже не дают (как в RMS)
                 if (typeof closedFlights !== 'undefined' && closedFlights.has(typeof getSalesLookupKey === 'function' ? getSalesLookupKey(row) : `${row[1]}|${code}`)) return;
                 const once = code + '|' + row[1];
                 const prev = picked.get(once);
@@ -147,7 +139,7 @@ window.ReportsView = (function () {
                 routeType: routeTypeOf(code),
                 seats,
                 sold,
-                // План — не больше кресел в продаже (как в RMS и карточке рейса).
+                // план не больше кресел в продаже (как в RMS и карточке рейса)
                 plan: withPlan ? ((p) => (p != null && seats > 0 ? Math.min(p, seats) : p))(planLoad(row, base)) : null
             });
         });
@@ -221,8 +213,6 @@ window.ReportsView = (function () {
             hasExpected: typeof expectedLoadData !== 'undefined' && expectedLoadData && Object.keys(expectedLoadData).length > 0
         };
     }
-
-    // ---------- Excel: отчёт для экономистов ----------
 
     const NAVY = '012A4A';
     const SECTION = '1A5276';
@@ -403,8 +393,6 @@ window.ReportsView = (function () {
         }
     }
 
-    // ---------- остальные выгрузки ----------
-
     async function exportData() {
         if (!canData()) {
             toast('Выгрузка «Загрузки рейсов» недоступна для вашего профиля', 'error');
@@ -448,8 +436,6 @@ window.ReportsView = (function () {
         return hasPerm('export_excel') && (canTab('data') || canTab('pair') || canTab('costs'));
     }
 
-    // ---------- проверка рейсов ----------
-
     function checksList() {
         if (typeof FlightChecks === 'undefined' || !FlightChecks.enabled() || !hasData()) return [];
         return FlightChecks.list();
@@ -457,7 +443,7 @@ window.ReportsView = (function () {
 
     const CHECKS_HELP = 'Проверяем субсидированные рейсы: межрегиональные, у которых в «Экономической таблице» субсидия больше 0. Краевые не субсидируются. Ошибка — если продан детский билет со скидкой 50% (…/CN50) или билет дороже предельного тарифа из справочника. Рейс с ошибкой помечен «!» в «Загрузке рейсов», «Экономической таблице» и «Динамике продаж».';
 
-    // Плитки «Ошибки тарифов» — в общем ряду раздела «Проверки».
+    // плитки ошибок тарифов - в общем ряду раздела "Проверки"
     function checksTileList() {
         if (typeof FlightChecks === 'undefined' || !FlightChecks.enabled() || !hasData()) return [];
         const all = checksList();
@@ -470,7 +456,6 @@ window.ReportsView = (function () {
         ];
     }
 
-    // Блок «Ошибки тарифов» (бывшая «Проверка рейсов»).
     function checksCard() {
         const all = checksList();
         const future = all.filter(i => i.state !== 'Улетел');
@@ -489,7 +474,8 @@ window.ReportsView = (function () {
                 <td>${canOpen ? `<button type="button" class="filter-btn rp-open" data-open-base="${esc(i.base)}" data-open-code="${esc(i.code)}" data-open-date="${esc(i.date)}">Открыть</button>` : ''}</td>
             </tr>`).join('');
         const exportBtn = `<button type="button" class="btn-primary rp-btn" id="rp-checks-export"${all.length && hasPerm('export_excel') ? '' : ' disabled'}>В Excel</button>`;
-        // Число строк в таблице зависит от галочки «только рейсы до вылета». Рейс может дать несколько ошибок.
+        // строк в таблице зависит от галочки "только рейсы до вылета"
+        // один рейс может дать несколько ошибок
         const body = !all.length
             ? '<p class="rp-ok">Ошибок нет: все проверенные рейсы в порядке.</p>'
             : `<div class="ref-toolbar"><label class="rp-filter"><input type="checkbox" id="rp-checks-future"${checksFutureOnly ? ' checked' : ''}> только рейсы до вылета</label>
@@ -508,7 +494,7 @@ window.ReportsView = (function () {
             </section>`;
     }
 
-    // Раздел «Проверки»: общие плитки сверху, ниже «Ошибки тарифов» и «Расхождения продаж и загрузки».
+    // раздел "Проверки": общие плитки сверху, ниже ошибки тарифов и расхождения продаж и загрузки
     function checksPageHtml() {
         const checksOn = typeof FlightChecks !== 'undefined' && FlightChecks.enabled();
         const recOn = typeof SalesReconcile !== 'undefined' && SalesReconcile.canView();
@@ -518,8 +504,6 @@ window.ReportsView = (function () {
         const tiles = (checksOn ? checksTileList() : []).concat(recOn ? SalesReconcile.tileList() : []);
         return tilesHtml(tiles) + (checksOn ? checksCard() : '') + (recOn ? SalesReconcile.card() : '');
     }
-
-    // ---------- справочник субсидированных тарифов ----------
 
     let refEditId = '';
     let refPrefill = '';
@@ -537,7 +521,7 @@ window.ReportsView = (function () {
         Object.keys(typeof groupedData !== 'undefined' && groupedData ? groupedData : {}).forEach(base => {
             (groupedData[base] || []).forEach(r => { if (r && r[0]) set.add(cleanFlight(r[0])); });
         });
-        // Только базовые номера: доп. рейсы (KV-301, KV-355…) идут под своим базовым.
+        // только базовые номера: доп. рейсы (KV-301, KV-355...) идут под базовым
         return [...new Set([...set].map(c => (typeof getBaseFlight === 'function' && /^KV-\d+$/.test(c) ? getBaseFlight(c) : c)))]
             .filter(c => /^KV-\d+$/.test(c) && typeof getFlightRouteType === 'function' && getFlightRouteType(c) === 'interregional')
             .filter(c => !neverSubsidized(c))
@@ -552,14 +536,14 @@ window.ReportsView = (function () {
         return typeof FlightChecks !== 'undefined' && FlightChecks.isNeverSubsidized && FlightChecks.isNeverSubsidized(code);
     }
 
-    // Рейсы без субсидии (KV-247/248) в справочнике не показываются, даже если записи с ними есть в файле.
+    // рейсы без субсидии (KV-247/248) не показываем, даже если они есть в файле
     function refEntries() {
         return FareRefs.list()
             .map(e => ({ ...e, flights: e.flights.filter(f => !neverSubsidized(f)) }))
             .filter(e => e.flights.length);
     }
 
-    // Плитки над справочником: то же, что считают значок вкладки и «Проверка полноты».
+    // плитки над справочником - те же числа, что на значке вкладки и в "Проверке полноты"
     function refsTiles() {
         const list = [];
         if (typeof FareRefs !== 'undefined' && FareRefs.canView()) {
@@ -596,7 +580,7 @@ window.ReportsView = (function () {
         }).join('');
         const editing = refEditId ? entries.find(e => e.id === refEditId) : null;
         const pick = editing ? editing.flights[0] : (refPrefill || missing[0] || '');
-        // Рейсы из записей справочника тоже в списке — иначе при правке сезонного рейса браузер молча выберет другой.
+        // рейсы из записей справочника тоже в списке, иначе при правке сезонного браузер молча выберет другой
         const codes = [...new Set(interregionalCodes().concat(entries.flatMap(e => e.flights), pick ? [pick] : []))];
         const subsidizedNow = new Set(missing.concat(entries.flatMap(e => e.flights)));
         const option = (c) => `<option value="${esc(c)}"${c === pick ? ' selected' : ''}>${esc(c)} · ${esc(directionOf(c))}</option>`;
@@ -788,7 +772,7 @@ window.ReportsView = (function () {
             return;
         }
         const everything = checksList();
-        // В файл идёт то же, что видно на экране: с галочкой «только рейсы до вылета» улетевшие не выгружаются.
+        // в файл то же, что на экране; с галочкой "только рейсы до вылета" улетевшие не выгружаем
         const all = checksFutureOnly ? everything.filter(i => i.state !== 'Улетел') : everything;
         if (!all.length) {
             toast(everything.length ? 'До вылета ошибок нет. Снимите галочку, чтобы выгрузить улетевшие.' : 'Ошибок нет — выгружать нечего', 'error');
@@ -821,8 +805,8 @@ window.ReportsView = (function () {
         else toast(msg);
     }
 
-    // Дробные числа билетов (ожидали 4,1; итог −3,5; в среднем +0,9) в Excel показываем с десятыми: формат '#,##0' округлял их до целых,
-    // и на экране было «+0,9», а в файле «1». Целые остаются целыми.
+    // дробные числа билетов в Excel с десятыми: формат '#,##0' округлял +0,9 до 1
+    // целые остаются целыми
     function showTenths(lib, ws, cols) {
         Object.keys(ws).forEach(addr => {
             if (addr.charAt(0) === '!') return;
@@ -832,8 +816,8 @@ window.ReportsView = (function () {
         });
     }
 
-    // «Запросы на снижение» → Excel: все строки текущего отбора, как на экране (шапка с группой «Ожидаемая загрузка»,
-    // плашки согласования цветом ячейки, «ожидали / стало» в ячейке, пометки «оценка» и «исправлено вручную»).
+    // запросы на снижение в Excel: все строки текущего отбора, как на экране
+    // как на экране: группа "Ожидаемая загрузка", цвет согласования, "ожидали / стало", "оценка", "исправлено вручную"
     async function exportLowRep() {
         if (!hasPerm('export_excel')) {
             toast('Выгрузка недоступна для вашего профиля', 'error');
@@ -864,7 +848,6 @@ window.ReportsView = (function () {
         const group = style('3B5F82', 'FFFFFF', true);
         const title = style('FFFFFF', NAVY, true, 'left');
         const t = d.totals;
-        // Шапка листа
         put(0, 0, `Запросы на снижение · период: ${d.period} · показано: ${d.show}${d.query ? ' · рейс: ' + d.query : ''} · выгрузка ${stamp}`, title);
         for (let c = 1; c < W; c++) put(0, c, '', title);
         merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: W - 1 } });
@@ -872,7 +855,6 @@ window.ReportsView = (function () {
         put(1, 0, sumText, style('FFFFFF', '475569', false, 'left'));
         for (let c = 1; c < W; c++) put(1, c, '', style('FFFFFF', '475569', false, 'left'));
         merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: W - 1 } });
-        // Двухстрочная шапка таблицы
         const H = 2;
         ['Дата запроса', 'Рейс', 'Дата рейса', 'Загрузка на момент запроса'].forEach((h, c) => { put(H, c, h, head); put(H + 1, c, '', head); merges.push({ s: { r: H, c }, e: { r: H + 1, c } }); });
         put(H, 4, 'Ожидаемая загрузка, мест', group);
@@ -936,7 +918,7 @@ window.ReportsView = (function () {
         else toast(msg);
     }
 
-    // «Решения» → Excel: лист «Журнал» (каждое решение) и «Сводка» (по типу, направлениям, людям).
+    // решения в Excel: лист "Журнал" (каждое решение) и "Сводка" (по типу, направлениям, людям)
     async function exportDecisionsTickets() {
         if (!hasPerm('export_excel')) {
             toast('Выгрузка недоступна для вашего профиля', 'error');
@@ -964,7 +946,7 @@ window.ReportsView = (function () {
         showTenths(lib, wsJ, [7, 9, 12]);
         const s = sheetWriter(lib);
         const sec = style(SECTION, 'FFFFFF', true, 'left');
-        const pct = (v) => (v == null ? '' : v);   // число, а не «67%»: в Excel его можно сортировать и складывать
+        const pct = (v) => (v == null ? '' : v);   // число, а не "67%": в Excel можно сортировать и складывать
         const block = (r, title, groups, keyLabel) => {
             s.title(r++, title, 8, sec);
             const head = [keyLabel, 'Решений', 'С итогом', 'Можно судить', 'Помогло', 'Помогло, %', 'Средний итог, бил.'];
@@ -997,7 +979,6 @@ window.ReportsView = (function () {
         else toast(msg);
     }
 
-    // «Решения» → Excel: лист «Журнал» (каждое решение) и «Сводка» (по типу, направлениям, людям).
     async function exportDecisions() {
         if (!hasPerm('export_excel')) {
             toast('Выгрузка недоступна для вашего профиля', 'error');
@@ -1025,8 +1006,8 @@ window.ReportsView = (function () {
         showTenths(lib, wsJ, [7, 9, 21]);
         const s = sheetWriter(lib);
         const sec = style(SECTION, 'FFFFFF', true, 'left');
-        // Те же числа, что на экране: «Помогло / Навредило» с «скорее» и «чуть», «Мало данных» и «Ждём итога» отдельно,
-        // «Эффект по всем оценённым» — с поправкой на шум и сдвиг (как «Общий итог»), рядом отдельно по продажам и поправка.
+        // те же числа, что на экране: "Помогло / Навредило" (со "скорее" и "чуть"), "Мало данных" и "Ждём итога" отдельно
+        // эффект по всем оценённым - с поправкой на шум и сдвиг, как "Общий итог"; по продажам отдельно
         const block = (r, title, groups, keyLabel) => {
             s.title(r++, title, 16, sec);
             const head = [keyLabel, 'Решений', 'Оценено', 'Определено (твёрдо)', 'Твёрдо помогло', 'Твёрдо навредило', 'Помогло (с «скорее» и «чуть»)', 'Навредило (с «скорее» и «чуть»)', 'Без заметного эффекта', 'Мало данных', 'Ждём итога', 'Эффект по определённым, ₽', 'Эффект по всем оценённым, ₽ (с поправкой, как «Общий итог»)', 'В том числе по продажам, ₽', 'В том числе поправка на шум и сдвиг, ₽', 'Ориентировочно (доверие низкое)'];
@@ -1059,8 +1040,6 @@ window.ReportsView = (function () {
         else toast(msg);
     }
 
-    // ---------- страница ----------
-
     function previewHtml() {
         if (!hasData()) {
             return '<p class="rp-note">Данных нет — нажмите «Загрузить» или «Последние», и здесь появятся итоги.</p>';
@@ -1084,7 +1063,7 @@ window.ReportsView = (function () {
             </div>`;
     }
 
-    // help — полный текст для значка «?» (если у карточки он длинный); text — короткая фраза.
+    // help - полный текст для значка "?" (если длинный); text - короткая фраза
     function card(id, title, text, allowed, denyText, extra, help) {
         return `
             <section class="rp-card">
@@ -1095,9 +1074,9 @@ window.ReportsView = (function () {
             </section>`;
     }
 
-    // Внутренние вкладки: проверка, справочник (только с правом), выгрузки.
+    // внутренние вкладки: проверки, справочник (только с правом), выгрузки
     const SUBTAB_KEY = 'krasavia_reports_subtab';
-    // Прежние разделы: «Проверка рейсов» и «Сверка» слились в «Проверки», «Прогноз и предупреждения» стал «Модели».
+    // старые id вкладок (reconcile, forecast) переводим в новые
     const SUBTAB_ALIAS = { reconcile: 'checks', forecast: 'models' };
     const SUBTAB_ANCHOR = { checks: 'rp-checks', reconcile: 'rp-reconcile' };
     let pendingScroll = '';
@@ -1109,14 +1088,14 @@ window.ReportsView = (function () {
         return typeof FareRefs !== 'undefined' && FareRefs.canEdit();
     }
 
-    // Значок-счётчик: красный или жёлтый, если есть что смотреть; серый «0», если всё в порядке.
-    // Пока данных нет, значка нет — «0» там означал бы «ошибок нет», а мы этого не знаем.
+    // значок-счетчик: красный или жёлтый, если есть что смотреть; серый 0 - всё в порядке
+    // без данных значка нет: 0 значил бы "ошибок нет", а мы этого не знаем
     function subtabs() {
         const list = [];
         const checksOn = typeof FlightChecks !== 'undefined' && FlightChecks.enabled();
         const recOn = typeof SalesReconcile !== 'undefined' && SalesReconcile.canView();
         if (checksOn || recOn) {
-            // Один счётчик на оба блока: рейсы с ошибкой тарифа до вылета + вылеты с расхождением продаж и загрузки.
+            // один счетчик на оба блока: рейсы с ошибкой тарифа до вылета + вылеты с расхождением продаж и загрузки
             const has = hasData();
             const nChecks = checksOn && has ? new Set(checksList().filter(i => i.state !== 'Улетел').map(i => i.code + '|' + i.date)).size : 0;
             const hasSales = recOn && has && (!SalesReconcile.hasSales || SalesReconcile.hasSales());
@@ -1137,7 +1116,7 @@ window.ReportsView = (function () {
         return list;
     }
 
-    // Иконки внутренних вкладок (контур, цвет — текущий цвет текста).
+    // иконки внутренних вкладок: контур, цвет как у текста
     const ICON = (d) => `<svg class="rp-subtab-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
     const SUBTAB_ICON = {
         checks: ICON('<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/>'),
@@ -1192,7 +1171,7 @@ window.ReportsView = (function () {
                 </button>`).join('')}
             </nav>
             <div class="rp-subtab-body rp-tab-${subtab}">${content}</div>`;
-        // Узкое окно: выбранный раздел может уйти за край полосы — прокручиваем к нему.
+        // узкое окно: выбранная вкладка может уйти за край - прокручиваем к ней
         const on = body.querySelector('.rp-subtab-on');
         if (on && on.scrollIntoView) { try { on.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) { /* ignore */ } }
         if (subtab === 'models' && typeof ModelsView !== 'undefined' && ModelsView.canView()) ModelsView.mount(body);
@@ -1235,7 +1214,7 @@ window.ReportsView = (function () {
             </div>
         `;
         const page = panel.querySelector('#rp-page');
-        // Подсказку «?» закрываем щелчком в другом месте и клавишей Esc.
+        // подсказку "?" закрываем кликом в другом месте и по Esc
         const closeHelp = (except) => page.querySelectorAll('details.rp-help[open]').forEach(d => { if (d !== except) d.removeAttribute('open'); });
         page.addEventListener('keydown', (event) => {
             if (event.key === 'Escape') closeHelp(null);
@@ -1245,7 +1224,7 @@ window.ReportsView = (function () {
             if (typeof LowReqReport !== 'undefined' && subtab === 'lowrep' && LowReqReport.handleDblClick(event)) return;
             if (typeof ModelsView !== 'undefined') ModelsView.handleDblClick(event);
         });
-        // «toggle» у <details> не всплывает — ловим на стадии перехвата (блок «Подробно для аналитика»).
+        // toggle у details не всплывает - ловим на capture (блок "Подробно для аналитика")
         page.addEventListener('toggle', (event) => { if (typeof ModelsView !== 'undefined') ModelsView.handleToggle(event.target, renderBody); }, true);
         page.addEventListener('change', (event) => {
             if (CustomPeriod.handleChange(event.target)) { renderBody(); return; }
@@ -1355,7 +1334,7 @@ window.ReportsView = (function () {
         renderBody();
     }
 
-    // Открыть нужную внутреннюю вкладку (например, из счётчика ошибок в шапке).
+    // открыть внутреннюю вкладку (например, из счетчика ошибок в шапке)
     function showSubtab(id) {
         const anchor = SUBTAB_ANCHOR[id] || '';
         id = SUBTAB_ALIAS[id] || id;

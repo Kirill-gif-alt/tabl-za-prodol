@@ -1,16 +1,13 @@
-// Справочник рейсов: новые рейсы без правки файлов. Номер туда, маршрут, обратный номер и доп. номера
-// (под которыми рейс летает, когда в день два вылета) — в «Отчёты» → «Справочник» → «Рейсы».
-// • Встроенные рейсы — из js/routes.js и правил доп. номеров (3xx → 1xx и т. п.); добавленные хранятся
-//   в shared/flights.json, общие для всех, правка по записи (at), удалённое не «воскресает».
-// • Добавленный рейс сразу работает везде: направление, базовый номер для доп. номеров, пара
-//   туда–обратно, тип (краевой / межрегиональный, МВЛ) — если города нет в списках cities.js.
+// справочник рейсов: новые рейсы без правки файлов; номер туда, маршрут, обратный номер, доп. номера (Отчеты - Справочник - Рейсы)
+// встроенные из routes.js и правил доп. номеров (3xx -> 1xx); добавленные в shared/flights.json, правка по записи (at)
+// удаленное не воскресает; добавленный рейс работает везде: направление, базовый номер, пара туда-обратно, тип
 window.FlightRegistry = (function () {
     const FILE = 'flights.json';
     const BUILTIN_DIRS = { ...(window.FLIGHT_DIRECTIONS || {}) };
     const BASE_CFG = window.CITY_CLASSIFICATION || {};
     const TYPES = { auto: 'по городам', krai: 'краевой', interregional: 'межрегиональный', international: 'международный (МВЛ)' };
 
-    let entries = {};     // код туда → { code, from, to, back, extras[], backExtras[], type, deleted, at, by }
+    let entries = {};     // код туда -> { code, from, to, back, extras[], backExtras[], type, deleted, at, by }
     let rev = 0;
 
     function profileName() {
@@ -90,7 +87,7 @@ window.FlightRegistry = (function () {
         window.FLIGHT_EXTRA_BASE = extraBase;
         window.FLIGHT_PAIR_OVERRIDES = pairs;
         window.FLIGHT_TYPE_OVERRIDES = types;
-        // Новый объект — кэши городов (cities.js) сбросятся сами.
+        // Новый объект - кэши городов (cities.js) сбросятся сами.
         window.CITY_CLASSIFICATION = { ...BASE_CFG, INTERNATIONAL_CITIES: [...intl].filter(c => !(BASE_CFG.HUB_CITIES || []).includes(c)) };
         if (typeof PerfCache !== 'undefined' && PerfCache.clearFlightCaches) PerfCache.clearFlightCaches();
         rev++;
@@ -125,11 +122,11 @@ window.FlightRegistry = (function () {
         regroup();
     }
 
-    // changes: [[id, entry], ...] — все правки одной записью файла (переименование не теряет рейс при сбое).
+    // changes: [[id, entry], ...], все правки одной записью файла: переименование не теряет рейс при сбое
     async function apply(changes) {
         if (!canEdit()) return { ok: false, error: 'Нет права менять справочник рейсов' };
         if (typeof SharedStorage === 'undefined') return { ok: false, error: 'Общая папка не подключена' };
-        // Файл перечитывается перед записью, меняются только эти рейсы: правки других не теряются.
+        // файл перечитываем перед записью, меняем только свои рейсы; правки других не теряются
         const res = await SharedStorage.updateJsonFile(FILE, (cur) => {
             const merged = mergeInto({}, cur && cur.flights);
             const at = new Date().toISOString();
@@ -145,7 +142,7 @@ window.FlightRegistry = (function () {
         return { ok: true };
     }
 
-    // Кто уже занимает номер: добавленный рейс (кроме exceptId) или встроенный; '' — свободен.
+    // Кто уже занимает номер: добавленный рейс (кроме exceptId) или встроенный; '' - свободен.
     function owner(c, exceptId) {
         const own = list().find(e => e.code !== exceptId && (e.code === c || e.back === c || e.extras.includes(c) || e.backExtras.includes(c)));
         if (own) return own.code;
@@ -157,7 +154,7 @@ window.FlightRegistry = (function () {
         if (!e || e.deleted) return Promise.resolve({ ok: false, error: 'Укажите номер рейса, откуда и куда' });
         const all = [e.code, e.back].concat(e.extras, e.backExtras).filter(Boolean);
         if (new Set(all).size !== all.length) return Promise.resolve({ ok: false, error: 'Номера повторяются' });
-        // Новый рейс или переименование — номер не должен совпадать с уже добавленным рейсом.
+        // Новый рейс или переименование - номер не должен совпадать с уже добавленным рейсом.
         if (e.code !== id && entries[e.code] && !entries[e.code].deleted) {
             return Promise.resolve({ ok: false, error: `Рейс ${e.code} уже есть в справочнике — откройте его кнопкой «Изменить»` });
         }
@@ -176,13 +173,13 @@ window.FlightRegistry = (function () {
         return apply([[id, { deleted: true }]]);
     }
 
-    // Обратный номер по умолчанию: нечётный туда → следующий чётный.
+    // Обратный номер по умолчанию: нечётный туда -> следующий чётный.
     function suggestBack(c) {
         const n = parseInt(String(code(c)).slice(3), 10) || 0;
         return n ? 'KV-' + (n % 2 === 1 ? n + 1 : n - 1) : '';
     }
 
-    // Встроенные рейсы (routes.js) парами — для списка в справочнике.
+    // Встроенные рейсы (routes.js) парами - для списка в справочнике.
     function builtinPairs() {
         const seen = new Set();
         const out = [];

@@ -1,4 +1,4 @@
-// Эфир KV / ЭК / SSJ с Flightradar (запрос — из изолированной рамки live-frame.html). Только «сегодня».
+// эфир KV / ЭК / SSJ с Flightradar, только на сегодня; запрос из изолированной рамки live-frame.html
 window.LiveKvFlights = (function () {
     const POLL_MS = 15000;
     const FLEET = new Set([
@@ -15,9 +15,9 @@ window.LiveKvFlights = (function () {
     let source = '';
     let onChange = null;
     let wanted = false;
-    const MAX_FAILS = 3;     // подряд неудачных запросов, после которых опрос прекращается
+    const MAX_FAILS = 3;     // неудач подряд, после которых опрос останавливается
     let fails = 0;
-    let down = false;        // радар недоступен: до следующего захода на вкладку «Сеть» не опрашиваем
+    let down = false;        // радар недоступен до следующего захода на вкладку "Сеть"
 
     function normReg(r) {
         return String(r || '').toUpperCase().replace(/\s+/g, '');
@@ -85,14 +85,14 @@ window.LiveKvFlights = (function () {
         return out;
     }
 
-    // Flightradar отдаёт данные только в виде программы (JSONP). Чужую программу нельзя выполнять на странице с данными
-    // сайта, поэтому запрос делает изолированная рамка live-frame.html (sandbox: без доступа к странице, общей папке и
-    // паролям), а сюда приходит только её ответ — как данные. Адрес и параметры запроса заданы в самой рамке.
+    // Flightradar отдаёт JSONP (код), чужой код на странице с данными не выполняем
+    // запрос в изолированной рамке (sandbox, без доступа к странице и паролям), сюда приходит только ответ как данные
+    // адрес и параметры заданы в самой рамке
     let frame = null;
     let frameReady = null;
     let frameReadyDone = null;
     let reqSeq = 0;
-    const waiting = new Map();   // номер запроса → { resolve, reject, tid }
+    const waiting = new Map();   // номер запроса -> { resolve, reject, tid }
 
     function onFrameMessage(e) {
         if (!frame || e.source !== frame.contentWindow || e.origin !== 'null') return;
@@ -172,7 +172,7 @@ window.LiveKvFlights = (function () {
             fails++;
             status = 'error';
             source = '';
-            // Три неудачи подряд (нет интернета, закрытая сеть) — дальше не стучимся, пока не зайдут на вкладку снова.
+            // три неудачи подряд (нет интернета, закрытая сеть) - не стучимся, пока не зайдут на вкладку снова
             if (fails >= MAX_FAILS) {
                 down = true;
                 status = 'down';
@@ -196,7 +196,7 @@ window.LiveKvFlights = (function () {
 
     function stop() {
         wanted = false;
-        // С вкладки «Сеть» ушли — при следующем заходе пробуем снова; пауза на этой же вкладке недоступность не снимает.
+        // ушли с вкладки - при заходе пробуем снова; пауза на той же вкладке недоступность не снимает
         if (typeof currentTab === 'undefined' || currentTab !== 'home') { down = false; fails = 0; }
         if (timer) {
             clearInterval(timer);

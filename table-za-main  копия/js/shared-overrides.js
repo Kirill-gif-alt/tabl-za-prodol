@@ -1,4 +1,4 @@
-// Общие ручные правки: субсидия и ПКЗ из NAV (shared + локально)
+// общие ручные правки: субсидия и ПКЗ из NAV (общий файл + локально)
 window.SharedOverrides = (function () {
     const SUB_FILE = 'subsidy-overrides.json';
     const NAV_FILE = 'pkz-nav.json';
@@ -7,7 +7,7 @@ window.SharedOverrides = (function () {
 
     let subsidy = {};
     let pkzNav = {};
-    // Растёт при каждой загрузке и правке субсидии: по нему проверки рейсов понимают, что пора пересчитать.
+    // растёт при каждой загрузке и правке субсидии; по нему проверки понимают, что пора пересчитать
     let subsidyRev = 0;
     let navRev = 0;
 
@@ -74,8 +74,8 @@ window.SharedOverrides = (function () {
         return out;
     }
 
-    // Файл мог быть восстановлен из резервной копии (restoredAt): правки старше этого момента, оставшиеся
-    // в кэше браузера, не должны вернуть ошибочные значения обратно.
+    // файл могли восстановить из копии (restoredAt)
+    // старые правки из кэша браузера после этого момента не возвращаем
     function newerThan(map, since) {
         if (!since) return map;
         const out = {};
@@ -127,11 +127,11 @@ window.SharedOverrides = (function () {
         return null;
     }
 
-    // Правки, не попавшие в общий файл (нет связи, папка закрыта на запись), хранятся на этом компьютере
-    // с пометкой unsynced и дописываются сами: сначала через 15 с, затем реже (до 2 мин).
+    // правки, не попавшие в общий файл (нет связи, папка закрыта), лежат тут с пометкой unsynced
+    // дописываем сами: через 15 с, потом реже, до 2 мин
     const RETRY_FIRST_MS = 15000;
     const RETRY_MAX_MS = 120000;
-    const retries = {};   // имя файла → { timer, ms }
+    const retries = {};   // имя файла -> { timer, ms }
 
     function scheduleRetry(filename, localKey, getValues, ms) {
         const st = retries[filename] || (retries[filename] = { timer: null, ms: RETRY_FIRST_MS });
@@ -149,17 +149,17 @@ window.SharedOverrides = (function () {
         }, ms || st.ms);
     }
 
-    // quiet — повторная запись в фоне: сообщение об ошибке уже было показано.
+    // quiet - повторная запись в фоне, ошибку уже показали
     async function persist(filename, localKey, values, quiet) {
-        // Перед записью сливаем с общим файлом: правки других ПК, сделанные после нашей загрузки, не теряются.
-        // Запись идёт «только если файл не менялся с прочтения»; если его успели изменить — читаем и сливаем заново.
+        // перед записью сливаем с общим файлом, правки других ПК не потеряются
+        // запись только если файл не менялся с прочтения, иначе читаем и сливаем заново
         const saveLocal = (p, unsynced) => {
             try {
                 localStorage.setItem(localKey, JSON.stringify(Object.assign({}, p, { unsynced: !!unsynced })));
             } catch { /* ignore */ }
         };
         let payload = { version: 1, updatedAt: new Date().toISOString(), values };
-        saveLocal(payload, true);   // на этом компьютере правка сохранена сразу, что бы ни случилось с общим файлом
+        saveLocal(payload, true);   // локально сохраняем сразу, что бы ни было с общим файлом
         let res = { ok: false, readFailed: true };
         if (typeof SharedStorage !== 'undefined' && SharedStorage.updateJsonFile) {
             res = await SharedStorage.updateJsonFile(filename, (cur) => {
@@ -175,7 +175,7 @@ window.SharedOverrides = (function () {
         }
         const shared = !!(res.ok && res.data && res.data.values);
         if (shared) {
-            // Файл восстановлен из копии — устаревшие правки из памяти убираем, остальное берём из файла.
+            // файл из копии: устаревшие правки из памяти убираем, остальное берём из файла
             if (res.data.restoredAt) Object.keys(values).forEach(k => { if (!(k in res.data.values)) delete values[k]; });
             Object.keys(res.data.values).forEach(k => { values[k] = res.data.values[k]; });   // заодно видим чужие правки
             payload = res.data;
@@ -222,7 +222,7 @@ window.SharedOverrides = (function () {
         pkzNav = await loadOne(NAV_FILE, NAV_LOCAL);
         subsidyRev++;
         navRev++;
-        // Прошлый сеанс не успел записать правки в общий файл — дописываем сейчас.
+        // прошлый сеанс не записал правки в общий файл, дописываем сейчас
         const pend = (key) => { const l = readLocal(key); return !!(l && l.unsynced); };
         if (pend(SUB_LOCAL)) scheduleRetry(SUB_FILE, SUB_LOCAL, () => subsidy, 1500);
         if (pend(NAV_LOCAL)) scheduleRetry(NAV_FILE, NAV_LOCAL, () => pkzNav, 1500);
@@ -248,7 +248,7 @@ window.SharedOverrides = (function () {
         if (!canWrite('edit_subsidy')) return false;
         const k = subKey(flight, date);
         if (!k) return false;
-        // Очистка — запись «пусто» со временем: иначе старое значение вернётся из копии на другом ПК.
+        // очистка - запись пусто со временем, иначе старое значение вернётся из копии на другом ПК
         const rec = value === '' || value === null || value === undefined ? null : entryOf(value);
         subsidy[k] = rec || tombstone();
         subsidyRev++;
@@ -266,7 +266,6 @@ window.SharedOverrides = (function () {
         if (!canWrite('edit_pkz_nav')) return false;
         const k = navKey(date, flight);
         if (!k) return false;
-        // Очистка — запись «пусто» со временем: иначе старое значение вернётся из копии на другом ПК.
         const rec = value === '' || value === null || value === undefined ? null : entryOf(value);
         pkzNav[k] = rec || tombstone();
         navRev++;

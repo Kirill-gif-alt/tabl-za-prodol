@@ -1,5 +1,5 @@
-// «Свой период»: два поля даты «с … по …» рядом с обычными вариантами периода (30 / 60 / 90 дн. и т.п.).
-// Состояние по имени (id) хранится в этом файле и запоминается в браузере. Даты в полях — ГГГГ-ММ-ДД, наружу — дд.мм.гггг.
+// свой период: два поля дат "с ... по ..." рядом с 30 / 60 / 90 дн. и т.п.
+// состояние по id запоминается в браузере; в полях ГГГГ-ММ-ДД, наружу дд.мм.гггг
 window.CustomPeriod = (function () {
     const KEY = 'krasavia_cp_';
     const mem = {};
@@ -23,7 +23,7 @@ window.CustomPeriod = (function () {
     function save(id) { try { localStorage.setItem(KEY + id, JSON.stringify(mem[id])); } catch (e) { /* ignore */ } }
     function set(id, patch) { Object.assign(state(id), patch); save(id); }
 
-    // Включить: пустые границы — последние 30 дней (вперёд-окна: от сегодня на 30 дней).
+    // включить: пустые границы - последние 30 дней (окна вперёд: от сегодня на 30 дней)
     function toggle(id, forward) {
         const s = state(id);
         if (s.on) { set(id, { on: false }); return; }
@@ -36,13 +36,13 @@ window.CustomPeriod = (function () {
     function buttonHtml(id) {
         return `<button type="button" class="filter-btn${state(id).on ? ' filter-btn-active' : ''}" data-cp-toggle="${id}">Свой период</button>`;
     }
-    // Поля «с … по …» (только когда выбран свой период). onlyTo — окно вперёд от сегодня: одно поле «по».
+    // поля "с ... по ..." только при своём периоде; onlyTo - окно вперёд, одно поле "по"
     function inputsHtml(id, onlyTo) {
         const s = state(id);
         if (!s.on) return '';
         return `<span class="cp-box">${onlyTo ? '' : `<label class="cp-lab">с <input type="date" class="cp-in" data-cp-id="${id}" data-cp-end="from" value="${s.from}"></label>`}<label class="cp-lab">по <input type="date" class="cp-in" data-cp-id="${id}" data-cp-end="to" value="${s.to}"></label></span>`;
     }
-    // Дата (дд.мм.гггг) входит в выбранный период? Пустая граница — без ограничения.
+    // дата дд.мм.гггг входит в период? пустая граница - без ограничения
     function contains(id, dateStr) {
         const s = state(id);
         const d = dayNum(dateStr);
@@ -55,7 +55,7 @@ window.CustomPeriod = (function () {
         const s = state(id);
         return `${ru(s.from) || '…'} – ${ru(s.to) || '…'}`;
     }
-    // Дней от сегодня до даты «по» (для окон «вперёд»); не меньше 1.
+    // дней от сегодня до даты "по" (для окон вперёд), не меньше 1
     function aheadDays(id) {
         const t = new Date();
         const b = dayNum(ru(state(id).to));

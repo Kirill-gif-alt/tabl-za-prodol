@@ -1,4 +1,4 @@
-// Порядок и названия вкладок в верхней панели — у каждого профиля свои (localStorage).
+// Порядок и названия вкладок в верхней панели - у каждого профиля свои (localStorage).
 window.TabOrder = (function () {
     const STORAGE_PREFIX = 'krasavia_tab_order_';
     const NAMES_PREFIX = 'krasavia_tab_names_';
@@ -28,7 +28,7 @@ window.TabOrder = (function () {
         return (typeof ProfileAuth !== 'undefined' && ProfileAuth.getCurrentProfile()?.id) || 'guest';
     }
 
-    // Свои названия вкладок: { table: 'Продажи', ... }; пустое — стандартное.
+    // Свои названия вкладок: { table: 'Продажи', ... }; пустое - стандартное.
     function loadNames() {
         try {
             const raw = JSON.parse(localStorage.getItem(NAMES_PREFIX + profileId()) || '{}');
@@ -129,7 +129,7 @@ window.TabOrder = (function () {
 
     function esc(v) { return escHtml(v); }
 
-    // Редактор: порядок (▲ ▼) и своё название каждой вкладки. onNames(names) — при правке названий.
+    // Редактор: порядок (▲ ▼) и своё название каждой вкладки. onNames(names) - при правке названий.
     function renderEditor(container, onChange, initialOrder, onNames, initialNames) {
         let order = initialOrder || getEditableTabs();
         let names = { ...(initialNames || loadNames()) };

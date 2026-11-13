@@ -1,20 +1,14 @@
-// Архив продаж: то, что иначе уходит из окна выгрузки.
-// • curves-ГГГГ-ММ.json — итог каждого улетевшего вылета: кресла, тип ВС, билеты и выручка,
-//   и сколько билетов продано в каждый «день до вылета». По ним строится норма по дням недели
-//   (sales-report.js) и «год назад», когда вылет уже пропал из файла продаж.
-// Пишет только тот, кто публикует данные (право share_data), в фоне и не чаще раза на новые данные.
-// Читаются файлы тоже в фоне после входа: несколько сотен КБ, старт не задерживают. Без ФИО и PNR.
-// • История продаж (SalesHistory.csv из Export-SalesHistory.ps1): улетевшие вылеты за прошлые месяцы и годы,
-//   уже сведённые по вылетам, без персональных данных. Загружает администратор — кривые попадают в тот же архив
-//   (h: 1 — из истории; se: 1 — кресла оценены по нынешнему ВС рейса; r — возвращено; g — в группах; k — корпоративных).
+// архив продаж: улетевшие вылеты, которых уже нет в окне выгрузки
+// curves-ГГГГ-ММ.json: кресла, ВС, билеты по дням до вылета и выручка (норма, sales-report.js)
+// пишет только право share_data, в фоне; без ФИО и PNR
 window.SalesArchive = (function () {
     const MAX_DTD = 365;
     const STD_SEATS = [48, 72, 120];   // ёмкость ВС парка: ATR-42 (до 48), ATR-72, 120 кресел
     const DONE_KEY = 'krasavia_archive_done';
 
-    let curves = Object.create(null);   // 'дд.мм.гггг|KV-107' → запись
-    // История по билетам (SalesTickets.csv): что было на вылете в контрольные дни 30…1 до вылета.
-    // 'дд.мм.гггг|KV-107' → { p: {H: [классы последнего дня продаж, макс. тариф]}, ro: {H: билетов, сданных позже дня H}, gh: {H: групповых на руках} }
+    let curves = Object.create(null);   // 'дд.мм.гггг|KV-107' -> запись
+    // история по билетам (SalesTickets.csv): контрольные дни 30...1 до вылета (H)
+    // 'дд.мм.гггг|KV-107' -> { p: {H: [классы, макс. тариф]}, ro: {H: сданы позже H}, gh: {H: групповых} }
     let tickets = Object.create(null);
     const T_HORIZONS = [30, 21, 14, 10, 7, 5, 3, 1];
     const loadedMonths = new Set();
@@ -38,9 +32,7 @@ window.SalesArchive = (function () {
         return typeof getTodayDate === 'function' ? getTodayDate() : formatDateRu(new Date());
     }
 
-    // ---------- чтение ----------
-
-    // Месяц попадает в loadedMonths только после чтения; параллельные запросы того же месяца ждут один и тот же промис.
+    // месяц в loadedMonths только после чтения; параллельные запросы ждут тот же промис
     const inflight = new Map();
 
     function readMonth(month) {
@@ -54,7 +46,7 @@ window.SalesArchive = (function () {
     async function readMonth0(month) {
         if (typeof SharedStorage === 'undefined') return;
         const r = await SharedStorage.readJsonFileStrict(`history/curves-${month}.json`).catch(() => ({ ok: false }));
-        if (r.ok) loadedMonths.add(month);   // нет доступа — не помечаем, перечитаем позже
+        if (r.ok) loadedMonths.add(month);   // нет доступа - не помечаем, перечитаем позже
         const tr = await SharedStorage.readJsonFileStrict(`history/tickets-${month}.json`).catch(() => ({ ok: false }));
         if (tr.ok && tr.data && tr.data.flights && typeof tr.data.flights === 'object') Object.assign(tickets, tr.data.flights);
         const c = r.data;
@@ -82,7 +74,7 @@ window.SalesArchive = (function () {
         return out;
     }
 
-    // Загрузить последние месяцы (и те же месяцы год назад — для «год назад, тот же день недели»).
+    // последние месяцы и те же месяцы год назад (для "год назад" по дню недели)
     let loadingMonth = '';
     function ensureLoaded() {
         const now = monthOf(todayStr());
@@ -95,19 +87,19 @@ window.SalesArchive = (function () {
         loading = Promise.all(months.map(m => readMonth(m).catch(() => null))).then(() => {
             rev++;
             refreshOpenReport();
-            if (months.some(m => !loadedMonths.has(m))) loading = null;   // часть месяцев не прочиталась — следующий вызов повторит
+            if (months.some(m => !loadedMonths.has(m))) loading = null;   // часть месяцев не прочиталась - повторим при следующем вызове
         });
         return loading;
     }
 
-    // Догрузить несколько месяцев (для прогноза: обучение и «год назад»). Промис — когда все прочитаны.
+    // догрузить месяцы (для прогноза: обучение и "год назад"); промис - когда все прочитаны
     function ensureMonths(months) {
         const need = (months || []).filter(m => m && !loadedMonths.has(m));
         if (!need.length) return Promise.resolve(false);
         return Promise.all(need.map(m => readMonth(m).catch(() => null))).then(() => { rev++; return true; });
     }
 
-    // Все улетевшие вылеты архива (для модели прогноза): [{ date, code, e }].
+    // все улетевшие вылеты для модели: [{ date, code, e }]
     function entries() {
         return Object.keys(curves).map(k => {
             const i = k.lastIndexOf('|');
@@ -135,9 +127,7 @@ window.SalesArchive = (function () {
         if (typeof refreshOpenSalesReport === 'function') refreshOpenSalesReport();
     }
 
-    // ---------- доступ для расчётов ----------
-
-    // Кривая в формате buildOnHandByDtd: onHand[t] — продано к «t дней до вылета».
+    // кривая как в buildOnHandByDtd: onHand[t] - продано к t дням до вылета
     function curveFor(dateStr, code) {
         const e = curves[`${dateStr}|${code}`];
         if (!e) return null;
@@ -152,8 +142,8 @@ window.SalesArchive = (function () {
         return { onHand, maxDtd, total: run };
     }
 
-    // Улетевшие вылеты рейса из архива (для нормы по дням недели). Индекс по рейсу — пересобирается после чтения архива:
-    // с историей за год вызовов тысячи, а записей — десятки тысяч.
+    // улетевшие вылеты рейса (для нормы по дням недели); индекс по рейсу пересобирается после чтения
+    // с историей за год: вызовов тысячи, записей десятки тысяч
     let index = { rev: -1, map: null };
 
     function departuresFor(code) {
@@ -170,12 +160,10 @@ window.SalesArchive = (function () {
         return (index.map.get(code) || []).slice();
     }
 
-    // Запись архива по вылету (кресла, итог, признаки истории) или null.
+    // запись архива по вылету или null (кресла, итог, признаки истории)
     function entryFor(dateStr, code) {
         return curves[`${dateStr}|${code}`] || null;
     }
-
-    // ---------- запись ----------
 
     function eachDeparture(fn) {
         const seen = new Set();
@@ -185,7 +173,7 @@ window.SalesArchive = (function () {
                 const date = row[1];
                 const code = cleanFlight(row[0]);
                 if (!date || !code) return;
-                // Вылет с посадками — один раз, по основному (сквозному) участку: его загрузка и кресла идут в архив.
+                // вылет с посадками один раз, по сквозному участку (его загрузка и кресла идут в архив)
                 if (row.segShare) return;
                 const key = `${date}|${code}`;
                 if (seen.has(key)) return;
@@ -222,11 +210,11 @@ window.SalesArchive = (function () {
 
     function dataToken() {
         const at = typeof lastSalesUpdate !== 'undefined' && lastSalesUpdate ? new Date(lastSalesUpdate).getTime() : 0;
-        // С датой: после полуночи вчерашние вылеты становятся улетевшими и должны попасть в архив без новых данных.
+        // после полуночи вчерашние вылеты уходят в архив без новых данных
         return `${todayStr()}|${at}|${(allData || []).length}|${Object.keys(salesDetails || {}).length}`;
     }
 
-    // Записи в один файл — по очереди: загрузка истории и запись архива по живым данным не затирают друг друга.
+    // записи в один файл по очереди, чтобы история и живые данные не затирали друг друга
     const writeQueue = Object.create(null);
 
     function mergeAndWrite(file, kind, additions) {
@@ -236,14 +224,13 @@ window.SalesArchive = (function () {
     }
 
     async function mergeAndWrite0(file, kind, additions) {
-        // Строгое чтение: если файл не прочитался (ошибка, нет доступа), не перезаписываем архив.
-        // Запись «только если файл не менялся с прочтения»: вылеты, которые другой ПК записал между чтением и записью,
-        // не теряются (при расхождении файл перечитывается и сливается заново).
+        // строго: если файл не прочитался, архив не перезаписываем
+        // запись только если файл не менялся с чтения, иначе перечитаем и сольём
         const res = await SharedStorage.updateJsonFile(file, (remote) => mergeArchive(remote, kind, additions)).catch(() => ({ ok: false }));
         return !!(res.ok || res.aborted);
     }
 
-    // Слияние добавок с содержимым файла: новый вид файла или false, если добавлять нечего.
+    // слияние добавок с файлом; false, если добавлять нечего
     function mergeArchive(remote, kind, additions) {
         const out = { version: 1, updatedAt: new Date().toISOString() };
         let changed = false;
@@ -252,9 +239,9 @@ window.SalesArchive = (function () {
             Object.keys(additions).forEach(k => {
                 const prev = flights[k] && normalizeCurve(flights[k]);
                 const next = additions[k];
-                // Берём вариант, где больше билетов: ранние продажи могли уже выпасть из окна выгрузки.
+                // берём вариант с большим числом билетов: ранние продажи могли выпасть из окна выгрузки
                 if (!prev || next.c.reduce((a, b) => a + b, 0) > prev.t || (next.sold !== prev.sold && next.c.reduce((a, b) => a + b, 0) === prev.t)) {
-                    // Возвраты, группы и корпоративные из истории продаж в живых данных не считаются — переносим.
+                    // возвраты, группы и корпоративные из истории в живых данных не считаются, переносим
                     flights[k] = prev ? { ...next, ...['r', 'g', 'k'].reduce((o, f) => (prev[f] ? { ...o, [f]: prev[f] } : o), {}) } : next;
                     changed = true;
                 }
@@ -262,14 +249,14 @@ window.SalesArchive = (function () {
             out.flights = flights;
         }
         if (kind === 'import') {
-            // История: новые вылеты добавляются; вылет, записанный по живым данным (настоящие кресла и ВС), не трогаем —
-            // только дописываем к нему возвраты/группы/корпоративных. Повторная загрузка истории заменяет прежнюю.
+            // история: новые вылеты добавляются; вылет из живых данных (кресла и ВС) не трогаем, только дописываем r/g/k
+            // повторная загрузка истории заменяет прежнюю
             const flights = remote && remote.flights && typeof remote.flights === 'object' ? { ...remote.flights } : {};
             Object.keys(additions).forEach(k => {
                 const prev = flights[k] && normalizeCurve(flights[k]);
                 const next = additions[k];
                 if (!prev || prev.h) {
-                    // Рейса сейчас нет в данных (сезонный, приостановлен) — кресла и ВС не знаем: прежние не затираем.
+                    // рейса нет в данных (сезонный, приостановлен): кресел и ВС не знаем, прежние не затираем
                     flights[k] = keepSeats(next, prev);
                     changed = true;
                     return;
@@ -283,7 +270,7 @@ window.SalesArchive = (function () {
         return changed ? out : false;
     }
 
-    // Записать архив по текущим данным. Только у публикующего и только когда данные новые.
+    // записать архив по текущим данным; только у публикующего и только при новых данных
     async function capture() {
         if (typeof SharedStorage === 'undefined' || typeof ProfileAuth === 'undefined') return false;
         if (!ProfileAuth.hasPermission('share_data')) return false;
@@ -325,7 +312,7 @@ window.SalesArchive = (function () {
         else setTimeout(fn, 3000);
     }
 
-    // После входа: прочитать архив, у публикующего — дописать его по текущим данным.
+    // после входа: читаем архив, публикующий дописывает его
     function scheduleAfterStart() {
         whenIdle(() => {
             ensureLoaded().then(() => capture()).catch(e => console.warn('SalesArchive', e));
@@ -333,20 +320,17 @@ window.SalesArchive = (function () {
         backgroundSummaries();
     }
 
-    // Фоновые сводки после входа и после публикации: метка «новое» (signals-days.json) и «деньги по решениям».
+    // фоновые сводки после входа и публикации: метка "новое" (signals-days.json), "деньги по решениям"
     function backgroundSummaries() {
         if (typeof SignalNews !== 'undefined' && SignalNews.backgroundSoon) SignalNews.backgroundSoon();
         if (typeof DecisionMoney !== 'undefined' && DecisionMoney.freezeSoon) DecisionMoney.freezeSoon();
         if (typeof LowReqReport !== 'undefined' && LowReqReport.captureSoon) LowReqReport.captureSoon();
     }
 
-    // После публикации новых данных.
     function captureSoon() {
         whenIdle(() => capture().catch(e => console.warn('SalesArchive.capture', e)), 30000);
         backgroundSummaries();
     }
-
-    // ---------- загрузка истории (SalesHistory.csv) ----------
 
     function keepSeats(next, prev) {
         if (!prev || next.s > 0 || !(prev.s > 0) || prev.s < next.sold) return next;
@@ -364,7 +348,7 @@ window.SalesArchive = (function () {
             const ac = typeof getAircraftType === 'function' ? getAircraftType(row[4]) : '';
             if (ac) A[ac] = (A[ac] || 0) + 1;
         });
-        // Рейса нет в нынешних данных — кресла по его вылетам, уже записанным в архив по живым данным (не из истории).
+        // рейса нет в нынешних данных: кресла берём из его вылетов в архиве по живым данным (не из истории)
         if (!Object.keys(C).length) {
             Object.keys(curves).forEach(k => {
                 if (k.slice(k.lastIndexOf('|') + 1) !== code) return;
@@ -391,7 +375,7 @@ window.SalesArchive = (function () {
         return c;
     }
 
-    // Какой файл истории загружен последним (history/import.json): тот же файл повторно не загружается.
+    // последний загруженный файл истории (history/import.json), повторно не грузим
     const IMPORT_FILE = 'history/import.json';
     const IMPORT_LOCAL_KEY = 'krasavia_hist_import_sig';
     let lastImport = null;
@@ -407,7 +391,7 @@ window.SalesArchive = (function () {
         return r;
     }
 
-    // Отметка записывается слиянием: поля другой загрузки (история / билеты) в файле не теряются.
+    // отметка пишется слиянием, поля других загрузок не теряются
     async function writeImportMark(fields) {
         const res = await SharedStorage.updateJsonFile(IMPORT_FILE, (cur) => Object.assign({}, cur && typeof cur === 'object' ? cur : {}, fields, { version: 1 })).catch(() => ({ ok: false }));
         if (res.ok && res.data) lastImport = res.data;
@@ -416,25 +400,25 @@ window.SalesArchive = (function () {
 
     async function noteImport(file, r) {
         lastImport = {
-            ...(lastImport || {}),   // отметки загрузки билетов (tickets*) не теряем
+            ...(lastImport || {}),   // tickets* не теряем
             version: 1, sig: fileSig(file), file: file ? String(file.name || '').slice(0, 80) : '', at: new Date().toISOString(),
             flights: r.flights, from: r.from ? formatDateRu(r.from) : '', to: r.to ? formatDateRu(r.to) : ''
         };
         const ok = await writeImportMark({ sig: lastImport.sig, file: lastImport.file, at: lastImport.at, flights: lastImport.flights, from: lastImport.from, to: lastImport.to });
-        // Отметку не записали (старый локальный сервер, нет доступа) — помним хотя бы на этом компьютере,
-        // иначе история перезагружалась бы при каждой загрузке данных.
+        // отметку не записали (старый локальный сервер, нет доступа): помним на этом компьютере
+        // иначе история грузилась бы при каждой загрузке данных
         try { localStorage.setItem(IMPORT_LOCAL_KEY, lastImport.sig); } catch (e) { /* ignore */ }
         return ok;
     }
 
-    // SalesHistory.csv из папки данных (её пишет Export-SalesHistory.ps1, например каждую ночь по расписанию):
-    // загружается сама у публикующего, если файл изменился с прошлой загрузки. Модель после этого доучивается.
+    // SalesHistory.csv (пишет Export-SalesHistory.ps1, например ночью по расписанию)
+    // публикующий грузит сам, если файл изменился; модель после этого доучивается
     async function autoImport(file) {
         if (!file || typeof SharedStorage === 'undefined' || typeof ProfileAuth === 'undefined') return null;
         if (!ProfileAuth.hasPermission('share_data')) return null;
         if (!(await SharedStorage.canWrite())) return null;
         const read = await readLastImport();
-        if (!read.ok) return null;   // не прочитали отметку — не грузим вслепую
+        if (!read.ok) return null;   // не прочитали отметку - не грузим вслепую
         let localSig = '';
         try { localSig = localStorage.getItem(IMPORT_LOCAL_KEY) || ''; } catch (e) { /* ignore */ }
         if ((lastImport && lastImport.sig === fileSig(file)) || localSig === fileSig(file)) return { ok: true, same: true };
@@ -443,7 +427,8 @@ window.SalesArchive = (function () {
         return r;
     }
 
-    // Разобрать файл истории и дописать архив. Возвращает { ok, flights, months, skipped, estimated, from, to, error }.
+    // разбираем файл истории и дописываем архив
+    // возвращает { ok, flights, months, skipped, estimated, from, to, error }
     async function importHistory(text, file) {
         if (typeof SharedStorage === 'undefined') return { ok: false, error: 'нет общей папки' };
         const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/);
@@ -467,7 +452,7 @@ window.SalesArchive = (function () {
             const r = splitLine(line);
             const code = cleanFlight(r[col('REIS')] || '');
             const d = parseLocalDate(String(r[col('FLYDATE')] || '').trim());
-            // Ключ — в том же виде, что у живых данных (дд.мм.гггг), иначе один вылет посчитается дважды.
+            // ключ дд.мм.гггг, как у живых данных, иначе вылет посчитается дважды
             const date = d ? (typeof formatDateRu === 'function' ? formatDateRu(d) : `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`) : '';
             const sold = parseInt(r[col('TICKETS')], 10) || 0;
             if (!code || !d || (today && d >= today) || sold <= 0) { skipped++; continue; }
@@ -475,14 +460,13 @@ window.SalesArchive = (function () {
             if (!c.length) { skipped++; continue; }
             if (!typical[code]) typical[code] = typicalOf(code);
             const ty = typical[code];
-            // Кресла прошлых вылетов не записаны — берём по нынешнему рейсу. Рейса нет в данных — кресел не знаем (s: 0):
-            // такой вылет идёт в норму и «прошлый год», но не в обучение модели (иначе загрузка была бы 100% по построению).
-            // Продано больше нынешних кресел — тогда летал ВС больше: берём наименьшую стандартную ёмкость, которая вмещает
-            // проданное (иначе такие вылеты выпали бы из обучения, и модель училась бы только на недогруженных).
+            // рейса нет в данных - s: 0: вылет в норму и "прошлый год", но не в обучение (иначе загрузка 100%)
+            // продано больше кресел - берём наименьшую стандартную ёмкость, которая вмещает проданное
             const seats = ty.s >= sold ? ty.s : (ty.s > 0 ? (STD_SEATS.find(x => x >= sold) || 0) : 0);
             const e = { c, s: seats, ac: ty.s >= sold ? ty.ac : '', sold, rev: Math.round(Number(r[col('REVENUE')]) || 0), h: 1 };
-            e.se = 1;   // кресел прошлых вылетов в истории продаж нет — оценка по нынешнему ВС рейса
-            // Ёмкость «по проданному» знает итог вылета — модели как признак её давать нельзя: s0 — обычные кресла рейса.
+            e.se = 1;   // кресел нет в истории - оценка по нынешнему ВС
+            // ёмкость по проданному знает итог вылета, модели как признак её давать нельзя
+            // s0 - обычные кресла рейса
             if (ty.s > 0 && ty.s < sold) e.s0 = ty.s;
             ['REFUNDED', 'GROUP', 'CORP'].forEach((n, j) => { const v = parseInt(r[col(n)], 10); if (v > 0) e[['r', 'g', 'k'][j]] = v; });
             estimated++;
@@ -500,7 +484,7 @@ window.SalesArchive = (function () {
             ok = (await mergeAndWrite(`history/curves-${m}.json`, 'import', byMonth[m])) && ok;
             loadedMonths.delete(m);
             await readMonth(m).catch(() => null);
-            // Повторная загрузка заменяет историю и в памяти (readMonth берёт запись, только если в ней больше билетов).
+            // повторная загрузка заменяет историю и в памяти; readMonth берёт запись, если в ней больше билетов
             Object.entries(byMonth[m]).forEach(([k, e]) => { const prev = curves[k]; if (!prev || prev.h) { const n = normalizeCurve(keepSeats(e, prev)); if (n) curves[k] = n; } });
         }
         rev++;
@@ -510,7 +494,6 @@ window.SalesArchive = (function () {
         return res;
     }
 
-    // ---------- история по билетам (SalesTickets.csv) ----------
     async function importTickets(text, file) {
         if (typeof SharedStorage === 'undefined') return { ok: false, error: 'нет общей папки' };
         const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/);
@@ -548,9 +531,9 @@ window.SalesArchive = (function () {
             const list = deps[key];
             const out = { p: {}, ro: {}, gh: {} };
             T_HORIZONS.forEach(H => {
-                // На руках в день H: куплены не позже (dtd ≥ H) и не сданы к этому дню (возврат позже или не было).
+                // на руках в день H: куплены не позже dtd >= H и не сданы к этому дню (возврат позже или не было)
                 const held = list.filter(t => t.dtd >= H && !(t.rd != null && t.rd >= H));
-                const ro = held.filter(t => t.rd != null).length;   // сданы позже — в истории (за вычетом возвратов) их нет
+                const ro = held.filter(t => t.rd != null).length;   // сданные позже - в истории их нет (за вычетом возвратов)
                 if (ro) out.ro[H] = ro;
                 const g = held.filter(t => t.grp).length;
                 if (g) out.gh[H] = g;
@@ -567,7 +550,7 @@ window.SalesArchive = (function () {
         if (!flights) return { ok: false, error: 'в файле нет улетевших вылетов' };
         let ok = true;
         for (const m of Object.keys(byMonth).sort()) {
-            // Месяц сливается по вылетам: ранее загруженные вылеты месяца, которых нет в этом файле, остаются.
+            // месяц сливаем по вылетам: прежние вылеты, которых нет в файле, остаются
             const wr = await SharedStorage.updateJsonFile(`history/tickets-${m}.json`, (cur) => ({
                 version: 1, updatedAt: new Date().toISOString(), flights: Object.assign({}, cur && cur.flights, byMonth[m])
             })).catch(() => ({ ok: false }));
@@ -603,7 +586,7 @@ window.SalesArchive = (function () {
 
     function ticketsFor(date, code) { return tickets[`${date}|${code}`] || null; }
 
-    // Обычные кресла рейса (по нынешним данным) — для вылетов истории, где ёмкость подобрана по проданному.
+    // обычные кресла рейса (по нынешним данным) - для вылетов истории с ёмкостью по проданному
     function typicalSeats(code) { return typicalOf(code).s || 0; }
 
     return {

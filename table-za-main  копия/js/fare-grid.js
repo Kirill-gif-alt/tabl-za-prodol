@@ -1,10 +1,6 @@
-// Сетка тарифов направления («Отчёты» → «Справочник» → «Сетка тарифов»).
-// Код тарифа: первая буква — класс бронирования, дальше — семейство и условия: VLHOW = класс V, семейство LH, OW.
-// У одного класса бывает несколько семейств с разной ценой: лайт (LH) дешевле стандарта (ST), оптимум (OP) — дороже.
-// Цена класса для ценового советника — самое дешёвое из «лайт / стандарт» (что есть), оптимум — надбавка к классу.
-// Главный источник — официальная сетка тарифов (Excel «Тарифы»: маршрут, КБТ, УПТ, тариф ВЗР по периодам действия),
-// её загружают в «Справочник» → «Сетка тарифов». Нет официальной сетки по направлению — сетка из продаж.
-// Всё хранится в shared/fare-grid.json — для всех.
+// сетка тарифов направления, shared/fare-grid.json; главный источник - официальная сетка (Excel), нет ее - сетка из продаж
+// код тарифа: первый символ - класс, дальше семейство и условия (VLHOW = V, LH, OW)
+// у класса несколько семейств: лайт (LH) дешевле стандарта (ST), оптимум (OP) дороже; для советника цена класса - самое дешевое из лайт/стандарт
 window.FareGrid = (function () {
     const FILE = 'fare-grid.json';
     const FAMILY = { lite: 'Лайт', standard: 'Стандарт', optimum: 'Оптимум', other: 'Другое' };
@@ -28,7 +24,7 @@ window.FareGrid = (function () {
         return String(typeof getFlightDirection === 'function' ? getFlightDirection(base(code)) || '' : '').replace(/\s+/g, ' ').trim() || base(code);
     }
 
-    // Код без детских/служебных хвостов: «KSTOW/CN20» → «KSTOW» (коды …IDB отсеяны раньше, в isAdult).
+    // код без детских и служебных хвостов: KSTOW/CN20 -> KSTOW; коды, оканчивающиеся на IDB, отсеяны раньше, в isAdult
     function cleanCode(b) {
         return String(b || '').toUpperCase().split('/')[0].trim();
     }
@@ -37,13 +33,13 @@ window.FareGrid = (function () {
         return AUTO_FAMILY[code.slice(1, 3)] || 'other';
     }
 
-    // Взрослый платный билет: цена > 0, не детский/младенец/льготный/служебный тариф. Единая логика для всех модулей.
+    // взрослый платный билет: цена > 0, не детский, младенческий, льготный или служебный; общая логика для всех модулей
     function isAdult(s) {
         const b = String(s.basicFareStr || '').toUpperCase();
         return (s.adjustedFare || s.fare || 0) > 0 && !/\/(CN|IN|ID|WO|DA)\d*/.test(b) && !/IDB$/.test(b.split('/')[0]);
     }
 
-    // Класс бронирования билета: первая буква кода тарифа («KSTOW/CN20» → «K»), без хвоста; пусто — если кода нет.
+    // класс бронирования: первая буква кода тарифа (KSTOW/CN20 -> K); пусто, если кода нет
     function classOf(s) {
         return String(s && s.basicFareStr || '').trim().charAt(0).toUpperCase();
     }
@@ -52,8 +48,7 @@ window.FareGrid = (function () {
         return [typeof dataEpoch === 'number' ? dataEpoch : 0, rev].join('|');
     }
 
-    // Все направления с продажами: { dir: Set(рейсов) }.
-    // Считается один раз на данные: раньше весь список рейсов перебирался заново для каждого направления.
+    // все направления с продажами: { dir: Set(рейсов) }; считаем один раз на данные
     function directions() {
         if (memo.sig !== sig()) memo = { sig: sig(), grids: new Map() };
         if (memo.dirs) return memo.dirs;
@@ -107,8 +102,6 @@ window.FareGrid = (function () {
         return rows;
     }
 
-    // ---------- официальная сетка тарифов (Excel) ----------
-
     function norm(t) { return String(t || '').toLowerCase().replace(/ё/g, 'е').replace(/[\s.]+/g, '').replace(/[—–]/g, '-'); }
 
     function parseDate(t) {
@@ -118,7 +111,7 @@ window.FareGrid = (function () {
         return `${m[1].padStart(2, '0')}.${m[2].padStart(2, '0')}.${y}`;
     }
 
-    // Период действия из шапки таблицы: «Период действия с 02.09.2026 по 20.12.2026» / «Дата начала действия с 07.07.2026».
+    // период действия из шапки таблицы: "Период действия с 02.09.2026 по 20.12.2026" или "Дата начала действия с 07.07.2026"
     function parsePeriod(t) {
         const s0 = String(t || '').replace(/\s+/g, ' ');
         const m = s0.match(/действия\s*с\s*([\d.]+)(?:\s*по\s*([\d.]+))?/i);
@@ -133,7 +126,7 @@ window.FareGrid = (function () {
         return t && isFinite(n) && n > 0 ? Math.round(n) : null;
     }
 
-    // Направления сайта («Красноярск — Абакан»), которые упомянуты в названии маршрута таблицы («Красноярск-Абакан, Абакан-Красноярск»).
+    // направления сайта, упомянутые в названии маршрута таблицы: "Красноярск-Абакан, Абакан-Красноярск"
     function matchDirections(routeText) {
         const t = norm(routeText);
         const out = new Set();
@@ -145,8 +138,8 @@ window.FareGrid = (function () {
         return [...out];
     }
 
-    // Разбор файла: листы с таблицами «Маршрут | КБТ | УПТ | Тариф ВЗР», несколько таблиц рядом — разные периоды действия.
-    // Интерлайн, «по северной прописке», чартеры, льготы, ТНДМР/ЭМР и международные — не сетка RMS, пропускаются.
+    // разбор: листы "Маршрут | КБТ | УПТ | Тариф ВЗР", таблицы рядом - разные периоды действия
+    // интерлайн, по северной прописке, чартеры, льготы, ТНДМР/ЭМР и международные пропускаем, это не сетка RMS
     const SKIP_SHEET = /интерлайн|чартер|льгот|тндмр|эмр|монгол/i;
     const SKIP_TABLE = /интерлайн|прописк/i;
     function parseWorkbook(lib, wb) {
@@ -160,7 +153,7 @@ window.FareGrid = (function () {
                 const kbt = [];
                 (rows[hr] || []).forEach((v, c) => { if (String(v).trim() === 'КБТ') kbt.push(c); });
                 if (!kbt.length) continue;
-                // Строка периодов — ближайшая выше; таблица — от своей ячейки периода до следующей.
+                // Строка периодов - ближайшая выше; таблица - от своей ячейки периода до следующей.
                 let pr = -1;
                 for (let k = hr - 1; k >= Math.max(0, hr - 3); k--) if ((rows[k] || []).some(v => /период|дата начала/i.test(String(v)))) { pr = k; break; }
                 const pcs = pr >= 0 ? (rows[pr] || []).map((v, c) => (/период|дата начала/i.test(String(v)) ? c : -1)).filter(c => c >= 0) : [kbt[0]];
@@ -168,7 +161,7 @@ window.FareGrid = (function () {
                     const next = pcs[ti + 1] != null ? pcs[ti + 1] : Infinity;
                     const cols = kbt.filter(c => c >= pc && c < next);
                     if (!cols.length) return;
-                    // Заголовок таблицы — выше строки периодов, в её колонках («Тарифы на Краевых рейсах по Северной прописке»).
+                    // заголовок таблицы выше строки периодов, в ее колонках (пример: "Тарифы на Краевых рейсах по Северной прописке")
                     let title = '';
                     for (let k = (pr >= 0 ? pr : hr) - 1; k >= 0 && !title; k--) {
                         for (let c = Math.max(0, pc - 1); c < Math.min(next, pc + 3); c++) { const v = String(cell(k, c)); if (/тариф/i.test(v) && !/ВЗР/.test(v)) { title = v; break; } }
@@ -187,7 +180,7 @@ window.FareGrid = (function () {
                             const code = String(cell(r, c)).trim().toUpperCase();
                             if (!/^[A-Z][A-Z0-9]{3,8}$/.test(code)) return;
                             const fare = fareNum(cell(r, c + 2));
-                            if (fare == null) return;   // «-» — не продаётся
+                            if (fare == null) return;   // прочерк - не продается
                             (byRoute[route] || (byRoute[route] = [])).push({ code, fare });
                         });
                     }
@@ -215,7 +208,7 @@ window.FareGrid = (function () {
         return pick || null;
     }
 
-    // Лестница по официальной сетке: класс → лайт, иначе стандарт, иначе самый дешёвый код; оптимум отдельно.
+    // лестница по официальной сетке: лайт, иначе стандарт, иначе самый дешевый код; оптимум отдельно
     function officialLadder(dir, date) {
         const per = officialFor(dir, date);
         if (!per) return null;
@@ -238,8 +231,7 @@ window.FareGrid = (function () {
         return { ladder, period: per };
     }
 
-    // Лестница классов для советника: официальная сетка на дату вылета, иначе — по продажам
-    // (класс → лайт, иначе стандарт, иначе самый дешёвый код класса).
+    // лестница для советника: официальная сетка на дату вылета, иначе по продажам
     function ladderFor(code, date) {
         const off = officialLadder(direction(code), date);
         if (off && off.ladder.length >= 2) return off.ladder;
@@ -262,7 +254,7 @@ window.FareGrid = (function () {
         if (r.ok && r.data && typeof r.data === 'object') { store = { version: 1, routes: r.data.routes || {}, official: r.data.official || null }; rev++; }
     }
 
-    // Запись через общий помощник: файл перечитывается, меняется только своё, правки других не теряются.
+    // пишем через общий помощник: файл перечитываем, меняем только свое, чужие правки не теряются
     async function saveShared(change) {
         if (typeof SharedStorage === 'undefined' || !SharedStorage.updateJsonFile) return false;
         const by = typeof ProfileAuth !== 'undefined' ? (ProfileAuth.getCurrentProfile() || {}).name || '' : '';
@@ -302,7 +294,6 @@ window.FareGrid = (function () {
         if (rerender) rerender();
     }
 
-    // ---------- раздел справочника ----------
     let current = '';
 
     function sectionHtml() {
@@ -424,8 +415,8 @@ window.FareGrid = (function () {
             const fam = document.querySelector(`[data-fg-family="${CSS.escape(code)}"]`);
             const off = document.querySelector(`[data-fg-off="${CSS.escape(code)}"]`);
             const e = { fare: Math.max(0, Math.round(Number(inp.value) || 0)), family: fam ? fam.value : familyAuto(code), off: !!(off && off.checked) };
-            // В справочник — только правки: строка «как в продажах» остаётся по продажам (и под порогом числа билетов),
-            // иначе одно «Сохранить» превратило бы редкие коды (1–2 билета) в ступени лестницы советника.
+            // в справочник пишем только правки: строка "как в продажах" остается по продажам (и под порогом по числу билетов)
+            // иначе одно "Сохранить" превратило бы редкие коды (1-2 билета) в ступени лестницы советника
             const r = byCode.get(code);
             const changed = !r || e.off || e.family !== familyAuto(code) || (r.autoFare == null ? e.fare > 0 : e.fare !== r.autoFare);
             if (changed) entries[code] = e;

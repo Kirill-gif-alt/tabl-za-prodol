@@ -1,4 +1,4 @@
-// Общие файлы на диске (папка shared/): профили и снимок данных для всех ПК
+// общие файлы в shared/: профили и снимок для всех ПК
 window.SharedStorage = (function () {
     const IDB_NAME = 'krasavia_shared_fs';
     const IDB_STORE = 'handles';
@@ -11,17 +11,17 @@ window.SharedStorage = (function () {
         'profiles.json', 'fare-grid.json', 'snapshot.json', 'activity.json', 'flight-comments.json',
         'subsidy-overrides.json', 'pkz-nav.json', 'sales-management.json',
         'creative-layouts.json', 'subsidy-fares.json', 'subsidy-ref.json', 'calendar.json', 'flights.json',
-        'export-kk.json', 'export-mr.json', // вкладки выгрузки «Загрузка - КК / Межрегионалка» (js/excel-export.js)
-        'lower-requests.json', // «Запрос на понижение» (js/lower-request.js)
-        'lowreq-report.json',  // «Отчёты → Запросы на снижение»: запросы, значения на момент запроса, факт по срокам (js/lowreq-report.js)
+        'export-kk.json', 'export-mr.json', // вкладки выгрузки "Загрузка - КК / Межрегионалка" (js/excel-export.js)
+        'lower-requests.json', // "Запрос на понижение" (js/lower-request.js)
+        'lowreq-report.json',  // "Отчёты -> Запросы на снижение": запросы, значения на момент запроса, факт по срокам (js/lowreq-report.js)
         'params.json',        // параметры расчётов администратора (js/params.js)
-        'signals-days.json',  // сигналы по дням для метки «новое» (js/signal-news.js): последние 7 дней, пишет тот, у кого share_data
-        'forecast-now.json',  // прогноз к вылету по всем рейсам — один для всех (пишет тот, у кого модель обучена)
-        'heli-points.json'    // справочник пунктов вертолётов: код → название (js/heli-data.js), правят админ и share_data
+        'signals-days.json',  // сигналы по дням для метки "новое" (js/signal-news.js), пишет тот, у кого share_data
+        'forecast-now.json',  // прогноз по всем рейсам, один на всех; пишет тот, у кого модель обучена
+        'heli-points.json'    // справочник пунктов вертолётов: код -> название (js/heli-data.js), правят админ и share_data
     ]);
 
-    // Резервные копии перед перезаписью — та же политика, что в scripts/local-server.py.
-    // every — не чаще раза в столько секунд, keep — сколько последних копий хранить.
+    // копии перед перезаписью, политика как в scripts/local-server.py
+    // every - не чаще раза в столько секунд, keep - сколько последних копий хранить
     const HISTORY_DIR = '_history';
     const HISTORY_POLICY = {
         'snapshot.json': { every: 6 * 3600, keep: 4 },
@@ -43,21 +43,21 @@ window.SharedStorage = (function () {
     };
     const lastBackupAt = {};
     let serverHistory = false;
-    let serverCas = false;   // сервер умеет проверять отпечаток файла при записи (X-Krasavia-If-Match)
+    let serverCas = false;   // сервер сверяет отпечаток при записи (X-Krasavia-If-Match)
 
     let rootHandle = null;
     let linkStatus = 'unknown'; // unknown | linked | server | fetch | none
-    // Запись через локальный сервер (Start-Krasavia.cmd): не зависит от разрешения браузера на папку,
-    // которое Chrome сбрасывает после перезапуска. null — ещё не проверяли.
+    // запись через локальный сервер (Start-Krasavia.cmd): не зависит от доступа к папке, его Chrome сбрасывает
+    // null - ещё не проверяли
     let serverWrite = null;
 
     let capsFailedAt = 0;
-    let capsReadOnlyAt = 0;   // сервер ответил, но общая папка закрыта на запись: проверяем снова, когда доступ вернут
+    let capsReadOnlyAt = 0;   // сервер ответил, но папка закрыта на запись: проверим позже
     async function detectServerWrite() {
         if (serverWrite === false && capsReadOnlyAt && Date.now() - capsReadOnlyAt > 15000) serverWrite = null;
         if (serverWrite !== null) return serverWrite;
         if (typeof location === 'undefined' || location.protocol !== 'http:') { serverWrite = false; return serverWrite; }
-        // Разовый сбой сети не отключает запись через сервер на всю сессию: повторяем не чаще раза в 4 с.
+        // разовый сбой сети не отключает сервер на всю сессию: повтор не чаще раза в 4 с
         if (capsFailedAt && Date.now() - capsFailedAt < 4000) return false;
         serverWrite = false;
         try {
@@ -80,7 +80,7 @@ window.SharedStorage = (function () {
         try {
             const headers = { 'Content-Type': 'application/json' };
             if (opts && opts.forceBackup) headers['X-Krasavia-Backup'] = 'force';
-            // Запись «только если файл не менялся с прочтения» (сервер сверяет отпечаток под замком записи).
+            // запись только если файл не менялся с чтения; сервер сверяет отпечаток под замком записи
             if (opts && opts.ifMatch) headers['X-Krasavia-If-Match'] = opts.ifMatch;
             const res = await fetch(`./${SHARED_DIR}/${filename}`, {
                 method: 'PUT',
@@ -148,7 +148,7 @@ window.SharedStorage = (function () {
                 linkStatus = 'linked';
                 return handle;
             }
-            // Без клика пользователя Chrome не даёт вернуть доступ — не пытаемся, чтобы не было ошибки.
+            // без клика Chrome не вернёт доступ к папке, не пробуем, чтобы не было ошибки
             const activated = !navigator.userActivation || navigator.userActivation.isActive;
             if (perm === 'prompt' && activated) {
                 const reqPerm = await handle.requestPermission({ mode: 'readwrite' });
@@ -187,7 +187,7 @@ window.SharedStorage = (function () {
         }
     }
 
-    // Исходный текст прочитанного JSON — для снимка: его копию в браузер дешевле хранить строкой.
+    // исходный текст JSON для снимка; строкой в браузере дешевле
     const rawTextOf = new WeakMap();
 
     function parseJsonText(text) {
@@ -197,14 +197,14 @@ window.SharedStorage = (function () {
         return data;
     }
 
-    // Архив продаж: shared/history/curves-ГГГГ-ММ.json (см. sales-archive.js).
-    const HISTORY_FILE_RE = /^history\/(curves-\d{4}-\d{2}|tickets-\d{4}-\d{2}|daylog-\d{4}-\d{2}|import)\.json$/;   // import.json — какой файл истории загружен последним
-    // Отметки «Управления продажами»: у каждого автора свой файл за месяц — никто не перезаписывает чужое.
+    // архив продаж: shared/history/curves-ГГГГ-ММ.json (sales-archive.js)
+    const HISTORY_FILE_RE = /^history\/(curves-\d{4}-\d{2}|tickets-\d{4}-\d{2}|daylog-\d{4}-\d{2}|import)\.json$/;   // import.json - какой файл истории загружен последним
+    // отметки "Управления продажами": файл на автора за месяц, чужое не трогаем
     const MARKS_FILE_RE = /^sales-marks\/\d{4}-\d{2}\/[a-z0-9_]{1,40}\.json$/;
     const MARKS_DIR_RE = /^sales-marks\/\d{4}-\d{2}$/;
-    // Журнал прогнозов загрузки: shared/forecast-log/ГГГГ-ММ.json (см. forecast-lab.js).
+    // журнал прогнозов загрузки: shared/forecast-log/ГГГГ-ММ.json (forecast-lab.js)
     const FCLOG_FILE_RE = /^forecast-log\/\d{4}-\d{2}\.json$/;
-    // Результаты решений в деньгах: shared/decision-money/ГГГГ-ММ.json (см. js/decision-money.js).
+    // решения в деньгах: shared/decision-money/ГГГГ-ММ.json (js/decision-money.js)
     const DMONEY_FILE_RE = /^decision-money\/\d{4}-\d{2}\.json$/;
 
     function isAllowedSharedFile(filename) {
@@ -212,7 +212,7 @@ window.SharedStorage = (function () {
         return ALLOWED_FILES.has(name) || HISTORY_FILE_RE.test(name) || MARKS_FILE_RE.test(name) || FCLOG_FILE_RE.test(name) || DMONEY_FILE_RE.test(name);
     }
 
-    // Папка и имя файла внутри shared/ (для архива — подпапка history/).
+    // папка и имя файла внутри shared/, для архива подпапка history/
     async function resolveSharedTarget(sharedDir, filename, create) {
         const parts = filename.split('/');
         const name = parts.pop();
@@ -221,9 +221,8 @@ window.SharedStorage = (function () {
         return { dir, name };
     }
 
-    // Чтение с различием «файла нет» и «не удалось прочитать»: писать поверх непрочитанного нельзя.
-    // { ok: true, data } — прочитан; { ok: true, data: null } — файла нет; { ok: false } — ошибка/нет доступа.
-    // withSha — вернуть отпечаток прочитанных байтов (sha): сервер по нему проверяет, что файл не менялся до записи.
+    // { ok: true, data } - прочитан, data: null - файла нет, { ok: false } - не прочитали, поверх не пишем
+    // withSha - отдать sha прочитанных байтов, по нему сервер проверяет файл перед записью
     async function readJsonFileStrict(filename, withSha) {
         if (!isAllowedSharedFile(filename)) return { ok: false };
         if (await detectServerWrite()) {
@@ -271,7 +270,7 @@ window.SharedStorage = (function () {
         }
     }
 
-    // Список .json в папке отметок (sales-marks/ГГГГ-ММ). null — нет доступа.
+    // Список .json в папке отметок (sales-marks/ГГГГ-ММ). null - нет доступа.
     async function listSharedDir(dir) {
         if (!MARKS_DIR_RE.test(String(dir || ''))) return null;
         if (await detectServerWrite()) {
@@ -303,7 +302,7 @@ window.SharedStorage = (function () {
 
     async function readViaFetch(filename) {
         if (!isAllowedSharedFile(filename)) return null;
-        // file:// — CORS блокирует fetch соседних файлов; не вызываем, чтобы не засорять консоль
+        // file:// - CORS режет fetch соседних файлов, не вызываем, чтобы не сорить в консоли
         if (typeof location !== 'undefined' && location.protocol === 'file:') return null;
         try {
             const res = await fetch(`./${SHARED_DIR}/${filename}`, { cache: 'no-store' });
@@ -346,8 +345,7 @@ window.SharedStorage = (function () {
     }
 
     async function readSharedJson(filename, timeField) {
-        // Сеть и подключённая папка читаются одновременно, а не по очереди. При запуске через сервер папку
-        // не трогаем: файл тот же, а запрос доступа к папке при входе только мешал (и большие файлы читались дважды).
+        // сеть и папка читаются параллельно; через сервер папку не трогаем, файл тот же, запрос доступа мешал
         const server = await detectServerWrite();
         const [fromFetch, fromHandle] = await Promise.all([readViaFetch(filename), server ? Promise.resolve(null) : readViaHandle(filename)]);
         let result = pickNewer(fromFetch, fromHandle, timeField);
@@ -364,7 +362,7 @@ window.SharedStorage = (function () {
         return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
     }
 
-    // Версии файла в shared/_history/<имя>/ — от новых к старым.
+    // Версии файла в shared/_history/<имя>/ - от новых к старым.
     async function listHistoryDir(histDir, base, withTimes) {
         const items = [];
         for await (const [name, entry] of histDir.entries()) {
@@ -382,7 +380,7 @@ window.SharedStorage = (function () {
         return items.sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
     }
 
-    // Политика копий: именные файлы — из HISTORY_POLICY, месячные журналы — по шаблону (как _policy_for в local-server.py).
+    // именные файлы из HISTORY_POLICY, месячные журналы по шаблону, как _policy_for в local-server.py
     function backupPolicyFor(filename) {
         if (HISTORY_POLICY[filename]) return HISTORY_POLICY[filename];
         if (DMONEY_FILE_RE.test(filename)) return { every: 6 * 3600, keep: 10 };
@@ -390,7 +388,7 @@ window.SharedStorage = (function () {
         return null;
     }
 
-    // Копия текущей версии перед перезаписью (запись без сервера). Ошибка копии запись не останавливает.
+    // копия текущей версии перед записью (без сервера); ошибка копии запись не останавливает
     async function backupViaHandle(sharedDir, filename, force) {
         const pol = backupPolicyFor(filename);
         if (!pol) return;
@@ -401,7 +399,7 @@ window.SharedStorage = (function () {
             try {
                 current = await (await sharedDir.getFileHandle(filename)).getFile();
             } catch {
-                return; // файла ещё нет — копировать нечего
+                return; // файла ещё нет - копировать нечего
             }
             const base = filename.slice(0, -5).replace(/\//g, '_');   // как в local-server.py: одна папка копий на файл
             const root = await sharedDir.getDirectoryHandle(HISTORY_DIR, { create: true });
@@ -485,13 +483,13 @@ window.SharedStorage = (function () {
         }
     }
 
-    // Восстановить версию: текущая версия перед этим тоже уходит в копии.
+    // восстановить версию; текущая тоже уходит в копии
     async function restoreHistory(filename, id) {
         const data = await readHistory(filename, id);
         if (!data || typeof data !== 'object') return { ok: false, error: 'Не удалось прочитать копию' };
-        // Метка «восстановлено из копии»: общие правки (комментарии, субсидия) хранятся ещё и в браузере каждого ПК
-        // и при загрузке сливаются по времени — без метки более новые ошибочные записи из кэша вернули бы всё назад.
-        // Записи старше метки в кэше игнорируются (см. flight-comments.js, shared-overrides.js).
+        // метка restoredAt: общие правки (комментарии, субсидия) есть и в кэше браузера, сливаются по времени
+        // без метки ошибочные, но более новые записи из кэша вернули бы всё назад
+        // записи старше метки в кэше игнорируем (flight-comments.js, shared-overrides.js)
         if (!Array.isArray(data)) data.restoredAt = new Date().toISOString();
         lastBackupAt[filename] = 0;
         const ok = await writeViaHandle(filename, data, { forceBackup: true });
@@ -503,11 +501,11 @@ window.SharedStorage = (function () {
 
     async function writeViaHandle(filename, data, opts) {
         if (!isAllowedSharedFile(filename)) return false;
-        // Сначала сервер — он всегда может записать; папка браузера — запасной путь.
+        // сначала сервер, папка браузера - запасной путь
         if (await writeViaServer(filename, data, opts)) return true;
-        if (opts && opts.conflict) return false;   // файл изменился после прочтения — через папку поверх не пишем
-        // Запись с проверкой («файл не менялся с прочтения») через папку проверить нечем: сервер ответил ошибкой
-        // (папка закрыта, файл занят другим ПК) — не пишем мимо проверки, вызывающий повторит позже.
+        if (opts && opts.conflict) return false;   // файл менялся после чтения - через папку поверх не пишем
+        // с проверкой через папку не сделать: сервер ответил ошибкой (папка закрыта, файл занят)
+        // мимо проверки не пишем, вызывающий повторит позже
         if (opts && opts.ifMatch) return false;
         const handle = rootHandle || await restoreRootHandle();
         if (!handle) return false;
@@ -540,7 +538,7 @@ window.SharedStorage = (function () {
     }
 
     async function saveProfiles(profiles, updatedAt, silent) {
-        // Профиль без пароля в общий файл не пишем: это локальная копия без паролей — она заблокировала бы всем вход.
+        // профиль без пароля не пишем в общий файл: локальная копия без паролей заблокирует всем вход
         if (!Array.isArray(profiles) || !profiles.length || profiles.some(p => !p || !p.hash || !p.salt)) {
             console.warn('saveProfiles: профили без паролей — запись в общий файл отменена');
             return false;
@@ -593,7 +591,7 @@ window.SharedStorage = (function () {
         };
     }
 
-    // Общий файл снимка → объект снимка, как его ждёт SessionStore.applySnapshot.
+    // общий файл снимка в объект для SessionStore.applySnapshot
     function snapshotFromWrapper(wrapper) {
         if (!wrapper?.data || !wrapper.savedAt) return null;
         const snap = {
@@ -615,8 +613,8 @@ window.SharedStorage = (function () {
         return snap;
     }
 
-    // Лёгкая метка общего снимка без скачивания: время изменения и размер файла (сервер — HEAD, папка — свойства файла).
-    // null — узнать не удалось; 'absent' — файла нет.
+    // метка снимка без скачивания: время и размер файла (сервер - HEAD, папка - свойства файла)
+    // null - не узнали, 'absent' - файла нет
     async function snapshotStamp() {
         try {
             if (await detectServerWrite()) {
@@ -644,7 +642,7 @@ window.SharedStorage = (function () {
     async function saveSnapshot(announce) {
         const payload = buildSnapshotPayload();
         if (!payload) return false;
-        // Более свежий общий снимок (по времени файла продаж) старым не перекрываем.
+        // более свежий снимок (по времени продаж) старым не перекрываем
         const mine = payload.data.lastSalesUpdate || '';
         if (mine) {
             const cur = await readJsonFileStrict(SNAPSHOT_FILE).catch(() => ({ ok: false }));
@@ -663,7 +661,7 @@ window.SharedStorage = (function () {
         return ok;
     }
 
-    // Можно ли записать общий файл без вопросов к пользователю (сервер или уже разрешённая папка).
+    // можно писать без вопросов к пользователю: есть сервер или папка уже разрешена
     async function canWrite() {
         if (await detectServerWrite()) return true;
         if (rootHandle) return true;
@@ -710,14 +708,14 @@ window.SharedStorage = (function () {
     }
 
     async function saveActivity(events) {
-        // Без подключённой папки записать нельзя — не качаем файл журнала зря.
+        // без подключённой папки писать нельзя, журнал зря не качаем
         if (!(rootHandle || await detectServerWrite() || await restoreRootHandle())) return false;
-        // Не удалось прочитать общий журнал — не пишем, иначе затрём чужие события.
-        // Запись «только если файл не менялся с прочтения»: события другого ПК, попавшие в файл между нашим чтением
-        // и записью, не теряются (при расхождении журнал перечитывается и сливается заново).
+        // журнал не прочитали - не пишем, иначе затрём чужие события
+        // запись только если файл не менялся с чтения: события другого ПК между чтением и записью не теряются
+        // при расхождении журнал перечитываем и сливаем заново
         const res = await updateJsonFile(ACTIVITY_FILE, (cur) => {
             const remote = Array.isArray(cur?.events) ? cur.events : [];
-            // Своих новых событий нет — файл не переписываем (и не мешаем другим ПК).
+            // новых своих событий нет - файл не переписываем
             const known = new Set(remote.map(e => e && e.id));
             if (!(events || []).some(e => e && e.id && !known.has(e.id))) return false;
             return {
@@ -803,11 +801,9 @@ window.SharedStorage = (function () {
         return writeViaHandle(filename, data);
     }
 
-    // Правка общего справочника без потери чужих правок: перечитать файл → применить своё изменение
-    // (mutate получает свежее содержимое и возвращает новое; false — ничего не писать) → записать.
-    // Через сервер запись идёт «только если файл не менялся с прочтения»: при расхождении всё повторяется.
-    // Без этого (запись через папку) файл перечитывается перед записью и проверяется после.
-    // Результат: { ok, data } | { ok:false, readFailed | writeFailed | aborted }.
+    // правка общего справочника без потери чужих: перечитать, применить mutate, записать
+    // mutate вернул false - не пишем; через сервер при расхождении всё повторяем, через папку перечитываем и проверяем
+    // результат: { ok, data } или { ok:false, readFailed | writeFailed | aborted }
     async function updateJsonFile(filename, mutate) {
         const sig = (d) => { try { return JSON.stringify(d === undefined ? null : d); } catch { return ''; } };
         for (let attempt = 0; attempt < 8; attempt++) {
@@ -820,12 +816,12 @@ window.SharedStorage = (function () {
             const opts = r.sha ? { ifMatch: r.sha } : {};
             if (!r.sha && !last) {
                 const r2 = await readJsonFileStrict(filename);
-                if (r2.ok && sig(r2.data) !== before) continue;   // файл изменили, пока считали, — берём свежий
+                if (r2.ok && sig(r2.data) !== before) continue;   // файл менялся, пока считали - берём свежий
             }
             if (!(await writeViaHandle(filename, next, opts))) {
                 if (opts.conflict) {
-                    // Кто-то записал раньше — применяем правку к его файлу. Короткая случайная пауза, чтобы двое
-                    // не сталкивались снова и снова в один и тот же момент.
+                    // кто-то записал раньше - применяем правку к его файлу
+                    // случайная пауза, чтобы двое не сталкивались снова и снова
                     await new Promise(res => setTimeout(res, 15 + Math.random() * 40 * (attempt + 1)));
                     continue;
                 }
@@ -834,9 +830,8 @@ window.SharedStorage = (function () {
             if (r.sha || last) return { ok: true, data: next };
             const r3 = await readJsonFileStrict(filename);
             if (!r3.ok || sig(r3.data) === sig(next)) return { ok: true, data: next };
-            // Другой человек записал свой вариант поверх нашего — применяем правку к его файлу.
         }
-        // conflict: файл всё время менялся другими — запись не прошла (чужое не затёрто), можно повторить.
+        // conflict - файл всё время менялся, чужое не затёрто, можно повторить
         return { ok: false, writeFailed: true, conflict: true };
     }
 

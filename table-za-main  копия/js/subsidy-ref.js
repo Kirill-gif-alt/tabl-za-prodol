@@ -1,10 +1,6 @@
-// Справочник субсидий внутри приложения (вкладка «Отчёты» → «Справочник»): вместо файлов
-// «Период субсидии.xlsx» и «Расходы.xlsx». Хранится в shared/subsidy-ref.json (видят все ПК).
-//  periods — периоды КОММЕРЦИИ по номеру рейса (как в файле: в эти даты субсидии нет);
-//            пустой список — коммерции нет, рейс субсидируется весь год.
-//  amounts — по маршруту и типу ВС: субсидия и себестоимость (тыс. ₽ за пару туда-обратно, как в файле).
-// Запись справочника важнее файла; если по рейсу/маршруту записи нет — берётся загруженный файл.
-// Каждая запись хранит время правки: при записи общий файл перечитывается и сливается по записям.
+// справочник субсидий (Отчёты - Справочник) вместо файлов "Период субсидии.xlsx" и "Расходы.xlsx"
+// periods - коммерция по рейсу (пустой список - её нет); amounts - субсидия и себестоимость, тыс. руб. за пару
+// запись важнее файла; перед записью файл перечитывается и сливается по записям
 window.SubsidyRef = (function () {
     const FILE = 'subsidy-ref.json';
     const LOCAL_KEY = 'krasavia_subsidy_ref_v1';
@@ -35,7 +31,7 @@ window.SubsidyRef = (function () {
         return typeof RouteCosts !== 'undefined' && RouteCosts.acKey ? RouteCosts.acKey(name) : cityKey(name);
     }
 
-    // Маршрут без направления: Красноярск—Абакан и Абакан—Красноярск — одна запись.
+    // маршрут без направления: Красноярск-Абакан и Абакан-Красноярск - одна запись
     function amountKey(from, to, ac) {
         const a = cityKey(from);
         const b = cityKey(to);
@@ -72,10 +68,10 @@ window.SubsidyRef = (function () {
         const to = cleanText(e.to, 60);
         const ac = cleanText(e.ac, 30);
         if (!amountKey(from, to, ac)) return null;
-        // Себестоимость одна (раньше было две — «при субсидии» и «коммерческая»: берём любую заданную).
+        // себестоимость одна; берём любую заданную (cost, costCom, costSub)
         const cost = num(e.cost) != null ? num(e.cost) : (num(e.costCom) != null ? num(e.costCom) : num(e.costSub));
         const out = { from, to, ac, subsidy: num(e.subsidy), cost, at, by: cleanText(e.by, 60) };
-        // Файл себестоимости и субсидий по месяцам: до трёх месяцев, в каждом себестоимость и субсидия (тыс. ₽ за пару).
+        // по месяцам: до трёх месяцев, в каждом себестоимость и субсидия (тыс. ₽ за пару)
         if (Array.isArray(e.months) && e.byMonth && typeof e.byMonth === 'object') {
             const months = e.months.map(m => parseInt(m, 10)).filter(m => m >= 1 && m <= 12).slice(-3);
             const byMonth = {};
@@ -91,13 +87,13 @@ window.SubsidyRef = (function () {
         return out;
     }
 
-    // Направление «в одну сторону»: «Красноярск — Абакан» ≠ «Абакан — Красноярск».
+    // направление в одну сторону: "Красноярск - Абакан" не равно "Абакан - Красноярск"
     function dirKey(label) {
         const parts = String(label || '').split(/\s*[—–→]\s*|\s+-\s+/).map(cityKey).filter(Boolean);
         return parts.length >= 2 ? parts.join('>') : '';
     }
 
-    // ПКЗ из NAV: правило «период + тип ВС + направление → кг», применяется ко всем подходящим вылетам.
+    // ПКЗ из NAV: правило "период + тип ВС + направление -> кг", применяется ко всем подходящим вылетам
     function normPkz(e) {
         if (!e || typeof e !== 'object') return null;
         const at = String(e.at || '');
@@ -109,7 +105,7 @@ window.SubsidyRef = (function () {
         const value = num(e.value);
         if (!from || !to || !dirKey(direction) || value == null) return null;
         const swap = typeof compareDateStr === 'function' && compareDateStr(from, to) > 0;
-        // Аэропорт Красноярска (KJA — Емельяново, KCY — Черемшанка); только для направлений с Красноярском.
+        // аэропорт Красноярска: KJA - Емельяново, KCY - Черемшанка; только для направлений с Красноярском
         const apt = krasSide(direction) ? aptCode(e.apt) : '';
         return { from: swap ? to : from, to: swap ? from : to, direction, ac, apt, value, at, by: cleanText(e.by, 60) };
     }
@@ -121,7 +117,7 @@ window.SubsidyRef = (function () {
         return '';
     }
 
-    // Красноярск в начале направления ('from'), в конце ('to') или его нет ('').
+    // Красноярск в начале ('from'), в конце ('to') или его нет ('')
     function krasSide(direction) {
         const parts = dirKey(direction).split('>');
         if (parts.length < 2) return '';
@@ -130,7 +126,7 @@ window.SubsidyRef = (function () {
         return '';
     }
 
-    // Аэропорт Красноярска, из/в который летит вылет: по маршруту строки загрузки («KCY-TGP-THX» → KCY).
+    // аэропорт Красноярска вылета: по маршруту строки загрузки ("KCY-TGP-THX" -> KCY)
     function aptOfRoute(direction, route) {
         const side = krasSide(direction);
         if (!side || !route) return '';
@@ -144,7 +140,7 @@ window.SubsidyRef = (function () {
 
     const APT_NAME = { KJA: 'Емельяново', KCY: 'Черемшанка' };
 
-    // «Красноярск — Абакан» + KCY → «Красноярск (Черемшанка) — Абакан».
+    // "Красноярск - Абакан" + KCY -> "Красноярск (Черемшанка) - Абакан"
     function dirLabel(direction, apt) {
         const a = aptCode(apt);
         if (!a || !krasSide(direction)) return direction;
@@ -174,7 +170,7 @@ window.SubsidyRef = (function () {
         return out;
     }
 
-    // Файл восстановили из резервной копии (restoredAt): записи браузера старше этого момента не возвращаем.
+    // файл восстановлен из резервной копии (restoredAt): записи браузера старше этого момента не берём
     function newerThan(st, since) {
         if (!since) return st;
         const keep = (m) => {
@@ -215,7 +211,7 @@ window.SubsidyRef = (function () {
 
     function push() {
         if (typeof RouteCosts !== 'undefined' && RouteCosts.applyRef) RouteCosts.applyRef(activePeriods(), activeAmounts());
-        // Суммы и периоды поменялись — кэши таблиц (экономика, метрики) пересчитываются.
+        // суммы и периоды поменялись: сбрасываем кэши таблиц (экономика, метрики)
         if (typeof invalidateMetricsCache === 'function') invalidateMetricsCache();
         if (typeof PerfCache !== 'undefined' && PerfCache.reset) PerfCache.reset();
         if (typeof tableHtmlCache !== 'undefined') tableHtmlCache = { sig: '', html: '' };
@@ -239,8 +235,8 @@ window.SubsidyRef = (function () {
         return cache;
     }
 
-    // Правка: перечитать общий файл, слить, применить, записать. Не прочитали — не пишем.
-    // Файл перечитывается перед записью и проверяется после: правки двух людей не затирают друг друга.
+    // правка: перечитать общий файл, слить, применить, записать; не прочитали - не пишем
+    // проверяем после записи, правки двух людей не затирают друг друга
     async function apply(mutate) {
         let next = null;
         const build = (data) => {
@@ -278,7 +274,7 @@ window.SubsidyRef = (function () {
     function canEdit() { return has('edit_subsidy_ref'); }
     function canView() { return canEdit() || has('view_subsidy_ref'); }
 
-    // Справочник ведётся по базовому номеру: доп. рейс KV-301 = KV-101.
+    // справочник по базовому номеру: доп. рейс KV-301 = KV-101
     function flightNum(code) {
         let c = String(code || '');
         if (/^\d+$/.test(c)) c = 'KV-' + c;
@@ -303,9 +299,9 @@ window.SubsidyRef = (function () {
         return apply(s => { s.pkz[key] = e; });
     }
 
-    // Загрузка из Excel: всё одной записью файла. Каждый раздел — только с правом на него.
-    //  periods: { '101': [{from,to}] } — периоды рейса заменяются целиком;
-    //  amounts: [{from,to,ac,subsidy,cost}]; pkz: [{from,to,direction,ac,value}] — совпавшее правило обновляется.
+    // загрузка из Excel одной записью файла; каждый раздел только с правом на него
+    // periods: { '101': [{from,to}] } - периоды рейса заменяются целиком
+    // amounts: [{from,to,ac,subsidy,cost}]; pkz: [{from,to,direction,ac,value}] - совпавшее правило обновляется
     async function applyImport(data) {
         const at = new Date().toISOString();
         const by = author();
@@ -347,10 +343,9 @@ window.SubsidyRef = (function () {
         return out;
     }
 
-    // ПКЗ из NAV для вылета: правило, где дата в периоде, направление рейса совпадает (в эту сторону),
-    // тип ВС совпадает (или в правиле «любой»), аэропорт Красноярска совпадает (или в правиле не указан).
-    // Аэропорт берётся из маршрута строки загрузки (route, например «KCY-TGP»); маршрута нет — подходит правило без
-    // аэропорта, иначе наименьшее из KJA/KCY. Несколько подходят — точнее по типу ВС и аэропорту, потом более позднее начало.
+    // ПКЗ для вылета: дата в периоде, направление в эту сторону, тип ВС (или "любой"), аэропорт
+    // аэропорт из маршрута строки (route, "KCY-TGP"); маршрута нет - правило без аэропорта, иначе меньшее из KJA/KCY
+    // несколько подходят - точнее по типу ВС и аэропорту, потом более позднее начало
     let pkzMemo = new Map();
     let pkzIdx = null;   // правила по направлению: { ключ направления: [{ id, r, rk }] }
     function pkzIndex() {
@@ -365,7 +360,7 @@ window.SubsidyRef = (function () {
         return pkzIdx;
     }
 
-    // Правило, которое получает вылет: { id, r } или null (см. описание pkzFor).
+    // правило вылета: { id, r } или null (см. pkzFor)
     function pkzRuleFor(date, flightCode, acRaw, route) {
         if (!date || !flightCode) return null;
         const routeText = typeof route === 'string' ? route : '';
@@ -382,7 +377,7 @@ window.SubsidyRef = (function () {
             if (rk && rk !== ak) return;
             const ra = r.apt || '';
             if (ra && apt && ra !== apt) return;
-            // Аэропорт известен: точное совпадение лучше правила без аэропорта; неизвестен: наоборот.
+            // аэропорт известен: точное совпадение лучше правила без аэропорта; неизвестен - наоборот
             const aptScore = apt ? (ra ? 2 : 1) : (ra ? 1 : 2);
             const score = (rk ? 10 : 0) + aptScore;
             let better = !best || score > best.score;
@@ -406,8 +401,7 @@ window.SubsidyRef = (function () {
         return b ? b.r.value : null;
     }
 
-    // ---------- загрузка ПКЗ из выгрузок NAV (Excel) ----------
-    // ICAO аэропорта → город сайта (как в FLIGHT_DIRECTIONS). Красноярск — два аэропорта.
+    // ICAO аэропорта -> город сайта (как в FLIGHT_DIRECTIONS); у Красноярска два аэропорта
     const NAV_CITY = {
         UNAA: 'Абакан', UNIB: 'Байкит', UNKB: 'Богучаны', UNIW: 'Ванавара', UNBG: 'Горно-Алтайск', UODD: 'Диксон',
         UOII: 'Игарка', UNEE: 'Кемерово', UNKI: 'Кодинск', UNKL: 'Красноярск', UNKM: 'Красноярск', UNKY: 'Кызыл',
@@ -419,11 +413,11 @@ window.SubsidyRef = (function () {
     const NAV_APT = { UNKL: 'KJA', UNKM: 'KCY' };
     const NAV_AC = { an24: 'Ан-24', an26: 'Ан-26', atr42: 'ATR-42', atr72: 'ATR-72', yak42: 'Як-42' };
 
-    // Тип ВС и сезон по имени файла: «ПКЗ АН24З.xls» → Ан-24, зима. Не узнали тип — known: false.
+    // тип ВС и сезон по имени файла: "ПКЗ АН24З.xls" -> Ан-24, зима; не узнали тип - known: false
     function navFileInfo(fileName) {
         let stem = String(fileName || '').replace(/^.*[\\/]/, '').replace(/\.(xlsx?|xlsm)$/i, '')
             .replace(/\s*[-–]?\s*копия(\s*\(\d+\))?\s*$/i, '').replace(/\s*\(\d+\)\s*$/, '').trim().toUpperCase().replace(/Ё/g, 'Е');
-        // «З» в конце имени — зимний период; но если имя кончается самим словом «ПКЗ» («АН24 ПКЗ.xls») — это не зима.
+        // З в конце имени - зима, но не если имя кончается на "ПКЗ" ("АН24 ПКЗ.xls")
         const winter = /[ЗZ]$/.test(stem) && !/^[ЗZ]$/.test(stem) && !/(^|[\s_-])(ПКЗ|PKZ)$/.test(stem);
         const body = winter ? stem.replace(/[\s_-]*[ЗZ]$/, '') : stem;
         let key = '';
@@ -445,9 +439,8 @@ window.SubsidyRef = (function () {
         return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
     }
 
-    // Авиационный сезон: зима — с последнего воскресенья октября до дня перед последним воскресеньем марта,
-    // лето — с последнего воскресенья марта до дня перед последним воскресеньем октября. Берётся текущий сезон
-    // (сегодня внутри него) или ближайший следующий.
+    // авиасезон: зима - с последнего вс октября до дня перед последним вс марта
+    // лето - с последнего вс марта до дня перед последним вс октября; берём текущий или ближайший следующий
     function navSeasonRange(winter, today) {
         const t = today instanceof Date ? new Date(today.getFullYear(), today.getMonth(), today.getDate()) : (() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); })();
         const y = t.getFullYear();
@@ -463,7 +456,7 @@ window.SubsidyRef = (function () {
         return { from: ruDate(c.a), to: ruDate(c.b), label: c.label };
     }
 
-    // Направления сайта в одну сторону: ключ → подпись «Город — Город».
+    // направления сайта в одну сторону: ключ -> подпись "Город - Город"
     function siteDirections() {
         const out = {};
         Object.values(window.FLIGHT_DIRECTIONS || {}).forEach(label => {
@@ -479,7 +472,7 @@ window.SubsidyRef = (function () {
         return m ? (+m[3]) * 10000 + (+m[2]) * 100 + (+m[1]) : 0;
     }
 
-    // Лист «Report» выгрузки NAV → правила (без периода и типа ВС). skipped — строки не наших направлений.
+    // лист "Report" выгрузки NAV -> правила (без периода и типа ВС); skipped - строки чужих направлений
     function navParseSheet(lib, wb) {
         const ws = wb.Sheets.Report || wb.Sheets[wb.SheetNames[0]];
         const res = { rules: [], skipped: 0, bad: 0, error: '' };
@@ -517,7 +510,7 @@ window.SubsidyRef = (function () {
         return res;
     }
 
-    // Сколько из правил заменят уже внесённые (тот же период, направление, тип ВС и аэропорт) и у скольких значение другое.
+    // сколько правил заменят внесённые (тот же период, направление, тип ВС, аэропорт) и у скольких значение другое
     function navCount(rules, from, to, ac) {
         const cur = activePkz();
         const ids = Object.keys(cur);
@@ -534,7 +527,7 @@ window.SubsidyRef = (function () {
         return { replace, changed };
     }
 
-    // Периоды коммерции для рейсов (номера или коды). ranges: [{from,to}] в ДД.ММ.ГГГГ.
+    // периоды коммерции для рейсов (номера или коды); ranges: [{from,to}] в ДД.ММ.ГГГГ
     async function setPeriods(flights, ranges) {
         if (!canEdit()) return { ok: false, error: 'Нет права менять справочник' };
         const nums = [...new Set((flights || []).map(flightNum).filter(Boolean))];
@@ -545,7 +538,7 @@ window.SubsidyRef = (function () {
         return apply(s => nums.forEach(n => { s.periods[String(n)] = { ranges: clean, at, by: author() }; }));
     }
 
-    // Убрать запись справочника — снова действует файл (если он загружен).
+    // убрать запись - снова действует файл (если загружен)
     async function clearPeriods(flights) {
         if (!canEdit()) return { ok: false, error: 'Нет права менять справочник' };
         const nums = [...new Set((flights || []).map(flightNum).filter(Boolean))];
@@ -571,7 +564,7 @@ window.SubsidyRef = (function () {
         return apply(s => { s.amounts[key] = { deleted: true, at, by: author() }; });
     }
 
-    // Перенести в справочник всё, что сейчас загружено из файлов (один раз — после этого файлы можно удалить).
+    // перенести в справочник всё из загруженных файлов (разово; потом файлы можно удалить)
     async function importFromFiles(opts) {
         if (!canEdit()) return { ok: false, error: 'Нет права менять справочник' };
         const src = typeof RouteCosts !== 'undefined' && RouteCosts.fileData ? RouteCosts.fileData() : null;
@@ -585,7 +578,7 @@ window.SubsidyRef = (function () {
         let nA = 0;
         const res = await apply(s => {
             Object.keys(src.periodsByNum || {}).forEach(n => {
-                // Строка доп. рейса (KV-305) идёт под базовым номером, если у базового своей строки нет.
+                // строка доп. рейса (KV-305) идёт под базовым номером, если у базового своей строки нет
                 const b = String(flightNum(n));
                 if (b !== String(n) && src.periodsByNum[b]) return;
                 const cur = s.periods[b];
@@ -611,9 +604,8 @@ window.SubsidyRef = (function () {
         return res.ok ? { ok: true, periods: nP, amounts: nA } : res;
     }
 
-    // ---------- история изменений ----------
-    // Версии — резервные копии файла справочника (shared/_history) и нынешний. По соседним версиям видно,
-    // что менялось; у записи есть автор и время (at, by). Откат — одной записи, а не всего файла.
+    // история изменений: версии - копии shared/_history и нынешний файл; у записи автор и время (at, by)
+    // откат - одной записи, а не всего файла
     const k1 = (v) => (v == null ? '—' : String(Math.round(v * 10) / 10).replace('.', ','));
     function sigOf(e) {
         if (!e) return 'x';
@@ -676,12 +668,12 @@ window.SubsidyRef = (function () {
             });
         }
         items.sort((x, y) => String(y.at).localeCompare(String(x.at)));
-        // Откатить можно, только если запись с тех пор не менялась: нынешнее состояние равно «после».
+        // откатить можно, только если запись с тех пор не менялась (нынешнее = "после")
         items.forEach(it => { it.canUndo = sigOf(cache[it.kind][it.key] || null) === sigOf(it.after); });
         return { ok: true, items: items.slice(0, 150), versions: versions.length - 1 };
     }
 
-    // Вернуть одну запись к тому, что было «до» (нет записи — убрать).
+    // вернуть одну запись к "до" (нет записи - убрать)
     async function revertEntry(kind, key, before) {
         if (!canEdit() && !(kind === 'pkz' && canEditPkz())) return { ok: false, error: 'Нет права менять справочник' };
         const at = new Date().toISOString();

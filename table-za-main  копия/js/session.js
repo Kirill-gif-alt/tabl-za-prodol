@@ -1,4 +1,4 @@
-// Сохранение сессии (localStorage) и снимка данных (IndexedDB) — работает при открытии index.html с диска
+// сохранение сессии (localStorage) и снимка данных (IndexedDB), работает и при открытии index.html с диска
 window.SessionStore = (function () {
     const UI_KEY = 'krasavia_ui_session';
     const IDB_NAME = 'krasavia_rms';
@@ -65,7 +65,7 @@ window.SessionStore = (function () {
         }
     }
 
-    /** debounce: не писать localStorage на каждый чих UI */
+    // debounce, чтобы не писать localStorage на каждый чих UI
     function saveUiSession() {
         if (uiSessionSaveTimer) clearTimeout(uiSessionSaveTimer);
         uiSessionSaveTimer = setTimeout(saveUiSessionNow, 120);
@@ -92,8 +92,7 @@ window.SessionStore = (function () {
                 }
             }
             if (s.tableSort) tableSort = s.tableSort;
-            // Выбор пользователя уважаем. Старые сессии хранили «Все» просто как значение по умолчанию —
-            // его не считаем выбором, там по умолчанию теперь «Открытые».
+            // старые сессии хранили "all" как дефолт - это не выбор пользователя, дефолт теперь open
             if (s.tableFilterStatus && typeof tableFilterChosen !== 'undefined') {
                 const chosen = s.tableFilterChosen === true || (s.tableFilterChosen === undefined && s.tableFilterStatus !== 'all');
                 if (chosen) { tableFilterStatus = s.tableFilterStatus; tableFilterChosen = true; }
@@ -103,16 +102,16 @@ window.SessionStore = (function () {
                 Object.keys(pairColVisibility).forEach((k) => {
                     if (typeof s.pairColVisibility[k] === 'boolean') pairColVisibility[k] = s.pairColVisibility[k];
                 });
-                // старое expenses = один суммарный столбец → теперь totalExpenses
+                // старое expenses (один суммарный столбец) теперь totalExpenses
                 if (s.pairColVisibility.totalExpenses === undefined
                     && s.pairColVisibility.expenses === true
                     && s.pairColVisibility._expensesIsLeg !== true) {
-                    // эвристика: старые сессии держали expenses как «общие»
+                    // эвристика: в старых сессиях expenses были общими
                     pairColVisibility.totalExpenses = true;
                     pairColVisibility.expenses = false;
                 }
             } else if (s.tableExtraColsExpanded && typeof pairColVisibility !== 'undefined') {
-                // миграция со старого «плюсика»: все доп. столбцы включены
+                // миграция со старого плюсика: все доп. столбцы включены
                 pairColVisibility.avgFare = true;
                 pairColVisibility.lastFare = true;
                 pairColVisibility.revenue = true;
@@ -124,7 +123,7 @@ window.SessionStore = (function () {
             if (typeof rmsUiFilters !== 'undefined') {
                 const f = s.rmsUiFilters && typeof s.rmsUiFilters === 'object' ? s.rmsUiFilters : {};
                 if (['7', '14', '30', 'custom'].includes(f.days)) rmsUiFilters.days = f.days;
-                const route = f.route || s.rmsRouteTypeFilter;   // старый формат сессии — только тип рейса
+                const route = f.route || s.rmsRouteTypeFilter;   // старый формат: только тип рейса
                 if (['all', 'krai', 'interregional'].includes(route)) rmsUiFilters.route = route;
                 if (['all', 'alerts'].includes(f.alert)) rmsUiFilters.alert = f.alert;
                 ['days', 'route', 'alert'].forEach(k => {
@@ -190,7 +189,7 @@ window.SessionStore = (function () {
         }
     }
 
-    // Подпись снимка перестраивается, только если данные заменили (ссылки и счётчик загрузки те же — подпись та же).
+    // подпись снимка пересчитываем только если данные заменили
     let sigMemo = null;
     function getSnapshotSignature() {
         const refs = [allData, salesMap, salesDetails, closedFlights, expectedLoadData, typeof baggageWeightsData !== 'undefined' ? baggageWeightsData : null];
@@ -250,7 +249,7 @@ window.SessionStore = (function () {
                 tx.onerror = () => reject(tx.error);
                 tx.objectStore(IDB_STORE).put(payload, SNAPSHOT_KEY);
             });
-            // Метка времени — отдельно: снимок уже записан, переполненный localStorage не должен его «отменять».
+            // метку времени пишем отдельно: переполненный localStorage не должен отменять уже записанный снимок
             try { localStorage.setItem('krasavia_snapshot_at', String(payload.savedAt)); } catch (e) { /* ignore */ }
             lastSavedSignature = signature;
             if (payload.savedAt > appliedSavedAt) appliedSavedAt = payload.savedAt;
@@ -265,7 +264,7 @@ window.SessionStore = (function () {
         }
     }
 
-    // Шлюз качества: что было в последних общих данных этого ПК (снимок при входе или прошлая публикация).
+    // шлюз качества: последние общие данные этого ПК (снимок при входе или прошлая публикация)
     let baselineStats = null;
 
     function currentDataStats() {
@@ -282,7 +281,7 @@ window.SessionStore = (function () {
 
     const SOURCE_NAMES = { availability: 'загрузка таб', sales: 'продажи', closed: 'закрытые рейсы', expected: 'ожидаемая загрузка', costs: 'расходы', heli: 'вертолёты' };
 
-    // Что подозрительно в новых данных по сравнению с прошлыми: пропал источник или резко меньше строк.
+    // подозрительно: пропал источник или резко меньше строк, чем раньше
     function suspiciousChanges(prev, next) {
         if (!prev) return [];
         const out = [];
@@ -308,7 +307,7 @@ window.SessionStore = (function () {
         const nextStats = currentDataStats();
         const issues = suspiciousChanges(baselineStats, nextStats);
         if (issues.length) {
-            // Неудачная загрузка (файл не дописан, не та папка) не должна уйти на все ПК без спроса.
+            // неудачная загрузка (файл не дописан, не та папка) не уходит на все ПК без спроса
             const okToPublish = announce && typeof confirm === 'function'
                 && confirm('Новые данные заметно отличаются от прошлых:\n\n' + issues.join('\n')
                     + '\n\nОпубликовать их для всех пользователей?\n«Отмена» — данные останутся только на этом компьютере.');
@@ -321,7 +320,7 @@ window.SessionStore = (function () {
         const ok = await SharedStorage.saveSnapshot(announce);
         if (ok) {
             baselineStats = nextStats;
-            // Своя публикация не должна выглядеть как «новые данные» от других.
+            // своя публикация не должна выглядеть как новые данные от других
             if (SharedStorage.snapshotStamp) { const st = await SharedStorage.snapshotStamp(); if (st) stampBase = st; }
         }
         if (ok && typeof SalesArchive !== 'undefined') SalesArchive.captureSoon();
@@ -334,7 +333,7 @@ window.SessionStore = (function () {
     }
 
     async function saveSnapshot(announceShared) {
-        // Слишком большой набор потом не открыть ни здесь, ни на других ПК — не сохраняем и говорим об этом.
+        // слишком большой набор потом не откроют ни здесь, ни на других ПК: не сохраняем, говорим
         if (typeof Security !== 'undefined' && !Security.snapshotFits({ allData, salesDetails, heli: typeof HeliData !== 'undefined' ? HeliData.toSnapshot() : null })) {
             if (typeof showToast === 'function') showToast('Данные слишком большие, чтобы сохранить их для следующего входа и общего файла', 'error');
             return false;
@@ -387,7 +386,7 @@ window.SessionStore = (function () {
                 req.onerror = () => resolve(null);
             });
             if (snap && typeof snap.sharedText === 'string') {
-                // Копия общего снимка, сохранённая строкой (см. saveSharedTextCopy).
+                // копия общего снимка строкой (см. saveSharedTextCopy)
                 if (typeof SharedStorage === 'undefined' || !SharedStorage.snapshotFromWrapper) return null;
                 return SharedStorage.snapshotFromWrapper(JSON.parse(snap.sharedText));
             }
@@ -405,13 +404,13 @@ window.SessionStore = (function () {
         }
         allData = snap.allData || [];
         salesMap = snap.salesMap || {};
-        // Младенцы без места (…/IN00) — не проданные места; в старых снимках они ещё есть.
+        // младенцы без места (.../IN00) - не проданные места; в старых снимках они есть
         const rawDetails = {};
         Object.keys(snap.salesDetails || {}).forEach(k => {
             const list = (snap.salesDetails[k] || []).filter(x => !(/\/(IN|ID)\d/i.test(String(x && x.basicFareStr || '')) && !((x && x.fare) > 0)));
             if (list.length) rawDetails[k] = list;
         });
-        // Размер заказа считается по PNR до того, как PNR скроется у тех, кому он не положен.
+        // размер заказа считаем по PNR до того, как PNR скроется у тех, кому он не положен
         if (typeof FlightInsights !== 'undefined') FlightInsights.annotateGroups(rawDetails);
         const canSeePii = typeof ProfileAuth === 'undefined'
             || (ProfileAuth.hasPermission('sales_detail') && ProfileAuth.hasPermission('load_data'));
@@ -436,10 +435,10 @@ window.SessionStore = (function () {
         CACHED_TODAY = null;
         CACHED_YESTERDAY = null;
         processData();
-        // Сверка продаж с загрузкой (перенос, доп. номер) — до пересчёта агрегатов ниже.
+        // сверка продаж с загрузкой (перенос, доп. номер) - до пересчёта агрегатов
         if (typeof SalesReconcile !== 'undefined') SalesReconcile.run(salesDetails);
         rememberBaseline();
-        // Пересчёт продаж «сегодня/вчера/7/14/30» по актуальной дате (не по дате снимка)
+        // пересчёт сегодня/вчера/7/14/30 по актуальной дате, не по дате снимка
         if (typeof rebuildSalesAggregatesFromDetails === 'function') {
             rebuildSalesAggregatesFromDetails();
         } else {
@@ -459,8 +458,8 @@ window.SessionStore = (function () {
         if (typeof switchMainTab === 'function') switchMainTab(startTab || currentTab || 'main');
     }
 
-    // Копия общего снимка в браузер — исходной строкой: строка сохраняется за миллисекунды,
-    // а 8 МБ объектов браузер копирует секундами и подвисает.
+    // копию снимка в браузер пишем строкой: строка сохраняется за миллисекунды
+    // 8 МБ объектов браузер копирует секундами и подвисает
     async function saveSharedTextCopy(snap) {
         const db = await openDb();
         await new Promise((resolve, reject) => {
@@ -475,7 +474,7 @@ window.SessionStore = (function () {
         return true;
     }
 
-    // Копия общего снимка в браузер — не в момент входа, а когда браузер свободен.
+    // копию пишем не при входе, а когда браузер свободен
     function saveLocalCopyWhenIdle(snap) {
         const run = () => {
             const job = snap && snap.sharedText ? saveSharedTextCopy(snap) : saveLocalSnapshot(true);
@@ -508,7 +507,7 @@ window.SessionStore = (function () {
         return true;
     }
 
-    // Снимок «из будущего» (часы ПК публикатора ушли вперёд) не должен побеждать навсегда.
+    // снимок из будущего (часы публикатора ушли вперёд) не должен побеждать навсегда
     const FUTURE_SLACK_MS = 10 * 60 * 1000;
     function fromFuture(snap) {
         return !!(snap && snap.savedAt && snap.savedAt > Date.now() + FUTURE_SLACK_MS);
@@ -523,7 +522,6 @@ window.SessionStore = (function () {
         return sharedSnap?.savedAt ? sharedSnap : (localSnap || null);
     }
 
-    // ---------- «Есть новые данные»: раз в 10 минут сверяем метку общего снимка (без скачивания) ----------
     const NEW_DATA_CHECK_MS = 10 * 60 * 1000;
     let stampBase = null;       // метка общего снимка на момент нашей загрузки / публикации
     let stampTimer = 0;
@@ -561,7 +559,7 @@ window.SessionStore = (function () {
         if (typeof SharedStorage === 'undefined' || !SharedStorage.snapshotStamp || document.hidden) return;
         const now = await SharedStorage.snapshotStamp();
         if (!now || now === 'absent' || stampBase == null || now === stampBase) return;
-        stampBase = now;      // про эту версию уже сказали: повторно не напоминаем, пока файл снова не изменится
+        stampBase = now;      // про эту версию уже сказали, не повторяем, пока файл не изменится
         showNewDataBar();
     }
 
@@ -570,7 +568,7 @@ window.SessionStore = (function () {
         stampTimer = setInterval(() => { checkNewData().catch(() => {}); }, NEW_DATA_CHECK_MS);
     }
 
-    // Кнопка «Обновить»: взять свежий общий снимок и показать его (автоматически данные не меняются).
+    // кнопка "Обновить": берём свежий общий снимок и показываем (сами данные не меняются)
     async function refreshFromShared() {
         const stamp = await SharedStorage.snapshotStamp();
         const snap = await SharedStorage.loadSnapshot();
@@ -610,10 +608,10 @@ window.SessionStore = (function () {
             let needsLocalCopy = false;
             if (typeof SharedStorage !== 'undefined') {
                 await SharedStorage.init();
-                // Метку берём до чтения: если файл изменится в промежутке, проверка это заметит.
+                // метку берём до чтения, чтобы проверка заметила изменение в промежутке
                 if (SharedStorage.snapshotStamp) stampBase = await SharedStorage.snapshotStamp();
                 const sharedSnap = await SharedStorage.loadSnapshot();
-                // Локальную копию (≈8 МБ) читаем, только если она может оказаться новее общей.
+                // локальную копию (~8 МБ) читаем, только если она может быть новее общей
                 let localAt = 0;
                 try { localAt = Number(localStorage.getItem('krasavia_snapshot_at')) || 0; } catch (e) { /* ignore */ }
                 const localSnap = (!sharedSnap?.savedAt || !localAt || localAt > sharedSnap.savedAt)
@@ -632,7 +630,7 @@ window.SessionStore = (function () {
             if (snap && snap.savedAt) appliedSavedAt = snap.savedAt;
             startNewDataWatch();
             updateRestoreButtonVisibility(exists);
-            // Снимок отвергнут по размеру — говорим об этом, а не молчим.
+            // снимок отвергнут по размеру: говорим, а не молчим
             if (!exists && typeof Security !== 'undefined' && Security.wasSnapshotRejected(true) && typeof showToast === 'function') {
                 showToast("Сохранённые данные слишком большие — загрузите файлы заново", 'error');
             }

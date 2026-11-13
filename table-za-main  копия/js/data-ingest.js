@@ -1,5 +1,5 @@
-// js\data-ingest.js - extracted from script.js, logic unchanged.
-// Globals on purpose: no bundler; onclick and other files call by name.
+// вынесено из script.js, логика та же
+// глобалы намеренно: без сборщика, onclick и другие файлы зовут по имени
 
 let salesLoadLock = null;
 
@@ -20,7 +20,7 @@ function getSalesAggForKey(key) {
         const st = PerfCache.getSalesStats(key);
         if (st && st.count) {
             return {
-                avg: st.paidCount ? Math.round(st.fareSum / st.paidCount) : 0,   // средний оплаченный взрослый: 0 ₽, детские и младенческие не в счёт
+                avg: st.paidCount ? Math.round(st.fareSum / st.paidCount) : 0,   // средний оплаченный взрослый; без оплаченных 0, дети и младенцы не в счёт
                 last: st.lastFare || 0,
                 lettr: String(st.lastBasicFare || '').trim()[0] || '',
                 paid: st.paidCount, sum: st.fareSum   // для среднего тарифа по группе рейсов
@@ -50,7 +50,7 @@ function getRevenueForRow(row, firstSalesByKey) {
     if (!row || !shouldAttachSalesToRowCached(row, firstSalesByKey)) return 0;
     if (typeof PerfCache !== 'undefined') {
         const st = PerfCache.getSalesStats(resolveSalesKey(row));
-        if (st && st.count) return st.paidSum || 0;   // выручка — по фактически оплаченному, не по пересчитанному детскому тарифу
+        if (st && st.count) return st.paidSum || 0;   // выручка по фактически оплаченному, не по пересчитанному детскому тарифу
     }
     return getSalesDetailsForRow(row).reduce((sum, x) => sum + (x.fare || 0), 0);
 }
@@ -66,12 +66,12 @@ function getLatestFilesFromList(files, cnt) {
     return [...files].sort((a, b) => b.lastModified - a.lastModified).slice(0, cnt);
 }
 
-// SalesHistory.csv (Export-SalesHistory.ps1) лежит в той же папке csv — это не файл продаж, а история для прогноза.
+// SalesHistory.csv (Export-SalesHistory.ps1) - не файл продаж, а история для прогноза
 function isSalesHistoryName(name) {
     return /^saleshistory.*\.csv$/i.test(String(name || ''));
 }
 
-// SalesTickets.csv (Export-SalesTickets.ps1) — история по билетам: класс и цена на каждый день, возвраты, группы.
+// SalesTickets.csv (Export-SalesTickets.ps1): история по билетам, класс и цена по дням, возвраты, группы
 function isSalesTicketsName(name) {
     return /^salestickets.*\.csv$/i.test(String(name || ''));
 }
@@ -80,7 +80,7 @@ function findSalesTicketsFile(files) {
     return getLatestFilesFromList((files || []).filter(f => isSalesTicketsName(f.name)), 1)[0] || null;
 }
 
-// Несколько копий (SalesHistory (1).csv и т.п.) — берём самую свежую, иначе старая затёрла бы новую историю.
+// копий несколько (SalesHistory (1).csv и т.п.): берём свежую, иначе старая затрёт новую историю
 function findSalesHistoryFile(files) {
     return getLatestFilesFromList((files || []).filter(f => isSalesHistoryName(f.name)), 1)[0] || null;
 }
@@ -95,8 +95,8 @@ function findSalesCsvFile(files) {
     return getLatestFilesFromList(csvs, 1)[0] || null;
 }
 
-// Вид файла «загрузка таб» по содержимому: 'heli' — вертолётный (конфигурация MIH-…), 'mixed' — и те и другие строки, 'air' — самолётный.
-// Читаем только начало файла; ответ запоминается по самому файлу.
+// вид файла "загрузка таб": heli (MIH-...), mixed (обе строки), air (самолётный)
+// читаем только начало файла, ответ кэшируем по самому файлу
 const availKindCache = new WeakMap();
 async function classifyAvailFile(file) {
     if (!file) return 'air';
@@ -111,7 +111,7 @@ async function classifyAvailFile(file) {
     return kind;
 }
 
-// Из папки «загрузка таб»: два последних самолётных файла и один последний вертолётный (вертолётный не вытесняет самолётные).
+// из папки: два последних самолётных и один вертолётный (он не вытесняет самолётные)
 async function pickAvailFromList(csvFiles) {
     const sorted = getLatestFilesFromList(csvFiles || [], (csvFiles || []).length);
     const air = [];
@@ -224,7 +224,7 @@ async function processDataFromSources(avail, closed, sales, exp, weights, childr
         })());
     }
     if (parallelLoads.length) await Promise.all(parallelLoads);
-    // Файл загрузки есть, а рейсов в нём нет (не тот файл, другой формат): прежние данные не затираем.
+    // в файле загрузки нет рейсов (не тот файл или формат): прежние данные не трогаем
     if (avail.length && !allData.length && !(typeof HeliData !== 'undefined' && HeliData.hasData())) {
         const err = new Error('no flights in availability file');
         err.userMessage = 'В файле загрузки не найдено ни одного рейса. Прежние данные оставлены.';
@@ -234,7 +234,7 @@ async function processDataFromSources(avail, closed, sales, exp, weights, childr
     if (sales) {
         setLoadingMessage('Загрузка продаж...');
         await loadSalesFile(sales);
-        // Билеты перенесённых рейсов и доп. номеров — к вылету, на котором люди летят (sales-reconcile.js).
+        // билеты перенесённых рейсов и доп. номеров - к вылету, на котором реально летят (sales-reconcile.js)
         if (typeof SalesReconcile !== 'undefined' && SalesReconcile.run(salesDetails) && typeof rebuildSalesAggregatesFromDetails === 'function') {
             rebuildSalesAggregatesFromDetails();
         }
@@ -286,7 +286,7 @@ async function processDataFromSources(avail, closed, sales, exp, weights, childr
     showToast('Данные успешно загружены');
     if (typeof MorningSummary !== 'undefined') MorningSummary.build().catch(() => {});
     } catch (e) {
-        // Данные уже сброшены — возвращаем последний сохранённый снимок, чтобы не остаться с пустыми таблицами.
+        // данные сброшены: возвращаем последний снимок, чтобы таблицы не остались пустыми
         window.ingestQuiet = false;
         if (typeof SessionStore !== 'undefined' && SessionStore.restoreLastData) {
             await SessionStore.restoreLastData(true).catch(err => console.warn('restoreLastData', err));
@@ -314,7 +314,7 @@ async function scanDirectoryHandle(dir) {
     let subsidyHandle = null;
     let subsidyName = '';
     const historyHandles = [];
-    // «Ожидаемая загрузка» и «Дети.csv» ищутся и в подпапках — как при выборе папки обычным окном.
+    // ожидаемая загрузка и Дети.csv ищем и в подпапках, как при выборе папки обычным окном
     const expHandles = [];
     const childHandles = [];
 
@@ -361,7 +361,7 @@ async function scanDirectoryHandle(dir) {
     const folderMap = {};
     for (const [lname, handles] of Object.entries(folderEntries)) {
         if (isLoadTabDirName(lname)) {
-            // Берём все файлы папки: сколько из них самолётных, а какой вертолётный, видно только по содержимому (pickAvailFromList).
+            // какой файл вертолётный, видно только по содержимому (pickAvailFromList)
             folderMap[lname] = await materializeCsvList(handles, 0);
         } else if (lname.includes('база закрытие') || lname.includes('базазакрытие')) {
             folderMap[lname] = await materializeCsvList(handles, 2);
@@ -386,7 +386,7 @@ async function scanDirectoryHandle(dir) {
     const subsidyFile = subsidyHandle
         ? await fileFromHandle(subsidyHandle, subsidyName)
         : (typeof RouteCosts !== 'undefined' ? RouteCosts.findPeriodsFile(rootReady) : null);
-    // Файлы из подпапок материализуем, только если в корне такого файла нет.
+    // файлы из подпапок - только если в корне их нет
     let expFile = findExpectedLoadFile(rootReady);
     if (!expFile && expHandles.length) expFile = findExpectedLoadFile((await materializeCsvList(expHandles)));
     let childFile = typeof findChildrenCsvFile === 'function' ? findChildrenCsvFile(rootReady) : null;
@@ -410,7 +410,7 @@ async function loadFromDirectoryPicker() {
     if (typeof SalesSync !== 'undefined') await SalesSync.saveDataFolderHandle(dir);
     showLoading('Сканирование папки...');
     const sources = await scanDirectoryHandle(dir);
-    // Не та папка — не стираем текущие данные (сброс идёт до чтения файлов).
+    // не та папка: текущие данные не стираем (сброс идёт до чтения файлов)
     if (!sources.avail.length && !sources.closed.length && !sources.sales && !sources.exp && !sources.weights) {
         showToast('В папке не найдены нужные файлы (загрузка таб, закрытие, продажи)', 'error');
         return;
@@ -419,7 +419,7 @@ async function loadFromDirectoryPicker() {
     importSalesHistorySoon(sources.history, sources.tickets);
 }
 
-// История продаж из папки данных: дописывается в архив сама, если файл новый (в фоне, после загрузки данных).
+// история продаж из папки данных дописывается в архив сама, если файл новый (в фоне)
 function importSalesHistorySoon(file, ticketsFile) {
     if (typeof ForecastLab !== 'undefined' && ForecastLab.afterDataLoad) ForecastLab.afterDataLoad();
     if (typeof SalesArchive === 'undefined') return;
@@ -517,7 +517,7 @@ async function loadAvailabilityFiles(files){
     for(const fh of files){
         const file = await toFile(fh);
         const txt = await readCsvText(file);
-        // Вертолётные строки (конфигурация MIH-…) — в отдельное хранилище, в allData они не попадают.
+        // вертолётные строки (MIH-...) уходят в отдельное хранилище, в allData не попадают
         let pureHeli = false;
         if (typeof HeliData !== 'undefined' && txt.indexOf('MIH-') >= 0) {
             const h = HeliData.parseText(txt);
@@ -530,7 +530,7 @@ async function loadAvailabilityFiles(files){
     }
     } finally { availabilityKeepClosed = false; }
     if (typeof HeliData !== 'undefined') HeliData.setRows(heliRows);
-    // Файлы — от нового к старому: первая строка рейса (в том числе закрытая) — актуальная; закрытые потом убираем.
+    // файлы идут от нового к старому: первая строка рейса актуальна (даже закрытая), закрытые потом убираем
     allData = dedupeAvailabilityRows(allData.filter(r => r.length >= 7 && r[0] && r[1])).filter(r => !r.closedRow);
     dataLoadStatus.availability = true;
     processData();
@@ -554,7 +554,7 @@ async function loadClosedFiles(files){
     updateHeaderStatus();
 }
 function parseSalesDateField(str) {
-    // Сначала полный разбор с временем (dd.mm.yyyy HH:MM)
+    // сначала разбор с временем (dd.mm.yyyy HH:MM)
     const parsed = parseDealDateTime(str);
     if (parsed?.date && /^\d{2}\.\d{2}\.\d{4}$/.test(parsed.date)) return parsed.date;
 
@@ -563,7 +563,7 @@ function parseSalesDateField(str) {
         if (fast && /^\d{2}\.\d{2}\.\d{4}$/.test(fast)) return fast;
     }
     const raw = String(str || '').trim().replace(/[^0-9]/g, '');
-    // только если ровно 8 цифр (ddmmyyyy), иначе не режем datetime
+    // только если ровно 8 цифр (ddmmyyyy), иначе datetime не режем
     if (raw.length === 8) {
         return raw.slice(0, 2) + '.' + raw.slice(2, 4) + '.' + raw.slice(4);
     }
@@ -576,7 +576,7 @@ function readSalesCsvText(file) {
         r.onload = e => {
             let text = String(e.target.result || '').replace(/^\uFEFF/, '');
             const head = text.split('\n')[0] || '';
-            // Заголовок латиницей — и в Windows-1251 читается; кириллица тогда превращается в «�» — читаем как 1251.
+            // заголовок латиницей, в windows-1251 читается; если кириллица дала �, читаем как 1251
             if (/BSONUM/i.test(head) && /FLYDATE/i.test(head) && !text.includes('\uFFFD')) {
                 resolve(text);
                 return;
@@ -613,7 +613,7 @@ function loadSalesFile(fh) {
         const nextSalesDetails = salesDetails;
         const todayStart = dates.todayStart || (() => { const t = new Date(); t.setHours(0,0,0,0); return t; })();
 
-        // крупные CSV: отдаём UI каждые N строк, чтобы не «замораживать» браузер
+        // крупные CSV: отдаём UI каждые N строк, чтобы не вешать браузер
         const YIELD_EVERY = 2500;
         for (let li = 1; li < lineCount; li++) {
             const line = lines[li];
@@ -622,9 +622,8 @@ function loadSalesFile(fh) {
             const row = parseCSVLine(line);
             if (row.length < 17) continue;
             if ((row[8] || '').toUpperCase() !== 'ETICKET') continue;
-            // Младенец без места (тариф …/IN00, …/ID00) — не место в самолёте: в загрузке его нет,
-            // поэтому и в продажах не считаем (иначе «продано 25» при загрузке 22).
-            // Младенец с местом (…/IN50) оплачен и занимает кресло — его считаем.
+            // младенец без места (тариф .../IN00, .../ID00) не считаем: в загрузке его нет
+            // иначе продано 25 при загрузке 22; младенец с местом (.../IN50) занимает кресло - считаем
             const nf = parseFloat(String(row[14] || '').replace(/[\s\u00a0]/g, '').replace(',', '.')) || 0;
             if (/\/(IN|ID)\d/i.test(row[13] || '') && !(nf > 0)) continue;
 
@@ -637,7 +636,7 @@ function loadSalesFile(fh) {
             if (!fly || !fl) continue;
 
             const deal = parseSalesDateField(row[5]);
-            // Билеты вертолётных рейсов — отдельно (самолётные итоги, шапка и расчёты их не видят).
+            // билеты вертолётных рейсов отдельно: самолётные итоги их не видят
             if (heli && heli.isHeliFlight(fl)) {
                 heli.addTicket(fly, fl, deal, row[10], row[11]);
                 loaded++;
@@ -654,7 +653,7 @@ function loadSalesFile(fh) {
 
             const daysAgo = daysBetweenDates(deal, todayStart);
             if (daysAgo !== null && daysAgo >= 0) {
-                if (daysAgo < 7) bucket.d7++;   // 7, 14 и 30 дней считаются с сегодняшнего дня
+                if (daysAgo < 7) bucket.d7++;   // 7, 14 и 30 дней считаем от сегодня
                 if (daysAgo < 14) bucket.d14++;
                 if (daysAgo < 30) bucket.d30++;
             }
@@ -669,7 +668,7 @@ function loadSalesFile(fh) {
                 fare: nf,
                 adjustedFare: adj,
                 basicFareStr: row[13] || '',
-                // ФИО и дата рождения из файла на сайте не хранятся (даже в памяти страницы): для расчётов нужен только возраст.
+                // ФИО и дату рождения не храним даже в памяти: нужен только возраст
                 ageAtFly: calculateAgeAtFly(birth || row[16], fly),
                 flyDate: fly,
                 bsonum: row[2] || '',
@@ -688,7 +687,7 @@ function loadSalesFile(fh) {
         }
 
         if (heli) heli.endSales();
-        // Размер заказа (PNR) у каждого билета — для «групповых броней»; сам PNR дальше не нужен.
+        // размер заказа (PNR) для групповых броней; сам PNR дальше не нужен
         if (typeof FlightInsights !== 'undefined') FlightInsights.annotateGroups(salesDetails);
         dataLoadStatus.sales = loaded > 0;
         tableHtmlCache = { sig: '', html: '' };
@@ -741,7 +740,7 @@ function processData() {
     for (let i = 0, n = allData.length; i < n; i++) {
         const r = allData[i];
         if (!r || r.length < 7 || !r[0] || !r[1]) continue;
-        // снимок/старый парсер мог оставить «+1 08:45» — нормализуем до HH:MM
+        // старый парсер или снимок мог оставить "+1 08:45", нормализуем до HH:MM
         if (normTime) {
             const t11 = r[11], t12 = r[12];
             if (t11 != null && t11 !== '' && !/^\d{1,2}:\d{2}$/.test(String(t11))) r[11] = normTime(t11);

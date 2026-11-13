@@ -1,30 +1,24 @@
-// «Сегодня» — стартовая страница: главное за день одним экраном.
-//  • заголовок с загрузкой вылетов на 7 дней, одна плашка про старые данные (с кнопкой «Загрузить свежие данные»);
-//  • четыре крупные плитки: ждут отметки / можно повысить цену / стоит снизить цену / ошибки в тарифах —
-//    клик по плитке отбирает строки таблицы; ниже строка поменьше: продано сегодня, к обычному, решения за 30 дней;
-//  • полоса дней (сегодня и столько дней вперёд, сколько выбрано в «Вперёд на»): число вылетов к отметке; клик — вылеты этого дня;
-//  • таблица: «Ждут отметки» / «Ошибки тарифов» / «Вылеты дня»; сортировка; клик по строке — карточка рейса
-//    (если она показана кнопкой ▤), двойной клик — подробности под строкой, «Открыть» — рейс в «Управлении продажами» или «Динамике продаж».
-// Считает лениво и только при открытии страницы; подсказки — те же, что в УП и сводке (SalesAdvice).
+// Сегодня - стартовая страница: плитки, полоса дней и таблица
+// считается лениво, при открытии страницы; подсказки те же, что в УП и SalesAdvice
 window.TodayView = (function () {
     let tab = 'advice';         // advice | errors | day
-    let filter = 'all';         // отбор «Ждут отметки» плиткой: all | up | down | attn («Внимание» — общее правило, attention.js)
-    let picked = new Set();     // отмеченные галочкой рейсы «рейс|дата» (массовая отметка)
-    let visibleKeys = new Set(); // рейсы, которые можно отметить среди показанных строк
-    let stickKey = '';          // только что отмеченный рейс с открытыми подробностями: остаётся в списке, пока не нажали «Следующий рейс»
-    let onlyNew = false;        // отбор «Только новые» (сигнал появился сегодня, см. signal-news.js)
-    let detailKey = '';         // рейс|дата, у которого открыты подробности (двойной клик)
+    let filter = 'all';         // отбор "Ждут отметки": all | up | down | attn (attn - из attention.js)
+    let picked = new Set();     // рейсы с галочкой, ключ "рейс|дата"
+    let visibleKeys = new Set(); // рейсы, которые можно отметить среди показанных
+    let stickKey = '';          // только что отмеченный рейс, держим в списке до "Следующий рейс"
+    let onlyNew = false;        // отбор "Только новые": сигнал появился сегодня (signal-news.js)
+    let detailKey = '';         // рейс|дата с открытыми подробностями (двойной клик)
     let pickDay = '';           // выбранный день полосы (ДД.ММ.ГГГГ)
     let selected = null;        // { code, date }
     let advice = [];
     let adviceSig = '';
     let building = null;
-    // «К обычному»: на сколько пассажиров вылеты ближайших 7 дней выше или ниже нормы «к этому дню».
+    // к обычному: на сколько пассажиров вылеты на 7 дней выше или ниже нормы "к этому дню"
     let normTile = { sig: '', data: null };
-    let normBuilding = null;    // идущий расчёт (обещание) или null
-    // «Решения за 30 дней»: только готовые зафиксированные итоги (DecisionMoney.get), без пересчёта.
+    let normBuilding = null;    // промис текущего расчета или null
+    // решения за 30 дней: только готовые итоги из DecisionMoney.get, без пересчета
     let decTile = { sig: '', data: null, loading: false };
-    // Сколько дней вперёд смотреть «Ждут решения» — выбирает сам пользователь, запоминается на профиль.
+    // сколько дней вперед смотреть "Ждут решения", выбирает пользователь, запоминается в профиле
     const AHEAD_OPTIONS = [3, 5, 7, 10, 15, 20, 30];
     const AHEAD_KEY = 'krasavia_today_ahead_';
     function aheadKey() {
@@ -32,7 +26,7 @@ window.TodayView = (function () {
         return AHEAD_KEY + (p ? p.id : 'guest');
     }
     function aheadDays() {
-        if (CustomPeriod.on('today')) return CustomPeriod.aheadDays('today');   // «Свой период»: до выбранной даты
+        if (CustomPeriod.on('today')) return CustomPeriod.aheadDays('today');   // свой период: до выбранной даты
         let v = 0;
         try { v = parseInt(localStorage.getItem(aheadKey()), 10); } catch (e) { /* ignore */ }
         return AHEAD_OPTIONS.includes(v) ? v : (typeof SalesAdvice !== 'undefined' ? SalesAdvice.DAYS_AHEAD : 15);
@@ -41,7 +35,7 @@ window.TodayView = (function () {
         try { localStorage.setItem(aheadKey(), String(v)); } catch (e) { /* ignore */ }
     }
 
-    // «Сначала»: самые денежные | самые срочные | по дате. Запоминается на профиль.
+    // сортировка: самые денежные | самые срочные | по дате, хранится в профиле
     const SORT_OPTIONS = [['money', 'самые денежные'], ['urgent', 'самые срочные'], ['date', 'по дате']];
     const SORT_KEY = 'krasavia_today_sort_';
     function sortBy() {
@@ -83,13 +77,13 @@ window.TodayView = (function () {
         return signed(n) + ' ₽';
     }
 
-    const NUM_RU = new Intl.NumberFormat('ru-RU');   // то же, что toLocaleString('ru-RU'), но без создания форматтера на каждое число
+    const NUM_RU = new Intl.NumberFormat('ru-RU');   // как toLocaleString('ru-RU'), но форматтер один на все числа
     function fmt(n) {
         return NUM_RU.format(Math.round(Number(n) || 0));
     }
 
-    // Все вылеты (по строкам «загрузки таб») на дату.
-    // Строки данных раскладываются по датам один раз на загрузку данных: вызывается десятки раз за отрисовку.
+    // вылеты на дату по строкам загрузки таб
+    // раскладка по датам один раз на загрузку (функция зовется десятки раз за отрисовку)
     let rowsByDate = null;
     let rowsByDateKey = null;
     function rowsOnDate(date) {
@@ -116,7 +110,7 @@ window.TodayView = (function () {
         const byCode = new Map();
         rowsOnDate(date).forEach(([base, r]) => {
             const code = cleanFlight(r[0]);
-            // Вылет с посадками — одна строка на номер: основной (сквозной) участок, а не участок, ушедший в чужой рейс.
+            // вылет с посадками: одна строка на номер, основной (сквозной) участок, не участок ушедший в чужой рейс
             const cur = byCode.get(code);
             if (cur && !(cur.row.segShare && !r.segShare)) return;
             byCode.set(code, { code, base, date, row: r });
@@ -129,8 +123,8 @@ window.TodayView = (function () {
         return out.sort((a, b) => String(a.row[11] || '').localeCompare(String(b.row[11] || '')) || (parseInt(a.code.slice(3), 10) - parseInt(b.code.slice(3), 10)));
     }
 
-    // Список УП кэшируется в SalesManagement: набор вылетов пересобираем, только когда сменился сам список.
-    // Внутри одной отрисовки (зовётся на каждую строку, сотни раз) список не меняется — берём готовый набор до её конца.
+    // кэш вылетов УП пересобираем, только если сменился список (SalesManagement)
+    // в одной отрисовке берем готовый набор (зовется на каждую строку)
     let depCache = { list: null, set: new Set() };
     let depNow = null;
     function salesDepartures() {
@@ -149,22 +143,22 @@ window.TodayView = (function () {
         } catch (e) { return new Set(); }
     }
 
-    // Сигналы за сегодня — в «новое со вчера» (signal-news.js): советы «Повысить / Снизить» и, когда всё посчитано, снимок дня.
+    // сигналы за сегодня идут в "новое со вчера" (signal-news.js): советы и снимок дня, когда все посчитано
     function announceSignals() {
         if (typeof SignalNews === 'undefined') return;
         const withAdvice = canTab('sales') && hintsOn() && adviceReady();
         SignalNews.setAdvice(withAdvice ? advice : [], withAdvice ? aheadDays() : 0);
         const salesReady = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : true;
-        // Снимок пишем только по свежим данным: старый файл продаж дал бы «вчерашние» сигналы за сегодня.
+        // снимок пишем только по свежим данным, со старым файлом сигналы будут вчерашние
         if (hasData() && salesReady && !(typeof getStaleSalesInfo === 'function' && getStaleSalesInfo()) && (withAdvice || !canTab('sales') || !hintsOn())) SignalNews.record();
     }
 
-    // Подсказки посчитаны под нынешние данные и окно дней (иначе «0 ждут решения» — это ещё не итог).
+    // подсказки под текущие данные и окно, иначе "0 ждут решения" еще не итог
     function adviceReady() {
         return typeof SalesAdvice === 'undefined' || adviceSig === sig();
     }
 
-    // Хоть раз посчитано: цифры в плитках и полосе дней показываем сразу, не мигая «…» при пересчёте.
+    // цифры показываем сразу, если хоть раз считали, без мигания при пересчете
     function adviceBuilt() {
         return typeof SalesAdvice === 'undefined' || adviceSig !== '';
     }
@@ -178,7 +172,7 @@ window.TodayView = (function () {
         if (!canTab('sales') || typeof SalesAdvice === 'undefined') { advice = []; return; }
         const s = sig();
         if (adviceSig === s) return;
-        // Идёт расчёт для другого окна дней — дождаться и пересчитать под нынешний выбор.
+        // идет расчет для другого окна дней: дождаться и пересчитать под текущий выбор
         if (building) return building.then(() => buildAdvice());
         building = (async () => {
             advice = await SalesAdvice.scanAll(salesDepartures(), aheadDays(), 'today');
@@ -187,8 +181,8 @@ window.TodayView = (function () {
         return building;
     }
 
-    // Норма считается порциями после подсказок; пока не готова — в плитке «—».
-    // Данные могли смениться, пока шёл расчёт: тогда считаем ещё раз под новую подпись (иначе плитка застревала на «считаю…»).
+    // норма считается порциями после подсказок, пока не готова - прочерк в плитке
+    // данные могли смениться во время расчета, тогда считаем еще раз (иначе плитка висит на "считаю...")
     function buildNorm() {
         if (typeof SalesAdvice === 'undefined' || !hasData()) return Promise.resolve();
         if (normBuilding) return normBuilding;
@@ -227,7 +221,7 @@ window.TodayView = (function () {
             typeof DecisionMoney !== 'undefined' ? DecisionMoney.revision() : 0].join('|');
     }
 
-    // Решения «снизить/повысить» за 30 дней и их готовые итоги. Плитка скрыта, если готовых итогов нет.
+    // решения снизить/повысить за 30 дней с готовыми итогами; без итогов плитку прячем
     function buildDecisions() {
         if (!canTab('sales') || typeof DecisionMoney === 'undefined' || typeof SalesManagement === 'undefined' || !SalesManagement.allMarks) return;
         const s = decSig();
@@ -246,7 +240,7 @@ window.TodayView = (function () {
             seen.set(k, x);
             list.push(x);
         });
-        // Противоположные решения на одной ячейке от разных людей — в итог только последнее (как в отчёте).
+        // противоположные решения на одной ячейке: в итог только последнее, как в отчете
         if (typeof PriceMarks !== 'undefined' && PriceMarks.markOverlaps) PriceMarks.markOverlaps(list);
         decTile.loading = true;
         DecisionMoney.ensureMonths([...new Set(list.map(x => x.month).filter(Boolean))]).catch(() => {}).then(() => {
@@ -261,13 +255,13 @@ window.TodayView = (function () {
                 const e = DecisionMoney.get(x.key);
                 if (!e || e.v !== DecisionMoney.METHOD_VERSION || e.stage !== 'final') return;
                 ready++;
-                sum += (e.delta || 0) + (e.corr || 0);      // как «Общий итог» в Отчётах → Решения: с поправкой на шум и сдвиг
+                sum += (e.delta || 0) + (e.corr || 0);      // как "Общий итог" в отчете: с поправкой на шум и сдвиг
                 if (pos.includes(e.verdict)) better++;
                 else if (neg.includes(e.verdict)) worse++;
             });
             decTile = { sig: s, loading: false, data: ready ? { better, worse, sum, ready, total: list.length } : null };
             if (typeof currentTab !== 'undefined' && currentTab === 'today') render();
-            if (decSig() !== s) buildDecisions();      // отметки или итоги сменились, пока считали — пересчитать
+            if (decSig() !== s) buildDecisions();      // отметки сменились, пока считали: пересчитать
         });
     }
 
@@ -280,13 +274,13 @@ window.TodayView = (function () {
             && !(typeof SalesManagement !== 'undefined' && SalesManagement.getMarks(a.code, a.date, t).length));
     }
 
-    // «Внимание» — вылеты по общему правилу сайта (attention.js): те же, что в шапке и в RMS «Срочно» + «Присмотреться».
-    // Горизонт свой (30 дней) и не зависит от «Вперёд на»; отмеченные сегодня тоже в списке — число должно совпадать с шапкой.
+    // внимание: вылеты по общему правилу (attention.js), как в шапке и RMS "Срочно" + "Присмотреться"
+    // горизонт 30 дней, не от "Вперёд на"; отмеченные сегодня тоже в списке, как в шапке
     let attnMemo = { list: null, items: [] };
     function attnItems() {
         if (typeof Attention === 'undefined') return [];
         if (attnMemo.list === Attention.list() && attnMemo.items.length === Attention.count()) return attnMemo.items;
-        // Строка RMS — участок рейса: у вылета с посадкой может быть две строки, поэтому берём строку данных самого участка.
+        // строка RMS - участок рейса: у вылета с посадкой две строки, берем строку самого участка
         const items = Attention.list().map(m => {
             const row = (groupedData[m.base] || []).find(r => r && typeof getMetricsStorageKey === 'function' && getMetricsStorageKey(r) === m.rowKey) || null;
             return { code: m.orig, date: m.date, dtd: m.dtd, status: 'attn', row, seg: m.segShare ? m.route : '', money: typeof getRmsMoney === 'function' ? getRmsMoney(m) : null, m };
@@ -295,10 +289,10 @@ window.TodayView = (function () {
         return items;
     }
 
-    // Что показано на вкладке «Ждут отметки» по плитке (без «Только новые»).
+    // что показано во вкладке по плитке (без "Только новые")
     function adviceShown(pend) {
         const list = filter === 'attn' ? attnItems() : (filter === 'all' ? pend : pend.filter(a => a.status === filter));
-        // Только что отмеченный рейс с открытыми подробностями остаётся в списке (иначе «Следующий рейс» пропал бы вместе со строкой).
+        // держим отмеченный рейс в списке, иначе "Следующий рейс" пропадет вместе со строкой
         if (stickKey && stickKey === detailKey && filter !== 'attn' && !list.some(a => a.code + '|' + a.date === stickKey)) {
             const st = advice.find(a => a.code + '|' + a.date === stickKey);
             if (st && (filter === 'all' || st.status === filter)) return list.concat([st]);
@@ -335,8 +329,6 @@ window.TodayView = (function () {
         return typeof getDaysUntil === 'function' ? getDaysUntil(date) : null;
     }
 
-    // ---------- шапка: строка-вывод и цифры ----------
-
     function isClosedDep(d) {
         return typeof closedFlights !== 'undefined' && typeof getSalesLookupKey === 'function' && closedFlights.has(getSalesLookupKey(d.row));
     }
@@ -346,31 +338,29 @@ window.TodayView = (function () {
         let seats = 0;
         let n = 0;
         for (let i = 0; i < 7; i++) {
-            // Закрытые рейсы не считаем — как в «Занято в среднем» на RMS (там их в списке нет).
+            // закрытые рейсы не считаем, как "Занято в среднем" на RMS
             departuresOn(shift(today(), i)).forEach(d => {
                 if (isClosedDep(d)) return;
                 sold += d.sold; seats += d.seats; n++;
             });
         }
         const k = typeof getGlobalKPIs === 'function' ? getGlobalKPIs() : {};
-        // Файл продаж не загружен — «0 продано» было бы неправдой (в шапке и в RMS там «—»).
+        // нет файла продаж: "0 продано" было бы неправдой, в шапке и RMS прочерк
         const salesReady = typeof hasSalesFileLoaded === 'function' ? hasSalesFileLoaded() : true;
         return { lf: seats ? Math.round(sold / seats * 100) : null, sold, seats, n, salesReady, todaySales: Number(k.todaySales) || 0, todayRevenue: Number(k.todayRevenue) || 0, todayOutside: Number(k.todayOutside) || 0 };
     }
 
-    // Подсказки на этой странице выключены в «Параметрах расчётов» — «в норме» писать нельзя: ничего не проверялось.
+    // подсказки выключены в параметрах расчетов: "в норме" писать нельзя, проверки не было
     function hintsOn() {
         return typeof SalesAdvice === 'undefined' || typeof PV === 'undefined' || PV.HINT_TODAY === 1;
     }
-
-    // ---------- полоса дней ----------
 
     function dayStripHtml(pend) {
         const byDay = new Map();
         pend.forEach(a => byDay.set(a.date, (byDay.get(a.date) || 0) + 1));
         const cells = [];
         const days = aheadDays() + 1;
-        // Число «к отметке» — только если подсказки посчитаны и доступны; иначе число вылетов дня.
+        // число "к отметке" только если подсказки посчитаны, иначе число вылетов дня
         const marks = canTab('sales') && hintsOn();
         const ready = adviceBuilt();
         for (let i = 0; i < days; i++) {
@@ -404,8 +394,6 @@ window.TodayView = (function () {
             <div class="td-days">${cells.join('')}</div></div>`;
     }
 
-    // ---------- таблица ----------
-
     const LABEL = { down: '▼ Снизить цену', up: '▲ Повысить цену', attn: '● Внимание' };
 
     function lfCls(lf) {
@@ -432,7 +420,7 @@ window.TodayView = (function () {
         return `<span class="td-muted" title="${esc(hintsOn() ? 'Подсказки нет: вылет сегодня или вне окна, рейс закрыт, либо нет нормы и плана' : 'Подсказки выключены в «Параметрах расчётов»')}">—</span>`;
     }
 
-    // Сегодняшняя отметка рейса (если уже стоит): видно, что рейс проверен.
+    // сегодняшняя отметка, если стоит: рейс проверен
     function markNoteHtml(code, date) {
         const mk = typeof PriceMarks !== 'undefined' ? PriceMarks.todayMark(code, date) : null;
         return mk && SalesManagement.STATUSES[mk.status] ? `<div class="td-muted">Отмечено: ${esc(SalesManagement.STATUSES[mk.status].short)}</div>` : '';
@@ -445,7 +433,7 @@ window.TodayView = (function () {
         const ac = r && typeof getAircraftType === 'function' ? getAircraftType(r[4]) : '';
         const dtd = daysUntil(item.date);
         const adv = item.adv !== undefined ? item.adv : (typeof SalesAdvice !== 'undefined' ? SalesAdvice.forDeparture(item.code, item.date, aheadDays(), 'today') : null);
-        // «К этой дате обычно»: если есть только план, одно число не должно читаться как «обычно».
+        // если есть только план, не подписывать его как "обычно"
         const refUsual = adv && adv.refs ? adv.refs.find(x => x.label.indexOf('обычно') === 0) : null;
         const refPlan = adv && adv.refs ? adv.refs.find(x => x.label.indexOf('по плану') === 0) : null;
         let refCell = '—';
@@ -478,7 +466,7 @@ window.TodayView = (function () {
             </tr>${detailKey === key ? detailRowHtml(item.code, item.date, (item.showMoney ? 9 : 8) + (bulkOn() ? 1 : 0)) : ''}`;
     }
 
-    // Подробности под строкой (двойной клик): то, что раньше пряталось в подсказках. Считается только по запросу, из готовых кэшей.
+    // подробности под строкой, считаем по запросу из готовых кэшей
     function detailRowHtml(code, date, cols) {
         const lines = [];
         const adv = typeof SalesAdvice !== 'undefined' ? SalesAdvice.forDeparture(code, date, aheadDays(), 'today') : null;
@@ -496,7 +484,7 @@ window.TodayView = (function () {
                 .forEach(i => lines.push(['Ошибка тарифа', `${i.title}: ${i.detail}`]));
         }
         if (!lines.length) lines.push(['', 'Подробностей нет: по этому вылету мало данных.']);
-        // Отметка и «Следующий рейс» — тем, кто может ставить отметки. Отметка — та же быстрая, что в RMS и карточке рейса (PriceMarks).
+        // отметка и "Следующий рейс" только у тех, кто может ставить отметки; кнопки те же, что в RMS (PriceMarks)
         const act = canPickRow(code, date, true) ? `<div class="td-detail-act">${PriceMarks.buttonsHtml(code, date)}<button type="button" class="td-next" data-td-next>Следующий рейс ›</button></div>` : '';
         return `<tr class="td-detail" data-td-detail="${esc(code + '|' + date)}"><td colspan="${cols}"><dl class="td-detail-list">${lines.map(l => `<div><dt>${esc(l[0])}</dt><dd>${esc(l[1])}</dd></div>`).join('')}</dl>${act}</td></tr>`;
     }
@@ -510,12 +498,12 @@ window.TodayView = (function () {
         return depMinutes(a.row) - depMinutes(b.row) || (parseInt(a.code.slice(3), 10) || 0) - (parseInt(b.code.slice(3), 10) || 0);
     }
 
-    // Отметки на этой странице — у тех, кто может ставить их в «Управлении продажами» (право edit_sales_mgmt) и видит эту вкладку.
+    // отметки при праве edit_sales_mgmt и доступе к вкладке продаж
     function bulkOn() {
         return canTab('sales') && typeof PriceMarks !== 'undefined' && PriceMarks.canMark();
     }
 
-    // Отметить можно вылет из списка «Управления продажами», который ещё не улетел и без сегодняшней отметки.
+    // отмечаем только вылет из УП, еще не улетевший и без отметки за сегодня
     function canPickRow(code, date, withMark) {
         if (!bulkOn() || !inSalesList(code, date)) return false;
         const d = daysUntil(date);
@@ -543,8 +531,8 @@ window.TodayView = (function () {
         if (typeof FlightCard !== 'undefined') FlightCard.maybeOpen(code, date);
     }
 
-    // Порядок «Ждут отметки»: самые денежные — где больше денег (без суммы — в конце, по виду подсказки);
-    // самые срочные — чей вылет ближе; по дате — по дате и времени вылета.
+    // самые денежные: где больше денег, без суммы в конце, по виду подсказки
+    // самые срочные: чей вылет ближе; по дате: по дате и времени вылета
     function sortedAdvice(list, by) {
         const order = { down: 0, attn: 1, up: 2 };
         const rub = (a) => (a.money ? a.money.rub : -1);
@@ -593,7 +581,7 @@ window.TodayView = (function () {
             rows = departuresOn(date).sort(byDepTime).map(d => rowHtml(d)).join('');
             empty = `На ${date} вылетов нет.`;
         }
-        // Выбор живёт только среди показанных строк: что исчезло из списка (отмечено, сменился отбор), из выбора уходит.
+        // выбор только среди показанных строк: что пропало из списка, уходит из выбора
         picked = new Set([...picked].filter(k => visibleKeys.has(k)));
         const chkTh = bulkOn() ? `<th class="td-th-chk"><input type="checkbox" data-td-pick-all aria-label="Выбрать все показанные"${visibleKeys.size && picked.size === visibleKeys.size ? ' checked' : ''}></th>` : '';
         return `${bulkOn() ? `<div class="td-bulk" id="td-bulk"${picked.size ? '' : ' hidden'}>${bulkBarInner()}</div>` : ''}<div class="td-table-wrap">${rows ? `<table class="td-table"><thead><tr>${chkTh}${head}</tr></thead><tbody>${rows}</tbody></table>` : `<p class="td-empty">${esc(empty)}</p>`}${more}</div>`;
@@ -605,7 +593,7 @@ window.TodayView = (function () {
             + '<button type="button" class="td-bulk-link" data-td-bulk-clear>Снять выбор</button>';
     }
 
-    // Выбор поменялся: обновить строку действий, галочку в шапке и подсветку строк, не перерисовывая страницу.
+    // обновляем панель действий, галочку и подсветку без перерисовки страницы
     function syncBulk() {
         const bar = document.getElementById('td-bulk');
         if (bar) { bar.hidden = !picked.size; bar.innerHTML = bulkBarInner(); }
@@ -622,7 +610,7 @@ window.TodayView = (function () {
         });
     }
 
-    // «Проверено без изменений» всем выбранным: та же запись, что у ручной отметки (PriceMarks → SalesManagement.putMark).
+    // то же, что ручная отметка: PriceMarks -> SalesManagement.putMark
     function bulkKeep() {
         const keys = [...picked].filter(k => visibleKeys.has(k));
         if (!keys.length || !bulkOn()) return;
@@ -630,11 +618,11 @@ window.TodayView = (function () {
         picked = new Set();
         const n = PriceMarks.setMany(keys.map(k => { const p = k.split('|'); return { code: p[0], date: p[1] }; }), 'keep');
         if (typeof showToast === 'function') showToast(n ? `Отмечено «Без изменений»: ${n}` : 'Отметки не поставлены', n ? 'success' : 'error');
-        if (typeof updateHeaderStatus === 'function') updateHeaderStatus();   // счётчик «☀» в шапке
+        if (typeof updateHeaderStatus === 'function') updateHeaderStatus();   // счетчик ☀ в шапке
         if (!n) render();      // при успехе страницу уже обновило событие отметки
     }
 
-    // «Следующий рейс»: подробности следующей строки в текущем порядке списка.
+    // следующий рейс: подробности следующей строки в текущем порядке списка
     function nextFlight() {
         const cur = document.querySelector('#td-page tr.td-detail');
         let tr = cur ? cur.previousElementSibling : null;
@@ -649,8 +637,6 @@ window.TodayView = (function () {
         const row = det && det.previousElementSibling;
         if (row && row.scrollIntoView) row.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }
-
-    // ---------- плитки ----------
 
     function bigTile(cls, label, value, note, opts) {
         const o = opts || {};
@@ -772,7 +758,7 @@ window.TodayView = (function () {
         });
     }
 
-    // Подробности под строкой: открыть у одного рейса, повторный двойной клик — закрыть.
+    // подробности: один рейс за раз, повторный двойной клик закрывает
     function onDblClick(e) {
         const row = e.target.closest('tr.td-row');
         if (!row || e.target.closest('button, select, a, input, td.td-chk')) return;
@@ -800,12 +786,12 @@ window.TodayView = (function () {
         const day = t.closest('[data-td-day]');
         if (day) { pickDay = day.dataset.tdDay; tab = 'day'; filter = 'all'; render(); return; }
         if (t.closest('[data-td-load]')) {
-            // Тот же вызов, что у кнопки «Загрузить» в шапке (право проверяется внутри).
+            // то же, что кнопка "Загрузить" в шапке, право проверяется внутри
             if (typeof autoLoadLatestFiles === 'function') autoLoadLatestFiles();
             return;
         }
         if (t.closest('[data-td-decisions]')) {
-            // Тот же период, что в плитке: 30 дней, вкладка «В рублях».
+            // тот же период, что в плитке: 30 дней, вид "В рублях"
             if (typeof DecisionsReport !== 'undefined') { DecisionsReport.setPeriod(30); DecisionsReport.setView('money'); }
             if (typeof DecisionsTickets !== 'undefined') DecisionsTickets.setPeriod(30);
             if (typeof ReportsView !== 'undefined') ReportsView.showSubtab('decisions');
@@ -818,7 +804,7 @@ window.TodayView = (function () {
             switchMainTab('reports');
             return;
         }
-        // Плитки «ждут отметки / повысить / снизить / ошибки» отбирают строки таблицы; повторный клик по включённой — сброс.
+        // плитки отбирают строки таблицы; повторный клик по включенной сбрасывает
         if (t.closest('[data-td-new]')) { onlyNew = !onlyNew; render(); return; }
         if (t.closest('[data-td-next]')) { nextFlight(); return; }
         if (t.closest('[data-td-bulk-keep]')) { bulkKeep(); return; }
@@ -897,17 +883,17 @@ window.TodayView = (function () {
         buildDecisions();
     }
 
-    // Отметка поставлена — счётчики и подсказки на странице обновляются.
+    // после отметки обновляем счетчики и подсказки
     document.addEventListener('krasavia:mark', (e) => {
         const d = (e && e.detail) || {};
         if (detailKey && d.code && d.code + '|' + d.date === detailKey) stickKey = detailKey;
         if (typeof currentTab !== 'undefined' && currentTab === 'today') render();
     });
 
-    // Фоновый расчёт сигналов без отрисовки (для снимка дня в signals-days.json): если «Сегодня» открыта, считает она сама.
+    // фоновый расчет сигналов для снимка дня (signals-days.json); если "Сегодня" открыта, считает она
     function backgroundSignals() {
         if (document.getElementById('td-page') || !hasData()) return Promise.resolve();
-        // Данные для советов (архив, параметры) подгружаются в фоне и меняют подпись — ждём, пока расчёт устоится.
+        // архив и параметры подгружаются в фоне и меняют подпись, ждем, пока устоится
         return (async () => {
             for (let i = 0; i < 5; i++) {
                 await buildAdvice();

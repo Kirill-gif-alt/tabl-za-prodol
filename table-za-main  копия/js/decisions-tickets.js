@@ -1,9 +1,6 @@
-// «Отчёты» → «Решения» → «По билетам»: журнал ценовых решений и их итог.
-// Каждая отметка «▼ Снижение» / «▲ Повышение» из «Управления продажами»: сколько билетов и по какому тарифу
-// продали за 3 дня до решения и за 3 дня после, и сколько обычно продаётся за те же дни (норма по дням недели).
-// Итог — в билетах против нормы (снижение — за несколько дней после решения, повышение — по итогу вылета).
-// Повышение с чуть меньшими продажами, но большим тарифом — не провал.
-// Сводка по типу решения, по направлениям и по людям. Те же расчёты, что в карточке рейса (price-marks.js).
+// отчёт "Решения" - "По билетам": журнал ценовых решений и их итог
+// билеты и тариф за 3 дня до и после против нормы по дням недели; снижение - через несколько дней, повышение - по итогу
+// повышение с меньшими продажами, но большим тарифом - не провал; расчёт тот же, что в price-marks.js
 window.DecisionsTickets = (function () {
     const PERIODS = [30, 60, 90];
     const KIND = { down: '▼ Снижение', up: '▲ Повышение', attn: '! Внимание' };
@@ -40,12 +37,12 @@ window.DecisionsTickets = (function () {
         return Math.round((t - d) / 86400000);
     }
 
-    // Строки журнала (решения «снижение/повышение» за период), с итогом.
+    // строки журнала: решения за период, с итогом
     function rows() {
         const s = sig();
         if (memo.sig === s && memo.rows) return memo.rows;
         const out = [];
-        // Одно решение, отмеченное двумя людьми, — одна строка (иначе его билеты и рубли посчитаются дважды).
+        // решение, отмеченное двумя людьми, одна строка - иначе билеты и рубли посчитаются дважды
         const seen = new Map();
         SalesManagement.allMarks().forEach(m => {
             if (m.status !== 'down' && m.status !== 'up') return;
@@ -70,14 +67,14 @@ window.DecisionsTickets = (function () {
             });
             seen.set(dk, out[out.length - 1]);
         });
-        // Противоположные решения на одной ячейке от разных людей — в итог только последнее, остальные «перекрыто».
+        // противоположные решения на одной ячейке: в итог только последнее, остальные "перекрыто"
         if (PriceMarks.markOverlaps) PriceMarks.markOverlaps(out).forEach(r => { if (r.overlap) r.done = false; });
         out.sort((a, b) => (parseLocalDate(b.check) - parseLocalDate(a.check)) || String(a.code).localeCompare(String(b.code), 'ru', { numeric: true }));
         memo = { sig: s, rows: out };
         return out;
     }
 
-    // «1 билет», «2 билета», «5 билетов»; у дробного числа — всегда «билета» («0,5 билета», «5,5 билета»).
+    // склонение: 1 билет, 2 билета, 5 билетов; у дробного всегда "билета"
     function plural(n) {
         const v = Math.round(Number(n) * 10) / 10;
         if (!Number.isInteger(v)) return 'билета';
@@ -93,12 +90,12 @@ window.DecisionsTickets = (function () {
         return (n > 0 ? '+' : (n < 0 ? '−' : '')) + numRu(Math.abs(n));
     }
 
-    // «Сработало» — по билетам против нормы (PriceMarks.judge); «рано судить» в долю не входит.
+    // сработало - по билетам против нормы (PriceMarks.judge); "рано судить" в долю не входит
     function worked(r) {
         return verdictOf(r).worked;
     }
 
-    // Сводка: решений, с итогом, «сработало», средний итог в билетах.
+    // сводка: решения, с итогом, сработало, средний итог
     function summarize(list) {
         const done = list.filter(r => r.done);
         const judged = done.filter(r => worked(r) != null);
@@ -118,7 +115,7 @@ window.DecisionsTickets = (function () {
         return [...map.entries()].map(([k, l]) => ({ key: k, ...summarize(l) })).sort((a, b) => b.n - a.n);
     }
 
-    // Группы по людям: решение, отмеченное двумя людьми, считается у каждого из них.
+    // группы по людям: решение с двумя отметчиками считается у каждого
     function groupByPeople(list) {
         const map = new Map();
         list.forEach(r => {
@@ -130,7 +127,7 @@ window.DecisionsTickets = (function () {
         return [...map.entries()].map(([k, l]) => ({ key: k, ...summarize(l) })).sort((a, b) => b.n - a.n);
     }
 
-    // Итог одной строки: вердикт для экрана и для Excel.
+    // вердикт и для экрана, и для Excel
     function verdictOf(r) {
         if (r.overlap) return { cls: 'none', text: 'перекрыто: позже на эту дату отмечено противоположное решение', short: 'перекрыто', worked: null };
         return PriceMarks.judge(r.e, r.status);
@@ -271,7 +268,7 @@ window.DecisionsTickets = (function () {
             </section>`;
     }
 
-    // Данные для выгрузки в Excel (reports-view.js → exportDecisions).
+    // данные для выгрузки в Excel (reports-view.js, exportDecisions)
     function exportData() {
         const list = filtered();
         const g = (fn) => groupBy(list, fn);
@@ -306,7 +303,7 @@ window.DecisionsTickets = (function () {
         return false;
     }
 
-    // Период и вид решений общие с вкладкой «В рублях» (DecisionsReport): при переключении вида они не сбрасываются.
+    // период и вид решений общие с вкладкой "В рублях" (DecisionsReport), при переключении не сбрасываются
     return {
         canView, html, handleClick, exportData,
         setPeriod: (n) => { if (PERIODS.includes(n)) period = n; },
