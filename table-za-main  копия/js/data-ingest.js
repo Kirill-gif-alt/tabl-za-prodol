@@ -224,6 +224,12 @@ async function processDataFromSources(avail, closed, sales, exp, weights, childr
         })());
     }
     if (parallelLoads.length) await Promise.all(parallelLoads);
+    // Файл загрузки есть, а рейсов в нём нет (не тот файл, другой формат): прежние данные не затираем.
+    if (avail.length && !allData.length && !(typeof HeliData !== 'undefined' && HeliData.hasData())) {
+        const err = new Error('no flights in availability file');
+        err.userMessage = 'В файле загрузки не найдено ни одного рейса. Прежние данные оставлены.';
+        throw err;
+    }
 
     if (sales) {
         setLoadingMessage('Загрузка продаж...');
@@ -453,7 +459,7 @@ async function processDataFromFileList(fileList) {
         const hint = (typeof SessionStore !== 'undefined' && await SessionStore.hasSnapshot())
             ? ' Выберите папку или нажмите «Последние данные».'
             : ' Выберите папку «Загрузка» (подпапки: загрузка таб, база закрытие, csv/продажи).';
-        showToast('Ошибка загрузки.' + hint, 'error');
+        showToast(e.userMessage || ('Ошибка загрузки.' + hint), 'error');
     } finally {
         hideLoading();
     }
@@ -495,7 +501,7 @@ async function autoLoadLatestFiles() {
             const hint = (typeof SessionStore !== 'undefined' && await SessionStore.hasSnapshot())
                 ? ' Выберите папку или нажмите «Последние данные».'
                 : ' Выберите папку с файлами или используйте Chrome/Edge.';
-            showToast('Ошибка загрузки.' + hint, 'error');
+            showToast(e.userMessage || ('Ошибка загрузки.' + hint), 'error');
         } finally {
             hideLoading();
         }
