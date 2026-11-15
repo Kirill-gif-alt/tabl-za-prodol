@@ -18,8 +18,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
 PORT = int(os.environ.get("KRASAVIA_PORT", "8765"))
 SHARED_DIR = os.path.join(ROOT, "shared")
-# Общие файлы, которые программа может записать через сервер (как ALLOWED_FILES в js/shared-storage.js).
-# Запись через сервер не зависит от разрешения браузера на папку, которое сбрасывается при перезапуске.
+# общие файлы, которые можно писать через сервер (как ALLOWED_FILES в js/shared-storage.js)
+# не зависит от разрешения браузера на папку, оно сбрасывается при перезапуске
 SHARED_WRITABLE = {
     "profiles.json", "fare-grid.json", "snapshot.json", "activity.json", "flight-comments.json",
     "subsidy-overrides.json", "pkz-nav.json", "sales-management.json",
@@ -27,9 +27,9 @@ SHARED_WRITABLE = {
     "forecast-now.json", "signals-days.json", "params.json", "lower-requests.json", "lowreq-report.json",
     "export-kk.json", "export-mr.json", "heli-points.json",
 }
-# Резервные копии перед перезаписью: shared/_history/<имя>/<имя>__ГГГГ-ММ-ДД_ЧЧ-ММ-СС.json.
-# every — не чаще раза в столько секунд, keep — сколько последних копий хранить.
-# Такая же политика в js/shared-storage.js (HISTORY_POLICY) для записи без сервера.
+# копии перед перезаписью: shared/_history/<имя>/<имя>__ГГГГ-ММ-ДД_ЧЧ-ММ-СС.json
+# every - не чаще раза в столько секунд, keep - сколько последних копий хранить
+# та же политика в js/shared-storage.js (HISTORY_POLICY)
 HISTORY_DIR = os.path.join(SHARED_DIR, "_history")
 HISTORY_POLICY = {
     "snapshot.json": (6 * 3600, 4),
@@ -51,7 +51,7 @@ HISTORY_POLICY = {
 }
 # Архив продаж (js/sales-archive.js): shared/history/curves-ГГГГ-ММ.json.
 ARCHIVE_RE = re.compile(r"^history/(curves-\d{4}-\d{2}|daylog-\d{4}-\d{2}|tickets-\d{4}-\d{2}|import)\.json$", re.ASCII)
-# Отметки «Управления продажами»: свой файл у каждого автора (js/sales-management.js).
+# отметки "Управления продажами": свой файл у каждого автора (js/sales-management.js)
 MARKS_RE = re.compile(r"^sales-marks/\d{4}-\d{2}/[a-z0-9_]{1,40}\.json$", re.ASCII)
 MARKS_DIR_RE = re.compile(r"^sales-marks/\d{4}-\d{2}$", re.ASCII)
 # Журнал прогнозов загрузки (js/forecast-lab.js): shared/forecast-log/ГГГГ-ММ.json.
@@ -69,12 +69,11 @@ def _name_lock(name):
         return _NAME_LOCKS.setdefault(name, threading.Lock())
 
 
-# Замок на файл между серверами. У каждого ПК свой сервер, а папка shared общая (по сети): замок потоков внутри
-# процесса защищает только этот сервер, поэтому проверка отпечатка (X-Krasavia-If-Match) и подмена файла у двух ПК
-# могли пройти одновременно и затереть друг друга. Файл-замок «.<имя>.lock» создаётся атомарно (O_EXCL, на SMB тоже)
-# на время проверки и записи и удаляется сразу после неё.
-LOCK_WAIT = 45          # сколько секунд ждём чужую запись, потом отвечаем «занято» (503)
-LOCK_STALE = 30         # замок, который столько секунд не меняется, считаем брошенным (ПК упал посреди записи);
+# замок на файл для других ПК: у каждого ПК свой сервер, а shared общая по сети
+# замок потоков защищает только свой сервер, два ПК могут затереть файл вместе
+# файл-замок ".<имя>.lock" создаётся атомарно (O_EXCL, на SMB тоже) и удаляется сразу после записи
+LOCK_WAIT = 45          # сколько секунд ждём чужую запись, потом отвечаем "занято" (503)
+LOCK_STALE = 30         # замок, который столько секунд не меняется, считаем брошенным (ПК упал посреди записи)
                         # запись даже большого файла по сети идёт заметно быстрее
 
 
@@ -107,13 +106,14 @@ def acquire_file_lock(target):
         except FileExistsError:
             pass
         except PermissionError:
-            # Windows/SMB: замок как раз удаляют — это ожидание. Нет самого замка — папка закрыта на запись, это ошибка.
+            # на Windows/SMB замок удаляют, это ожидание
+            # если замка нет совсем, папка закрыта на запись, это ошибка
             if not os.path.exists(lock_path):
                 raise
         now = time.monotonic()
         sig = _lock_sig(lock_path)
-        # Устарел ли замок, судим по своим часам: пока мы ждём, он не менялся дольше LOCK_STALE секунд
-        # (время файла на сервере и часы ПК могут расходиться, поэтому на возраст файла не смотрим).
+        # судим по своим часам: замок не менялся дольше LOCK_STALE
+        # время файла на сервере и часы ПК могут расходиться, поэтому возраст файла не смотрим
         if sig is None:
             seen_sig, seen_at = None, now
             continue
@@ -155,7 +155,7 @@ def release_file_lock(lock):
             mine = f.read(256).decode("utf-8", "replace") == token
     except OSError:
         return
-    if mine:                      # замок могли снять как брошенный и взять другим — чужой не трогаем
+    if mine:                      # замок могли снять как брошенный и взять другим, чужой не трогаем
         try:
             os.remove(lock_path)
         except OSError:
@@ -164,14 +164,13 @@ def release_file_lock(lock):
 
 ALLOWED_HOSTS = {"127.0.0.1:%d" % PORT, "localhost:%d" % PORT}
 
-# Правила для браузера (те же, что в index.html, плюс запрет открывать сайт внутри чужой страницы).
-# Страница выполняет только свои файлы js/ и обращается только к этому серверу: вставленный в данные чужой текст
-# ничего не выполнит, а данные сайта некуда отправить.
+# заголовки CSP для браузера: как в index.html, плюс запрет открывать сайт в чужой странице
+# страница выполняет только js/ и ходит только на этот сервер, чужой текст из данных не выполнится
 PAGE_CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
             "connect-src 'self' blob:; font-src 'self'; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; "
             "base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
-# live-frame.html — изолированная рамка для запроса к Flightradar (см. комментарий в самом файле): чужая программа
-# выполняется только в ней, открыть её можно только внутри нашей же страницы.
+# live-frame.html: рамка для запроса к Flightradar, чужая программа выполняется только в ней
+# открыть её можно только внутри нашей страницы
 RADAR_FRAME = "/live-frame.html"
 SERVED_TYPES = (".html", ".js", ".css", ".json", ".geojson", ".svg", ".png", ".ico", ".woff", ".woff2")
 RADAR_CSP = ("default-src 'none'; script-src 'unsafe-inline' https://data-cloud.flightradar24.com; "
@@ -179,7 +178,7 @@ RADAR_CSP = ("default-src 'none'; script-src 'unsafe-inline' https://data-cloud.
 
 
 def _history_base(name):
-    # forecast-log/2026-10.json → forecast-log_2026-10 (одна папка копий на файл, без подпапок).
+    # forecast-log/2026-10.json -> forecast-log_2026-10 (одна папка копий на файл, без подпапок).
     return name[:-5].replace("/", "_")
 
 
@@ -188,7 +187,7 @@ def _policy_for(name):
         return HISTORY_POLICY[name]
     if FCLOG_RE.fullmatch(name) or DMONEY_RE.fullmatch(name):
         return (6 * 3600, 10)
-    # Архив продаж (кривые по месяцам) — копия раз в сутки, три последних: загрузка истории переписывает все месяцы.
+    # архив продаж (кривые по месяцам): копия раз в сутки, три последних; загрузка истории переписывает все месяцы
     if ARCHIVE_RE.fullmatch(name):
         return (24 * 3600, 3)
     return None
@@ -230,7 +229,7 @@ def backup_if_due(name, force=False):
         dest = os.path.join(folder, "%s__%s.json" % (_history_base(name), stamp))
         if not os.path.exists(dest):
             shutil.copy2(target, dest)
-            os.utime(dest)  # время копии — для интервала; время версии — в имени
+            os.utime(dest)  # время копии - для интервала; время версии - в имени
         _, items = _history_versions(name)
         for fn, _, _ in items[keep:]:
             try:
@@ -246,7 +245,7 @@ class Handler(SimpleHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "Krasavia"   # без версий Python и сервера в ответах
     sys_version = ""
-    # Без задержки отправки мелких пакетов: иначе каждый из ~80 файлов страницы ждёт ~40 мс.
+    # без задержки мелких пакетов, иначе каждый из ~80 файлов ждёт ~40 мс
     disable_nagle_algorithm = True
     # Типы заданы явно: на Windows Python берёт их из реестра, и .js там бывает text/plain.
     extensions_map = {
@@ -286,9 +285,8 @@ class Handler(SimpleHTTPRequestHandler):
         return None
 
     def _static_blocked(self):
-        # Служебное не отдаём: .git и скрытые пути, scripts/, tools/, ml-forecast/, secrets/.
-        # Отдаём только те виды файлов, из которых состоит сайт: скрипты запуска, ключи, настройки, журналы и любые
-        # случайно положенные в папку документы через сервер не прочитать.
+        # служебное не отдаём: .git, скрытые пути, scripts/, tools/, ml-forecast/, secrets/
+        # отдаём только типы файлов, из которых состоит сайт; документы и прочее через сервер не читаются
         parts = [p for p in unquote(urlparse(self.path).path).replace("\\", "/").split("/") if p]
         if any(p.startswith(".") for p in parts):
             return True
@@ -297,8 +295,8 @@ class Handler(SimpleHTTPRequestHandler):
         return bool(parts) and not parts[-1].lower().endswith(SERVED_TYPES)
 
     def _foreign_request(self):
-        # Запрос пришёл со страницы другого сайта (браузер сам сообщает это в Sec-Fetch-Site). Чужой странице можно
-        # только открыть сам сайт по ссылке; файлы данных, общую папку и служебные адреса она не получит.
+        # запрос со страницы другого сайта (Sec-Fetch-Site): чужой странице можно только открыть сам сайт
+        # файлы данных, общую папку и служебные адреса она не получит
         site = self.headers.get("Sec-Fetch-Site")
         if site is None or site in ("same-origin", "none"):
             return False
@@ -346,14 +344,14 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
-        # POST сайту не нужен: запись идёт через PUT /shared/…
+        # POST сайту не нужен, запись идёт через PUT /shared/...
         self.close_connection = True
         return self._send_json(404, {"error": "not allowed"})
 
     def do_PUT(self):
         path = self.path.split("?")[0]
         name = path[len("/shared/"):] if path.startswith("/shared/") else ""
-        # При отказе тело не читаем — закрываем соединение, чтобы остаток не приняли за новый запрос.
+        # при отказе тело не читаем, закрываем соединение, иначе остаток примут за новый запрос
         self.close_connection = True
         if not self._same_origin():
             return self._send_json(403, {"error": "forbidden"})
@@ -378,12 +376,12 @@ class Handler(SimpleHTTPRequestHandler):
             target = os.path.join(SHARED_DIR, *name.split("/"))
             target_dir = os.path.dirname(target)
             os.makedirs(target_dir, exist_ok=True)
-            # Сначала очередь потоков этого сервера, затем замок на файл для остальных серверов (других ПК) на ту же папку.
+            # сначала очередь потоков этого сервера, потом замок на файл для других ПК
             with _name_lock(name):
                 lock = acquire_file_lock(target)
-                # Пока замок у нас, временных файлов этого же имени ни у кого нет: оставшиеся — от оборванной записи.
+                # Пока замок у нас, временных файлов этого же имени ни у кого нет: оставшиеся - от оборванной записи.
                 sweep_stale_tmp(target)
-                # Запись «только если файл не менялся с прочтения»: отпечаток SHA-1 прочитанных байтов или absent (файла не было).
+                # Запись "только если файл не менялся с прочтения": отпечаток SHA-1 прочитанных байтов или absent (файла не было).
                 want = self.headers.get("X-Krasavia-If-Match")
                 if want:
                     try:
@@ -407,7 +405,7 @@ class Handler(SimpleHTTPRequestHandler):
                         os.chmod(tmp, 0o644)  # mkstemp создаёт файл только для владельца
                     except OSError:
                         pass
-                    # На Windows/SMB замена падает, пока файл открыт читателем (другой ПК) — повторяем.
+                    # на Windows/SMB замена падает, пока файл открыт читателем (другой ПК), повторяем
                     for attempt in range(6):
                         try:
                             os.replace(tmp, target)
@@ -436,7 +434,7 @@ class Handler(SimpleHTTPRequestHandler):
     def end_headers(self):
         radar = urlparse(self.path).path == RADAR_FRAME
         self.send_header("Cache-Control", "no-cache")
-        # Защита: не угадывать тип файла, не открывать страницу внутри чужого сайта, не отдавать адрес.
+        # защита: тип файла не угадываем, страницу внутри чужого сайта не открываем, адрес не отдаём
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "SAMEORIGIN" if radar else "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
@@ -444,7 +442,7 @@ class Handler(SimpleHTTPRequestHandler):
         # Файлы сайта и общей папки нельзя подключить на чужой странице (картинкой, скриптом, рамкой).
         self.send_header("Cross-Origin-Resource-Policy", "same-origin")
         self.send_header("Cross-Origin-Opener-Policy", "same-origin")
-        # Сайту не нужны камера, микрофон, место на карте и подобное — запрещаем их вместе со всем остальным.
+        # сайту не нужны камера, микрофон и геолокация: запрещаем вместе со всем остальным
         self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()")
         super().end_headers()
 

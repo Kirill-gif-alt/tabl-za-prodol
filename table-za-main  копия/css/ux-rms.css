@@ -1,8 +1,7 @@
-/* Оформление вкладки: rms (ux-rms)
-   Только раскладка, размеры и выравнивание. Цвета таблицы (заливка строк «критично/внимание», ячейки,
-   значки) остаются из styles.css и настроек темы. */
+/* оформление вкладки: rms (ux-rms)
+   только раскладка, размеры и выравнивание; цвета остаются из styles.css и настроек темы */
 
-/* ---------- Пояснение под шапкой и значок «?» ---------- */
+/* пояснение под шапкой и значок "?" */
 .rms-hero-note {
     display: flex;
     align-items: center;
@@ -49,7 +48,7 @@
     line-height: 1.4;
 }
 
-/* ---------- Пометка про скрытые продажи — в строке пояснения под шапкой ---------- */
+/* пометка про скрытые продажи в строке пояснения под шапкой */
 .rms-cols-note {
     color: #fde68a;
     font-size: 0.76rem;
@@ -58,8 +57,8 @@
 .rms-cols-note::before { content: "·"; margin-right: 8px; color: rgb(255 255 255 / 0.6); }
 .rms-cols-note[hidden] { display: none; }
 
-/* ---------- Таблица: шапка ---------- */
-/* Шапка стоит на месте при прокрутке; подписи короткие, полное название — в подсказке (title). */
+/* таблица: шапка */
+/* Шапка стоит на месте при прокрутке; подписи короткие, полное название - в подсказке (title). */
 table.rms-table thead th {
     position: sticky;
     top: 0;
@@ -72,9 +71,9 @@ table.rms-table thead th {
 }
 table.rms-table thead th.rms-col-mark { text-align: center; }
 
-/* ---------- Таблица: строки одной высоты ---------- */
-/* Высота строки одна на все строки (рейс, подробности, заголовок группы): окно прокрутки считает по ней —
-   число RMS_ROW_H в js/rms-view.js должно совпадать с --rms-row-h. */
+/* таблица: строки одной высоты */
+/* высота строки одна у всех (рейс, подробности, заголовок группы), окно прокрутки считает по ней
+   число RMS_ROW_H в js/rms-view.js должно совпадать с --rms-row-h */
 table.rms-table {
     --rms-row-h: 38px;
     font-variant-numeric: tabular-nums;
@@ -92,8 +91,8 @@ table.rms-table tbody tr.rms-detail > td {
     line-height: 1.2;
 }
 
-/* Ширины столбцов заданы жёстко: таблица рисует только видимые строки, и без этого столбцы «ездили» бы при прокрутке.
-   Остаток ширины забирает «Причина». */
+/* ширины столбцов жёсткие: таблица рисует только видимые строки, иначе столбцы ездят при прокрутке
+   остаток ширины забирает "Причина" */
 table.rms-table .rms-col-flight { width: 240px; min-width: 240px; max-width: 240px; }
 table.rms-table .rms-col-date { width: 118px; min-width: 118px; max-width: 118px; }
 table.rms-table .rms-col-load { width: 128px; min-width: 128px; max-width: 128px; }
@@ -108,7 +107,7 @@ table.rms-table .rms-col-reason {
 }
 table.rms-table tbody td.rms-col-reason { max-width: 0; }
 table.rms-table td.rms-col-mark { text-align: center; }
-/* Причина — одна строка, полный текст в подсказке: высота строки одинаковая. */
+/* причина в одну строку, полный текст в подсказке (высота строки одинаковая) */
 .rms-reason-text {
     display: block;
     overflow: hidden;
@@ -116,7 +115,7 @@ table.rms-table td.rms-col-mark { text-align: center; }
     white-space: nowrap;
 }
 
-/* Рейс: код с типом и направление — в две строки */
+/* Рейс: код с типом и направление - в две строки */
 table.rms-table .rms-flight-code {
     display: flex;
     align-items: center;
@@ -143,7 +142,7 @@ table.rms-table .rms-flight-name {
 }
 table.rms-table .rms-flight-route { display: inline; margin: 0; }
 
-/* Вторые строки ячеек: «через 3 дн.», «2 из 45 пасс.», «ожидали 18» */
+/* Вторые строки ячеек: "через 3 дн.", "2 из 45 пасс.", "ожидали 18" */
 table.rms-table .rms-sub {
     margin-top: 1px;
     font-size: 0.72rem;
@@ -164,7 +163,7 @@ table.rms-table .rms-col-load .occupancy-med {
 }
 table.rms-table .rms-delta { display: inline-block; padding: 0 8px; border-radius: 6px; font-size: 0.9rem; font-weight: 700; line-height: 1.2; }
 
-/* ---------- «Что сделать» ---------- */
+/* что сделать */
 .rms-act {
     display: inline-block;
     padding: 3px 10px;
@@ -184,7 +183,7 @@ html[data-theme="dark"] .rms-act-promo { background: rgb(56 189 248 / 0.18); col
 html[data-theme="dark"] .rms-act-up { background: rgb(52 211 153 / 0.18); color: #6ee7b7; }
 html[data-theme="dark"] .rms-act-check { background: rgb(251 191 36 / 0.18); color: #fcd34d; }
 
-/* ---------- Заголовки групп и «Показать остальные» ---------- */
+/* заголовки групп и "Показать остальные" */
 table.rms-table tbody tr.rms-group > td {
     background: var(--muted-bg, var(--bg));
     border-bottom: 1px solid var(--border);
@@ -238,7 +237,7 @@ table.rms-table tbody tr.rms-group-warn > td { box-shadow: inset 4px 0 0 #f59e0b
 .rms-rest-toggle:hover { border-color: var(--primary); }
 .rms-rest-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
-/* ---------- Подробности под строкой ---------- */
+/* подробности под строкой */
 table.rms-table tbody tr.rms-detail > td {
     background: var(--muted-bg, var(--bg));
     border-bottom: 1px solid var(--border);
@@ -260,11 +259,11 @@ table.rms-table tbody tr.rms-detail > td {
 html[data-theme="dark"] .rms-detail-line .rms-today-hot { color: #4ade80 !important; }
 .rms-detail-code { font-weight: 700; color: var(--text); }
 
-/* ---------- Узкие окна ---------- */
+/* узкие окна */
 @media (max-width: 900px) {
     table.rms-table { min-width: 980px; }
 }
 
-/* Строка рейса с участком: города могут не влезть — переносим на вторую строку (таких строк мало) */
+/* строка рейса с участком: города могут не влезть, переносим на вторую строку (таких мало) */
 table.rms-table .rms-flight-name.rms-flight-name-wrap { white-space: normal; overflow: visible; text-overflow: clip; }
 table.rms-table .rms-flight-name-wrap .rms-flight-route:first-child { font-size: inherit; color: inherit; }

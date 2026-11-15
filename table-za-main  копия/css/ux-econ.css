@@ -1,19 +1,18 @@
-/* Оформление вкладки «Экономическая таблица» (ux-econ)
-   Только раскладка, размеры, выравнивание и шапка таблицы. Тело таблицы (заливка строк по неделям, плашки ЗПК,
-   поле субсидии, ячейки выручки и расчёты) не менялось. Цвета шапки те же: тёмно-синий, синий «туда», зелёный «обратно». */
+/* оформление вкладки "Экономическая таблица" (ux-econ)
+   только раскладка и шапка, тело таблицы не трогаем; цвета шапки: тёмно-синий, синий туда, зелёный обратно */
 
 .ec-page {
-    --ec-h: 34px;                                  /* высота каждой строки шапки таблицы */
-    --ec-line: rgb(255 255 255 / 0.22);            /* тонкая линия между столбцами шапки */
-    --ec-line-strong: rgb(255 255 255 / 0.6);      /* граница между «туда», «обратно» и «пара» */
-    --ec-line-under: rgb(255 255 255 / 0.4);       /* линия под общей подписью группы */
+    --ec-h: 34px;
+    --ec-line: rgb(255 255 255 / 0.22);
+    --ec-line-strong: rgb(255 255 255 / 0.6);      /* граница между "туда", "обратно" и "пара" */
+    --ec-line-under: rgb(255 255 255 / 0.4);
     --ec-sep: #94a3b8;                             /* то же в теле таблицы */
 }
 html[data-theme="dark"] .ec-page {
     --ec-sep: #57606a;
 }
 
-/* ---------- плашка с названием пары и кнопкой выгрузки ---------- */
+/* плашка с названием пары и кнопкой выгрузки */
 .ec-page .ec-hero {
     display: flex;
     align-items: center;
@@ -48,7 +47,7 @@ html[data-theme="dark"] .ec-page {
 .ec-page .ec-hero .export-excel-btn:hover { background: #e0f2fe; border-color: #e0f2fe; color: #012A4A; }
 .ec-page .ec-hero .export-excel-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 
-/* ---------- панель: ряд 1 — фильтры, порядок, поиск; ряд 2 — галочки столбцов ---------- */
+/* панель: ряд 1 фильтры, порядок, поиск; ряд 2 галочки столбцов */
 .ec-page .ec-panel {
     display: flex;
     flex-direction: column;
@@ -74,7 +73,7 @@ html[data-theme="dark"] .ec-page {
     .ec-page .ec-row-2 .ec-group + .ec-group { padding-left: 30px; margin-left: -6px; border-left: 1px solid var(--border); }
 }
 
-/* фильтры — отдельные «таблетки» с цифрой */
+/* фильтры отдельными "таблетками" с цифрой */
 .ec-page .table-filter-group {
     display: flex;
     flex-wrap: wrap;
@@ -162,7 +161,7 @@ html[data-theme="dark"] .ec-page {
     white-space: nowrap;
 }
 
-/* ---------- шапка таблицы: сплошная, без зазоров ---------- */
+/* шапка таблицы: сплошная, без зазоров */
 .ec-page.pair-page table.pair-table thead th {
     box-sizing: border-box;
     height: var(--ec-h);
@@ -179,7 +178,7 @@ html[data-theme="dark"] .ec-page {
     vertical-align: middle;
 }
 .ec-page.pair-page table.pair-table thead th.col-date { text-align: left; padding-left: 12px; }
-/* первая строка шапки стоит у верхнего края, вторая — ровно под ней */
+/* первая строка шапки стоит у верхнего края, вторая - ровно под ней */
 .ec-page.pair-page table.pair-table thead tr.ec-head-1 th { top: 0; z-index: 102; }
 .ec-page.pair-page table.pair-table thead tr.ec-head-2 th { top: var(--ec-h); z-index: 101; }
 
@@ -218,14 +217,14 @@ html[data-theme="dark"] .ec-page {
 .ec-page.pair-page table.pair-table thead tr.ec-head-2 th.pair-grp-first {
     box-shadow: inset 1px 0 0 var(--ec-line-strong);
 }
-/* выделенный щелчком столбец — как у остальных таблиц */
+/* выделенный щелчком столбец - как у остальных таблиц */
 .ec-page.pair-page table.pair-table thead th.tbl-sel-col {
     background: #93c5fd !important;
     color: #0f172a !important;
     box-shadow: inset 0 -3px 0 #2563eb;
 }
 
-/* ---------- тело: вместо чёрной полосы — тонкая линия ---------- */
+/* тело: вместо чёрной полосы тонкая линия */
 .ec-page.pair-page table.pair-table tbody td.pair-split-end { border-right: 0 !important; }
 .ec-page.pair-page table.pair-table tbody td.pair-split-start,
 .ec-page.pair-page table.pair-table tbody td.pair-grp-first {

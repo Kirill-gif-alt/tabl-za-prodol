@@ -1,6 +1,5 @@
-/* Оформление вкладки «Сегодня» (ux-today)
-   Только раскладка, размеры, выравнивание и цвета новых плиток/плашек.
-   Цвета таблицы (шапка, заливка строк, цвета прогноза) остаются из styles.css и «Настроек». */
+/* оформление вкладки "Сегодня" (ux-today)
+   только раскладка и цвета новых плиток и плашек; цвета таблицы из styles.css и "Настроек" */
 
 .td-main {
     display: flex;
@@ -10,7 +9,6 @@
 }
 .td-main > * { margin: 0; }
 
-/* ---------- заголовок ---------- */
 .td-head {
     display: flex;
     flex-wrap: wrap;
@@ -32,7 +30,7 @@
     font-size: 1rem;
 }
 
-/* ---------- плашка про старые данные ---------- */
+/* плашка про старые данные */
 .td-stale {
     display: flex;
     flex-wrap: wrap;
@@ -62,7 +60,7 @@ html[data-theme="dark"] .td-stale { background: #33250c; border-color: #7c5a10; 
 html[data-theme="dark"] .td-stale-btn { background: #059669; border-color: #059669; }
 html[data-theme="dark"] .td-stale-btn:hover { background: #10b981; border-color: #10b981; }
 
-/* ---------- четыре крупные плитки ---------- */
+/* четыре крупные плитки */
 .td-bigs {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
@@ -118,7 +116,7 @@ html[data-theme="dark"] .td-stale-btn:hover { background: #10b981; border-color:
 .td-big-gray.td-big-on { border-left-color: #64748b; }
 .td-big .td-link { font-size: inherit; }
 
-/* ---------- вторая строка: поменьше ---------- */
+/* вторая строка: плитки поменьше */
 .td-stats {
     grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
     gap: 10px;
@@ -136,7 +134,7 @@ html[data-theme="dark"] .td-stale-btn:hover { background: #10b981; border-color:
 .td-stat b { font-size: 1.15rem; }
 .td-stat em { font-size: 0.76rem; }
 
-/* ---------- полоса ближайших дней: одна строка ---------- */
+/* полоса ближайших дней в одну строку */
 .td-days-card {
     padding: 8px 12px 10px;
     border: 1px solid var(--border);
@@ -211,7 +209,7 @@ html[data-theme="dark"] .td-day.td-day-wk .td-dow { color: #f87171; }
 html[data-theme="dark"] .td-day.td-day-lo .td-bar,
 html[data-theme="dark"] .td-day.td-day-hi .td-bar { background: rgb(255 255 255 / 0.14); }
 
-/* ---------- вкладки таблицы, сортировка ---------- */
+/* вкладки таблицы, сортировка */
 .td-tabs {
     flex-wrap: wrap;
     align-items: center;
@@ -248,7 +246,7 @@ html[data-theme="dark"] .td-day.td-day-hi .td-bar { background: rgb(255 255 255 
 }
 .td-filter-chip:hover { border-style: solid; }
 .td-filter-chip-on { border-style: solid; border-color: var(--today-active, var(--text)); box-shadow: 0 0 0 1px var(--today-active, var(--text)); }
-/* Метка «новое»: сигнал появился сегодня (signal-news.js); та же в RMS. */
+/* метка "новое": сигнал появился сегодня (signal-news.js), та же в RMS */
 .td-new {
     display: inline-block;
     margin-left: 6px;
@@ -276,7 +274,7 @@ html[data-theme="dark"] .td-new { background: #172554; color: #bfdbfe; }
     border-radius: 9px;
 }
 
-/* ---------- массовая отметка и подробности ---------- */
+/* массовая отметка и подробности */
 .td-bulk {
     display: flex;
     flex-wrap: wrap;
@@ -337,7 +335,7 @@ html[data-theme="dark"] .td-new { background: #172554; color: #bfdbfe; }
 }
 .td-next:hover { border-color: var(--text); }
 
-/* ---------- таблица ---------- */
+/* таблица */
 .td-table { font-size: 0.88rem; }
 .td-table th.td-th-r,
 .td-table td.td-money { text-align: right; }
@@ -379,7 +377,7 @@ html[data-theme="dark"] .td-err { color: #fca5a5; }
     color: var(--text-muted);
 }
 
-/* ---------- подробности под строкой (двойной клик) ---------- */
+/* подробности под строкой (двойной клик) */
 .td-table tbody tr.td-detail > td,
 .td-table tbody tr.td-detail:hover > td {
     padding: 8px 14px 10px 24px;
@@ -409,7 +407,7 @@ html[data-theme="dark"] .td-err { color: #fca5a5; }
     line-height: 1.4;
 }
 
-/* ---------- узкие экраны ---------- */
+/* узкие экраны */
 @media (max-width: 1000px) {
     .td-bigs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .td-stats { grid-template-columns: 1fr; }

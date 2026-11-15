@@ -1,6 +1,6 @@
 /* Оформление вкладки: costs (ux-costs) */
 
-/* ---------- Цвета вкладки: расходы — серый, субсидия — синий, доход — зелёный; плюс — зелёный, минус — красный ---------- */
+/* цвета вкладки: расходы серые, субсидия синяя, доход зелёный; плюс зелёный, минус красный */
 .cost-calc-page {
     --cc-r: 16px;
     --cc-gap: 16px;
@@ -29,7 +29,7 @@ html[data-theme="dark"] .cost-calc-page {
     --cc-neg-line: rgb(248 113 113 / 0.4);
 }
 
-/* ---------- Каркас: все блоки одной ширины с шапкой, одинаковые отступы ---------- */
+/* каркас: все блоки одной ширины с шапкой */
 .cost-calc-page .cost-calc-hero {
     padding: 16px var(--cc-pad);
 }
@@ -99,7 +99,7 @@ html[data-theme="dark"] .cost-calc-page {
     color: var(--text-muted);
 }
 
-/* Файл по месяцам: сверху среднее (крупно) и расчёт по нему, ниже — месяцы мельче */
+/* Файл по месяцам: сверху среднее (крупно) и расчёт по нему, ниже - месяцы мельче */
 .cost-calc-page .cost-calc-month:not(.cost-calc-month-compact) .cost-calc-month-title {
     font-size: 0.95rem;
     font-weight: 700;
@@ -127,7 +127,7 @@ html[data-theme="dark"] .cost-calc-page {
 }
 .cost-calc-page .cost-calc-month-compact .cost-calc-kpi-hint { display: none; }
 
-/* ---------- Плитки ---------- */
+/* плитки */
 .cost-calc-page .cost-calc-kpis {
     gap: var(--cc-gap);
 }
@@ -147,7 +147,6 @@ html[data-theme="dark"] .cost-calc-page {
     padding: var(--cc-pad);
     border-radius: var(--cc-r);
 }
-/* Цветная метка в углу: расходы — серая, субсидия — синяя, доход — зелёная */
 .cost-calc-page .cost-calc-kpi-exp::after,
 .cost-calc-page .cost-calc-kpi-sub::after,
 .cost-calc-page .cost-calc-kpi-rev::after {
@@ -192,7 +191,6 @@ html[data-theme="dark"] .cost-calc-page {
     line-height: 1.35;
     color: var(--text-muted);
 }
-/* Плитка «Фин. результат»: плюс — зелёная, минус — красная */
 .cost-calc-page .cost-calc-kpi-fin { border-color: var(--border); }
 .cost-calc-page .cost-calc-kpi-fin.cost-calc-pos {
     background: var(--cc-pos-bg);
@@ -205,7 +203,7 @@ html[data-theme="dark"] .cost-calc-page {
 }
 .cost-calc-page .cost-calc-kpi-fin.cost-calc-neg .cost-calc-kpi-val { color: var(--cc-neg); }
 
-/* ---------- Пустые состояния ---------- */
+/* пустые состояния */
 .cost-calc-page .table-empty-state {
     padding: 48px var(--cc-pad);
     border: 1px dashed var(--border);
@@ -216,7 +214,7 @@ html[data-theme="dark"] .cost-calc-page {
 .cost-calc-page .table-empty-hint { color: var(--text-muted); }
 
 
-/* ---------- Вывод словами: в плюс / в минус ---------- */
+/* вывод словами: в плюс / в минус */
 .cost-calc-page .cost-calc-verdict {
     display: flex;
     flex-direction: column;
@@ -244,7 +242,7 @@ html[data-theme="dark"] .cost-calc-page {
 .cost-calc-page .cost-calc-verdict-none .cost-calc-verdict-val { color: var(--text-muted); font-weight: 700; }
 .cost-calc-page .cost-calc-verdict-text { margin: 4px 0 0; font-size: 1rem; line-height: 1.45; color: var(--text); }
 
-/* ---------- Таблица «сколько мест занять» ---------- */
+/* таблица "сколько мест занять" */
 .cost-calc-page .cost-calc-block {
     padding: var(--cc-pad);
     border-radius: var(--cc-r);
@@ -297,7 +295,7 @@ html[data-theme="dark"] .cost-calc-page {
 .cost-calc-page .cost-calc-neg { color: var(--cc-neg); font-weight: 700; }
 .cost-calc-page .cost-calc-muted { color: var(--text-muted); }
 
-/* ---------- Узкий экран ---------- */
+/* узкий экран */
 @media (max-width: 640px) {
     .cost-calc-page .cost-calc-block,
     .cost-calc-page .cost-calc-form,

@@ -23,7 +23,6 @@
 
     <a class="skip-link" href="#main-content-inner">К основному содержимому</a>
 
-    <!-- Оверлей загрузки -->
     <div id="loading-overlay" class="loading-overlay" role="status" aria-live="polite" aria-busy="false" aria-hidden="true">
         <div class="loading-card">
             <div class="loading-spinner" aria-hidden="true"></div>
@@ -32,10 +31,8 @@
         </div>
     </div>
 
-    <!-- Toast-уведомления -->
     <div id="toast-container" class="toast-container" role="region" aria-label="Уведомления" aria-live="polite"></div>
 
-    <!-- Вход по профилю -->
     <div id="login-overlay" class="login-overlay open" role="dialog" aria-modal="true" aria-labelledby="login-title">
         <div class="login-card">
             <div class="login-brand">
@@ -64,7 +61,6 @@
         </div>
     </div>
 
-    <!-- Настройки профиля (оформление) -->
     <div id="profile-settings-modal" class="profile-admin-modal">
         <div class="profile-admin-backdrop"></div>
         <div class="profile-admin-panel profile-settings-panel" role="dialog" aria-modal="true" aria-labelledby="profile-settings-title">
@@ -84,7 +80,6 @@
         </div>
     </div>
 
-    <!-- Управление профилями (админ) -->
     <div id="profile-admin-modal" class="profile-admin-modal">
         <div class="profile-admin-backdrop"></div>
         <div class="profile-admin-panel" role="dialog" aria-modal="true" aria-labelledby="profile-admin-title">
@@ -172,7 +167,7 @@
 
     <input type="file" id="folder-input" webkitdirectory multiple hidden>
 
-    <!-- Библиотеки лежат рядом (те же версии, что раньше брались с CDN): работают без интернета. xlsx 0.18.5, chart.js 4.4.1 из npm. -->
+    <!-- библиотеки лежат рядом, работают без интернета: xlsx 0.18.5, chart.js 4.4.1 -->
     <script src="js/vendor/chart.umd.js"></script>
     <script src="js/security.js"></script>
     <script src="js/routes.js"></script>

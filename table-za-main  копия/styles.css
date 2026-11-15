@@ -91,7 +91,7 @@ body, .app-body {
     margin: 0;
 }
 
-/* ========== LAYOUT ========== */
+/* layout */
 .main-layout {
     display: flex;
     height: 100vh;
@@ -205,7 +205,7 @@ body, .app-body {
     max-width: 160px;
 }
 
-/* Масштаб в шапке — слева от KPI продаж */
+/* масштаб в шапке слева от KPI продаж */
 .global-zoom-wrap {
     display: inline-flex;
     align-items: center;
@@ -309,7 +309,7 @@ body, .app-body {
     border-color: var(--primary);
 }
 
-/* ========== MAIN CONTENT ========== */
+/* main content */
 .main-content {
     flex: 1;
     min-width: 0;
@@ -421,7 +421,7 @@ body, .app-body {
     min-height: 0;
 }
 
-/* ========== HEADER META ========== */
+/* header meta */
 .data-ready-mark {
     display: inline-flex;
     align-items: center;
@@ -497,7 +497,7 @@ body, .app-body {
 .ml-1 { margin-left: 0.25rem; }
 
 
-/* ========== CARDS & TABLES ========== */
+/* карточки и таблицы */
 .card {
     background: var(--surface);
     border-radius: var(--radius-lg);
@@ -522,7 +522,7 @@ body, .app-body {
     color: #fff;
 }
 
-/* Все заголовки на тёмном hero — светлые */
+/* заголовки на тёмном hero светлые */
 .table-page-hero h2,
 .table-page-hero .data-hero-title,
 .table-page-hero .rms-hero-title,
@@ -1099,9 +1099,8 @@ body, .app-body {
     display: flex;
     flex-direction: column;
 }
-/* Скрытая вкладка не выбрасывается из раскладки, а «замораживается» (content-visibility: hidden):
-   браузер не рисует её и не пересчитывает, но помнит готовую раскладку — возврат на вкладку
-   с тысячами элементов (Графплан, Загрузка рейсов) не раскладывает их заново. */
+/* скрытая вкладка замораживается (content-visibility: hidden), а не выбрасывается из раскладки
+   браузер не пересчитывает её при возврате (Графплан, Загрузка рейсов) */
 #main-content-inner {
     position: relative;
 }
@@ -1110,15 +1109,15 @@ body, .app-body {
     inset: 0;
     height: auto;
 }
-/* Скрытые панели — под активной (у активной z-index не задан, своего слоя она не создаёт): клики достаются только открытой вкладке.
-   visibility/pointer-events не трогаем: они наследуются и заставили бы пересчитать все элементы вкладки. */
+/* скрытые панели под активной (z-index у активной не задан), клики достаются открытой вкладке
+   visibility и pointer-events не трогаем: они наследуются и заставят пересчитать вкладку */
 #main-content-inner > .tab-panel[hidden] {
     display: flex !important;
     content-visibility: hidden;
     z-index: -1;
 }
 
-/* Вкладка «Данные» */
+/* Вкладка "Данные" */
 .content-data { overflow: hidden; }
 
 .data-page {
@@ -1138,7 +1137,6 @@ body, .app-body {
     font-size: 1.25rem;
     font-weight: 700;
     letter-spacing: -0.02em;
-    /* hero на тёмном фоне — заголовок белый */
     color: #ffffff;
 }
 
@@ -1217,8 +1215,8 @@ body, .app-body {
     width: 100%;
 }
 
-/* Блок маршрута — таблица как на вкладке «Экономическая» */
-/* Карточки маршрутов за экраном не рисуются, пока до них не прокрутили: вкладка открывается быстрее. */
+/* Блок маршрута - таблица как на вкладке "Экономическая" */
+/* карточки маршрутов рисуем, только когда они в экране: вкладка открывается быстрее */
 .data-route-block {
     content-visibility: auto;
     contain-intrinsic-size: auto 600px;
@@ -1302,7 +1300,6 @@ body, .app-body {
 .data-route-block.data-type-krai .data-board-cap-badge { background: rgb(34 197 94 / 0.25); color: #bbf7d0; }
 .data-route-block.data-type-inter .data-board-cap-badge { background: rgb(59 130 246 / 0.25); color: #dbeafe; }
 
-/* Шапка столбцов */
 .data-board-table thead tr.data-board-head-main th {
     padding: 10px 8px;
     vertical-align: middle;
@@ -1446,7 +1443,7 @@ body, .app-body {
     letter-spacing: 0;
     border-bottom: 2px solid #86efac;
     box-shadow: none;
-    /* перебиваем белый текст шапки — иначе Σ не видно */
+    /* перебиваем белый текст шапки, иначе Σ не видно */
     color: #0f172a !important;
     background: #f8fafc !important;
 }
@@ -1564,7 +1561,7 @@ body, .app-body {
     color: #713f12 !important;
 }
 
-/* Вкладка «Данные»: 4 блока — инфо | туда | обратно | ср.ЗПК */
+/* Вкладка "Данные": 4 блока - инфо | туда | обратно | ср.ЗПК */
 .data-board-table tbody tr.week-even {
     background: var(--table-row-even, #dbeafe) !important;
 }
@@ -1602,7 +1599,7 @@ body, .app-body {
     }
 }
 
-/* Жёлтый 100% ЗПК сильнее своего правила — только клетки этой ноги */
+/* Жёлтый 100% ЗПК сильнее своего правила - только клетки этой ноги */
 .data-board-table tbody tr td.data-block-zpk-full,
 .data-board-table tbody tr.week-even td.data-block-zpk-full,
 .data-board-table tbody tr.week-odd td.data-block-zpk-full {
@@ -1651,7 +1648,7 @@ body, .app-body {
 }
 .data-hl-panel { max-width: 720px; }
 
-/* улетевшие — тёмно-серые, без жёлтого; текст тёмный, читаемый */
+/* улетевшие - тёмно-серые, без жёлтого; текст тёмный, читаемый */
 .data-board-table tbody tr.flew-flight {
     background: #94a3b8 !important;
 }
@@ -1677,7 +1674,7 @@ body, .app-body {
     color: #0f172a !important;
 }
 
-/* одно направление закрыто — серый блок только этой ноги (туда или обратно) */
+/* одно направление закрыто - серый блок только этой ноги (туда или обратно) */
 .data-board-table tbody td.data-leg-closed,
 .data-board-table tbody tr.week-even td.data-leg-closed,
 .data-board-table tbody tr.week-odd td.data-leg-closed,
@@ -1694,7 +1691,7 @@ body, .app-body {
     border-color: #64748b;
 }
 
-/* оба направления закрыты — вся строка серая, включая «Ср. ЗПК» */
+/* оба направления закрыты - вся строка серая, включая "Ср. ЗПК" */
 .data-board-table tbody tr.closed-flight,
 .data-board-table tbody tr.data-row-both-closed {
     background: #94a3b8 !important;
@@ -1724,7 +1721,6 @@ body, .app-body {
     border-color: #94a3b8;
 }
 
-/* Панель управления — компактно в правом верхнем углу */
 .data-hero-compact {
     padding: 12px 14px !important;
 }
@@ -1813,7 +1809,7 @@ body, .app-body {
     transform-origin: top left;
 }
 
-/* zoom вместо transform — шапка таблиц остаётся sticky при масштабе ≠ 100% */
+/* zoom вместо transform - шапка таблиц остаётся sticky при масштабе ≠ 100% */
 .data-board-track {
     transform: none !important;
 }
@@ -1824,7 +1820,7 @@ body, .app-body {
     flex: 1;
 }
 
-/* как «Скрыть улет.» — без рамки/фона */
+/* как "Скрыть улет." - без рамки/фона */
 .data-spec-bookings-label {
     display: inline-flex;
     align-items: center;
@@ -1879,7 +1875,7 @@ body, .app-body {
     color: #1d4ed8;
 }
 
-/* Спец. брони / время — как обычные ячейки (зебра, закрыт, 100% ЗПК) */
+/* Спец. брони / время - как обычные ячейки (зебра, закрыт, 100% ЗПК) */
 .data-col-bookings,
 .col-spec-book,
 .data-col-time {
@@ -1923,7 +1919,7 @@ body, .app-body {
     transform: translateX(-50%) translateY(0);
 }
 
-/* детализация открыта — плашку «кол-во / сумма» не показываем */
+/* детализация открыта - плашку "кол-во / сумма" не показываем */
 body.pkz-detail-open .selection-status-bar,
 body.pkz-detail-open .selection-status-bar.is-visible {
     display: none !important;
@@ -1946,7 +1942,6 @@ body.pkz-detail-open .selection-status-bar.is-visible {
     letter-spacing: 0.04em;
 }
 
-/* Выделение столбцов/строк/ячеек (Excel-like) */
 table.data-table,
 table.pair-table,
 table.rms-table,
@@ -1969,7 +1964,7 @@ table.pair-table tbody td:first-child {
     cursor: cell;
 }
 
-/* Выделение ячеек — заметный голубой (как на «Динамике продаж»), не тонкая рамка */
+/* Выделение ячеек - заметный голубой (как на "Динамике продаж"), не тонкая рамка */
 table.data-table td.tbl-sel,
 table.pair-table td.tbl-sel,
 table.rms-table td.tbl-sel,
@@ -1982,7 +1977,7 @@ table.data-board-table td.tbl-sel {
     color: #0f172a !important;
 }
 
-/* поверх зебры, жёлтого 100% и серого «закрыт» */
+/* поверх зебры, жёлтого 100% и серого "закрыт" */
 table.data-table tbody tr.week-even td.tbl-sel,
 table.data-table tbody tr.week-odd td.tbl-sel,
 table.data-table tbody tr.full-loaded td.tbl-sel,
@@ -2022,7 +2017,7 @@ table.pair-table button {
     font-feature-settings: 'tnum' 1;
 }
 
-/* ПКЗ из NAV — ручной ввод */
+/* ПКЗ из NAV - ручной ввод */
 .pkz-nav-cell {
     padding: 4px 6px !important;
     min-width: 88px;
@@ -2112,7 +2107,7 @@ table.pair-table button {
     font-size: 0.7rem;
 }
 
-/* Столбец «Комментарий» — восклицательный знак */
+/* Столбец "Комментарий" - восклицательный знак */
 .data-table thead th.col-comment {
     min-width: 5.5rem;
     white-space: nowrap;
@@ -2259,7 +2254,6 @@ table.pair-table button {
     color: #93c5fd;
 }
 
-/* Аудит читаемости: текст в таблицах */
 .data-table tbody td {
     color: var(--text);
 }
@@ -2268,7 +2262,7 @@ table.pair-table button {
     color: #fff;
 }
 
-/* Подсказки на тёмных hero — светлые; на светлом фоне — muted */
+/* Подсказки на тёмных hero - светлые; на светлом фоне - muted */
 .table-page-hero .table-page-hint {
     color: rgb(255 255 255 / 0.72);
     font-size: 0.74rem;
@@ -2350,7 +2344,7 @@ table.pair-table button {
     font-weight: 600;
 }
 
-/* Метка «задержан» рядом с датой или номером: тихая, как «(ДОП)», без цвета и подсказки */
+/* Метка "задержан" рядом с датой или номером: тихая, как "(ДОП)", без цвета и подсказки */
 .delay-badge {
     display: inline-block;
     margin-left: 4px;
@@ -2410,7 +2404,7 @@ html[data-theme="dark"] .delay-badge { color: #b1bac4; border-color: rgb(177 186
     color: #047857;
 }
 
-/* «Загрузка рейсов»: участок рейса с посадками рядом с датой */
+/* "Загрузка рейсов": участок рейса с посадками рядом с датой */
 .data-seg-tag {
     font-size: 0.72rem;
     font-weight: 600;
@@ -2461,9 +2455,9 @@ html[data-theme="dark"] .delay-badge { color: #b1bac4; border-color: rgb(177 186
 
 .dtd-urgent { color: #dc2626; font-weight: 800; background: #fee2e2; padding: 1px 6px; border-radius: 6px; }
 
-/* ========== KPI ========== */
+/* kpi */
 
-/* ========== RMS ========== */
+/* rms */
 .content-rms {
     display: flex;
     flex-direction: column;
@@ -2813,7 +2807,7 @@ html[data-theme="dark"] .delay-badge { color: #b1bac4; border-color: rgb(177 186
     font-weight: 500;
 }
 
-/* ========== MAIN — только графический план ========== */
+/* main: только графический план */
 .main-timeline-page {
     height: 100%;
     min-height: 0;
@@ -2841,7 +2835,7 @@ html[data-theme="dark"] .delay-badge { color: #b1bac4; border-color: rgb(177 186
     min-height: 140px;
 }
 
-/* ========== TIMELINE (графический план) ========== */
+/* timeline, графический план */
 .timeline-section {
     gap: 8px;
 }
@@ -3120,7 +3114,7 @@ html[data-theme="dark"] .delay-badge { color: #b1bac4; border-color: rgb(177 186
     border-radius: 8px;
     background: rgb(248 250 252 / 0.55);
     overflow: hidden;
-    /* Ячейки за краем экрана браузер не раскладывает и не рисует (размер ячейки задан сеткой и высотой). */
+    /* ячейки за краем экрана браузер не раскладывает (размер задан сеткой и высотой) */
     content-visibility: auto;
     contain-intrinsic-size: auto 140px auto 120px;
 }
@@ -3233,7 +3227,7 @@ html[data-theme="dark"] .delay-badge { color: #b1bac4; border-color: rgb(177 186
 .timeline-cell.timeline-ac-an24 { background: rgb(217 119 6 / 0.05); }
 .timeline-cell.timeline-ac-an26 { background: rgb(234 88 12 / 0.05); }
 .timeline-cell.timeline-ac-yak42 { background: rgb(13 148 136 / 0.05); }
-/* Графплан: заголовок дня в одну строку «чт 08.10 · 11», выходные, линия «сейчас» */
+/* Графплан: заголовок дня в одну строку "чт 08.10 · 11", выходные, линия "сейчас" */
 .timeline-date-line {
     display: inline-flex;
     align-items: center;
@@ -3259,7 +3253,7 @@ html[data-theme="dark"] .delay-badge { color: #b1bac4; border-color: rgb(177 186
     pointer-events: none;
     z-index: 3;
 }
-/* Подпись типа ВС — сверху строки и прилипает при прокрутке, а не теряется в середине высокой строки */
+/* подпись типа ВС сверху строки, прилипает при прокрутке, не в середине высокой строки */
 .timeline-side-ac { align-items: flex-start; }
 .timeline-side-ac .timeline-ac-name, .timeline-side-ac .timeline-ac-dot { position: sticky; top: 64px; }
 .timeline-side-ac .timeline-ac-dot { margin-top: 3px; }
@@ -3519,7 +3513,7 @@ html[data-theme="dark"] .delay-badge { color: #b1bac4; border-color: rgb(177 186
 .timeline-empty-icon { font-size: 2rem; margin-bottom: 8px; }
 .timeline-empty-title { font-size: 0.95rem; font-weight: 600; color: #64748b; margin-bottom: 4px; }
 
-/* ========== CHARTS ========== */
+/* charts */
 .chart-container { position: relative; width: 100%; }
 
 .chart-expand-btn {
@@ -3572,7 +3566,7 @@ html[data-theme="dark"] .delay-badge { color: #b1bac4; border-color: rgb(177 186
 }
 .export-excel-btn:hover { background: #ecfdf5; border-color: #10b981; }
 
-/* ========== SALES REPORT TABLE ========== */
+/* sales report table */
 .report-table-scroll {
     overflow: auto;
     border: 1px solid var(--border);
@@ -3599,7 +3593,7 @@ html[data-theme="dark"] .delay-badge { color: #b1bac4; border-color: rgb(177 186
 }
 .report-data-table tbody tr:last-child td { border-bottom: none; }
 
-/* ========== LOADING ========== */
+/* loading */
 .loading-overlay {
     display: none;
     position: fixed;
@@ -3650,7 +3644,7 @@ html[data-theme="dark"] .delay-badge { color: #b1bac4; border-color: rgb(177 186
     margin: 0;
 }
 
-/* ========== TOAST ========== */
+/* toast */
 .toast-container {
     position: fixed;
     bottom: 24px;
@@ -3678,7 +3672,7 @@ html[data-theme="dark"] .delay-badge { color: #b1bac4; border-color: rgb(177 186
     to { opacity: 1; transform: translateY(0); }
 }
 
-/* ========== PROFILES & LOGIN ========== */
+/* profiles и login */
 .main-layout.app-locked {
     pointer-events: none;
     user-select: none;
@@ -4335,7 +4329,7 @@ html[data-theme="dark"] .delay-badge { color: #b1bac4; border-color: rgb(177 186
     .theme-excel-row { grid-template-columns: 1fr; }
 }
 
-/* ========== STATS (admin) ========== */
+/* stats (admin) */
 .content-stats {
     overflow: auto;
 }
@@ -4375,7 +4369,7 @@ html[data-theme="dark"] .delay-badge { color: #b1bac4; border-color: rgb(177 186
 
 .stats-refresh-btn {
     font-size: 0.8rem;
-    color: #fff;   /* кнопка на тёмной шапке «Статистики» — была почти не видна */
+    color: #fff;   /* кнопка на тёмной шапке "Статистики", иначе почти не видна */
     border-color: rgba(255, 255, 255, 0.55);
 }
 
@@ -4385,7 +4379,7 @@ html[data-theme="dark"] .delay-badge { color: #b1bac4; border-color: rgb(177 186
     color: #64748b;
 }
 
-/* ========== РАСЧЁТ РАСХОДОВ ========== */
+/* расчёт расходов */
 .cost-calc-page .cost-calc-hero {
     padding: 16px 20px;
 }
@@ -4475,7 +4469,7 @@ html[data-theme="dark"] .delay-badge { color: #b1bac4; border-color: rgb(177 186
 .cost-calc-kpi-fin.cost-calc-neg { background: #fef2f2; border-color: #fca5a5; }
 .cost-calc-kpi-fin.cost-calc-neg .cost-calc-kpi-val { color: #b91c1c; }
 
-/* ========== RESPONSIVE ========== */
+/* responsive */
 @media (max-width: 900px) {
     .data-table { min-width: 800px; font-size: 13px; }
     .rms-table { min-width: 820px; }
@@ -4783,7 +4777,7 @@ html[data-theme="dark"] textarea {
     .nmap-side { max-height: 40vh; border-right: none; border-bottom: 1px solid var(--border); }
 }
 
-/* ========== Управление продажами ========== */
+/* управление продажами */
 .content-sales {
     display: flex;
     flex-direction: column;
@@ -5103,7 +5097,7 @@ html.no-cmix[data-theme="dark"] .sm-flight-on {
 
 
 
-/* ===== Творческая: конструктор таблицы ===== */
+/* творческая: конструктор таблицы */
 .content-creative {
     display: flex;
     flex-direction: column;
@@ -5425,7 +5419,7 @@ html.no-cmix[data-theme="dark"] .sm-flight-on {
     }
 }
 
-/* ===== Отчёты ===== */
+/* отчёты */
 .content-reports {
     display: flex;
     flex-direction: column;
@@ -5551,7 +5545,7 @@ html.no-cmix[data-theme="dark"] .sm-flight-on {
     font-weight: 700;
 }
 
-/* ===== Проверка рейсов: значок «!» и подсветка ===== */
+/* проверка рейсов: значок "!" и подсветка */
 .fc-flag {
     display: inline-flex;
     align-items: center;
@@ -5570,7 +5564,7 @@ html.no-cmix[data-theme="dark"] .sm-flight-on {
     flex-shrink: 0;
 }
 
-/* «!» рисуется стилем, а не текстом: в выгрузки Excel из таблиц он не попадает. */
+/* "!" рисуется стилем, в выгрузку Excel не попадает */
 .fc-flag::before {
     content: '!';
 }
@@ -5645,7 +5639,7 @@ tr.fc-row-problem > td:first-child {
     font-size: 0.75rem;
 }
 
-/* ===== Справочник субсидированных тарифов ===== */
+/* справочник субсидированных тарифов */
 .rp-refs {
     border-color: #fcd34d;
 }
@@ -5764,7 +5758,7 @@ span.rp-chip {
     display: none;
 }
 
-/* ===== Норма продаж по дню недели: из чего посчитана ===== */
+/* норма продаж по дню недели: из чего посчитана */
 .norm-cohort {
     margin-top: 8px;
     font-size: 0.78rem;
@@ -5790,7 +5784,6 @@ span.rp-chip {
     font-weight: 400;
 }
 
-/* Резервные копии общих файлов */
 .shared-history-panel { max-width: 720px; }
 .shared-history-hint { font-size: 0.8rem; color: var(--text-muted); margin: 0 0 12px; line-height: 1.45; }
 .shared-history-row {
@@ -5823,7 +5816,7 @@ span.rp-chip {
 .rp-nowrap { white-space: nowrap; }
 .rp-warn-text { color: #b91c1c; font-weight: 600; }
 
-/* Режим даты вылета: С — субсидия, К — коммерция (у субсидированного маршрута) */
+/* режим даты вылета: С - субсидия, К - коммерция (у субсидированного маршрута) */
 .mode-badge {
     display: inline-flex;
     align-items: center;
@@ -5911,7 +5904,6 @@ span.rp-chip {
 .pm-eff-down { color: #b91c1c; }
 .pm-hint { margin-top: 6px; font-size: 0.7rem; color: var(--text-muted, #64748b); }
 
-/* Карточка рейса */
 .flight-card {
     position: fixed;
     top: 0;
@@ -5965,7 +5957,7 @@ span.rp-chip {
 .fc-comment { font-size: 0.8rem; padding: 8px; border-radius: 8px; background: #fffbeb; margin: 8px 0; }
 .fc-links { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 0.78rem; color: var(--text-muted, #64748b); margin-top: 10px; }
 .fc-empty { color: var(--text-muted, #64748b); }
-/* Карточка рейса: «Прошлые решения» */
+/* Карточка рейса: "Прошлые решения" */
 .fc-past { margin: 10px 0 4px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border, #e2e8f0); background: var(--surface, #fff); font-size: 0.78rem; }
 .fc-past-title { font-weight: 700; font-size: 0.82rem; margin-bottom: 4px; }
 .fc-past-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
@@ -5999,7 +5991,6 @@ span.rp-chip {
     .fc-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-/* Отчёты: внутренние вкладки */
 .rp-subtabs {
     display: flex;
     flex-wrap: wrap;
@@ -6044,11 +6035,11 @@ body.flight-card-pinned { padding-right: 470px; }
 body.fc-window-body { margin: 0; background: var(--surface, #fff); }
 body.fc-window-body .flight-card { position: static; width: auto; max-width: none; min-height: 100vh; box-shadow: none; border: none; animation: none; }
 @media (max-width: 1100px) { body.flight-card-pinned { padding-right: 0; } }
-/* Сообщения (toast) при показанной карточке: выше неё по слою и левее неё — иначе карточка закрывает текст */
+/* toast при показанной карточке: выше по слою и левее, иначе карточка закрывает текст */
 body.flight-card-pinned .toast-container { z-index: 14001; right: 484px; }
 @media (max-width: 560px) { body.flight-card-pinned .toast-container { right: 24px; } }
 
-/* «Управление продажами»: несколько отметок в ячейке — части своих цветов, новая слева */
+/* управление продажами: несколько отметок в ячейке, части своих цветов, новая слева */
 .sm-cell.sm-multi { padding: 0 !important; }
 .sm-split { display: flex; align-items: stretch; width: 100%; min-height: 26px; }
 .sm-part {
@@ -6123,7 +6114,7 @@ body.flight-card-pinned .toast-container { z-index: 14001; right: 484px; }
 .sd-fare-table td, .sd-fare-table th { white-space: nowrap; padding: 6px 8px; }
 .sd-block-head h5 { white-space: nowrap; }
 
-/* Вывод «продано / обычно / по плану» */
+/* Вывод "продано / обычно / по плану" */
 .booking-curve-verdict .vd-head { margin-bottom: 2px; }
 .booking-curve-verdict .vd-head strong { font-size: 1.05em; }
 .booking-curve-verdict .vd-muted { font-weight: 500; opacity: 0.75; }
@@ -6131,7 +6122,7 @@ body.flight-card-pinned .toast-container { z-index: 14001; right: 484px; }
 .booking-curve-verdict .vd-up { color: #15803d; font-weight: 700; }
 .booking-curve-verdict .vd-down { color: #b91c1c; font-weight: 700; }
 
-/* ---------- Отчёты → Справочник ---------- */
+/* отчёты: справочник */
 .ref-sections {
     display: flex;
     flex-wrap: wrap;
@@ -6268,7 +6259,7 @@ body.flight-card-pinned .toast-container { z-index: 14001; right: 484px; }
 [data-theme="dark"] .ref-src { background: #1e293b; color: #94a3b8; }
 [data-theme="dark"] .ref-src-ref { background: #1e3a8a; color: #bfdbfe; }
 
-/* ---------- Творческая: компактная панель, выдвижные «Столбцы», всплывающие фильтры ---------- */
+/* творческая: компактная панель, выдвижные "Столбцы", всплывающие фильтры */
 .cr-top .cr-controls {
     gap: 8px;
     row-gap: 6px;
@@ -6523,7 +6514,7 @@ html[data-theme="dark"] .cr-pop { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
     box-shadow: inset 0 -2px 0 #2563eb;
 }
 
-/* Управление продажами: подсказка решения в пустой ячейке «сегодня» */
+/* Управление продажами: подсказка решения в пустой ячейке "сегодня" */
 .sm-cell.sm-suggest {
     outline: 2px dashed currentColor;
     outline-offset: -4px;
@@ -6561,7 +6552,6 @@ html[data-theme="dark"] .cr-pop { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
     display: none;
 }
 
-/* Справочник: проверка полноты */
 .ref-check-block {
     margin: 12px 0 4px;
     padding-top: 10px;
@@ -6587,7 +6577,6 @@ html[data-theme="dark"] .cr-pop { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
     text-align: center;
 }
 
-/* Утренняя сводка */
 .header-kpi-morning {
     padding: 2px 8px;
     border-radius: 999px;
@@ -6710,7 +6699,7 @@ html[data-theme="dark"] .cr-pop { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
     margin: -4px 0 6px;
 }
 
-/* ---------- страница «Сегодня» ---------- */
+/* страница "Сегодня" */
 .content-today {
     overflow: auto;
 }
@@ -6791,7 +6780,7 @@ html[data-theme="dark"] .cr-pop { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
     color: var(--text-muted);
 }
 
-/* Полоса дней: сколько дней выбрано в «Вперёд на» — столько плиток, лишние переносятся на следующую строку. */
+/* полоса дней: плиток столько же, сколько дней в "Вперёд на", лишние на следующей строке */
 .td-days {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
@@ -7022,7 +7011,7 @@ html[data-theme="dark"] .cr-pop { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
     text-align: center;
 }
 
-/* «Сегодня»: решения по старым данным */
+/* "Сегодня": решения по старым данным */
 .td-stale {
     margin: -8px 0 14px;
     padding: 8px 12px;
@@ -7047,13 +7036,13 @@ html[data-theme="dark"] .td-pill-down { background: #3b1219; color: #fda4af; }
 html[data-theme="dark"] .td-pill-up { background: #0f2e22; color: #86efac; }
 html[data-theme="dark"] .td-pill-attn { background: #33250c; color: #fcd34d; }
 
-/* тёмная тема: строки RMS с предупреждением — тёмные оттенки вместо светло-розовых */
+/* тёмная тема: строки RMS с предупреждением - тёмные оттенки вместо светло-розовых */
 html[data-theme="dark"] .rms-row-crit { background: #2a1519 !important; }
 html[data-theme="dark"] .rms-row-warn { background: #2a2312 !important; }
 html[data-theme="dark"] .rms-row-crit:hover { background: #3a1a20 !important; }
 html[data-theme="dark"] .rms-row-warn:hover { background: #3a3016 !important; }
 
-/* ---------- прогноз, безубыточность, группы (flight-insights.js) ---------- */
+/* прогноз, безубыточность, группы (flight-insights.js) */
 .fc-insights {
     margin: 8px 0 6px;
     border: 1px solid var(--border);
@@ -7146,7 +7135,7 @@ html[data-theme="dark"] .fc-ins-group, html[data-theme="dark"] .fc-groups-title 
 .rms-fc-up, .td-fc-up { color: #047857; }
 .rms-fc-down, .td-fc-down { color: #b91c1c; }
 
-/* ---------- календарь событий ---------- */
+/* календарь событий */
 .cal-dot {
     display: inline-block;
     width: 7px;
@@ -7180,7 +7169,7 @@ html[data-theme="dark"] .fc-ins-group, html[data-theme="dark"] .fc-groups-title 
     gap: 6px;
 }
 
-/* ---------- журнал решений ---------- */
+/* журнал решений */
 .dr-sums {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
@@ -7203,7 +7192,7 @@ html[data-theme="dark"] .fc-ins-group, html[data-theme="dark"] .fc-groups-title 
     white-space: nowrap;
 }
 
-/* Числа и их заголовки — по правому краю: «—» и значения стоят под своим заголовком. */
+/* числа по правому краю, прочерк "-" тоже, под своим заголовком */
 .dr-sum-table th:not(:first-child),
 .dr-sum-table td:not(:first-child) {
     text-align: right;
@@ -7233,11 +7222,11 @@ html[data-theme="dark"] .cal-type-school { background: #172554; color: #93c5fd; 
 .ref-warn { color: #b45309; }
 .ref-hint { font-size: 0.78rem; margin: 6px 0; }
 
-/* ---------- сверка продаж и загрузки ---------- */
+/* сверка продаж и загрузки */
 .rc-row-big td { background: color-mix(in srgb, #fee2e2 45%, transparent); }
 .rc-more { color: #b45309; font-weight: 700; }
 
-/* доп. номера рейса — чипы */
+/* доп. номера рейса - чипы */
 .ref-extras-field { display: flex; flex-direction: column; gap: 3px; font-size: 0.75rem; color: var(--text-muted); grid-column: span 2; }
 .ref-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .ref-chip-list { display: inline-flex; flex-wrap: wrap; gap: 4px; }
@@ -7247,10 +7236,8 @@ html[data-theme="dark"] .cal-type-school { background: #172554; color: #93c5fd; 
 html[data-theme="dark"] .ref-chip { background: #1e293b; color: #c7d2fe; }
 
 
-/* ========== Единый вид таблиц ==========
-   Таблицы «Отчётов» (проверка, справочник, сверка, решения, итоги) и «Сегодня» — как основные таблицы
-   сайта (RMS, «Динамика», «Экономика»): тёмная шапка заглавными, строки с разделителями без сетки,
-   одинаковые отступы, подсветка строки при наведении. Цвета — те же переменные темы. */
+/* единый вид таблиц: тёмная шапка заглавными, строки с разделителями без сетки
+   таблицы отчётов и "Сегодня" как основные, цвета из переменных темы */
 .rp-table,
 .td-table {
     width: 100%;
@@ -7293,7 +7280,7 @@ html[data-theme="dark"] .ref-chip { background: #1e293b; color: #c7d2fe; }
 .rp-table tbody tr:last-child > td { border-bottom: 0; }
 .rp-table tr.rp-total > td { background: #e2e8f0; font-weight: 700; border-top: 2px solid var(--border); }
 .rp-table td:first-child { font-weight: 600; }
-/* Таблица без шапки (справочник: пропуски) — рамка вокруг, как у карточки. */
+/* Таблица без шапки (справочник: пропуски) - рамка вокруг, как у карточки. */
 .rp-table:not(:has(thead)) { border: 1px solid var(--border); border-radius: 8px; }
 .rp-scroll {
     border: 1px solid var(--border);
@@ -7312,7 +7299,7 @@ html[data-theme="dark"] .ref-chip { background: #1e293b; color: #c7d2fe; }
 .rc-row-big:hover > td { background-color: color-mix(in srgb, #dc2626 9%, var(--surface)) !important; }
 html[data-theme="dark"] .rp-table tr.rp-total > td { background: #1e293b; }
 
-/* ---------- журнал решений: оформление ---------- */
+/* журнал решений: оформление */
 .dr-card .rp-card-head { margin-bottom: 4px; }
 .dr-help { margin: 4px 0 10px; font-size: 0.8rem; color: var(--text-muted); }
 .dr-help summary { cursor: pointer; color: var(--accent, #2563eb); font-weight: 600; width: max-content; }
@@ -7359,11 +7346,9 @@ html[data-theme="dark"] .rp-table tr.rp-total > td { background: #1e293b; }
 html[data-theme="dark"] .dr-kind-down, html[data-theme="dark"] .dr-verdict-neg { color: #f87171; }
 html[data-theme="dark"] .dr-kind-up, html[data-theme="dark"] .dr-verdict-pos { color: #34d399; }
 
-/* ========== Шапки всех таблиц — один вид ==========
-   Динамика, Экономика, Загрузка рейсов, RMS, ПКЗ, Управление продажами, Творческая, Отчёты, Сегодня:
-   один шрифт, заглавные, одинаковые отступы и нижняя линия, без «парящей» тени. Цвета не меняются.
-   Нижние строки шапки (вторая, третья) прилипают ровно под верхней — отступ ставит script.js по
-   реальной высоте строки, поэтому шапка не «съезжает» при прокрутке. */
+/* шапки всех таблиц, один вид
+   один шрифт, заглавные, одинаковые отступы и линия снизу, без тени; цвета не меняются
+   нижние строки шапки прилипают под верхней, отступ ставит script.js по высоте строки */
 table.data-table thead th,
 table.sm-table thead th,
 table.cr-table thead tr:first-child th,
@@ -7381,22 +7366,22 @@ table.td-table thead th {
 }
 table.sm-table thead th,
 table.cr-table thead tr:first-child th { padding: 9px 8px; }
-/* Строки сумм в шапке — числа, не подписи: обычный регистр. */
+/* Строки сумм в шапке - числа, не подписи: обычный регистр. */
 table.data-table thead tr.table-sales-sum-row th,
 table.cr-table thead tr.cr-totals th {
     text-transform: none;
     letter-spacing: 0;
     box-shadow: none;
 }
-/* Сегодняшний столбец в «Управлении продажами» — та же жёлтая черта снизу. */
+/* Сегодняшний столбец в "Управлении продажами" - та же жёлтая черта снизу. */
 table.sm-table thead th.sm-check-today { box-shadow: inset 0 -3px 0 #fde68a; }
-/* Разделитель под шапкой — линия, а не тень: шапка стоит, строки уходят под неё. */
+/* Разделитель под шапкой - линия, а не тень: шапка стоит, строки уходят под неё. */
 table.data-table thead,
 table.rp-table thead,
 table.td-table thead { box-shadow: none; }
 
 
-/* ---------- цвета новых вкладок из «Настроек» (Сегодня, Творческая, Отчёты) ---------- */
+/* цвета новых вкладок из "Настроек" (Сегодня, Творческая, Отчёты) */
 .td-stat,
 .td-day { background: var(--today-card-bg, var(--surface)); }
 .td-day-on {
@@ -7429,7 +7414,7 @@ table.cr-table thead tr.cr-totals th { background: var(--cr-totals-bg, #e2e8f0);
 .tab-order-name::placeholder { color: var(--text); opacity: 0.55; font-weight: 600; }
 .tab-order-name:focus { outline: none; border-color: var(--accent, #10b981); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #10b981) 25%, transparent); }
 
-/* ========== Поиск рейса (js/flight-search.js) ========== */
+/* поиск рейса (js/flight-search.js) */
 .fs-field {
     position: relative;
     display: inline-flex;
@@ -7611,7 +7596,7 @@ html[data-theme="dark"] .fs-lf-hi { color: #34d399; }
 html[data-theme="dark"] .fs-lf-mid { color: #fbbf24; }
 html[data-theme="dark"] .fs-lf-lo { color: #f87171; }
 
-/* ---------- Точность прогноза (js/forecast-lab.js) ---------- */
+/* точность прогноза (js/forecast-lab.js) */
 .rp-table td.fl-best { background: color-mix(in srgb, #10b981 12%, var(--surface)) !important; font-weight: 700; }
 .fl-infl { display: grid; grid-template-columns: minmax(150px, 1fr) 2fr 44px; gap: 8px; align-items: center; padding: 4px 0; font-size: 0.8rem; }
 .fl-infl-label { color: var(--text); }
@@ -7619,7 +7604,7 @@ html[data-theme="dark"] .fs-lf-lo { color: #f87171; }
 .fl-infl-bar span { display: block; height: 100%; background: #1d4ed8; border-radius: 4px; }
 .fl-infl-val { text-align: right; font-weight: 700; color: var(--text-muted); }
 
-/* Карточка: загрузка — в пассажирах крупно, процент — подписью */
+/* Карточка: загрузка - в пассажирах крупно, процент - подписью */
 .fc-tile-of { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); }
 .fc-tile-load .fc-tile-value { font-size: 1.25rem; }
 .fc-tile-pct { font-weight: 700; color: var(--text); }
@@ -7638,8 +7623,8 @@ html[data-theme="dark"] .fs-lf-lo { color: #f87171; }
 }
 .fl-seg { font-size: 0.74rem; line-height: 1.35; white-space: normal; }
 
-/* График «ошибка прогноза по горизонтам» (только администратор). Цвета серий проверены на различимость
-   при нарушениях цветового зрения (светлая и тёмная темы); у каждой серии есть подпись — цвет не единственный признак. */
+/* график "ошибка прогноза по горизонтам" (только администратор)
+   цвета серий проверены при нарушениях цветового зрения; у каждой серии есть подпись */
 .fl-chart { --flc-s1: #2a78d6; --flc-s2: #eb6834; --flc-s3: #1baf7a; --flc-s4: #eda100; margin: 6px 0 14px; max-width: 900px; }
 html[data-theme="dark"] .fl-chart { --flc-s1: #3987e5; --flc-s2: #d95926; --flc-s3: #199e70; --flc-s4: #c98500; }
 .flc-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.78rem; color: var(--text); margin-bottom: 4px; }
@@ -7690,7 +7675,7 @@ html[data-theme="dark"] .fl-warn-over { background: #3a2a0a; color: #fcd34d; }
 html[data-theme="dark"] .fl-warn-slow { background: #1e2250; color: #c7d2fe; }
 .fl-warn-why { font-size: 0.76rem; min-width: 220px; white-space: normal; line-height: 1.35; }
 
-/* ---------- Управление профилями: список слева, редактор справа ---------- */
+/* управление профилями: список слева, редактор справа */
 #profile-admin-modal .profile-admin-panel { width: min(1140px, calc(100vw - 32px)); height: min(860px, calc(100vh - 40px)); }
 #profile-admin-modal .profile-admin-body { padding: 0; overflow: hidden; }
 .pa-layout { display: grid; grid-template-columns: 260px 1fr; height: 100%; min-height: 0; }
@@ -7757,7 +7742,7 @@ html[data-theme="dark"] .fl-warn-slow { background: #1e2250; color: #c7d2fe; }
 .pa-create-bar .profile-create-btn { width: auto; padding: 10px 26px; }
 #profile-admin-modal.pa-creating #profile-admin-save { display: none; }
 
-/* ---------- Настройки профиля: меню по группам, заголовки разделов ---------- */
+/* настройки профиля: меню по группам, заголовки разделов */
 .profile-settings-panel .theme-settings-layout { grid-template-columns: 210px 1fr; gap: 18px; }
 .theme-nav-group { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
 .theme-nav-group[hidden], .theme-section-tab[hidden] { display: none; }
@@ -7776,7 +7761,7 @@ html[data-theme="dark"] .fl-warn-slow { background: #1e2250; color: #c7d2fe; }
     .theme-section-panel .theme-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-/* ---------- Отчёты: современное оформление (цвета — из темы) ---------- */
+/* отчёты: оформление, цвета из темы */
 #rp-page .rp-body { max-width: none; gap: 14px; }
 #rp-page .rp-subtabs {
     position: sticky; top: 0; z-index: 5; align-self: stretch;
@@ -7819,7 +7804,7 @@ html[data-theme="dark"] .fl-warn-slow { background: #1e2250; color: #c7d2fe; }
 #rp-page .rp-subtabs { flex-shrink: 0; }
 #rp-page .rp-subtab-body > * { flex-shrink: 0; }
 
-/* Запасные цвета для браузеров без color-mix() (Chrome/Edge до 111) — метку .no-cmix ставит core-utils.js */
+/* Запасные цвета для браузеров без color-mix() (Chrome/Edge до 111) - метку .no-cmix ставит core-utils.js */
 .no-cmix table.cr-table thead tr:first-child th.cr-sorted { background: #1a5276; }
 .no-cmix .fs-item.fs-on { background: #e7f8f1; }
 .no-cmix .fs-item mark, .no-cmix .fs-pal mark { background: #fde68a; }
@@ -7840,7 +7825,7 @@ html[data-theme="dark"] .fl-warn-slow { background: #1e2250; color: #c7d2fe; }
 .no-cmix #rp-page .rp-card, .no-cmix #rp-page .dr-kpi { border-color: var(--border); }
 .no-cmix #rp-page .dr-kpi { background: var(--surface); }
 
-/* ---------- Тёмная тема: места, где светлый фон оставался под светлым текстом (аудит дизайна) ---------- */
+/* тёмная тема: места со светлым текстом на светлом фоне */
 html[data-theme="dark"] #rp-page .rp-subtab-on, html[data-theme="dark"] #rp-page .rp-subtab-on:hover { background: var(--accent, #238636); color: #fff; }
 html[data-theme="dark"] .cr-table tbody tr:nth-child(even) td { background: var(--cr-row-even, #1c2128); }
 html[data-theme="dark"] .sm-table .sm-freeze { background: var(--surface); }
@@ -7864,27 +7849,27 @@ html[data-theme="dark"] .filter-btn { color: var(--text-muted); }
 /* Готовые темы в настройках: кнопки не налезают друг на друга */
 .theme-section-panel .theme-presets { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
 .theme-section-panel .theme-preset-btn { min-width: 0; }
-/* Графплан: шапка выходных дней непрозрачная — карточки при прокрутке не просвечивают */
+/* Графплан: шапка выходных дней непрозрачная - карточки при прокрутке не просвечивают */
 .timeline-date-head-weekend:not(.timeline-date-head-today) { background: #fef2f2; }
 #profile-settings-reset[hidden] { display: none; }
 html[data-theme="dark"] .cr-table td { background: var(--surface); border-color: #30363d; }
 html[data-theme="dark"] .cr-table tbody tr:hover td { background: #1f2a37; }
 
-/* ---------- Дизайн и доступность: правки по отчёту веб-дизайнера ---------- */
-/* «Загрузка рейсов», тёмная тема: при наведении фон светлый — текст тёмный */
+/* дизайн и доступность */
+/* "Загрузка рейсов", тёмная тема: при наведении фон светлый - текст тёмный */
 html[data-theme="dark"] .data-board-table tbody tr:hover:not(.flew-flight):not(.closed-flight) td { color: #0f172a !important; }
-/* «Загрузка рейсов»: подписи и кнопки в синей шапке читаются */
+/* "Загрузка рейсов": подписи и кнопки в синей шапке читаются */
 .data-hero-toolbar .data-hide-flew-label { color: rgba(255, 255, 255, 0.88); }
 .data-hero-toolbar .filter-btn.data-ctrl-sm { color: #fff; border-color: rgba(255, 255, 255, 0.5); }
 .data-hero-toolbar .filter-btn.data-ctrl-sm:hover { background: rgba(255, 255, 255, 0.16); color: #fff; border-color: #fff; }
 .data-hero-toolbar-top-right { gap: 6px 12px; }
 .data-hero-toolbar .data-hide-flew-label.data-ctrl-sm { max-width: none; }
 .data-hero-toolbar .data-board-stats { color: rgba(255, 255, 255, 0.78); }
-/* RMS: «ПРИЧИНА» в шапке и мелкая подпись под загрузкой */
+/* RMS: "ПРИЧИНА" в шапке и мелкая подпись под загрузкой */
 .rms-table th.rms-col-reason { color: #fff; }
 .rms-load-sub { color: #475569; font-size: 0.72rem; }
 html[data-theme="dark"] .rms-load-sub, html[data-theme="dark"] .extra-badge { color: #b1bac4; }
-/* Светлая тема: зелёный на белом и белый на зелёном — тёмно-зелёный */
+/* Светлая тема: зелёный на белом и белый на зелёном - тёмно-зелёный */
 html:not([data-theme="dark"]) #rp-page .btn-primary.rp-btn { background: #047857; border-color: #047857; }
 html:not([data-theme="dark"]) #rp-page .btn-primary.rp-btn:hover { background: #065f46; }
 html:not([data-theme="dark"]) .td-link, html:not([data-theme="dark"]) .td-go, html:not([data-theme="dark"]) .dr-help summary { color: #047857; }
@@ -7898,7 +7883,7 @@ html:not([data-theme="dark"]) .td-link, html:not([data-theme="dark"]) .td-go, ht
     background: var(--hover-bg, #eef2f7); border-color: var(--accent); color: var(--text);
 }
 .filter-btn.rp-open:hover, .filter-btn.rp-open:focus-visible { border-color: var(--accent); }
-/* Тёмная тема: только цвет текста там, где был жёстко задан тёмный */
+/* тёмная тема: меняем только цвет текста там, где он задан жёстко */
 html[data-theme="dark"] .stats-total-badge,
 html[data-theme="dark"] .timeline-count,
 html[data-theme="dark"] .flew-text { color: #b1bac4; }
@@ -7909,18 +7894,18 @@ html[data-theme="dark"] .delta-yellow { color: #854d0e; }
 html[data-theme="dark"] .rp-rule-child50_subsidy { color: #fca5a5; }
 html[data-theme="dark"] .export-excel-btn { color: #34d399; }
 html[data-theme="dark"] .rc-more { color: #fbbf24; }
-/* «Отчёты» на узком экране: подвкладки переносятся, а не режутся */
+/* "Отчёты" на узком экране: подвкладки переносятся, а не режутся */
 @media (max-width: 1000px) {
     #rp-page .rp-subtabs { flex-wrap: wrap; overflow-x: visible; }
 }
-/* «Управление продажами»: цветные плашки — подпись-легенда, не кнопки */
+/* "Управление продажами": цветные плашки - подпись-легенда, не кнопки */
 .sm-legend { align-items: center; }
 .sm-legend::before { content: "Обозначения:"; font-size: 0.72rem; color: var(--text-muted); margin-right: 2px; }
 .sm-legend-item { border-radius: 4px; font-weight: 500; cursor: default; }
 /* Строки таблиц с клавиатуры: видимая рамка фокуса */
 .data-table tbody tr:focus-visible, .pair-table tbody tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
-/* Настройки → Параметры расчётов (администратор) */
+/* Настройки -> Параметры расчётов (администратор) */
 .theme-params-bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
 .theme-params-bar input { max-width: 260px; }
 .theme-params-group { margin-bottom: 14px; }
@@ -7937,7 +7922,7 @@ html[data-theme="dark"] .rc-more { color: #fbbf24; }
 .theme-param-reset:disabled { opacity: 0.35; cursor: default; }
 .theme-params-actions { display: flex; gap: 10px; align-items: center; position: sticky; bottom: 0; background: var(--surface); padding: 10px 0; border-top: 1px solid var(--border); }
 
-/* «Загрузка рейсов»: строка «Итого за сутки» над вылетами */
+/* "Загрузка рейсов": строка "Итого за сутки" над вылетами */
 .data-board-table tr.data-day-sum-row td {
     font-weight: 700;
     border-bottom: 2px solid var(--border);
@@ -7962,7 +7947,7 @@ html[data-theme="dark"] .rc-more { color: #fbbf24; }
 .rp-ref-warn { margin: 10px 0 0; padding: 8px 12px; border-radius: 8px; background: #fffbeb; border: 1px solid #fcd34d; color: #78350f; font-size: 13px; }
 .rp-ref-warn[hidden] { display: none; }
 
-/* «Запрос на понижение» */
+/* "Запрос на понижение" */
 .lr-card { max-width: none; width: 100%; }
 .lr-card .rp-scroll { max-height: calc(100vh - 250px); min-height: 300px; }
 .lr-table { width: 100%; }
@@ -7985,7 +7970,6 @@ html[data-theme="dark"] .rc-more { color: #fbbf24; }
 .lr-del2 { border: 0; background: transparent; color: #b91c1c; cursor: pointer; }
 .lr-n { width: 36px; text-align: center; color: #64748b; font-weight: 600; }
 
-/* Решения: диаграммы */
 .dv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-bottom: 14px; }
 .dv-card { background: var(--surface, #fff); border: 1px solid var(--border, #e2e8f0); border-radius: 10px; padding: 12px 14px; }
 .dv-title { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 10px; }
@@ -8018,7 +8002,6 @@ html[data-theme="dark"] .rc-more { color: #fbbf24; }
 html[data-theme="dark"] .dv-na { color: #0f172a; }
 .dv-grid > .dv-card:has(.dv-stack) { align-self: start; }
 
-/* Решения: компактный список */
 .dp-read { font-size: 0.8rem; color: var(--text-muted); margin: 0 0 10px; line-height: 2; }
 .dp-chip { display: inline-block; padding: 1px 8px; border-radius: 5px; font-size: 0.68rem; font-weight: 800; margin: 0 4px 0 10px; color: #fff; }
 .dp-chip:first-child { margin-left: 0; }
@@ -8079,7 +8062,7 @@ details.dp-more { margin-top: 8px; } details.dp-more > summary { cursor: pointer
 .dp-flags { color: #b45309; font-size: 0.8rem; margin: 4px 0; }
 .dp-reasons { font-size: 0.8rem; color: var(--text-muted); margin: -4px 0 10px; }
 
-/* Решения: тёмная тема — цвета меток, сумм и предупреждений читаются на тёмном фоне */
+/* тёмная тема: цвета меток, сумм и предупреждений читаются на тёмном фоне */
 html[data-theme="dark"] .dr-pos, html[data-theme="dark"] .dp-pos .dp-big { color: #34d399; }
 html[data-theme="dark"] .dr-neg, html[data-theme="dark"] .dp-neg .dp-big { color: #f87171; }
 html[data-theme="dark"] .dp-flags { color: #fbbf24; }
@@ -8104,7 +8087,7 @@ html[data-theme="dark"] .dp-ud-up { color: #34d399; } html[data-theme="dark"] .d
 .dp-wpos .dp-big { color: #15803d; } .dp-wneg .dp-big { color: #b91c1c; } .dp-flat .dp-big { color: var(--text-muted); }
 .dv-wpos { background: #d1fae5; color: #0f172a; } .dv-wneg { background: #fee2e2; color: #0f172a; } .dv-flat { background: #e2e8f0; color: #0f172a; }
 
-/* ---------- Вторая модель прогноза: плитка в карточке и окно «Сравнение моделей» ---------- */
+/* вторая модель прогноза: плитка и окно "Сравнение моделей" */
 .fc-it-muted { border-left-color: var(--border); }
 .fc-it-muted .fc-it-note { margin-top: 0; }
 .fc-ins-muted { color: var(--text-muted); }
@@ -8199,17 +8182,17 @@ html[data-theme="dark"] .mlw-best { color: #34d399; }
 .mlw-warn { margin: 0; padding-left: 18px; font-size: 0.8rem; color: var(--text-muted); }
 @media (max-width: 720px) { .mlw-panel { width: calc(100vw - 16px); } .mlw-body { padding: 10px 12px 14px; } }
 
-/* Плитка «Решения за 30 дн.» на странице «Сегодня» открывает отчёт */
+/* Плитка "Решения за 30 дн." на странице "Сегодня" открывает отчёт */
 .td-stat-link { cursor: pointer; }
 .td-stat-link:hover { box-shadow: 0 0 0 2px var(--primary, #012a4a) inset; }
 .td-stat-link:focus-visible { outline: 2px solid var(--accent, #2563eb); outline-offset: 2px; }
 
-/* Окно отметки в «Управлении продажами»: не выше экрана, «Готово» всегда видна */
+/* Окно отметки в "Управлении продажами": не выше экрана, "Готово" всегда видна */
 .sm-pop { max-height: calc(100vh - 16px); overflow-y: auto; overscroll-behavior: contain; }
 .sm-pop .sm-pop-actions { position: sticky; bottom: -12px; margin-bottom: -12px; padding: 8px 0 12px; background: inherit; z-index: 1; }
 
-/* Цвета из ⚙ «Цвета вкладок»: действуют, только если пользователь сам сменил цвет (классы ставит ThemeSettings.apply).
-   Пока цвет не менялся, вид таблиц прежний. */
+/* цвета из "Цвета вкладок" работают, только если пользователь сам сменил цвет
+   классы ставит ThemeSettings.apply; без смены вид таблиц прежний */
 html.th-data-out .data-board-table tbody tr:not(.closed-flight):not(.flew-flight) td.data-block-out:not(.data-leg-closed):not(.data-leg-flew):not(.data-block-custom-hl):not(.data-block-zpk-full):not(.tbl-sel) { background: var(--data-leg-out) !important; }
 html.th-data-in .data-board-table tbody tr:not(.closed-flight):not(.flew-flight) td.data-block-in:not(.data-leg-closed):not(.data-leg-flew):not(.data-block-custom-hl):not(.data-block-zpk-full):not(.tbl-sel) { background: var(--data-leg-in) !important; }
 html.th-data-head .data-board-caption-inner { background: var(--data-card-head-bg); color: var(--data-card-head-text, #e2e8f0); }
@@ -8219,7 +8202,7 @@ html.th-data-head .data-board-caption-inner .data-board-cap-sep { color: inherit
 html.th-pair-out .pair-table tbody tr:not(.closed-flight):not(.flew-flight):not(.full-loaded) td.pair-leg-out:not(.data-block-out):not(.tbl-sel) { background: var(--pair-leg-out-bg) !important; }
 html.th-pair-in .pair-table tbody tr:not(.closed-flight):not(.flew-flight):not(.full-loaded) td.pair-leg-in:not(.data-block-in):not(.tbl-sel) { background: var(--pair-leg-in-bg) !important; }
 
-/* «Последние» — только тем, у кого есть право загружать данные */
+/* кнопка "Последние" только у тех, кто может загружать данные */
 body.no-load-data #restore-data-btn { display: none !important; }
 .timeline-chip .delay-badge { display: block; width: max-content; margin: 2px 0 0; padding: 0 4px; font-size: 9px; color: inherit; border-color: currentColor; opacity: 0.75; }
 .rms-date .delay-badge, .td-nowrap .delay-badge { display: block; width: max-content; margin: 2px 0 0; }

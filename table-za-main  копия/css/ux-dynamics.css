@@ -1,16 +1,15 @@
-/* Оформление вкладки «Динамика продаж» (ux-dynamics)
-   Только раскладка, размеры, подписи и шапка таблицы. Цвета таблицы (зебра по неделям, плашки загрузки,
-   зелёные и синие столбцы продаж) остаются из styles.css и «Настроек». */
+/* оформление вкладки "Динамика продаж" (ux-dynamics)
+   только раскладка, размеры, подписи и шапка; цвета остаются из styles.css и "Настроек" */
 
 .dyn-page {
-    --dyn-h: 34px;                                 /* высота строк шапки таблицы */
-    --dyn-sum-h: 32px;                             /* высота итоговой строки */
+    --dyn-h: 34px;
+    --dyn-sum-h: 32px;
     --dyn-line: rgb(255 255 255 / 0.22);           /* тонкая линия между столбцами шапки */
-    --dyn-line-strong: rgb(255 255 255 / 0.6);     /* граница перед блоком «Продано билетов» */
-    --dyn-line-under: rgb(255 255 255 / 0.4);      /* линия под общей подписью */
+    --dyn-line-strong: rgb(255 255 255 / 0.6);     /* граница перед блоком "Продано билетов" */
+    --dyn-line-under: rgb(255 255 255 / 0.4);
 }
 
-/* ---------- заголовок страницы: название слева, кнопки справа ---------- */
+/* заголовок страницы: название слева, кнопки справа */
 .dyn-page .dyn-head {
     display: flex;
     align-items: center;
@@ -71,7 +70,7 @@
     color: var(--text);
 }
 
-/* ---------- три простые карточки ---------- */
+/* три карточки */
 .dyn-page .dyn-cards {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -108,7 +107,7 @@
     .dyn-page .dyn-card + .dyn-card { border-left: 0; border-top: 1px solid var(--border); }
 }
 
-/* ---------- одна полоса управления ---------- */
+/* полоса управления */
 .dyn-page .dyn-strip {
     display: flex;
     flex-wrap: wrap;
@@ -195,7 +194,7 @@
     white-space: nowrap;
 }
 
-/* ---------- шапка таблицы: сплошная, без зазоров ---------- */
+/* шапка таблицы: сплошная, без зазоров */
 .dyn-page table.dyn-table thead th {
     box-sizing: border-box;
     height: var(--dyn-h);
@@ -214,12 +213,12 @@
 .dyn-page table.dyn-table thead th.col-date { text-align: left; padding-left: 12px; }
 /* длинные подписи двухрядных ячеек переносятся на вторую строку, когда места мало (узкий экран) */
 .dyn-page table.dyn-table thead th[rowspan] { white-space: normal; }
-/* три строки шапки стоят друг под другом точно по высоте строк */
+/* три строки шапки стоят друг под другом по высоте строк */
 .dyn-page table.dyn-table thead tr.dyn-head-1 th { top: 0; z-index: 102; }
 .dyn-page table.dyn-table thead tr.dyn-head-2 th { top: var(--dyn-h); z-index: 101; }
 .dyn-page table.dyn-table thead tr.dyn-sum-row th { top: calc(var(--dyn-h) * 2); z-index: 100; }
 
-/* общая подпись «Продано билетов» над шестью столбцами продаж */
+/* общая подпись "Продано билетов" над шестью столбцами продаж */
 .dyn-page table.dyn-table thead th.dyn-grp-sales {
     font-size: 0.72rem;
     letter-spacing: 0.03em;
@@ -266,7 +265,7 @@
     box-shadow: inset 1px 0 0 rgb(21 128 61 / 0.18), inset 0 -1px 0 var(--border);
 }
 
-/* ---------- строка-расшифровка значков под таблицей ---------- */
+/* строка расшифровки значков под таблицей */
 .dyn-page .dyn-legend {
     flex: 0 0 auto;
     margin: 0;
@@ -278,6 +277,6 @@
 .dyn-page .dyn-legend .mode-badge { margin: 0 2px 0 0; cursor: default; }
 .dyn-page .dyn-legend b { color: var(--text); }
 
-/* Фраза про двойной щелчок — только когда карточка рейса включена кнопкой ▤ */
+/* фраза про двойной щелчок только когда карточка рейса включена кнопкой */
 .dyn-page .dyn-legend .dyn-legend-card { display: none; }
 body.flight-card-on .dyn-page .dyn-legend .dyn-legend-card { display: inline; }
