@@ -228,7 +228,7 @@ window.MlModel = (function () {
     // ---------- обучение ----------
     function signature(hist) {
         const last = hist.length ? hist[hist.length - 1].ts : 0;
-        return hist.length + '|' + new Date(last).toISOString().slice(0, 10) + '|' + GBM.trees + '|v1';
+        return hist.length + '|' + new Date(last).toISOString().slice(0, 10) + '|' + GBM.trees + '|v2';
     }
 
     function prepareHist() {
@@ -318,15 +318,22 @@ window.MlModel = (function () {
                 preds[1][i] = simpleRatio(x, mt.booked, mt.cap);
                 preds[2][i] = mt.booked + gbmPredict(m1, x) * mt.cap;
             }
+            // Веса сочетания подбираются на первой половине проверки, ошибка считается на второй (отложенной);
+            // рабочие веса затем уточняются по всей проверке.
+            const half = Math.floor(va.n / 2);
+            const sub = (a, from, to) => a.slice(from, to);
+            const wHalf = bestWeights(preds.map(a => sub(a, 0, half)), va.meta.slice(0, half), half);
             const w = bestWeights(preds, va.meta, va.n);
             const ens = new Float64Array(va.n);
-            for (let i = 0; i < va.n; i++) ens[i] = w[0] * preds[0][i] + w[1] * preds[1][i] + w[2] * preds[2][i];
+            for (let i = 0; i < va.n; i++) ens[i] = wHalf[0] * preds[0][i] + wHalf[1] * preds[1][i] + wHalf[2] * preds[2][i];
+            const hm = va.meta.slice(half);
+            const nh = va.n - half;
             metrics[key] = {
-                _baseline_booked: score(va.meta.map(m => m.booked), va.meta, va.n),
-                hmean: score(preds[0], va.meta, va.n),
-                ratio: score(preds[1], va.meta, va.n),
-                gbm: score(preds[2], va.meta, va.n),
-                ensemble: score(ens, va.meta, va.n)
+                _baseline_booked: score(va.meta.slice(half).map(m => m.booked), hm, nh),
+                hmean: score(sub(preds[0], half), hm, nh),
+                ratio: score(sub(preds[1], half), hm, nh),
+                gbm: score(sub(preds[2], half), hm, nh),
+                ensemble: score(sub(ens, half), hm, nh)
             };
             // окончательная модель — на всех вылетах
             const all = rowsFor(hist, key, idx, 0, hist.length, firstTs);
