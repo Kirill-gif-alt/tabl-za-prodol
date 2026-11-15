@@ -1,14 +1,6 @@
-// Вторая модель прогноза итоговой загрузки — машинное обучение прямо в браузере, без Python и без служб.
-// Учится на улетевших вылетах из истории сайта (кривая «сколько продано за N дней до вылета») и сама
-// переучивается раз в день, когда в истории появляются новые вылеты.
-//  • сроки: за 30, 14, 7 и 1–3 дня до вылета — для каждого своя модель;
-//  • три способа считать и их сочетание: «по средним» (добавка к проданному), «по доле продаж», градиентный бустинг
-//    (деревья решений); веса сочетания подобраны на вылетах, которых модель при обучении не видела;
-//  • история рейса учитывается с иерархией: рейс и день недели → рейс → направление и день недели → направление → всё вместе;
-//    берутся только вылеты, улетевшие ДО даты прогноза (будущее не подсматриваем);
-//  • проверка: ошибка в пассажирах на последних 20% вылетов по времени, рядом — «просто текущие продажи»;
-//  • критик: итог не ниже уже проданного и не выше мест, пустые и бесконечные числа не пропускаются.
-// Данные берёт у ForecastLab (mlHistory / mlLive) — это те же вылеты, что видит модель 1, но считает по-своему.
+// вторая модель прогноза итоговой загрузки, ML прямо в браузере (без Python и служб)
+// учится на улетевших вылетах (кривая продаж за N дней до вылета), переучивается раз в день
+// данные из ForecastLab (mlHistory / mlLive), те же вылеты, что у модели 1
 window.MlModel = (function () {
     const CURVE_H = 62;                 // длина кривой: дней до вылета
     const DAY = 86400000;
@@ -35,14 +27,13 @@ window.MlModel = (function () {
 
     function dirOf(base) { try { return typeof getFlightDirection === 'function' ? String(getFlightDirection(base) || '') : ''; } catch (e) { return ''; } }
     function dowOf(ts) { return (new Date(ts).getDay() + 6) % 7; }
-    // Дата вылета в истории — местная полночь: через toISOString() она сдвигалась бы на сутки назад (Красноярск, UTC+7).
+    // дата вылета - местная полночь, toISOString сдвинул бы ее на сутки назад (Красноярск, UTC+7)
     function ymd(ts) {
         const d = new Date(ts);
         return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
     }
 
-    // ---------- история: индекс по уровням с накопленными суммами ----------
-    // Для каждого уровня и ключа — вылеты по возрастанию даты и накопленные суммы (итог/места, продано к h0/места).
+    // индекс по уровням: вылеты по возрастанию даты и накопленные суммы (итог/места, продано к h0/места)
     function buildIndex(hist, h0) {
         const levels = { d: new Map(), dd: new Map(), b: new Map(), bd: new Map() };
         const all = { ts: [], cs: [[0], [0]] };
@@ -92,11 +83,10 @@ window.MlModel = (function () {
         return { hFinal: f, hBook: b, hRem: Math.max(0, f - b), nBase, level };
     }
 
-    // ---------- признаки ----------
     const at = (cum, k) => cum[Math.min(Math.max(k, 0), cum.length - 1)];
 
     function features(out, o, idx, h0) {
-        // out — Float32Array(NF), o: { cum, s, ts, base, dir, dow, h }
+        // out - Float32Array(NF), o: { cum, s, ts, base, dir, dow, h }
         const { cum, s, ts, h } = o;
         const booked = at(cum, h);
         const hs = histStats(idx, o.base, o.dir, o.dow, ts - h * DAY);
@@ -124,14 +114,13 @@ window.MlModel = (function () {
         return booked;
     }
 
-    // Простые способы (не обучаются): прогноз итога в пассажирах.
+    // простые способы, не обучаются: итог в пассажирах
     function simpleAdd(x, booked, cap) { return booked + x[15] * cap; }
     function simpleRatio(x, booked, cap) {
         const r = x[14] > 0.02 ? Math.min(x[13] / x[14], 6) : null;
         return r == null ? booked + x[15] * cap : booked * r;
     }
 
-    // ---------- градиентный бустинг (гистограммные деревья) ----------
     function rng(seed) { let a = seed >>> 0; return () => { a = (a * 1664525 + 1013904223) >>> 0; return a / 4294967296; }; }
 
     function makeBins(X, n) {
@@ -225,7 +214,6 @@ window.MlModel = (function () {
         return v;
     }
 
-    // ---------- обучение ----------
     function signature(hist) {
         const last = hist.length ? hist[hist.length - 1].ts : 0;
         return hist.length + '|' + new Date(last).toISOString().slice(0, 10) + '|' + GBM.trees + '|v2';
@@ -318,8 +306,8 @@ window.MlModel = (function () {
                 preds[1][i] = simpleRatio(x, mt.booked, mt.cap);
                 preds[2][i] = mt.booked + gbmPredict(m1, x) * mt.cap;
             }
-            // Веса сочетания подбираются на первой половине проверки, ошибка считается на второй (отложенной);
-            // рабочие веса затем уточняются по всей проверке.
+            // веса подбираем на первой половине проверки, ошибку меряем на второй (отложенной)
+            // потом уточняем по всей проверке
             const half = Math.floor(va.n / 2);
             const sub = (a, from, to) => a.slice(from, to);
             const wHalf = bestWeights(preds.map(a => sub(a, 0, half)), va.meta.slice(0, half), half);
@@ -335,7 +323,7 @@ window.MlModel = (function () {
                 gbm: score(sub(preds[2], half), hm, nh),
                 ensemble: score(sub(ens, half), hm, nh)
             };
-            // окончательная модель — на всех вылетах
+            // окончательная модель - на всех вылетах
             const all = rowsFor(hist, key, idx, 0, hist.length, firstTs);
             const mf = await fitGbm(all.X, all.y, all.n, key);
             hz[key] = { w, gbm: mf };
@@ -367,7 +355,7 @@ window.MlModel = (function () {
         try { const s = localStorage.getItem(STORE_KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; }
     }
 
-    // Подготовка: если сохранённая модель свежая — берём её, иначе обучаем. Параллельные вызовы ждут один и тот же расчёт.
+    // если сохраненная модель свежая - берем ее, иначе учим; параллельные вызовы ждут один расчет
     function ensure() {
         if (S.running) return S.running;
         if (S.status === 'ready' && S.model && S.sigNow === dataSig()) return Promise.resolve();
@@ -409,7 +397,7 @@ window.MlModel = (function () {
     function health() {
         const m = S.model;
         if (S.status === 'ready' && m) {
-            // Период — по истории в памяти (местные даты): у модели, сохранённой раньше, он мог быть записан со сдвигом на сутки.
+            // период берем из истории в памяти (местные даты): у старой сохраненной модели он мог сдвинуться на сутки
             const hs = S.hist && S.hist.length ? S.hist : null;
             const period = hs ? { from: ymd(hs[0].ts), to: ymd(hs[hs.length - 1].ts) } : m.period;
             return { status: 'ok', model_loaded: true, version: m.sig, trained_at: m.trainedAt, n_flights: m.nFlights, data_period: period, metrics: m.metrics };
@@ -418,7 +406,6 @@ window.MlModel = (function () {
         return { status: 'no_model', model_loaded: false, detail: S.err || '' };
     }
 
-    // ---------- прогноз ----------
     function template(base, dir, asOf) {
         const key = base + '|' + Math.floor(asOf / DAY);
         if (S.tpl.has(key)) return S.tpl.get(key);
@@ -437,7 +424,7 @@ window.MlModel = (function () {
         return out;
     }
 
-    // Кривая вылета: известная часть — из данных сайта (если вылет есть), будущая — по типичной кривой, приведённой к темпу.
+    // кривая вылета: известная часть из данных сайта (если вылет есть), будущая - по типичной кривой к темпу
     function requestCurve(base, dir, ts, cb, cap, dtd, live) {
         const T = template(base, dir, ts - dtd * DAY);
         const c = new Array(CURVE_H + 1);
@@ -516,7 +503,7 @@ window.MlModel = (function () {
         return { reis: code, flydate: it.flydate, horizons, critic: { ok: allOk, chosen_model: 'ensemble_' + near, flags } };
     }
 
-    // Много рейсов за раз. Ответ — как у API: [{ ok, result } | { ok: false, error }].
+    // много рейсов за раз, ответ как у API: [{ ok, result } | { ok: false, error }]
     function predictMany(items) {
         if (S.status !== 'ready' || !S.model) return items.map(() => ({ ok: false, error: 'модель ещё не обучена' }));
         return items.map(it => {

@@ -1,22 +1,18 @@
-// «Отчёты» → «Модели»: две модели прогноза загрузки рядом.
-//  • карточки моделей: статус, когда обучена, ошибка в пассажирах за 30 / 14 / 7 / 1–3 дня, вывод простыми словами;
-//  • одна таблица «Ближайшие рейсы»: модель 1 (ForecastLab) и модель 2 (MlForecast), разница, сигналы, фильтры, «В Excel»;
-//  • график «Точность по срокам»;
-//  • свёрнутый блок «Подробно для аналитика» — всё остальное из бывшего «Прогноза и предупреждений» (рисуется при раскрытии).
-// Новых расчётов здесь нет: сигналы считает ForecastLab (computeWarnings), модель 2 — MlForecast.compareFlights (кэш там же).
+// раздел "Отчеты" -> "Модели": две модели прогноза загрузки рядом (карточки, таблица, график, аналитика)
+// новых расчетов тут нет: сигналы из ForecastLab.computeWarnings, модель 2 из MlForecast.compareFlights
 window.ModelsView = (function () {
-    const PAGE = 100;                      // строк в таблице за раз; дальше — «Показать ещё»
+    const PAGE = 100;                      // строк в таблице за раз, дальше "Показать ещё"
     const KEYS = [['30', 'за 30 дн.'], ['14', 'за 14 дн.'], ['7', 'за 7 дн.'], ['1_3', 'за 1–3 дня']];
     const M2KEY = { '30': '30d', '14': '14d', '7': '7d', '1_3': '1_3d' };
     const FILTERS = [['all', 'Все'], ['alarm', 'Есть сигнал модели'], ['diff', 'Модели расходятся'], ['under', 'Модель ждёт недобор'], ['over', 'Модель ждёт перегруз'], ['pace', 'Необычный темп']];
     const SIGNAL = { under: ['Недобор', 'md-sg-under'], over: ['Перегруз', 'md-sg-over'], fast: ['Темп ↑', 'md-sg-pace'], slow: ['Темп ↓', 'md-sg-pace'] };
 
-    // Состояние страницы (живёт, пока вкладка открыта; при выходе из сайта не сохраняется).
+    // состояние страницы, живет пока открыта вкладка, не сохраняется
     const view = { filter: 'all', sort: 'default', shown: PAGE, open: new Set(), analyst: false };
     let uni = { sig: '', rows: [] };                       // вылеты горизонта (по данным сайта)
-    let m1Map = { arr: null, map: null };                   // сигналы модели 1 по ключу «дата|рейс»
-    const m2 = { sig: '', map: new Map(), running: '', done: '', token: 0 };   // модель 2 по ключу «дата|рейс»
-    let lastRows = [];                                      // что сейчас на экране (с учётом фильтра), для «В Excel»
+    let m1Map = { arr: null, map: null };                   // сигналы модели 1 по ключу "дата|рейс"
+    const m2 = { sig: '', map: new Map(), running: '', done: '', token: 0 };   // модель 2 по ключу "дата|рейс"
+    let lastRows = [];                                      // что на экране с учетом фильтра, для "В Excel"
     let rowByKey = new Map();
     let chart = null;
     let themeObs = null;
@@ -25,7 +21,6 @@ window.ModelsView = (function () {
     let mlStamp = '';
     let mounted = false;
 
-    // ---------- общее ----------
     function esc(v) { return escHtml(v); }
     function hasM1() { return typeof ForecastLab !== 'undefined' && ForecastLab.canView(); }
     function hasM2() { return typeof MlForecast !== 'undefined' && MlForecast.canView(); }
@@ -51,8 +46,7 @@ window.ModelsView = (function () {
         return `${same ? 'сегодня' : (typeof formatDateRu === 'function' ? formatDateRu(d) : d.toLocaleDateString('ru-RU'))} в ${pad(d.getHours())}:${pad(d.getMinutes())}`;
     }
 
-    // ---------- вылеты горизонта ----------
-    // Один вылет (рейс + дата) — одна строка. Список строится один раз на подпись данных (файл, день, горизонт).
+    // один вылет (рейс + дата) - одна строка; список строим один раз на подпись данных (файл, день, горизонт)
     function universe(days) {
         const sig = [typeof dataEpoch === 'number' ? dataEpoch : 0, today(), days].join('|');
         if (uni.sig === sig) return uni.rows;
@@ -67,7 +61,7 @@ window.ModelsView = (function () {
                     if (!r || !dates.has(r[1])) return;
                     const code = cleanFlight(r[0]);
                     const key = r[1] + '|' + code;
-                    if (seen.has(key) || r.segShare) return;   // вылет с посадками — по основному участку
+                    if (seen.has(key) || r.segShare) return;   // вылет с посадками - по основному участку
                     const seats = typeof getSeatsOnSale === 'function' ? getSeatsOnSale(r) : 0;
                     if (!(seats > 0)) return;
                     seen.add(key);
@@ -96,7 +90,7 @@ window.ModelsView = (function () {
         return m1Map.map;
     }
 
-    // Строки таблицы: вылет + модель 1 + модель 2 + сигналы. Только чтение готовых кэшей — дорогих расчётов здесь нет.
+    // строки таблицы: вылет + модель 1 + модель 2 + сигналы, только чтение кэшей
     function compose() {
         const cfg = settings();
         const base = universe(cfg.days);
@@ -138,14 +132,13 @@ window.ModelsView = (function () {
 
     function codeNum(c) { return parseInt(String(c).slice(3), 10) || 0; }
     const SORTS = {
-        // Сигналы моделей и расхождения сверху, затем по дате; внутри даты — самые срочные.
+        // сигналы и расхождения сверху, потом по дате, внутри даты - самые срочные
         default: (a, b) => ((b.alarm || b.diverge ? 1 : 0) - (a.alarm || a.diverge ? 1 : 0)) || (a.ts - b.ts) || ((b.w ? b.w.urgency : 0) - (a.w ? a.w.urgency : 0)) || (codeNum(a.code) - codeNum(b.code)),
         date: (a, b) => (a.ts - b.ts) || (codeNum(a.code) - codeNum(b.code)),
         diff: (a, b) => (Math.abs(b.diff == null ? -1 : b.diff) - Math.abs(a.diff == null ? -1 : a.diff)) || (a.ts - b.ts),
         code: (a, b) => (codeNum(a.code) - codeNum(b.code)) || (a.ts - b.ts)
     };
 
-    // ---------- «Коротко» и подробности ----------
     function shortText(r) {
         const w = r.w;
         const out = [];
@@ -181,7 +174,6 @@ window.ModelsView = (function () {
         return rows.join('');
     }
 
-    // ---------- карточки моделей ----------
     function pill(cls, text) { return `<span class="md-pill md-pill-${cls}">${esc(text)}</span>`; }
 
     function m1Card() {
@@ -269,7 +261,7 @@ window.ModelsView = (function () {
         else if (!w2.length) text = w1.length === wins.length ? 'На всех сроках точнее модель 1.' : `Точнее модель 1 (${lab(w1)}), на остальных сроках — одинаково.`;
         else if (!w1.length) text = w2.length === wins.length ? 'На всех сроках точнее модель 2.' : `Точнее модель 2 (${lab(w2)}), на остальных сроках — одинаково.`;
         else {
-            // Привычная картина: далеко до вылета точнее одна модель, близко к вылету — другая.
+            // обычно далеко до вылета точнее одна модель, близко - другая
             const idx = (list) => list.map(x => wins.indexOf(x));
             const firstIsOne = wins.find(x => x.w !== 0).w === 1;
             const far = firstIsOne ? w1 : w2;
@@ -311,7 +303,6 @@ window.ModelsView = (function () {
             ${verdict ? `<div class="rp-card md-verdict"><b>Вывод:</b> ${esc(verdict)}</div>` : ''}`;
     }
 
-    // ---------- таблица ----------
     function modelCell(r, n) {
         const state = n === 1 ? r.m1state : r.m2state;
         const v = n === 1 ? r.m1 : r.m2;
@@ -424,7 +415,6 @@ window.ModelsView = (function () {
         renderChart();
     }
 
-    // ---------- график ----------
     function chartData() {
         const { c1, c2 } = cardsData();
         const naive = (c1 && c1.naive) || (c2 && c2.naive) || null;
@@ -493,7 +483,6 @@ window.ModelsView = (function () {
         </section>`;
     }
 
-    // ---------- «Подробно для аналитика» ----------
     function analystInner(rerender) {
         let html = '';
         if (typeof ForecastLab !== 'undefined' && hasM1()) html += ForecastLab.html(rerender, { analyst: true });
@@ -519,7 +508,6 @@ window.ModelsView = (function () {
         </details></section>`;
     }
 
-    // ---------- вход и расчёты в фоне ----------
     function html(rerender) {
         return `<div class="md-root" id="md-root">
             <div id="md-cards" class="md-cards">${cardsHtml()}</div>
@@ -560,7 +548,7 @@ window.ModelsView = (function () {
         }).catch(e => { console.warn('ModelsView', e); if (token === m2.token) m2.running = ''; });
     }
 
-    // Модель 2 сменила состояние (учится → готова) или версию — обновить карточки и таблицу.
+    // модель 2 сменила состояние (учится, готова) или версию - обновляем карточки и таблицу
     if (typeof MlForecast !== 'undefined' && MlForecast.onChange) {
         MlForecast.onChange(() => {
             if (!alive()) return;
@@ -582,7 +570,7 @@ window.ModelsView = (function () {
         kickM1();
         kickM2();
         if (hasM2() && MlForecast.refreshHealth) MlForecast.refreshHealth(false).then(() => { if (alive()) { renderCards(); kickM2(); renderList(); } }).catch(() => {});
-        // Смена светлой/тёмной темы: перекрасить график.
+        // смена светлой/тёмной темы - перекрасить график
         if (!themeObs && typeof MutationObserver === 'function') {
             themeObs = new MutationObserver(() => { if (alive()) renderChart(); });
             themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
@@ -602,7 +590,6 @@ window.ModelsView = (function () {
         if (themeObs) { themeObs.disconnect(); themeObs = null; }
     }
 
-    // ---------- действия ----------
     function openCard(key) {
         const i = key.indexOf('|');
         const date = key.slice(0, i);
@@ -675,7 +662,7 @@ window.ModelsView = (function () {
             exportTable().catch(e => { console.error(e); toast('Ошибка выгрузки', 'error'); }).finally(() => { x.disabled = false; });
             return true;
         }
-        // Клик по строке — карточка рейса (с короткой паузой: двойной клик раскрывает подробности и карточку не открывает).
+        // клик по строке - карточка рейса (с паузой: двойной клик раскрывает подробности, карточку не открывает)
         const tr = t.closest('tr[data-md-key]');
         if (tr && !t.closest('button, a, input, select')) {
             clearTimeout(clickTimer);
@@ -703,10 +690,10 @@ window.ModelsView = (function () {
         if (event.shiftKey) toggleDetail(tr.dataset.mdKey); else openCard(tr.dataset.mdKey);
     }
 
-    // Блок «Подробно для аналитика» раскрыли — рисуем его только сейчас.
+    // блок "Подробно для аналитика" рисуем только при раскрытии
     function handleToggle(target) {
         if (!target || target.id !== 'md-analyst') return;
-        if (target.open === view.analyst) return;      // раскрыт при отрисовке страницы — уже заполнен
+        if (target.open === view.analyst) return;      // уже заполнен, если раскрыт при отрисовке страницы
         view.analyst = target.open;
         if (target.open) fillAnalyst();
     }

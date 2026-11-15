@@ -1,10 +1,5 @@
-// Прогноз и экономика вылета — то, что продажник спрашивает о рейсе в первую очередь:
-//  • прогноз загрузки к вылету: сколько обычно добирают такие же вылеты (тот же рейс, тот же день недели,
-//    соседние недели, без праздников — см. calendar-events.js) от этого дня до вылета; разброс — между ними;
-//    когда рейс распродастся;
-//  • точка безубыточности и прогноз финрезультата: себестоимость − субсидия против среднего тарифа;
-//  • групповые брони: заказ (PNR) от порога групп (параметры расчётов): сколько человек и когда куплено.
-// Всё считается лениво — только для показанных рейсов — и кэшируется до новых данных.
+// прогноз загрузки, экономика вылета (безубыточность, финрезультат), групповые брони
+// считается лениво, только для показанных рейсов, кэш до новых данных
 window.FlightInsights = (function () {
 
     let memo = { sig: '', fc: new Map(), econ: new Map(), fare: new Map() };
@@ -32,16 +27,13 @@ window.FlightInsights = (function () {
     }
 
     function canEconomy() {
-        // Финрезультат включает выручку и себестоимость — как «Фин. результат» в «Творческой».
+        // финрезультат - выручка и себестоимость, как в "Творческой"
         if (typeof ProfileAuth === 'undefined') return true;
         return (ProfileAuth.canAccessTab('pair') || ProfileAuth.canAccessTab('costs'))
             && (ProfileAuth.canAccessTab('table') || ProfileAuth.canAccessTab('pair'));
     }
 
-    // ---------- групповые брони ----------
-
-    // Размер заказа у каждого билета (grp) — считается по PNR до скрытия персональных данных,
-    // поэтому «группу» видят и те, кому PNR не показывается.
+    // grp считается по PNR до скрытия персональных данных, поэтому группу видят и без PNR
     function annotateGroups(details) {
         Object.keys(details || {}).forEach(k => {
             const list = details[k];
@@ -52,9 +44,9 @@ window.FlightInsights = (function () {
                 if (!s || !s.pnr) return;
                 by.set(s.pnr, (by.get(s.pnr) || 0) + 1);
             });
-            // Номера заказов — по самому PNR, а не по порядку в списке: одинаковые на всех ПК и при любом порядке.
+            // номер заказа по PNR, а не по порядку в списке (одинаковые на всех ПК)
             [...by.keys()].sort().forEach((pnr, i) => ids.set(pnr, i + 1));
-            // grpId — номер заказа внутри вылета (1, 2, …), не PNR: по нему группы не склеиваются и не дробятся.
+            // grpId - номер внутри вылета, не PNR: группы по нему не склеиваются и не дробятся
             list.forEach(s => {
                 if (!s) return;
                 s.grp = s.pnr ? by.get(s.pnr) : 1;
@@ -64,7 +56,7 @@ window.FlightInsights = (function () {
         return details;
     }
 
-    // Группы вылета: [{ n, dealDate, pnr? }] — от больших к меньшим.
+    // Группы вылета: [{ n, dealDate, pnr? }] - от больших к меньшим.
     function groupsFor(code, date) {
         const list = typeof getFlightSalesList === 'function' ? getFlightSalesList(date, code) : [];
         if (!list.length) return [];
@@ -88,8 +80,6 @@ window.FlightInsights = (function () {
         return groupsFor(code, date).reduce((a, g) => a + g.n, 0);
     }
 
-    // ---------- прогноз загрузки ----------
-
     function quantile(sorted, q) {
         if (!sorted.length) return null;
         const pos = (sorted.length - 1) * q;
@@ -98,7 +88,7 @@ window.FlightInsights = (function () {
         return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
     }
 
-    // Улетевшие вылеты того же рейса в тот же день недели (с их кривыми продаж, по загрузке).
+    // улетевшие вылеты того же рейса и дня недели, с их кривыми продаж
     function flownCohort(base, code, date) {
         if (typeof collectSameWeekdayCohort !== 'function') return [];
         const all = collectSameWeekdayCohort(base, date, code).filter(c => c.observedFrom === 0 && c.seats > 0);
@@ -133,14 +123,12 @@ window.FlightInsights = (function () {
         return res;
     }
 
-    // Один прогноз на вылет: если модель доступна (право «Прогноз загрузки и предупреждения») и обучена — её число.
-    // Она сама учитывает и прошлые вылеты в этот день недели, и файл ожидаемой, и темп, и календарь — и выбрана
-    // по честной проверке как самая точная. Простой расчёт по прошлым вылетам остаётся запасным и для подсказки.
+    // если модель доступна (право "Прогноз загрузки и предупреждения") и обучена, берем ее число
+    // простой расчет по прошлым вылетам - запасной и для подсказки
     function computeForecast(code, date) {
         const simple = computeSimple(code, date);
         if (simple && simple.source === 'flown') return simple;
-        // Продажи закрыты — добора не будет, итог = продано. Модель 1 так считает за 30 дней до вылета (forecast-lab.js);
-        // дальше этого срока (и у простого расчёта) закрытый рейс получал «добор по прошлым вылетам» — то же число теперь на любом сроке.
+        // продажи закрыты - добора не будет, итог = продано; так же считает модель 1 (forecast-lab.js)
         const rowC = rowOf(code, date);
         if (rowC && typeof closedFlights !== 'undefined' && typeof getSalesLookupKey === 'function' && closedFlights.has(getSalesLookupKey(rowC))) {
             const seatsC = getSeatsOnSale(rowC);
@@ -157,7 +145,7 @@ window.FlightInsights = (function () {
         let ml = null;
         try { ml = typeof ForecastLab !== 'undefined' && ForecastLab.forecastFor ? ForecastLab.forecastFor(code, date) : null; } catch (e) { ml = null; }
         if (!ml || ml.final == null) return simple;
-        // Простого прогноза нет (мало прошлых вылетов, нет файла) — модель всё равно даёт число.
+        // простого прогноза нет (мало вылетов, нет файла), модель все равно дает число
         const row = rowOf(code, date);
         if (!row) return simple;
         const seats = getSeatsOnSale(row);
@@ -229,14 +217,12 @@ window.FlightInsights = (function () {
         return null;
     }
 
-    // ---------- экономика: безубыточность и прогноз результата ----------
-
-    // Деньги — по фактически оплаченному (детский билет со скидкой считается за столько, сколько заплатили).
+    // деньги по фактически оплаченному: детский со скидкой считаем за сколько заплатили
     function paidFares(list) {
         return (list || []).map(s => s.fare || 0).filter(v => v > 0);
     }
 
-    // Тарифы оплаченных взрослых билетов (как в таблицах «Ср. тариф»: FareGrid.isAdultPaid, цена adjustedFare || fare).
+    // тарифы оплаченных взрослых, как в "Ср. тариф" (FareGrid.isAdultPaid, adjustedFare || fare)
     function adultFares(list) {
         const isAdult = typeof FareGrid !== 'undefined' && FareGrid.isAdultPaid ? FareGrid.isAdultPaid : (x) => (x.adjustedFare || x.fare || 0) > 0;
         const out = [];
@@ -244,9 +230,9 @@ window.FlightInsights = (function () {
         return out;
     }
 
-    // Средний тариф: свой (если платных билетов не меньше порога), иначе по рейсу за окно дней из параметров расчётов.
-    // value — то, что видит пользователь: средний тариф оплаченных взрослых, как в таблицах.
-    // mean — выручка на один оплаченный билет (с детскими): нужна только расчёту безубыточности.
+    // средний тариф: свой, если платных не меньше порога, иначе по рейсу за окно из параметров
+    // value - что видит пользователь (как в таблицах)
+    // mean - выручка на платный билет (с детскими), только для безубыточности
     function avgFare(code, date) {
         const m = cache();
         const key = code + '|' + date;
@@ -262,7 +248,7 @@ window.FlightInsights = (function () {
             const fly = parseLocalDate(date);
             let sum = 0;
             let n = 0;
-            let all = 0;   // все билеты выборки, с нулевыми: из них считается доля платных
+            let all = 0;   // все билеты выборки, с нулевыми - из них доля платных
             let aSum = 0;
             let aN = 0;
             Object.keys(typeof salesDetails !== 'undefined' && salesDetails ? salesDetails : {}).forEach(k => {
@@ -309,8 +295,8 @@ window.FlightInsights = (function () {
         const mean = fare ? (fare.mean || fare.value) : 0;
         const out = { cost, subsidy, fare: fare ? fare.value : null, fareSource: fare ? fare.source : '', seats, breakeven: null, final: fc ? fc.final : null, finResult: null, need: null, needFare: null, belowCost: false };
         if (!fare || !(fare.value > 0)) return out;
-        // Билеты за 0 ₽ места занимают, но денег не дают: на пассажира приходится тариф × доля платных.
-        const perPax = mean * (fare.share > 0 ? fare.share : 1);   // безубыточность — по выручке на оплаченный билет, как и раньше
+        // билеты за 0 ₽ места занимают, денег не дают: на пассажира тариф × доля платных
+        const perPax = mean * (fare.share > 0 ? fare.share : 1);   // безубыточность - по выручке на платный билет
         out.breakeven = gap <= 0 ? 0 : Math.ceil(gap / perPax);
         out.belowCost = out.breakeven > seats;
         if (fc && fc.final != null) {
@@ -323,8 +309,6 @@ window.FlightInsights = (function () {
         return out;
     }
 
-    // ---------- тексты ----------
-
     function plural(n, one, few, many) {
         const m10 = n % 10, m100 = n % 100;
         if (m10 === 1 && m100 !== 11) return one;
@@ -332,7 +316,7 @@ window.FlightInsights = (function () {
         return many;
     }
 
-    // Короткая подпись прогноза: «38 (34–41) · 83%».
+    // короткая подпись прогноза, например 38 (34-41) · 83%
     function forecastShort(f) {
         if (!f) return '—';
         const range = f.lo != null && f.hi != null && f.lo !== f.hi ? ` (${f.lo}–${f.hi})` : '';

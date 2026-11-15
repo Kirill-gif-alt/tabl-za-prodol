@@ -1,9 +1,6 @@
-// Вторая модель прогноза загрузки (машинное обучение) — показ в сайте. Сама модель — ml-model.js: она работает
-// прямо в браузере, учится на истории сайта и ничего не требует устанавливать.
-//  • прогноз для карточки рейса считается по запросу и кэшируется;
-//  • окно «Сравнение моделей»: ближайшие рейсы, модель 1 рядом с моделью 2, качество модели 2, проверка своего рейса.
-// Сравнение моделей теперь — раздел «Отчёты» → «Модели» (js/models-view.js); окно в коде осталось, но кнопки его не открывают.
-// Включает админ в «Управлении профилями» → «Функции» («Вторая модель прогноза»).
+// вторая модель прогноза загрузки (ML), сама модель в ml-model.js, работает прямо в браузере
+// включается админом: "Управление профилями" -> "Функции" -> "Вторая модель прогноза"
+// сравнение моделей теперь в "Отчеты" -> "Модели" (models-view.js), окно кнопки не открывают
 window.MlForecast = (function () {
     const HZ = [
         { key: '30d', center: 30, label: 'за 30 дн.' },
@@ -30,8 +27,7 @@ window.MlForecast = (function () {
     function onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }
     function notify() { listeners.forEach(fn => { try { fn(); } catch (e) { console.warn('MlForecast listener', e); } }); }
 
-    // ---------- связь с моделью ----------
-    // Ответы — того же вида, что у прежней службы: { ok, data } / { ok: false, offline }.
+    // формат ответа: { ok, data } / { ok: false, offline }
     async function call(path, body) {
         if (typeof MlModel === 'undefined') return { ok: false, offline: true };
         if (path === 'health') { await Promise.resolve(); return { ok: true, data: MlModel.health() }; }
@@ -43,7 +39,7 @@ window.MlForecast = (function () {
         return { ok: false, offline: true };
     }
 
-    // Проверка службы: не чаще раза в 30–45 секунд; параллельные вызовы ждут один ответ.
+    // проверка службы не чаще раза в 30-45 с, параллельные вызовы ждут один ответ
     function refreshHealth(force) {
         if (st.pending) return st.pending;
         if (!force && st.state !== 'unknown' && Date.now() - st.at < TTL[st.state]) return Promise.resolve(st.state);
@@ -58,7 +54,7 @@ window.MlForecast = (function () {
             }
             if (st.state !== prev) {
                 if (st.state !== 'ready') cache.forEach((v, k) => { if (v.s === 'loading') cache.delete(k); });
-                else cache.clear();       // модель переучилась — прежние ответы устарели
+                else cache.clear();       // модель переучилась - прежние ответы устарели
                 notify();
             }
             return st.state;
@@ -72,7 +68,6 @@ window.MlForecast = (function () {
     }
     function health() { return st.health; }
 
-    // ---------- вход для прогноза ----------
     function inputOf(code, date) {
         if (typeof getFlightRowForDate !== 'function' || typeof getBaseFlight !== 'function') return null;
         const row = getFlightRowForDate(getBaseFlight(code), date, code);
@@ -81,8 +76,8 @@ window.MlForecast = (function () {
         const sold = typeof getSoldFromRow === 'function' ? getSoldFromRow(row) : 0;
         const real = typeof getDaysUntil === 'function' ? getDaysUntil(date) : null;
         if (!(seats > 0) || real == null || real < 0) return null;
-        // Продажи в файле — на день среза данных, а не на сегодня (файл может быть старше суток). Как в модели 1,
-        // считаем срок от дня среза: иначе 5 проданных «за 2 дня до вылета» на деле были проданы за 22 дня.
+        // продажи в файле на день среза, не на сегодня (файл может быть старше суток)
+        // срок от дня среза, как в модели 1 - иначе 5 продаж "за 2 дня до вылета" были за 22 дня
         const lag = typeof observedFromDtd === 'function' ? observedFromDtd(date) : 0;
         const dtd = Math.max(real, lag);
         if (dtd > 180) return null;
@@ -97,7 +92,7 @@ window.MlForecast = (function () {
         return e || null;
     }
 
-    // Прогноз вылета: { s: 'loading'|'ok'|'err'|'off'|'none', ... }. Сам запрос уходит в фон.
+    // прогноз вылета: { s: 'loading'|'ok'|'err'|'off'|'none', ... }, запрос уходит в фон
     function forFlight(code, date) {
         if (!canView()) return { s: 'hidden' };
         const state = status();
@@ -136,7 +131,7 @@ window.MlForecast = (function () {
         notify();
     }
 
-    // Запросить сразу много рейсов (окно сравнения); возвращает Promise, когда все ответы в кэше.
+    // много рейсов сразу (окно сравнения), Promise, когда все ответы в кэше
     async function ensureMany(inps) {
         const need = inps.filter(i => !entry(i));
         need.forEach(i => cache.set(keyOf(i), { s: 'loading', at: Date.now() }));
@@ -152,26 +147,25 @@ window.MlForecast = (function () {
         }
     }
 
-    // ---------- разбор ответа ----------
     function nearestKey(dtd) {
         let best = HZ[0];
         HZ.forEach(h => { if (Math.abs(h.center - dtd) < Math.abs(best.center - dtd)) best = h; });
         return best.key;
     }
 
-    // Главное число: прогноз горизонта, ближайшего к сегодняшнему дню до вылета.
+    // главное число - горизонт, ближайший к дням до вылета сегодня
     function headline(res, dtd, inp) {
         if (!res || !res.horizons) return null;
         const key = nearestKey(dtd);
         const h = res.horizons[key];
         if (!h) return null;
-        // Продажи закрыты — добора не будет: итог = продано, как у модели 1.
+        // продажи закрыты - итог = продано, как у модели 1
         if (inp && inp.closed) return { key, pred: inp.current_booked, conf: 0.99, ok: true, flags: [], chosen: '', closed: true };
         return { key, pred: h.pred, conf: h.confidence, ok: !res.critic || res.critic.ok !== false,
             flags: res.critic && res.critic.flags || [], chosen: res.critic && res.critic.chosen_model || '' };
     }
 
-    // Обычная ошибка модели 2 на этом сроке (в пассажирах) — из проверки на вылетах, которых она не видела.
+    // обычная ошибка на этом сроке (в пассажирах), из проверки на вылетах, которых модель не видела
     function mae(key) {
         const m = st.health && st.health.metrics && st.health.metrics[key];
         const v = m && m.ensemble && m.ensemble.mae;
@@ -212,8 +206,7 @@ window.MlForecast = (function () {
         return c;
     }
 
-    // ---------- плитка для карточки рейса ----------
-    // Возвращает { tile, chip }: HTML плитки (рядом с моделью 1) и короткая подпись для свёрнутой строки.
+    // { tile, chip }: HTML плитки рядом с моделью 1 и короткая подпись для свернутой строки
     function cardParts(code, date) {
         const f = forFlight(code, date);
         if (f.s === 'hidden' || f.s === 'none') return { tile: '', chip: '' };
@@ -266,8 +259,7 @@ window.MlForecast = (function () {
         return { tile, chip: `<span class="fc-ins-chip fc-ins-ml">модель 2: ${h.pred}/${seats} · ${lf}%</span>` };
     }
 
-    // ---------- пакет для раздела «Отчёты» → «Модели» ----------
-    // Ответ по одному рейсу в виде, удобном таблице: { s: 'ok'|'err'|'none', pred, conf, seats, flags, closed } (расчёт уже в кэше).
+    // ответ по рейсу для таблицы: { s, pred, conf, seats, flags, closed }, расчет уже в кэше
     function resultOf(inp) {
         const e = entry(inp);
         if (!e || e.s === 'loading') return { s: 'loading' };
@@ -278,8 +270,8 @@ window.MlForecast = (function () {
             flags: h.closed ? ['продажи закрыты — итог равен проданному'] : flagTexts(h.flags) };
     }
 
-    // Прогнозы модели 2 пачками по 40 рейсов с передышкой для браузера: таблица не ждёт, строки заполняются по мере готовности.
-    // items: [{ code, date }]; onPart(список { code, date, r }) вызывается после каждой пачки; isCancelled() — прервать.
+    // пачками по 40 рейсов с передышкой для браузера, строки заполняются по мере готовности
+    // items: [{ code, date }], onPart([{ code, date, r }]) после каждой пачки, isCancelled() - прервать
     async function compareFlights(items, onPart, isCancelled) {
         if (!canView() || !items.length) return;
         await refreshHealth(false);
@@ -303,7 +295,7 @@ window.MlForecast = (function () {
         }
     }
 
-    // Раздел «Отчёты» → «Модели»; false — если у профиля нет вкладки «Отчёты» (тогда остаётся старое окно).
+    // раздел "Отчеты" -> "Модели"; false, если у профиля нет вкладки "Отчеты" (тогда старое окно)
     function openModels() {
         if (!canView() && !(typeof ForecastLab !== 'undefined' && ForecastLab.canView())) return false;
         const canReports = typeof ProfileAuth === 'undefined' || typeof ProfileAuth.canAccessTab !== 'function' || ProfileAuth.canAccessTab('reports');
@@ -313,7 +305,6 @@ window.MlForecast = (function () {
         return true;
     }
 
-    // ---------- окно «Сравнение моделей» (больше не показывается кнопками) ----------
     let win = null;
     let wstate = { tab: 'compare', days: 7, minDiff: 0, rows: [], building: 0, sort: 'diff', own: null, ownRes: null };
 
@@ -342,7 +333,7 @@ window.MlForecast = (function () {
         return out;
     }
 
-    // Чем отличаются данные, по которым построена таблица окна: загрузка файлов, новый день, переобучение, параметры.
+    // сигнатура данных окна: загрузка файлов, новый день, переобучение, параметры
     function winSig() {
         return [typeof dataEpoch === 'number' ? dataEpoch : 0, today(), typeof analyticsRevision === 'function' ? analyticsRevision() : '',
             st.health && st.health.version || ''].join('|');
@@ -361,7 +352,7 @@ window.MlForecast = (function () {
         if (st.state !== 'ready') { wstate.status = ''; renderWin(); return; }
         await ensureMany(list.map(z => z.inp));
         if (token !== wstate.building) return;
-        // Модель 1 считаем порциями, чтобы окно не подвисало.
+        // модель 1 порциями, чтобы окно не подвисало
         const rows = [];
         for (let i = 0; i < list.length; i += 20) {
             list.slice(i, i + 20).forEach(z => {
@@ -369,7 +360,7 @@ window.MlForecast = (function () {
                 const m2 = e && e.s === 'ok' ? headline(e.res, z.inp.dtd, z.inp) : null;
                 let m1 = null;
                 try { m1 = typeof FlightInsights !== 'undefined' ? FlightInsights.forecast(z.x.code, z.x.date) : null; } catch (err) { m1 = null; }
-                // Вылет «сегодня и раньше» у модели 1 — не прогноз, а факт (final = продано): в карточке его не показывают, и здесь тоже.
+                // модель 1 на вылетах "сегодня и раньше" - факт (final = продано), в карточке не показываем и здесь тоже
                 const m1v = m1 && m1.final != null && m1.source !== 'flown' ? m1.final : null;
                 rows.push({ code: z.x.code, date: z.x.date, ts: dateTs(z.x.date), dir: typeof getFlightDirection === 'function' ? getFlightDirection(z.x.code) : '',
                     sold: z.inp.current_booked, seats: z.inp.total_au, dtd: z.inp.dtdReal != null ? z.inp.dtdReal : z.inp.dtd, m1: m1v, m2: m2 ? m2.pred : null,
@@ -399,7 +390,7 @@ window.MlForecast = (function () {
         const bits = [];
         if (st.state === 'training') bits.push(`обучение: ${Math.round((h.progress || 0) * 100)}%`);
         if (st.state === 'ready') {
-            // Дата обучения — местная (в ISO она по Гринвичу: ночью по Красноярску показывала бы вчера).
+            // дата обучения местная: в ISO она по Гринвичу, ночью в Красноярске показала бы вчера
             const tr = h.trained_at ? new Date(h.trained_at) : null;
             if (tr && !isNaN(tr.getTime())) bits.push('обучена ' + (typeof formatDateRu === 'function' ? formatDateRu(tr) : String(h.trained_at).slice(0, 10).split('-').reverse().join('.')));
             if (h.n_flights) bits.push(`${Number(h.n_flights).toLocaleString('ru-RU')} ${pluralRu(h.n_flights, 'вылет', 'вылета', 'вылетов')} в истории`);
@@ -589,7 +580,7 @@ window.MlForecast = (function () {
         if (tab) wstate.tab = tab;
         renderWin();
         refreshHealth(true).then(() => {
-            // Данные загрузили заново, наступил новый день или модель переучилась — прежняя таблица устарела.
+            // новые данные, новый день или переобучение - таблица устарела
             if (wstate.rows.length && wstate.sig !== winSig()) wstate.rows = [];
             renderWin();
             if (st.state === 'ready' && wstate.tab === 'compare' && !wstate.rows.length && !wstate.status) buildCompare();
@@ -603,7 +594,7 @@ window.MlForecast = (function () {
         wstate.status = '';
     }
 
-    // Ход обучения: обновляем состояние не чаще раза в 400 мс.
+    // ход обучения - состояние не чаще раза в 400 мс
     let modelTimer = 0;
     if (typeof MlModel !== 'undefined') {
         MlModel.onChange(() => {
