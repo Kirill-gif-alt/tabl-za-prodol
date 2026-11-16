@@ -462,3 +462,41 @@ html[data-theme="dark"] #rp-page .lrr-edit-tr td { background: #1e2a3a !importan
 #rp-page .lrr-card .rp-scroll { max-height: none; overflow: auto; }
 #rp-page .lrr-table thead th { position: sticky; top: 0; z-index: 3; }
 #rp-page .lrr-w-ld { width: 88px; }
+
+/* "Проверка расчётов": полоса, таблица проверок, примеры расхождений */
+#rp-page .sc-ctl { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin: 4px 0 12px; }
+#rp-page .sc-when { font-size: 0.8rem; color: var(--text-muted); }
+#rp-page .sc-tiles { margin-bottom: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+#rp-page .sc-prog { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 6px 0 4px; }
+#rp-page .sc-bar { flex: 1 1 260px; max-width: 520px; height: 10px; border-radius: 6px; background: var(--border); overflow: hidden; }
+#rp-page .sc-bar-in { height: 100%; width: 0; background: var(--accent, #2563eb); transition: width 0.15s linear; }
+#rp-page .sc-bar-text { font-size: 0.82rem; color: var(--text); font-variant-numeric: tabular-nums; }
+#rp-page .sc-scroll { max-height: none; }
+#rp-page .sc-table td, #rp-page .sc-table th { white-space: normal; }
+#rp-page .sc-table td:nth-child(2), #rp-page .sc-table td:nth-child(3) { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+#rp-page .sc-table th:nth-child(2), #rp-page .sc-table th:nth-child(3) { width: 170px; }
+#rp-page .sc-table td:first-child { font-weight: 400; }
+#rp-page .sc-name { display: inline; padding: 0; border: 0; background: none; font: inherit; color: var(--text); text-align: left; cursor: pointer; }
+#rp-page .sc-name:hover { text-decoration: underline; }
+#rp-page .sc-name-plain { cursor: default; }
+#rp-page .sc-name-plain:hover { text-decoration: none; }
+#rp-page .sc-caret { display: inline-block; width: 1em; color: var(--text-muted); }
+#rp-page .sc-num-bad { color: #b91c1c; font-weight: 700; }
+#rp-page .sc-num-ok { color: #047857; font-weight: 700; }
+html[data-theme="dark"] #rp-page .sc-num-bad { color: #fca5a5; }
+html[data-theme="dark"] #rp-page .sc-num-ok { color: #6ee7b7; }
+#rp-page .sc-ex-row > td { padding: 8px 10px; background-color: var(--muted-bg, #f8fafc) !important; text-align: left !important; white-space: normal; }
+html[data-theme="dark"] #rp-page .sc-ex-row > td { background-color: #161b22 !important; }
+#rp-page .sc-ex-scroll { max-height: 420px; }
+#rp-page .sc-ex-table td, #rp-page .sc-ex-table th { white-space: normal; }
+#rp-page .sc-ex-table td:nth-child(n+4) { text-align: right; white-space: nowrap; }
+#rp-page .sc-more { margin: 6px 0 0; font-size: 0.78rem; color: var(--text-muted); }
+@media (max-width: 700px) {
+    #rp-page .sc-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+#rp-page .sc-run { padding: 6px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 0.84rem; font-weight: 600; cursor: pointer; }
+#rp-page .sc-run:hover:not(:disabled) { border-color: var(--accent, #2563eb); }
+#rp-page .sc-run:disabled { opacity: 0.6; cursor: default; }
+#rp-page .sc-table th:first-child, #rp-page .sc-ex-table th:nth-child(-n+3) { text-align: left; }
+#rp-page .sc-table th:nth-child(n+2), #rp-page .sc-ex-table th:nth-child(n+4) { text-align: right; }
+#rp-page .sc-ex-table td:nth-child(-n+3) { text-align: left; }

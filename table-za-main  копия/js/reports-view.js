@@ -502,7 +502,8 @@ window.ReportsView = (function () {
             return `<section class="rp-card rp-checks" id="rp-checks">${headHtml('Проверки', CHECKS_HELP)}<p class="rp-note">Данных нет — нажмите «Загрузить» или «Последние».</p></section>`;
         }
         const tiles = (checksOn ? checksTileList() : []).concat(recOn ? SalesReconcile.tileList() : []);
-        return tilesHtml(tiles) + (checksOn ? checksCard() : '') + (recOn ? SalesReconcile.card() : '');
+        const selfOn = typeof SelfCheck !== 'undefined' && SelfCheck.canView();
+        return tilesHtml(tiles) + (checksOn ? checksCard() : '') + (recOn ? SalesReconcile.card() : '') + (selfOn ? SelfCheck.card() : '');
     }
 
     let refEditId = '';
@@ -801,6 +802,50 @@ window.ReportsView = (function () {
             : (lib.writeFile(wb, filename), { where: 'download' });
         if (typeof ActivityLog !== 'undefined') ActivityLog.log('export', 'Проверка рейсов');
         const msg = `Файл готов, ошибок: ${all.length}`;
+        if (typeof excelAnnounceSaved === 'function') excelAnnounceSaved(saved, msg);
+        else toast(msg);
+    }
+
+    // проверка расчётов в Excel: сводка и полный список расхождений
+    async function exportSelfCheck() {
+        if (!hasPerm('export_excel')) {
+            toast('Выгрузка недоступна для вашего профиля', 'error');
+            return;
+        }
+        if (typeof SelfCheck === 'undefined' || !SelfCheck.canView()) return;
+        const d = SelfCheck.exportData();
+        if (!d.at) {
+            toast('Сначала нажмите «Проверить»', 'error');
+            return;
+        }
+        const folder = typeof excelPrepareFolder === 'function' ? await excelPrepareFolder('econ') : null;
+        const lib = await ensureXlsx();
+        if (!lib) {
+            toast('Библиотека Excel не загружена', 'error');
+            return;
+        }
+        const stamp = typeof excelExportStamp === 'function' ? excelExportStamp() : ru(new Date());
+        const s = sheetWriter(lib);
+        s.title(0, `Проверка расчётов · выгрузка ${stamp}`, 4, style('FFFFFF', NAVY, true, 'left'));
+        s.table(1, ['Проверка', 'Сверено', 'Единица', 'Расхождений'], d.checks.map(c => ({ leftCols: [2], cells: [c.name, c.checked, c.unit, c.bad] })));
+        const wsS = s.finish([62, 12, 20, 14], 2);
+        const w = sheetWriter(lib);
+        w.title(0, `Расхождения · выгрузка ${stamp}`, 6, style('FFFFFF', NAVY, true, 'left'));
+        w.table(1, ['Проверка', 'Рейс', 'Дата', 'Где', 'Одно число', 'Другое число'],
+            d.rows.map(r => ({ leftCols: [3], cells: [r.check, r.flight, r.date, r.where, r.one, r.other] })));
+        const wsD = w.finish([54, 16, 14, 60, 16, 16], 2);
+        const wb = lib.utils.book_new();
+        lib.utils.book_append_sheet(wb, wsS, 'Сводка');
+        lib.utils.book_append_sheet(wb, wsD, 'Расхождения');
+        const fileDate = typeof getTodayDate === 'function' ? getTodayDate() : stamp;
+        const filename = typeof excelDailyFilename === 'function'
+            ? excelDailyFilename('КРАСАВИА_проверка_расчётов', fileDate)
+            : `КРАСАВИА_проверка_расчётов_${fileDate.replace(/\./g, '-')}.xlsx`;
+        const saved = typeof excelSaveWorkbook === 'function'
+            ? await excelSaveWorkbook(lib, wb, filename, folder)
+            : (lib.writeFile(wb, filename), { where: 'download' });
+        if (typeof ActivityLog !== 'undefined') ActivityLog.log('export', 'Проверка расчётов');
+        const msg = `Файл готов, расхождений: ${d.rows.length}`;
         if (typeof excelAnnounceSaved === 'function') excelAnnounceSaved(saved, msg);
         else toast(msg);
     }
@@ -1249,6 +1294,7 @@ window.ReportsView = (function () {
             if (typeof DecisionsReport !== 'undefined' && DecisionsReport.handleClick(btn, renderBody)) return;
             if (btn.dataset.cpToggle) { CustomPeriod.toggle(btn.dataset.cpToggle); renderBody(); return; }
             if (typeof LowReqReport !== 'undefined' && LowReqReport.handleClick(btn, renderBody)) return;
+            if (typeof SelfCheck !== 'undefined' && SelfCheck.handleClick(btn, renderBody)) return;
             if (typeof ForecastLab !== 'undefined' && ForecastLab.handleClick(btn, renderBody)) return;
             if (typeof PriceAdvisor !== 'undefined' && PriceAdvisor.handleClick(btn, renderBody)) return;
             if (btn.dataset.rpTab) {
@@ -1308,8 +1354,9 @@ window.ReportsView = (function () {
                 : (btn.id === 'rp-sales' ? exportSales
                     : (btn.id === 'rp-econ' ? exportEcon
                         : (btn.id === 'rp-checks-export' ? exportChecks
-                            : (btn.id === 'lrr-export' ? exportLowRep
-                                : (btn.id === 'dr-export' ? (DecisionsReport.view() === 'money' ? exportDecisions : exportDecisionsTickets) : null)))));
+                            : (btn.id === 'sc-export' ? exportSelfCheck
+                                : (btn.id === 'lrr-export' ? exportLowRep
+                                    : (btn.id === 'dr-export' ? (DecisionsReport.view() === 'money' ? exportDecisions : exportDecisionsTickets) : null))))));
             if (!run) return;
             btn.disabled = true;
             Promise.resolve()
