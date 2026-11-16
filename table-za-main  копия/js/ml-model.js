@@ -88,17 +88,18 @@ window.MlModel = (function () {
     function features(out, o, idx, h0) {
         // out - Float32Array(NF), o: { cum, s, ts, base, dir, dow, h }
         const { cum, s, ts, h } = o;
-        const booked = at(cum, h);
+        const k = o.k || 1;   // приведение продаж по билетам к загрузке на день прогноза
+        const booked = at(cum, h) * k;
         const hs = histStats(idx, o.base, o.dir, o.dow, ts - h * DAY);
         const d = new Date(ts);
         const doy = Math.floor((ts - new Date(d.getFullYear(), 0, 0).getTime()) / DAY);
         out[0] = h;
         out[1] = booked / s;
         out[2] = s;
-        out[3] = (booked - at(cum, h + 3)) / 3 / s;
-        out[4] = (booked - at(cum, h + 7)) / 7 / s;
-        out[5] = (booked - at(cum, h + 14)) / 14 / s;
-        out[6] = (booked + 1) / (at(cum, h + 7) + 1);
+        out[3] = (booked - at(cum, h + 3) * k) / 3 / s;
+        out[4] = (booked - at(cum, h + 7) * k) / 7 / s;
+        out[5] = (booked - at(cum, h + 14) * k) / 14 / s;
+        out[6] = (booked + 1) / (at(cum, h + 7) * k + 1);
         out[7] = o.dow;
         out[8] = d.getMonth() + 1;
         out[9] = d.getDate();
@@ -216,7 +217,7 @@ window.MlModel = (function () {
 
     function signature(hist) {
         const last = hist.length ? hist[hist.length - 1].ts : 0;
-        return hist.length + '|' + new Date(last).toISOString().slice(0, 10) + '|' + GBM.trees + '|v2';
+        return hist.length + '|' + new Date(last).toISOString().slice(0, 10) + '|' + GBM.trees + '|v3';
     }
 
     function prepareHist() {
@@ -235,7 +236,9 @@ window.MlModel = (function () {
             const d = hist[i];
             if (d.ts - firstTs < 30 * DAY) continue;       // первые недели истории: нет опоры на прошлое
             for (let h = lo; h <= hi; h++) {
-                const booked = features(buf, { cum: d.cum, s: d.s, ts: d.ts, base: d.base, dir: d.dir, dow: d.dow, h }, idx, h0);
+                // продажи на день прогноза: по билетам до этого дня и коэффициент, известный на этот день (итог вылета не используется)
+                const k = d.raw && typeof ForecastLab !== 'undefined' && ForecastLab.mlRho ? ForecastLab.mlRho(d, d.ts - h * DAY) : 1;
+                const booked = features(buf, { cum: d.raw || d.cum, k, s: d.s, ts: d.ts, base: d.base, dir: d.dir, dow: d.dow, h }, idx, h0);
                 rowsX.push(Float32Array.from(buf));
                 rowsY.push(Math.max(0, (d.sold - booked) / d.s));
                 rowsMeta.push({ booked, cap: d.s, final: d.sold });

@@ -26,8 +26,9 @@
 //     важность признака: доля Σ G всех его разбиений во всех деревьях
 // (5) Ансамбль: t̂ = ½·(t̂_lin + t̂_gbm). Отдельной поправки рейса нет (была бы двойной подстройкой по тем же данным):
 //     особенности рейса несёт признак "добор этого рейса" (EB)
-//     Модель с кривой продаж (linx, gbmx, ensx): те же линейная модель и деревья, но к вектору признаков добавлено 10 чисел
-//     на день прогноза T: темп за 3 и 14 дней (b₀-b₃)/3s и (b₀-b₁₄)/14s, рост за 7 дней (b₀+1)/(b₇+1), и по улетевшим до T
+//     Модель с кривой продаж (linx, gbmx, ensx): те же линейная модель и деревья, но к вектору признаков добавлено 11 чисел
+//     на день прогноза T: темп за 3 и 14 дней (b₀-b₃-g₃)/3s и (b₀-b₁₄-g₁₄)/14s, рост за 7 дней (b₀-G₀+1)/(b₇-G₇+1) без групповых броней
+//     (g - билеты групп PNR от PV.GROUP_MIN мест, купленные в этом окне, G - все купленные к T), места в группах за 14 дней g₁₄/s, и по улетевшим до T
 //     вылетам (tsⱼ < T) сглаженные (K=5) итог и продано к дню h у "направление -> направление и день недели -> рейс -> рейс и день недели",
 //     их разность, число вылетов рейса, уровень истории и (b₀/s+0,02)/(продано к h у похожих+0,02). Всё считается из продаж
 //     по датам до T; в журнал не пишется. Это отдельные способы-кандидаты: в выбор по горизонту и в комитет они входят наравне с остальными.
@@ -767,8 +768,9 @@ window.ForecastLab = (function () {
     // форма кривой продаж и история рейса (признаки модели с кривой)
     // Считаются на день прогноза T только по продажам до T и по вылетам, улетевшим до T; в журнал не пишутся.
     // [темп за 3 дня, темп за 14 дней, рост за 7 дней, итог рейса, продано рейсом к этому дню, обычный добор,
-    //  вылетов рейса, уровень истории, продано против обычного, есть]
-    const CX_N = 10;
+    //  вылетов рейса, уровень истории, продано против обычного, места в группах за 14 дней, есть]
+    // темп и рост считаются без групповых броней (одна группа не значит, что рейс пошёл быстрее)
+    const CX_N = 11;
     const CX_ZERO = new Array(CX_N).fill(0);
     const CX_SHRINK = 5;
 
@@ -840,10 +842,14 @@ window.ForecastLab = (function () {
         const b3 = rawAt(dep, dh + 3, T);
         const b7 = rawAt(dep, dh + 7, T);
         const b14 = rawAt(dep, dh + 14, T);
+        // группы, купленные к дню T (дней до вылета не меньше dh)
+        const g0 = groupsBetween(dep, dh - 1, 400);
+        const g7 = groupsBetween(dep, dh + 6, 400);
         const hs = histStatsAsOf(hIdx, dep.base, dep.ts, T);
         const r3 = (v) => Math.round(v * 1000) / 1000;
-        return [r3((b0 - b3) / 3 / s), r3((b0 - b14) / 14 / s), r3(Math.min(6, (b0 + 1) / (b7 + 1))), r3(hs.f), r3(hs.b), r3(Math.max(0, hs.f - hs.b)),
-            r3(hs.nBase / (hs.nBase + 10)), hs.level / 4, r3(Math.min(10, (b0 / s + 0.02) / (hs.b + 0.02))), 1];
+        return [r3(Math.max(0, b0 - b3 - groupsBetween(dep, dh - 1, dh + 2)) / 3 / s), r3(Math.max(0, b0 - b14 - groupsBetween(dep, dh - 1, dh + 13)) / 14 / s),
+            r3(Math.min(6, Math.max(0, b0 - g0 + 1) / Math.max(0, b7 - g7 + 1))), r3(hs.f), r3(hs.b), r3(Math.max(0, hs.f - hs.b)),
+            r3(hs.nBase / (hs.nBase + 10)), hs.level / 4, r3(Math.min(10, (b0 / s + 0.02) / (hs.b + 0.02))), r3(groupsBetween(dep, dh - 1, dh + 13) / s), 1];
     }
 
     // признаки модели с кривой: обычные и форма кривой продаж (нет данных - нули и признак "нет")
@@ -2376,8 +2382,16 @@ window.ForecastLab = (function () {
         for (let h = H - 1; h >= 0; h--) if (cum[h] < cum[h + 1]) cum[h] = cum[h + 1];     // не убывает к вылету
         return cum;
     }
+    // raw - продажи по билетам без привязки к итогу вылета; к загрузке их приводит mlRho на день прогноза
     function mlDep(dep, H) {
-        return { code: dep.code, base: dep.base, date: dep.date, ts: dep.ts, s: dep.sF || dep.s, sold: dep.sold, cum: mlCum(dep, H) };
+        const raw = rawOf(dep);
+        const rw = new Array(H + 1);
+        for (let h = 0; h <= H; h++) rw[h] = at(raw, h);
+        return { code: dep.code, base: dep.base, date: dep.date, ts: dep.ts, s: dep.sF || dep.s, sold: dep.sold, cum: mlCum(dep, H), raw: rw, arch: !!dep.arch };
+    }
+    // коэффициент приведения продаж по билетам к загрузке на день T (только по вылетам, улетевшим до недели T)
+    function mlRho(d, T) {
+        return d.arch ? 1 : rhoAsOf(d.base, T);
     }
     // улетевшие вылеты с кривой продаж, без "обрезанных слева" (ранние покупки там не попали в историю)
     function mlHistory(H) {
@@ -3081,5 +3095,5 @@ window.ForecastLab = (function () {
         return true;
     }
 
-    return { canView, html, handleClick, summary, signalsAll, signalsAllAsync, applyWarnSettings, warnSettings, exportWarnings, afterStart, afterDataLoad, afterHistoryImport, modelRevision: () => modelRev, forecastFor, ensureLoaded, startEvaluation, mlHistory, mlLive };
+    return { canView, html, handleClick, summary, signalsAll, signalsAllAsync, applyWarnSettings, warnSettings, exportWarnings, afterStart, afterDataLoad, afterHistoryImport, modelRevision: () => modelRev, forecastFor, mlRho, ensureLoaded, startEvaluation, mlHistory, mlLive };
 })();
