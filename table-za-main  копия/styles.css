@@ -8208,3 +8208,10 @@ html.th-pair-in .pair-table tbody tr:not(.closed-flight):not(.flew-flight):not(.
 body.no-load-data #restore-data-btn { display: none !important; }
 .timeline-chip .delay-badge { display: block; width: max-content; margin: 2px 0 0; padding: 0 4px; font-size: 9px; color: inherit; border-color: currentColor; opacity: 0.75; }
 .rms-date .delay-badge, .td-nowrap .delay-badge { display: block; width: max-content; margin: 2px 0 0; }
+
+/* окно настроек: кнопки папок Excel не отнимают место у подписи */
+.theme-excel-row .filter-btn { padding-left: 10px; padding-right: 10px; white-space: nowrap; }
+
+/* окно настроек: подсказка в строке поиска параметров мелким шрифтом, кнопки внизу в одну строку */
+.theme-params-bar .theme-section-hint { font-size: 0.78rem; color: var(--text-muted); }
+.theme-params-actions .btn-primary, .theme-params-actions .btn-secondary { white-space: nowrap; }

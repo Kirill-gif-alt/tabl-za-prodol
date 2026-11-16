@@ -2,12 +2,12 @@
 
 const RMS_FILTER_FIELDS = {
     pct: { label: 'Занято, %', step: 1 },
-    free: { label: 'Пассажиров', step: 1 },
-    delta: { label: 'Разница с ожидаемой', step: 1 },
+    free: { label: 'Занято, пасс.', step: 1 },
+    delta: { label: 'Разница с ожидаемой, пасс.', step: 1 },
     dtd: { label: 'Дней до вылета', step: 1 },
-    pickup: { label: 'Продано за 1–2 дня', step: 1 },
+    pickup: { label: 'Продано за 1–2 дня, пасс.', step: 1 },
     remainder: { label: 'Остаток мест', step: 1 },
-    salesToday: { label: 'Продано сегодня', step: 1 },
+    salesToday: { label: 'Продано сегодня, пасс.', step: 1 },
     avg: { label: 'Средний тариф, ₽', step: 100 }
 };
 

@@ -7,7 +7,7 @@ window.DataBoardFilters = (function () {
     const FIELDS = {
         dtd: { label: 'Дней до вылета', step: 1 },
         pct: { label: 'Занято, %', step: 1 },
-        load: { label: 'Загрузка (пасс.)', step: 1 },
+        load: { label: 'Загрузка, пасс.', step: 1 },
         seats: { label: 'Кресла в продаже', step: 1 }
     };
     const OPS = [

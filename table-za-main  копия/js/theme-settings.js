@@ -472,7 +472,7 @@ window.ThemeSettings = (function () {
                 </label>`).join('')}</div>`).join('') || '<p class="theme-section-hint">Ничего не найдено.</p>'}
             <div class="theme-params-actions">
                 <button type="button" class="btn-primary" id="theme-params-save">Сохранить параметры</button>
-                <button type="button" class="btn-secondary" id="theme-params-defaults">Всё по умолчанию</button>
+                <button type="button" class="btn-secondary" id="theme-params-defaults">Сбросить всё</button>
                 <span id="theme-params-status" class="theme-section-hint"></span>
             </div>`;
         if (wrap.dataset.bound) return;
@@ -548,7 +548,11 @@ window.ThemeSettings = (function () {
         const host = container.querySelector('#theme-excel-folders');
         if (!host || typeof excelFolderKinds !== 'function') return;
         const supported = typeof excelFoldersSupported !== 'function' || excelFoldersSupported();
-        const paint = (items) => {
+        // только то, что человеку доступно: по вкладке, отчёт для экономистов - по экономическим вкладкам
+        const can = (t) => typeof ProfileAuth === 'undefined' || !!ProfileAuth.canAccessTab(t);
+        const visible = (it) => (it.id === 'econ' ? (can('data') || can('pair') || can('costs')) : can(it.id));
+        const paint = (all) => {
+            const items = all.filter(visible);
             host.innerHTML = `
                 <p class="theme-excel-note">У каждого файла своя папка на этом компьютере. Утренняя и вечерняя выгрузка одного дня — один файл: вечерний заменяет утренний. Завтра сохраняется новый файл. Если сегодняшний файл открыт в Excel, закройте его перед повторной выгрузкой. Без выбранной папки браузер только скачивает копию и не может заменить уже скачанный файл.</p>
                 ${supported ? '' : '<p class="theme-excel-note">Выбор папки работает в Chrome или Edge, когда сайт открыт через запуск КРАСАВИА, а не как файл с диска.</p>'}
@@ -559,7 +563,7 @@ window.ThemeSettings = (function () {
                             <span class="theme-excel-path" data-excel-path="${escSettingAttr(item.id)}">${item.name ? escSetting(item.name) : 'Папка не выбрана — файл скачается'}</span>
                         </div>
                         <button type="button" class="filter-btn" data-excel-pick="${escSettingAttr(item.id)}"${supported ? '' : ' disabled'}>Выбрать папку</button>
-                        <button type="button" class="filter-btn" data-excel-clear="${escSettingAttr(item.id)}"${item.name ? '' : ' disabled'}>Сброс</button>
+                        <button type="button" class="filter-btn" data-excel-clear="${escSettingAttr(item.id)}"${item.name ? '' : ' disabled'}>Сбросить</button>
                     </div>
                 `).join('')}
             `;
@@ -826,8 +830,29 @@ window.ThemeSettings = (function () {
         return true;
     }
 
+    // названия чипов - как на кнопках вкладок (с учётом своих названий), недоступные вкладки скрыты
+    function syncColorChips(body) {
+        const chips = Array.from(body.querySelectorAll('[data-color-sub]'));
+        let first = null;
+        chips.forEach(chip => {
+            const id = chip.dataset.colorSub;
+            const sec = SECTIONS.find(x => x.id === id);
+            if (typeof TabOrder !== 'undefined' && TabOrder.labelOf && id !== 'general') chip.textContent = TabOrder.labelOf(id);
+            else if (sec) chip.textContent = sec.label;
+            const ok = typeof ProfileAuth === 'undefined' || !!ProfileAuth.canAccessTab(id);
+            chip.hidden = !ok;
+            const panel = body.querySelector(`[data-color-panel="${id}"]`);
+            if (!ok && panel) panel.hidden = true;
+            if (ok && !first) first = chip;
+        });
+        const cur = chips.find(c => c.classList.contains('active') && !c.hidden) || first;
+        chips.forEach(c => c.classList.toggle('active', c === cur));
+        body.querySelectorAll('[data-color-panel]').forEach(pn => { pn.hidden = !cur || pn.dataset.colorPanel !== cur.dataset.colorSub; });
+    }
+
     function syncAdminSettings(body) {
         if (!body) return;
+        syncColorChips(body);
         const prof = typeof ProfileAuth !== 'undefined' ? ProfileAuth.getCurrentProfile() : null;
         const homeWrap = body.querySelector('#theme-home-map-wrap');
         const homeCb = body.querySelector('#theme-show-home-map');

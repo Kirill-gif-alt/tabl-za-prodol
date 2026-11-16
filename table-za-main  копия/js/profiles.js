@@ -20,11 +20,12 @@ window.ProfileAuth = (function () {
         tab_sales: { label: 'Управление продажами', group: 'Вкладки' },
         tab_creative: { label: 'Творческая', group: 'Вкладки' },
         tab_reports: { label: 'Отчёты', group: 'Вкладки' },
+        lowreq: { label: 'Запрос на понижение', group: 'Вкладки', hint: 'вкладка и галочка у рейса в «Управлении продажами»' },
         tab_stats: { label: 'Журнал действий', group: 'Вкладки', hint: 'кто и что делал на сайте' },
-        tab_heli: { label: 'Вкладка Вертолёты', group: 'Вкладки', hint: 'загрузка вертолётных рейсов по отрезкам маршрута (файл с конфигурацией MIH в папке «загрузка таб»)' },
+        tab_heli: { label: 'Вертолёты', group: 'Вкладки', hint: 'загрузка вертолётных рейсов по отрезкам маршрута' },
         load_data: { label: 'Загрузка данных', group: 'Данные', hint: 'кнопка «Загрузить»: файлы загрузки рейсов и продаж' },
-        share_data: { label: 'Публикация данных для всех', group: 'Данные', hint: 'загруженные данные видят все; архив продаж, журнал прогноза, история продаж' },
-        export_excel: { label: 'Выгрузки в Excel', group: 'Данные' },
+        share_data: { label: 'Публикация данных для всех', group: 'Данные', hint: 'запись в общую папку: загруженные данные, архив продаж, журнал прогноза, история продаж, итоги решений, пункты вертолётов; без права — только у себя' },
+        export_excel: { label: 'Выгрузки в Excel', group: 'Данные', hint: 'кнопки «В Excel» на вкладках и подвкладка «Выгрузки в Excel» в «Отчётах»' },
         sales_detail: { label: 'Детализация продаж', group: 'Данные', hint: 'продажи рейса по дням, тарифы и брони' },
         edit_subsidy: { label: 'Правка субсидии', group: 'Данные', hint: 'отметки субсидии в таблицах' },
         edit_sales_mgmt: { label: 'Управление продажами — менять', group: 'Данные', hint: 'отметки решений ▲▼ и ячейки таблицы' },
@@ -39,7 +40,6 @@ window.ProfileAuth = (function () {
         edit_calendar: { label: 'Календарь событий — менять', group: 'Справочник', hint: 'праздники, каникулы; видят все' },
         view_forecast: { label: 'Прогноз загрузки и предупреждения', group: 'Отчёты', hint: 'в «Отчётах» → «Модели» часть первой модели (сигналы, ближайшие рейсы, точность), строка «Модель» в карточке рейса' },
         price_advisor: { label: 'Ценовой советник', group: 'Отчёты', hint: 'какой класс держать открытым: строка «Цена» в карточке рейса и блок «Подробно для аналитика» в «Отчёты → Модели»' },
-        lowreq: { label: 'Запрос на понижение', group: 'Отчёты', hint: 'вкладка и галочка у рейса в «Управлении продажами»' },
         manage_profiles: { label: 'Управление профилями', group: 'Админ' }
     };
 
@@ -66,7 +66,7 @@ window.ProfileAuth = (function () {
         flight_checks: { label: 'Проверка рейсов', hint: 'детский −50% и тариф выше субсидированного: «!», счётчик в шапке, раздел в «Отчётах»', def: true },
         subsidy_mode: { label: 'Метки «С» / «К» у дат вылета', hint: 'субсидия или коммерция — в «Графическом плане», в «Динамике продаж» и RMS', def: true },
         flight_card: { label: 'Карточка рейса', hint: 'клик по рейсу открывает панель с графиком, прогнозом и отметкой решения', def: 'admin' },
-        ml_forecast: { label: 'Вторая модель прогноза', hint: 'вторая модель (машинное обучение): её часть в «Отчётах» → «Модели», карточка рейса и «Сравнение моделей»; первая модель без права «Прогноз загрузки» не показывается', def: 'admin' },
+        ml_forecast: { label: 'Вторая модель прогноза', hint: 'вторая модель (машинное обучение): её часть в «Отчётах» → «Модели», карточка рейса и «Сравнение моделей»; первая модель без права «Прогноз загрузки и предупреждения» не показывается', def: 'admin' },
         header_kpi: { label: 'Продажи за сегодня в шапке', hint: 'билеты и выручка', def: true },
         morning_summary: { label: 'Утренняя сводка', hint: 'при входе и значок «☀ N»: вылеты на 20 дней, решения, ошибки тарифов, пропуски справочника', def: 'admin' },
         rms_header_alerts: { label: 'Счётчик сигналов RMS «⚠» в шапке', def: true },
@@ -556,7 +556,7 @@ window.ProfileAuth = (function () {
     function featuresBlockHtml(profileId, profile) {
         const id = escAttr(profileId);
         const homeOn = resolveShowHomeMap(profile) ? 'checked' : '';
-        const rows = [switchRow(`<input type="checkbox" class="profile-home-map-cb" data-home-map="${id}" ${homeOn}>`, 'Главная страница при входе', 'карта сети')]
+        const rows = [switchRow(`<input type="checkbox" class="profile-home-map-cb" data-home-map="${id}" ${homeOn}>`, 'Главная страница при входе', 'вкладка «Сеть» с картой сети')]
             .concat(Object.entries(FEATURES).map(([key, meta]) => switchRow(
                 `<input type="checkbox" class="profile-feature-cb" data-profile-feature="${id}" data-feature="${key}" ${resolveFeature(profile, key) ? 'checked' : ''}>`,
                 meta.label, meta.hint || '')));
