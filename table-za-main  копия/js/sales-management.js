@@ -786,6 +786,11 @@ window.SalesManagement = (function () {
         const to = cleanCls(src && src.clsTo);
         if (from) out.clsFrom = from;
         if (to) out.clsTo = to;
+        // "Снижение" поставили поверх своего "Внимания": помним, что запрос был (отчёт "Запросы на снижение")
+        if (status === 'down' && src && src.was === 'attn') {
+            out.was = 'attn';
+            if (src.wasAt) out.wasAt = String(src.wasAt);
+        }
         return out;
     }
 
@@ -793,6 +798,7 @@ window.SalesManagement = (function () {
         const out = {};
         if (e.clsFrom) out.clsFrom = e.clsFrom;
         if (e.clsTo) out.clsTo = e.clsTo;
+        if (e.was) { out.was = e.was; if (e.wasAt) out.wasAt = e.wasAt; }
         return out;
     }
 
@@ -821,6 +827,7 @@ window.SalesManagement = (function () {
             const ex = markExtra(s, src);
             if (ex.clsFrom) entry.clsFrom = ex.clsFrom;
             if (ex.clsTo) entry.clsTo = ex.clsTo;
+            if (ex.was) { entry.was = ex.was; if (ex.wasAt) entry.wasAt = ex.wasAt; }
             by.set(id, entry);
         };
         // задержанный рейс: отметки исходной даты показываем у новой, файлы не трогаем
@@ -957,6 +964,11 @@ window.SalesManagement = (function () {
     function setOwn(key, s, author, extra) {
         const name = authorSignature(author) || profileName() || 'Без подписи';
         const slug = slugOf(name);
+        if (s === 'down') {
+            const mine = cellEntries(key).find(e => authorId(e.author) === authorId(name));
+            if (mine && mine.status === 'attn') extra = { ...(extra || {}), was: 'attn', wasAt: mine.updatedAt };
+            else if (mine && mine.was === 'attn') extra = { ...(extra || {}), was: 'attn', wasAt: mine.wasAt };
+        }
         pending.set(key + '|' + slug, { key, slug, author: name, s, at: stamp(key), ...markExtra(s, extra) });
         savePending();
         markRev++;

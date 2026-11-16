@@ -151,13 +151,17 @@ window.LowReqReport = (function () {
         SalesManagement.allMarks().forEach(m => {
             const cd = dayNum(m.check);
             if (cd != null && (from == null || cd < from)) from = cd;
-            if (m.status === 'attn' && adm.set.has(norm(m.author))) {
+            const isAdmin = adm.set.has(norm(m.author));
+            // запрос: "Внимание" администратора, в том числе уже заменённое на "Снижение" в той же ячейке
+            if (isAdmin && (m.status === 'attn' || (m.status === 'down' && m.was === 'attn'))) {
                 const c = dayNum(m.check);
-                if (c == null || c > t) return;   // отметка на будущую дату станет запросом в свой день
                 const k = keyOf(m.flight, m.dep, m.check);
+                const at = m.status === 'attn' ? (m.updatedAt || '') : (m.wasAt || m.updatedAt || '');
                 const prev = cands.get(k);
-                if (!prev || String(m.updatedAt || '') < String(prev.markAt || '')) cands.set(k, { key: k, code: m.flight, dep: m.dep, check: m.check, author: m.author || '', markAt: m.updatedAt || '' });
-            } else if (m.status === 'down') {
+                // отметка на будущую дату станет запросом в свой день
+                if (c != null && c <= t && (!prev || String(at) < String(prev.markAt || ''))) cands.set(k, { key: k, code: m.flight, dep: m.dep, check: m.check, author: m.author || '', markAt: at });
+            }
+            if (m.status === 'down') {
                 const k = m.flight + '|' + m.dep;
                 if (!downs.has(k)) downs.set(k, []);
                 downs.get(k).push({ check: m.check, author: m.author || '', at: m.updatedAt || '' });
