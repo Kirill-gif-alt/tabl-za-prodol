@@ -343,7 +343,7 @@ class Handler(SimpleHTTPRequestHandler):
         parts = [p for p in unquote(urlparse(self.path).path).replace("\\", "/").split("/") if p]
         if any(p.startswith(".") for p in parts):
             return True
-        if parts and parts[0].lower() in ("scripts", "tools", "ml-forecast", "secrets"):
+        if parts and parts[0].lower() in ("scripts", "tools", "ml-forecast", "secrets", "_backup"):
             return True
         return bool(parts) and not parts[-1].lower().endswith(SERVED_TYPES)
 
