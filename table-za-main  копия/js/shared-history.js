@@ -50,6 +50,7 @@ window.SharedHistory = (function () {
                     <p class="shared-history-hint">Перед каждой перезаписью общего файла сохраняется его прошлая версия
                         (не чаще раза в 10 мин–6 ч, хранятся последние копии). Если загрузка или правка что-то испортила —
                         выберите версию и нажмите «Восстановить». Текущая версия при этом тоже уйдёт в копии.</p>
+                    <div id="shared-history-old" class="shared-history-old" hidden></div>
                     <div id="shared-history-list" class="shared-history-list">Загрузка…</div>
                 </div>
             </div>`;
@@ -80,9 +81,37 @@ window.SharedHistory = (function () {
         }).join('');
     }
 
+    // журналы продаж и прогнозов старше срока, нужного сайту: можно убрать в shared/_archive
+    async function renderOld() {
+        const box = document.getElementById('shared-history-old');
+        if (!box) return;
+        const old = await SharedStorage.oldJournals();
+        box.hidden = !old;
+        if (!old) return;
+        box.innerHTML = old.files
+            ? `<div class="shared-history-name">Старые журналы<span class="shared-history-file">${old.files} ${pluralRu(old.files, 'файл', 'файла', 'файлов')}, ${esc(sizeLabel(old.bytes))}: сайту они уже не нужны</span></div>
+               <button type="button" class="btn-secondary" data-sh-archive>Убрать в архив</button>`
+            : '<div class="shared-history-name">Старые журналы<span class="shared-history-file">убирать нечего</span></div>';
+    }
+
     async function onClick(e) {
         if (e.target.closest('[data-sh-close]')) {
             close();
+            return;
+        }
+        const arch = e.target.closest('[data-sh-archive]');
+        if (arch) {
+            if (!confirm('Перенести старые журналы в папку shared/_archive?\nФайлы не удаляются, их можно вернуть обратно.')) return;
+            arch.disabled = true;
+            const res = await SharedStorage.archiveOldJournals();
+            if (!res) {
+                arch.disabled = false;
+                if (typeof showToast === 'function') showToast('Не удалось перенести журналы', 'error');
+                return;
+            }
+            if (typeof ActivityLog !== 'undefined') ActivityLog.log('journals_archive', `Файлов: ${res.moved}`);
+            if (typeof showToast === 'function') showToast(`Перенесено файлов: ${res.moved} (${sizeLabel(res.bytes)})`);
+            renderOld();
             return;
         }
         const btn = e.target.closest('[data-sh-restore]');
@@ -108,6 +137,7 @@ window.SharedHistory = (function () {
         if (typeof ProfileAuth !== 'undefined' && !ProfileAuth.hasPermission('manage_profiles')) return;
         ensureModal().classList.add('open');
         render();
+        renderOld();
     }
 
     function close() {

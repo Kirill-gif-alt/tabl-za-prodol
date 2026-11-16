@@ -15,6 +15,7 @@ window.ActivityLog = (function () {
         data_share: 'Публикация данных',
         data_share_blocked: 'Публикация остановлена (подозрительные данные)',
         history_restore: 'Восстановление из резервной копии',
+        journals_archive: 'Старые журналы убраны в архив',
         sales_mark: 'Отметка «Управления продажами»',
         export: 'Выгрузка',
         fare_refs: 'Справочник тарифов',
@@ -30,7 +31,7 @@ window.ActivityLog = (function () {
     const ACTION_TONE = {
         login: 'in', logout: 'out', tab: 'tab', flight: 'view', export: 'export',
         data_load: 'load', import: 'load', costs_upload: 'load',
-        data_restore: 'restore', history_restore: 'restore', data_share: 'share',
+        data_restore: 'restore', history_restore: 'restore', journals_archive: 'restore', data_share: 'share',
         sales_mark: 'edit', fare_refs: 'edit', profile_save: 'edit', password_self: 'edit', password_admin: 'edit',
         profile_create: 'create', profile_delete: 'danger', data_share_blocked: 'danger'
     };

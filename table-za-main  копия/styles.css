@@ -5798,6 +5798,8 @@ span.rp-chip {
 .shared-history-file { display: block; font-weight: 400; font-size: 0.7rem; color: var(--text-muted); }
 .shared-history-select { max-width: 230px; }
 .shared-history-empty { font-size: 0.78rem; color: var(--text-muted); grid-column: span 2; }
+.shared-history-old { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
+.shared-history-old[hidden] { display: none; }
 @media (max-width: 560px) {
     .shared-history-row { grid-template-columns: 1fr; }
     .shared-history-select { max-width: none; }

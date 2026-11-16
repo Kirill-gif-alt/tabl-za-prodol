@@ -59,6 +59,14 @@ FCLOG_RE = re.compile(r"^forecast-log/\d{4}-\d{2}\.json$", re.ASCII)
 # Результаты решений в деньгах (js/decision-money.js): shared/decision-money/ГГГГ-ММ.json.
 DMONEY_RE = re.compile(r"^decision-money/\d{4}-\d{2}\.json$", re.ASCII)
 MAX_BODY = 64 * 1024 * 1024
+# старые месячные журналы: сколько месяцев нужны сайту (с запасом), остальное можно убрать в shared/_archive
+# daylog - решения и запросы за год; forecast-log - окно обучения до 24 мес; curves/tickets - окно + прошлый год
+OLD_KEEP = (
+    (re.compile(r"^history/daylog-(\d{4})-(\d{2})\.json$", re.ASCII), 14),
+    (re.compile(r"^forecast-log/(\d{4})-(\d{2})\.json$", re.ASCII), 26),
+    (re.compile(r"^history/(?:curves|tickets)-(\d{4})-(\d{2})\.json$", re.ASCII), 38),
+)
+ARCHIVE_DIR = os.path.join(SHARED_DIR, "_archive")
 SOCKET_TIMEOUT = 30   # зависший клиент не держит поток и память бесконечно
 _NAME_LOCKS = {}
 _NAME_LOCKS_GUARD = threading.Lock()
@@ -160,6 +168,51 @@ def release_file_lock(lock):
             os.remove(lock_path)
         except OSError:
             pass
+
+
+def old_journals():
+    """Месячные журналы старше срока из OLD_KEEP: [(имя, размер)]."""
+    now = time.localtime()
+    cur = now.tm_year * 12 + now.tm_mon - 1
+    out = []
+    for sub in ("history", "forecast-log"):
+        folder = os.path.join(SHARED_DIR, sub)
+        if not os.path.isdir(folder):
+            continue
+        for fn in os.listdir(folder):
+            name = sub + "/" + fn
+            for rx, keep in OLD_KEEP:
+                m = rx.fullmatch(name)
+                if m and cur - (int(m.group(1)) * 12 + int(m.group(2)) - 1) > keep:
+                    try:
+                        out.append((name, os.path.getsize(os.path.join(folder, fn))))
+                    except OSError:
+                        pass
+    return sorted(out)
+
+
+def archive_old_journals():
+    """Перенести старые журналы в shared/_archive (не удаляя). Возвращает (сколько, байт)."""
+    moved, size = 0, 0
+    for name, sz in old_journals():
+        src = os.path.join(SHARED_DIR, *name.split("/"))
+        dest = os.path.join(ARCHIVE_DIR, *name.split("/"))
+        lock = None
+        try:
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with _name_lock(name):
+                lock = acquire_file_lock(src)
+                if os.path.exists(dest):   # такой месяц уже убирали, а файл появился снова
+                    dest = dest[:-5] + time.strftime("__%Y-%m-%d_%H-%M-%S") + ".json"
+                os.replace(src, dest)
+            moved += 1
+            size += sz
+        except (OSError, LockBusy) as e:
+            sys.stderr.write("archive %s: %s\n" % (name, e))
+        finally:
+            if lock:
+                release_file_lock(lock)
+    return moved, size
 
 
 ALLOWED_HOSTS = {"127.0.0.1:%d" % PORT, "localhost:%d" % PORT}
@@ -327,6 +380,11 @@ class Handler(SimpleHTTPRequestHandler):
                 _, items = _history_versions(name)
                 out[name] = [{"id": fn, "size": size} for fn, size, _ in items]
             return self._send_json(200, {"files": out})
+        if self.path.split("?")[0] == "/__krasavia/old-journals":
+            if not self._same_origin():
+                return self._send_json(403, {"error": "forbidden"})
+            items = old_journals()
+            return self._send_json(200, {"files": len(items), "bytes": sum(sz for _, sz in items)})
         if self.path.split("?")[0] == "/__krasavia/list":
             if not self._same_origin():
                 return self._send_json(403, {"error": "forbidden"})
@@ -344,9 +402,28 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
-        # POST сайту не нужен, запись идёт через PUT /shared/...
+        # запись идёт через PUT /shared/...; POST - только перенос старых журналов в архив
         self.close_connection = True
-        return self._send_json(404, {"error": "not allowed"})
+        if self.path.split("?")[0] != "/__krasavia/old-journals":
+            return self._send_json(404, {"error": "not allowed"})
+        if not self._same_origin() or self._foreign_request():
+            return self._send_json(403, {"error": "forbidden"})
+        if not self.headers.get("Content-Type", "").startswith("application/json"):
+            return self._send_json(415, {"error": "json only"})
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = -1
+        if length <= 0 or length > 1024:
+            return self._send_json(413, {"error": "bad size"})
+        try:
+            ok = json.loads(self.rfile.read(length).decode("utf-8")).get("move") is True
+        except (UnicodeDecodeError, ValueError, AttributeError):
+            ok = False
+        if not ok:
+            return self._send_json(400, {"error": "bad request"})
+        moved, size = archive_old_journals()
+        return self._send_json(200, {"moved": moved, "bytes": size})
 
     def do_PUT(self):
         path = self.path.split("?")[0]

@@ -435,6 +435,24 @@ window.SharedStorage = (function () {
     }
 
     // Список резервных копий: { 'profiles.json': [{ id, size }], ... }.
+    // старые месячные журналы (сроки хранения в scripts/local-server.py): { files, bytes } или null без сервера
+    async function oldJournals() {
+        if (!(await detectServerWrite())) return null;
+        try {
+            const res = await fetch('./__krasavia/old-journals', { cache: 'no-store' });
+            return res.ok ? await res.json() : null;
+        } catch { return null; }
+    }
+
+    // перенести их в shared/_archive: { moved, bytes } или null
+    async function archiveOldJournals() {
+        if (!(await detectServerWrite())) return null;
+        try {
+            const res = await fetch('./__krasavia/old-journals', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"move":true}' });
+            return res.ok ? await res.json() : null;
+        } catch { return null; }
+    }
+
     async function listHistory() {
         if (await detectServerWrite() && serverHistory) {
             try {
@@ -859,6 +877,8 @@ window.SharedStorage = (function () {
         updateJsonFile,
         canWrite,
         listHistory,
+        oldJournals,
+        archiveOldJournals,
         readHistory,
         restoreHistory,
         historyFiles: () => Object.keys(HISTORY_POLICY)
