@@ -528,3 +528,51 @@ html[data-theme="dark"] #rp-page .lrr-add { background: #1e2a3a; }
 #rp-page .lrr-add input[type="text"]#lrr-a-code { text-align: left; }
 #rp-page .lrr-rm { margin-left: 18px; color: #b91c1c; }
 #rp-page .wk-low th:nth-child(2) { text-align: left; }
+
+/* "Образец файла": ссылка рядом с кнопкой загрузки Excel и раскрывающаяся таблица (js/excel-samples.js) */
+.xs-link {
+    display: inline-block;
+    margin: 0 0 0 10px;
+    padding: 2px 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: 0.82rem;
+    color: var(--accent, #2563eb);
+    text-decoration: underline;
+    cursor: pointer;
+}
+.xs-link:hover { text-decoration: none; }
+.xs-link[aria-expanded="true"] { font-weight: 600; }
+.xs-box {
+    box-sizing: border-box;
+    max-width: 100%;
+    margin: 8px 0 4px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    text-align: left;
+    font-size: 0.8rem;
+}
+.xs-box[hidden] { display: none; }
+.xs-note { margin: 0 0 6px; color: var(--text-muted); font-size: 0.78rem; line-height: 1.4; }
+.xs-title { margin: 8px 0 3px; font-size: 0.76rem; font-weight: 600; color: var(--text-muted); }
+.xs-scroll { max-width: 100%; overflow-x: auto; }
+.xs-table { border-collapse: collapse; width: max-content; min-width: 100%; }
+.xs-table th, .xs-table td {
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    text-align: left;
+    white-space: nowrap;
+    font-size: 0.78rem;
+    font-weight: 400;
+    color: var(--text);
+}
+.xs-table th { background: var(--surface-2, rgb(148 163 184 / 0.14)); font-weight: 600; }
+.xs-table .xs-lead td { color: var(--text-muted); font-style: italic; }
+.rp-tab-refs > .xs-box { order: 2; flex: 1 1 100%; }
+.rp-card-head .xs-link { white-space: nowrap; }
+.xs-actions { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+.xs-actions .xs-link { margin-left: 0; }

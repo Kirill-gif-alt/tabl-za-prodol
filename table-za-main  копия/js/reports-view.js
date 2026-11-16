@@ -1180,7 +1180,7 @@ window.ReportsView = (function () {
     function card(id, title, text, allowed, denyText, extra, help) {
         return `
             <section class="rp-card">
-                ${headHtml(esc(title), help ? esc(help) : '', `<button type="button" class="btn-primary rp-btn" id="${id}"${allowed ? '' : ' disabled'}>${id === 'rp-costs-upload' ? 'Загрузить файл' : 'Выгрузить'}</button>`)}
+                ${headHtml(esc(title), help ? esc(help) : '', (id === 'rp-costs-upload' && allowed ? '<span class="xs-actions">' : '') + `<button type="button" class="btn-primary rp-btn" id="${id}"${allowed ? '' : ' disabled'}>${id === 'rp-costs-upload' ? 'Загрузить файл' : 'Выгрузить'}</button>` + (id === 'rp-costs-upload' && allowed ? ExcelSamples.button('costs') + '</span>' : ''))}
                 <p class="rp-card-text">${esc(text)}</p>
                 ${allowed ? '' : `<p class="rp-note rp-warn">${esc(denyText)}</p>`}
                 ${extra || ''}
@@ -1271,7 +1271,7 @@ window.ReportsView = (function () {
                     canSales(), 'Нужна вкладка «Управление продажами».'),
                 card('rp-costs-upload', 'Себестоимость и субсидии',
                     'Файл по месяцам: себестоимость и субсидия по маршрутам.' + (costsAccess().local && costsAccess().ok ? ' Без права на справочник субсидий файл действует только на этом компьютере.' : ''),
-                    costsAccess().ok, 'Нужно право на загрузку данных или на правку справочника субсидий.', '',
+                    costsAccess().ok, 'Нужно право на загрузку данных или на правку справочника субсидий.', costsAccess().ok ? ExcelSamples.box('costs') : '',
                     'Загрузить файл по месяцам (маршрут, тип ВС, субсидия и себестоимость за каждый месяц). На сайт идут последние три месяца и среднее — вкладка «Расчёт расходов». Краевые рейсы — субсидия 0, межрегиональные — как в файле.')
             ].join('')}</div>
             ${card('rp-econ', 'Для экономистов',

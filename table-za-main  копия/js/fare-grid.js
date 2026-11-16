@@ -340,7 +340,8 @@ window.FareGrid = (function () {
         return `<section class="rp-card">
             <div class="rp-card-head"><h3 class="rp-card-title">Сетка тарифов</h3></div>
             <p class="rp-card-text"><strong>Официальная сетка.</strong> ${offInfo}
-                ${edit ? '<button type="button" class="btn-primary rp-btn" id="fg-upload">Загрузить сетку тарифов (Excel)</button><input type="file" id="fg-file" accept=".xlsx,.xls" hidden>' : ''}</p>
+                ${edit ? '<button type="button" class="btn-primary rp-btn" id="fg-upload">Загрузить сетку тарифов (Excel)</button><input type="file" id="fg-file" accept=".xlsx,.xls" hidden> ' + ExcelSamples.button('grid') : ''}</p>
+            ${edit ? ExcelSamples.box('grid') : ''}
             <div class="ref-toolbar"><label>Направление <select id="fg-dir">${dirs.map(d => `<option${d === current ? ' selected' : ''}>${esc(d)}</option>`).join('')}</select></label></div>
             ${offHtml}
             <p class="rp-note">Лестница для советника сейчас (класс — цена): ${lad.map(l => `${esc(l.cls)} ${l.price.toLocaleString('ru-RU')} ₽${l.optimum ? ` (оптимум ${l.optimum.toLocaleString('ru-RU')})` : ''}`).join(' · ') || '—'}</p>

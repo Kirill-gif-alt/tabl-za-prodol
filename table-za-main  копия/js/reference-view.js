@@ -595,8 +595,9 @@ window.ReferenceView = (function () {
                 ${ReportsView.head('ПКЗ из NAV', `Правило: <strong>период + направление в одну сторону + тип ВС → ПКЗ, кг</strong>. Значение само подставляется во все
                     вылеты, которые подходят (вкладка «ПКЗ», «Творческая», карточки). Обратное направление — отдельное правило.
                     Если подходят несколько — берётся правило с конкретным типом ВС, затем с более поздним началом периода.
-                    Ручное значение, введённое в таблице «ПКЗ» для конкретного вылета, важнее правила.`, can && !ne ? '<button type="button" class="btn-primary rp-btn" data-refn-load>Загрузить из NAV</button> <button type="button" class="btn-primary rp-btn" data-refn-new>Добавить правило</button>' : '')}
+                    Ручное значение, введённое в таблице «ПКЗ» для конкретного вылета, важнее правила.`, can && !ne ? '<span class="xs-actions"><button type="button" class="btn-primary rp-btn" data-refn-load>Загрузить из NAV</button> <button type="button" class="btn-primary rp-btn" data-refn-new>Добавить правило</button>' + ExcelSamples.button('nav') + '</span>' : '')}
                 <p class="rp-card-text">Правило: период, направление и тип ВС дают ПКЗ в кг. Оно подставляется во все подходящие вылеты.</p>
+                ${can && !ne ? ExcelSamples.box('nav') : ''}
                 ${can ? navImportHtml() : ''}
                 ${form}
                 <div class="ref-toolbar">
@@ -1213,8 +1214,10 @@ window.ReferenceView = (function () {
             <div class="ref-excel">
                 <button type="button" class="filter-btn" data-ref-xl-export ${canExportXl() ? '' : 'disabled'} title="Все разделы справочника, которые вам видны, — отдельными листами">В Excel</button>
                 ${canImport ? `<button type="button" class="filter-btn" data-ref-xl-import title="Тот же формат, что у выгрузки: можно выгрузить, поправить и загрузить обратно">⬆ Загрузить из Excel</button>
-                <input type="file" id="ref-xl-file" accept=".xlsx,.xls" hidden>` : ''}
-            </div>`;
+                <input type="file" id="ref-xl-file" accept=".xlsx,.xls" hidden>
+                ${ExcelSamples.button('reference')}` : ''}
+            </div>
+            ${canImport ? ExcelSamples.box('reference') : ''}`;
     }
 
     function html(faresHtml) {
