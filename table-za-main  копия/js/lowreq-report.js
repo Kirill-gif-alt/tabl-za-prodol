@@ -26,6 +26,7 @@ window.LowReqReport = (function () {
     let lastRerender = null;
     let editKey = '';
     let draft = null;
+    let addDraft = null;   // форма "Добавить рейс" открыта: { code, dep, check, agree, places, fare }
     const asked = new Set();
 
     function esc(v) { return escHtml(v); }
@@ -461,11 +462,13 @@ window.LowReqReport = (function () {
             key: c.key, code: c.code, dep: c.dep, check: c.check, author: c.author, route: routeOf(c.code),
             snap, sold: snap ? snap.sold : null, seats: snap ? snap.seats : null,
             terms, curSold, curSeats, expRev: snap ? snap.expRev : null, curRev, dtdNow, flown: dtdNow < 0,
-            ask: ask && ask.places > 0 ? { places: ask.places, fare: ask.fare != null ? ask.fare : null } : null, approx: !!(snap && snap.late), res, autoRes: auto.res, autoText, down: auto.down, edited: !!over, over, what, saved: !!it
+            ask: ask && ask.places > 0 ? { places: ask.places, fare: ask.fare != null ? ask.fare : null } : null, approx: !!(snap && snap.late), res, autoRes: auto.res, autoText, down: auto.down, edited: !!over, over, what, saved: !!it,
+            removed: !!(it && it.removed), manual: !!(it && it.manual)
         };
     }
 
-    function rows() {
+    // все строки, вместе с убранными из отчёта вручную
+    function allRows() {
         if (!available()) return [];
         const d = derive();
         const sg = sigNow();
@@ -477,15 +480,19 @@ window.LowReqReport = (function () {
             if (seen.has(k)) return;
             const it = store.items[k];
             if (!it || !it.code || !it.dep || !it.check) return;
-            // отметку сняли (дата внутри прочитанного окна, отметки нет): запроса больше нет
+            // отметки "Внимание" в прочитанном окне уже нет. Если на её месте "Снижение" - это ответ на запрос,
+            // строка остаётся; если отметку просто сняли - запроса больше нет. Добавленные вручную не трогаем
             const ck = dayNum(it.check);
-            if (d.from != null && ck != null && ck >= d.from) return;
+            if (!it.manual && d.from != null && ck != null && ck >= d.from
+                && autoResult(it.code, it.dep, it.check, d.downs).res !== 'yes') return;
             out.push(buildRow({ key: k, code: it.code, dep: it.dep, check: it.check, author: it.author || '', markAt: it.markAt || '' }, it, d));
         });
         out.sort((a, b) => (dayNum(b.check) - dayNum(a.check)) || String(a.code).localeCompare(String(b.code), 'ru', { numeric: true }));
         memo = { sig: sg, rows: out };
         return out;
     }
+    function rows() { return allRows().filter(r => !r.removed); }
+    function removedRows() { return allRows().filter(r => r.removed); }
 
     function inPeriod(list) {
         if (CustomPeriod.on('low')) return list.filter(r => CustomPeriod.contains('low', r.check));
@@ -496,7 +503,8 @@ window.LowReqReport = (function () {
 
     function filtered() {
         const q = norm(query).replace(/\s+/g, '');
-        return inPeriod(rows()).filter(r => (!show || r.res === show) && (!q || norm(r.code).replace('-', '').includes(q.replace('-', ''))));
+        const base = show === 'removed' ? removedRows() : inPeriod(rows()).filter(r => !show || r.res === show);
+        return base.filter(r => !q || norm(r.code).replace('-', '').includes(q.replace('-', '')));
     }
 
     function totals(list) {
@@ -641,6 +649,54 @@ window.LowReqReport = (function () {
         return true;
     }
 
+    // правка одной записи в общем файле; fn(запись или null) -> новая запись, false - ничего не менять
+    async function mutateItem(key, fn) {
+        const res = await SharedStorage.updateJsonFile(FILE, (cur) => {
+            const items = cur && cur.items && typeof cur.items === 'object' ? { ...cur.items } : {};
+            const next = fn(items[key] ? { ...items[key] } : null);
+            if (!next) return false;
+            items[key] = next;
+            return { version: 1, updatedAt: new Date().toISOString(), by: byName(), items };
+        }).catch(() => ({ ok: false }));
+        if (!res.ok) return res.aborted ? 'same' : false;
+        store.items = res.data.items;
+        store.loaded = true;
+        rev++;
+        return true;
+    }
+
+    // убрать строку из отчёта (запись остаётся с пометкой, её можно вернуть)
+    function setRemoved(key, on) {
+        const r = allRows().find(x => x.key === key);
+        return mutateItem(key, (it) => {
+            if (!it) {
+                if (!r || !on) return false;
+                it = { code: r.code, dep: r.dep, check: r.check, author: r.author || '', markAt: '', first: new Date().toISOString() };
+            }
+            if (on) it.removed = { by: byName(), at: new Date().toISOString() };
+            else delete it.removed;
+            return it;
+        });
+    }
+
+    // рейс, добавленный вручную (без отметки в "Управлении продажами")
+    function addManual(d) {
+        const key = keyOf(d.code, d.dep, d.check);
+        return mutateItem(key, (it) => {
+            if (it && !it.removed) return false;   // такой запрос уже есть
+            const now = new Date().toISOString();
+            it = it || { code: d.code, dep: d.dep, check: d.check, author: byName(), markAt: '', first: now };
+            delete it.removed;
+            it.manual = true;
+            if (d.agree != null) {
+                it.over = { agree: d.agree, by: byName(), at: now };
+                if (d.agree && d.places != null) it.over.places = d.places;
+                if (d.agree && d.fare != null) it.over.fare = d.fare;
+            }
+            return it;
+        });
+    }
+
     function stateOf(res) { return res === 'yes' ? { cls: 'yes', text: 'Да' } : (res === 'no' ? { cls: 'no', text: 'Нет' } : { cls: 'wait', text: 'Ждём ответа' }); }
 
     function factClass(fact, exp) { return fact > exp ? 'up' : (fact < exp - 2 ? 'dn' : 'eq'); }
@@ -669,7 +725,7 @@ window.LowReqReport = (function () {
             <div class="lrr-ei"><span class="lrr-el">Согласовали</span><div class="lrr-tg"><button type="button" class="${dr.agree === true ? 'on' : ''}" data-lrr-agree="1">Да</button><button type="button" class="${dr.agree === false ? 'on' : ''}" data-lrr-agree="0">Нет</button></div></div>
             <div class="lrr-ei"><span class="lrr-el">мест</span><input type="text" inputmode="numeric" id="lrr-places" value="${esc(dr.places)}" style="width:70px"></div>
             <div class="lrr-ei"><span class="lrr-el">тариф, ₽</span><input type="text" inputmode="numeric" id="lrr-fare" value="${esc(dr.fare)}" style="width:100px"></div>
-            <div class="lrr-ei lrr-bt"><button type="button" class="btn-primary lrr-sv" data-lrr-save="${esc(r.key)}">Сохранить</button><button type="button" class="filter-btn" data-lrr-cancel="1">Отмена</button>${r.edited ? `<button type="button" class="filter-btn" data-lrr-reset="${esc(r.key)}">Вернуть автоматическое</button>` : ''}</div>
+            <div class="lrr-ei lrr-bt"><button type="button" class="btn-primary lrr-sv" data-lrr-save="${esc(r.key)}">Сохранить</button><button type="button" class="filter-btn" data-lrr-cancel="1">Отмена</button>${r.edited ? `<button type="button" class="filter-btn" data-lrr-reset="${esc(r.key)}">Вернуть автоматическое</button>` : ''}<button type="button" class="filter-btn lrr-rm" data-lrr-remove="${esc(r.key)}">Убрать из отчёта</button></div>
             <div class="lrr-en">Автоматически: ${esc(r.autoText)}</div>
         </div></td></tr>`;
     }
@@ -697,7 +753,7 @@ window.LowReqReport = (function () {
             ? (ap.asked ? `<span class="lrr-wh">${esc(ap.asked)}</span>` : '') + (ap.agreed ? `<span class="lrr-agr">${esc(ap.agreed)}</span>` : '') + (ap.est ? '<span class="lrr-es">оценка</span>' : '')
             : '<span class="lrr-mut">—</span>';
         const A = r.approx ? '≈ ' : '';
-        const open = editKey === r.key;
+        const open = editKey === r.key && !r.removed;
         const tr = `<tr data-lrr-row="${esc(r.key)}" class="${open ? 'lrr-open' : ''}${r.edited ? ' lrr-ed-row' : ''}">
             <td class="lrr-dt">${esc(r.check)}${r.approx ? '<span class="lrr-apx">примерно</span>' : ''}</td>
             <td class="lrr-fl"><b class="lrr-code" data-lrr-code="${esc(r.code)}" data-lrr-dep="${esc(r.dep)}">${esc(r.code)}</b>${r.route ? `<span class="lrr-rt">${esc(r.route)}</span>` : ''}</td>
@@ -708,8 +764,22 @@ window.LowReqReport = (function () {
             <td class="lrr-rub">${r.expRev != null && r.approx ? '≈ ' : ''}${fmt(r.expRev)}</td>
             <td class="lrr-rub">${fmt(r.curRev)}</td>
             <td class="lrr-ag"><span class="lrr-pl lrr-pl-${st.cls}">${st.text}</span>${r.edited ? '<span class="lrr-ed">исправлено вручную</span>' : ''}</td>
-            <td class="lrr-wt"><div class="lrr-wtin"><div>${what}</div>${canEditRows() ? `<button type="button" class="lrr-edit-btn" data-lrr-open="${esc(r.key)}">править</button>` : ''}</div></td></tr>`;
+            <td class="lrr-wt"><div class="lrr-wtin"><div>${what}</div>${canEditRows() ? (r.removed ? `<button type="button" class="lrr-edit-btn" data-lrr-restore="${esc(r.key)}">вернуть</button>` : `<button type="button" class="lrr-edit-btn" data-lrr-open="${esc(r.key)}">править</button>`) : ''}</div></td></tr>`;
         return tr + (open ? editHtml(r) : '');
+    }
+
+    // форма "Добавить рейс": запрос, которого нет среди отметок
+    function addFormHtml() {
+        const a = addDraft;
+        return `<div class="lrr-edit lrr-add">
+            <div class="lrr-ei"><span class="lrr-el">Рейс</span><input type="text" id="lrr-a-code" value="${esc(a.code)}" placeholder="KV-101" autocomplete="off" style="width:96px"></div>
+            <div class="lrr-ei"><span class="lrr-el">Дата рейса</span><input type="date" id="lrr-a-dep" value="${esc(a.dep)}"></div>
+            <div class="lrr-ei"><span class="lrr-el">Дата запроса</span><input type="date" id="lrr-a-check" value="${esc(a.check)}"></div>
+            <div class="lrr-ei"><span class="lrr-el">Согласовали</span><div class="lrr-tg"><button type="button" class="${a.agree === true ? 'on' : ''}" data-lrr-aagree="1">Да</button><button type="button" class="${a.agree === false ? 'on' : ''}" data-lrr-aagree="0">Нет</button></div></div>
+            <div class="lrr-ei"><span class="lrr-el">мест</span><input type="text" inputmode="numeric" id="lrr-a-places" value="${esc(a.places)}" style="width:70px"></div>
+            <div class="lrr-ei"><span class="lrr-el">тариф, ₽</span><input type="text" inputmode="numeric" id="lrr-a-fare" value="${esc(a.fare)}" style="width:100px"></div>
+            <div class="lrr-ei lrr-bt"><button type="button" class="btn-primary lrr-sv" data-lrr-addsave="1">Добавить</button><button type="button" class="filter-btn" data-lrr-addcancel="1">Отмена</button></div>
+        </div>`;
     }
 
     function tableBodyHtml(list) {
@@ -763,6 +833,8 @@ window.LowReqReport = (function () {
             sc.scrollTop = keep;
         }, 40);
         const d = derive();
+        const removedN = canEditRows() ? removedRows().length : 0;
+        if (show === 'removed' && !removedN) show = '';
         const inP = inPeriod(rows());
         const t = totals(inP);
         const list = filtered();
@@ -786,11 +858,13 @@ window.LowReqReport = (function () {
                 <div class="lrr-ctl">
                     <h3 class="lrr-title">Запросы на снижение</h3>
                     <div class="dr-seg"><span class="dr-seg-label">Период</span>${PERIODS.map(p => seg('period', CustomPeriod.on('low') ? 'x' + p : p, CustomPeriod.on('low') ? '' : period, p ? p + ' дн.' : 'всё время').replace('data-lrr-period="x', 'data-lrr-period="')).join('')}${CustomPeriod.buttonHtml('low')}${CustomPeriod.inputsHtml('low')}</div>
-                    <div class="dr-seg"><span class="dr-seg-label">Показать</span>${[['', 'все'], ['yes', 'согласовано'], ['no', 'не согласовано'], ['wait', 'ждём']].map(([v, tx]) => seg('show', v, show, tx)).join('')}</div>
-                    <input type="text" class="lrr-q" id="lrr-q" placeholder="Рейс, например KV-101" value="${esc(query)}" autocomplete="off">
+                    <div class="dr-seg"><span class="dr-seg-label">Показать</span>${[['', 'все'], ['yes', 'согласовано'], ['no', 'не согласовано'], ['wait', 'ждём']].concat(removedN ? [['removed', 'убранные ' + removedN]] : []).map(([v, tx]) => seg('show', v, show, tx)).join('')}</div>
+                    <input type="text" class="lrr-q" id="lrr-q" placeholder="Рейс: KV-101" value="${esc(query)}" autocomplete="off">
                     <span class="lrr-sp"></span>
+                    ${canEditRows() ? '<button type="button" class="filter-btn" data-lrr-add="1">Добавить рейс</button>' : ''}
                     ${exp ? `<button type="button" class="btn-primary rp-btn" id="lrr-export"${list.length ? '' : ' disabled'}>В Excel</button>` : ''}
                 </div>
+                ${addDraft && canEditRows() ? addFormHtml() : ''}
                 <div class="rp-scroll"><table class="lrr-table"><thead>
                     <tr><th rowspan="2" class="lrr-w-dt">Дата запроса</th><th rowspan="2" class="lrr-w-fl">Рейс</th><th rowspan="2" class="lrr-w-dt">Дата рейса</th><th rowspan="2" class="lrr-w-ld">Загрузка на момент запроса</th><th colspan="4" class="lrr-grp">Ожидаемая загрузка, мест</th><th rowspan="2" class="lrr-w-ld">Текущая загрузка</th><th rowspan="2" class="lrr-w-rub">Ожидаемая выручка на вылете, ₽</th><th rowspan="2" class="lrr-w-rub">Текущая выручка, ₽</th><th rowspan="2" class="lrr-w-ag">Согласовали</th><th rowspan="2" class="lrr-w-wt">Что просили / что согласовали</th></tr>
                     <tr><th>за 14 дн.</th><th>за 7 дн.</th><th>за 3 дн.</th><th>на вылете</th></tr></thead>
@@ -808,6 +882,30 @@ window.LowReqReport = (function () {
         if (p) draft.places = p.value;
         if (f) draft.fare = f.value;
     }
+    function readAddDraft() {
+        if (!addDraft) return;
+        ['code', 'dep', 'check', 'places', 'fare'].forEach(k => { const el = document.getElementById('lrr-a-' + k); if (el) addDraft[k] = el.value; });
+    }
+    // "2026-11-16" -> "16.11.2026"
+    function ruDate(iso) {
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+        return m ? `${m[3]}.${m[2]}.${m[1]}` : '';
+    }
+    function isoDate(ru) {
+        const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(String(ru || ''));
+        return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+    }
+    // "101", "kv 101", "КВ-101" -> "KV-101"; рейс должен быть в данных или в справочнике направлений
+    function flightCode(v) {
+        const m = /(\d{2,4})/.exec(String(v || ''));
+        if (!m) return '';
+        const code = 'KV-' + m[1];
+        const base = typeof getBaseFlight === 'function' ? getBaseFlight(code) : code;
+        const dirs = window.FLIGHT_DIRECTIONS || {};
+        const known = dirs[code] || dirs[base] || (typeof groupedData !== 'undefined' && groupedData && groupedData[base]);
+        return known ? code : '';
+    }
+
     function numOrNull(v) {
         const s = String(v == null ? '' : v).replace(/[\s ]/g, '').replace(',', '.');
         if (!s) return null;
@@ -821,6 +919,46 @@ window.LowReqReport = (function () {
         if (ds.lrrShow != null) { show = ds.lrrShow; saveView(); rerender(); return true; }
         if (ds.lrrOpen) { editKey = editKey === ds.lrrOpen ? '' : ds.lrrOpen; draft = null; rerender(); return true; }
         if (ds.lrrCancel) { editKey = ''; draft = null; rerender(); return true; }
+        if (ds.lrrRemove) {
+            btn.disabled = true;
+            setRemoved(ds.lrrRemove, true).then(ok => { if (ok) { editKey = ''; draft = null; toast('Убрано из отчёта. Вернуть можно в «убранные»'); } else toast('Не удалось сохранить: нет доступа к общей папке', 'error'); })
+                .finally(rerender);
+            return true;
+        }
+        if (ds.lrrRestore) {
+            btn.disabled = true;
+            setRemoved(ds.lrrRestore, false).then(ok => { if (ok) toast('Возвращено в отчёт'); else toast('Не удалось сохранить: нет доступа к общей папке', 'error'); })
+                .finally(rerender);
+            return true;
+        }
+        if (ds.lrrAdd) { addDraft = addDraft ? null : { code: '', dep: '', check: isoDate(today()), agree: null, places: '', fare: '' }; rerender(); return true; }
+        if (ds.lrrAddcancel) { addDraft = null; rerender(); return true; }
+        if (ds.lrrAagree != null) { readAddDraft(); if (addDraft) { const v = ds.lrrAagree === '1'; addDraft.agree = addDraft.agree === v ? null : v; } rerender(); return true; }
+        if (ds.lrrAddsave) {
+            readAddDraft();
+            if (!addDraft) return true;
+            const code = flightCode(addDraft.code);
+            const dep = ruDate(addDraft.dep);
+            const check = ruDate(addDraft.check);
+            if (!code) { toast('Такого рейса нет. Номер — как KV-101', 'error'); return true; }
+            if (!dep || !check) { toast('Укажите дату рейса и дату запроса', 'error'); return true; }
+            if (dayNum(check) > dayNum(today())) { toast('Дата запроса — не позже сегодня', 'error'); return true; }
+            if (dayNum(check) > dayNum(dep)) { toast('Дата запроса — не позже даты рейса', 'error'); return true; }
+            const places = numOrNull(addDraft.places);
+            const fare = numOrNull(addDraft.fare);
+            if (Number.isNaN(places) || Number.isNaN(fare)) { toast('Места и тариф — числом', 'error'); return true; }
+            btn.disabled = true;
+            addManual({ code, dep, check, agree: addDraft.agree, places, fare }).then(ok => {
+                if (ok === 'same') { toast('Такой запрос уже есть в отчёте', 'error'); return; }
+                if (!ok) { toast('Не удалось сохранить: нет доступа к общей папке', 'error'); return; }
+                addDraft = null;
+                toast('Рейс добавлен');
+                // цифры на момент запроса запишет обычный расчёт
+                try { localStorage.removeItem(DONE_KEY); } catch (e) { /* ignore */ }
+                capture();
+            }).finally(rerender);
+            return true;
+        }
         if (ds.lrrAgree != null) { readDraft(); if (draft) draft.agree = ds.lrrAgree === '1'; rerender(); return true; }
         if (ds.lrrReset) {
             btn.disabled = true;
@@ -855,6 +993,7 @@ window.LowReqReport = (function () {
             return true;
         }
         if (target.id === 'lrr-places' || target.id === 'lrr-fare') { readDraft(); return true; }
+        if (/^lrr-a-/.test(target.id || '')) { readAddDraft(); return true; }
         return false;
     }
 

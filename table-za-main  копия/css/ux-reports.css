@@ -365,10 +365,10 @@ html[data-theme="dark"] #rp-page .rp-tile-ok { border-left-color: #34d399; }
 #rp-page .lrr-neg { color: #b91c1c; }
 html[data-theme="dark"] #rp-page .lrr-pos { color: #6ee7b7; }
 html[data-theme="dark"] #rp-page .lrr-neg { color: #fca5a5; }
-#rp-page .lrr-ctl { display: flex; align-items: center; gap: 6px 20px; flex-wrap: wrap; margin-bottom: 10px; }
+#rp-page .lrr-ctl { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; margin-bottom: 10px; }
 #rp-page .lrr-title { margin: 0 8px 0 0; font-size: 1.05rem; color: var(--text); }
 #rp-page .lrr-q {
-    height: 30px; width: 170px; padding: 0 10px; box-sizing: border-box;
+    height: 30px; width: 120px; padding: 0 10px; box-sizing: border-box;
     border: 1px solid var(--border); border-radius: 8px; font-size: 0.82rem;
     background: var(--surface); color: var(--text);
 }
@@ -500,3 +500,31 @@ html[data-theme="dark"] #rp-page .sc-ex-row > td { background-color: #161b22 !im
 #rp-page .sc-table th:first-child, #rp-page .sc-ex-table th:nth-child(-n+3) { text-align: left; }
 #rp-page .sc-table th:nth-child(n+2), #rp-page .sc-ex-table th:nth-child(n+4) { text-align: right; }
 #rp-page .sc-ex-table td:nth-child(-n+3) { text-align: left; }
+
+/* "Неделя": выбор недели и блоки листа */
+#rp-page .wk-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; }
+#rp-page .wk-label { min-width: 190px; text-align: center; font-size: 1.05rem; font-weight: 700; color: var(--text); }
+#rp-page .wk-step { width: 34px; padding: 4px 0; font-size: 1.1rem; line-height: 1.2; }
+#rp-page .wk-step:disabled { opacity: 0.4; cursor: default; }
+#rp-page .wk-sp { flex: 1; }
+#rp-page .wk-card { margin-top: 14px; }
+#rp-page .wk-card .rp-note { margin: 8px 0 0; }
+#rp-page .wk-table td, #rp-page .wk-table th { white-space: normal; }
+#rp-page .wk-table td:first-child { font-weight: 400; }
+#rp-page .wk-table th:first-child { text-align: left; }
+#rp-page .wk-center td, #rp-page .wk-center th { text-align: center; }
+#rp-page .wk-center td:first-child { font-weight: 600; }
+#rp-page .wk-sub { margin: 14px 0 6px; font-size: 0.9rem; color: var(--text); }
+#rp-page .wk-foot { margin: 8px 0 0; font-size: 0.78rem; color: var(--text-muted); }
+#rp-page .wk-nav .rp-btn { flex: none; width: auto; margin-left: auto; }
+#rp-page .wk-card .rp-scroll { max-height: none; }
+#rp-page .wk-table th:nth-child(n+2) { text-align: right; }
+#rp-page .wk-center th:nth-child(n+1) { text-align: center; }
+#rp-page .wk-table td:nth-child(n+2) { white-space: nowrap; }
+
+/* запросы на снижение: форма "Добавить рейс" и кнопка "Убрать из отчёта" */
+#rp-page .lrr-add { margin: 0 0 10px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: #eef4fb; }
+html[data-theme="dark"] #rp-page .lrr-add { background: #1e2a3a; }
+#rp-page .lrr-add input[type="text"]#lrr-a-code { text-align: left; }
+#rp-page .lrr-rm { margin-left: 18px; color: #b91c1c; }
+#rp-page .wk-low th:nth-child(2) { text-align: left; }

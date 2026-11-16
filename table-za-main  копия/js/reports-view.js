@@ -806,6 +806,74 @@ window.ReportsView = (function () {
         else toast(msg);
     }
 
+    // лист «Неделя» в Excel: один лист, шапка закреплена
+    async function exportWeek() {
+        if (!hasPerm('export_excel')) {
+            toast('Выгрузка недоступна для вашего профиля', 'error');
+            return;
+        }
+        const d = typeof WeekReport !== 'undefined' ? WeekReport.exportData() : null;
+        if (!d) {
+            toast('Лист ещё считается или данных за неделю нет', 'error');
+            return;
+        }
+        const folder = typeof excelPrepareFolder === 'function' ? await excelPrepareFolder('econ') : null;
+        const lib = await ensureXlsx();
+        if (!lib) {
+            toast('Библиотека Excel не загружена', 'error');
+            return;
+        }
+        const stamp = typeof excelExportStamp === 'function' ? excelExportStamp() : ru(new Date());
+        const w = sheetWriter(lib);
+        const W = 6;
+        const sec = style(SECTION, 'FFFFFF', true, 'left');
+        w.title(0, `Неделя · ${d.label} · выгрузка ${stamp}`, W, style('FFFFFF', NAVY, true, 'left'));
+        w.title(1, 'Один лист для руководства: итоги недели, направления, решения, запросы, следующая неделя', W, style('FFFFFF', '475569', false, 'left'));
+        let r = 3;
+        r = w.table(r, ['Показатель', 'Значение', 'К прошлой неделе'], d.tiles.map(t => ({ leftCols: [2], cells: [t.label, /^[\d\s\u00a0]+$/.test(t.value) ? Number(String(t.value).replace(/\D/g, '')) : t.value, t.sub] }))) + 1;
+        w.title(r++, 'По направлениям', W, sec);
+        r = w.table(r, ['Направление', 'Рейсов', 'Пассажиров', 'Загрузка, %', 'Выручка, ₽', 'Загрузка к прошлой неделе'],
+            d.dirs.map(x => ({ cells: [x.name, x.flights, x.pax, blank(x.load), x.rev, x.change] }))
+                .concat([{ total: true, cells: [d.total.name, d.total.flights, d.total.pax, blank(d.total.load), d.total.rev, d.total.change] }])) + 1;
+        if (d.decisions) {
+            const k = d.decisions;
+            w.title(r++, 'Решения по ценам за неделю', W, sec);
+            r = w.table(r, ['Решение', 'Принято', 'Сработало', 'Итог, ₽'], [
+                { cells: ['Повышение', k.up.n, k.up.good, k.up.sum] },
+                { cells: ['Снижение', k.down.n, k.down.good, k.down.sum] },
+                { cells: ['Внимание', k.attn, '', ''] },
+                { total: true, cells: ['Всего', k.up.n + k.down.n + k.attn, k.up.good + k.down.good, k.up.sum + k.down.sum] }
+            ]);
+            if (k.waiting) { w.title(r++, `Ещё ждём итога по решениям: ${k.waiting}`, W, style('FFFFFF', '475569', false, 'left')); }
+            r++;
+        }
+        if (d.low) {
+            w.title(r++, 'Запросы на снижение за неделю', W, sec);
+            r = w.table(r, ['Запросов', 'Согласовано', 'Не согласовано', 'Ждём ответа'], [{ cells: [d.low.n, d.low.yes, d.low.no, d.low.wait] }]) + 1;
+        }
+        w.title(r++, `Следующая неделя: ${d.next.label}`, W, sec);
+        r = w.table(r, ['Рейсов', 'Кресел', 'Уже продано', 'Прогноз загрузки, %'], [{ cells: [d.next.flights, d.next.seats, d.next.sold, blank(d.next.lf)] }]) + 1;
+        if (d.next.lowest.length) {
+            w.title(r++, 'Пять рейсов с самой низкой прогнозной загрузкой', W, sec);
+            w.table(r, ['Рейс', 'Направление', 'Дата', 'Продано', 'Кресел', 'Прогноз загрузки, %'],
+                d.next.lowest.map(x => ({ leftCols: [1], cells: [x.code, x.direction, x.date, x.sold, x.seats, x.lf] })));
+        }
+        const ws = w.finish([40, 16, 16, 16, 16, 30], 2);
+        const wb = lib.utils.book_new();
+        lib.utils.book_append_sheet(wb, ws, 'Неделя');
+        const fileDate = typeof getTodayDate === 'function' ? getTodayDate() : stamp;
+        const filename = typeof excelDailyFilename === 'function'
+            ? excelDailyFilename('КРАСАВИА_неделя', fileDate)
+            : `КРАСАВИА_неделя_${fileDate.replace(/\./g, '-')}.xlsx`;
+        const saved = typeof excelSaveWorkbook === 'function'
+            ? await excelSaveWorkbook(lib, wb, filename, folder)
+            : (lib.writeFile(wb, filename), { where: 'download' });
+        if (typeof ActivityLog !== 'undefined') ActivityLog.log('export', 'Неделя');
+        const msg = `Файл готов: неделя ${d.label}`;
+        if (typeof excelAnnounceSaved === 'function') excelAnnounceSaved(saved, msg);
+        else toast(msg);
+    }
+
     // проверка расчётов в Excel: сводка и полный список расхождений
     async function exportSelfCheck() {
         if (!hasPerm('export_excel')) {
@@ -1149,6 +1217,7 @@ window.ReportsView = (function () {
             list.push({ id: 'checks', label: 'Проверки', badge: has ? String(n) : '', zero: has && !n, tip: `Рейсов с ошибкой тарифа до вылета: ${nChecks}; вылетов с расхождением продаж и загрузки: ${nRec}` });
         }
         if (typeof DecisionsReport !== 'undefined' && DecisionsReport.canView()) list.push({ id: 'decisions', label: 'Решения', badge: '' });
+        if (typeof WeekReport !== 'undefined' && WeekReport.canView()) list.push({ id: 'week', label: 'Неделя', badge: '' });
         if (typeof LowReqReport !== 'undefined' && LowReqReport.canView()) list.push({ id: 'lowrep', label: 'Запросы на снижение', badge: '' });
         if (typeof ModelsView !== 'undefined' && ModelsView.canView()) list.push({ id: 'models', label: 'Модели', badge: '' });
         else if (typeof PriceAdvisor !== 'undefined' && PriceAdvisor.canView()) list.push({ id: 'models', label: 'Ценовой советник', badge: '' });
@@ -1167,6 +1236,7 @@ window.ReportsView = (function () {
         checks: ICON('<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/>'),
         refs: ICON('<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5z"/><path d="M4 19a2 2 0 0 1 2-2h13"/>'),
         decisions: ICON('<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>'),
+        week: ICON('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 3v4"/><path d="M16 3v4"/>'),
         lowrep: ICON('<path d="M3 7l6 6 4-4 8 8"/><path d="M15 17h6v-6"/>'),
         models: ICON('<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>'),
         export: ICON('<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/>')
@@ -1184,6 +1254,7 @@ window.ReportsView = (function () {
         if (subtab === 'checks') content = checksPageHtml();
         else if (subtab === 'refs') content = refsTiles() + (typeof ReferenceView !== 'undefined' ? ReferenceView.html(refsHtml) : refsHtml());
         else if (subtab === 'decisions') content = DecisionsReport.html(renderBody);
+        else if (subtab === 'week') content = WeekReport.html(renderBody);
         else if (subtab === 'lowrep') content = LowReqReport.html(renderBody);
         else if (subtab === 'models') content = typeof ModelsView !== 'undefined' && ModelsView.canView() ? ModelsView.html(renderBody) : (typeof PriceAdvisor !== 'undefined' ? PriceAdvisor.reportHtml(renderBody) : '');
         else {
@@ -1242,7 +1313,8 @@ window.ReportsView = (function () {
             typeof SalesArchive !== 'undefined' && SalesArchive.revision ? SalesArchive.revision() : 0,
             typeof Params !== 'undefined' && Params.revision ? Params.revision() : 0,
             typeof DecisionMoney !== 'undefined' && DecisionMoney.revision ? DecisionMoney.revision() : 0,
-            typeof LowReqReport !== 'undefined' && LowReqReport.revision ? LowReqReport.revision() : 0].join(':');
+            typeof LowReqReport !== 'undefined' && LowReqReport.revision ? LowReqReport.revision() : 0,
+            typeof WeekReport !== 'undefined' && WeekReport.revision ? WeekReport.revision() : 0].join(':');
         return [epoch, today, prof, rows, checksOn, checks, revs].join('|');
     }
 
@@ -1295,6 +1367,7 @@ window.ReportsView = (function () {
             if (btn.dataset.cpToggle) { CustomPeriod.toggle(btn.dataset.cpToggle); renderBody(); return; }
             if (typeof LowReqReport !== 'undefined' && LowReqReport.handleClick(btn, renderBody)) return;
             if (typeof SelfCheck !== 'undefined' && SelfCheck.handleClick(btn, renderBody)) return;
+            if (typeof WeekReport !== 'undefined' && WeekReport.handleClick(btn, renderBody)) return;
             if (typeof ForecastLab !== 'undefined' && ForecastLab.handleClick(btn, renderBody)) return;
             if (typeof PriceAdvisor !== 'undefined' && PriceAdvisor.handleClick(btn, renderBody)) return;
             if (btn.dataset.rpTab) {
@@ -1354,9 +1427,10 @@ window.ReportsView = (function () {
                 : (btn.id === 'rp-sales' ? exportSales
                     : (btn.id === 'rp-econ' ? exportEcon
                         : (btn.id === 'rp-checks-export' ? exportChecks
+                            : (btn.id === 'wk-export' ? exportWeek
                             : (btn.id === 'sc-export' ? exportSelfCheck
                                 : (btn.id === 'lrr-export' ? exportLowRep
-                                    : (btn.id === 'dr-export' ? (DecisionsReport.view() === 'money' ? exportDecisions : exportDecisionsTickets) : null))))));
+                                    : (btn.id === 'dr-export' ? (DecisionsReport.view() === 'money' ? exportDecisions : exportDecisionsTickets) : null)))))));
             if (!run) return;
             btn.disabled = true;
             Promise.resolve()
@@ -1392,7 +1466,7 @@ window.ReportsView = (function () {
         if (document.getElementById('rp-page')) renderBody();
     }
 
-    return { create, refresh, showSubtab, head: headHtml, tiles: tilesHtml };
+    return { create, refresh, showSubtab, head: headHtml, tiles: tilesHtml, collectWeek };
 })();
 
 function createReportsView(panel) {

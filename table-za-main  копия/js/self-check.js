@@ -28,7 +28,7 @@ window.SelfCheck = (function () {
         return typeof groupedData !== 'undefined' && groupedData && Object.keys(groupedData).length > 0;
     }
 
-    // число из текста таблицы ("1 234", "—")
+    // число из текста таблицы ("1 234", "-")
     function num(s) {
         if (typeof s === 'number') return s;
         const t = String(s == null ? '' : s).replace(/[\s  ]/g, '').replace('−', '-');
@@ -127,7 +127,7 @@ window.SelfCheck = (function () {
         return ctx;
     }
 
-    // пары туда-обратно, как в «Загрузке рейсов», но без фильтров экрана
+    // пары туда-обратно, как в "Загрузке рейсов", но без фильтров экрана
     function pairsList() {
         const seen = new Set();
         const out = [];
@@ -183,7 +183,7 @@ window.SelfCheck = (function () {
                 put('RMS', 'Продано', m.free, sold);
                 put('RMS', 'Загрузка %', m.pct, pct);
             } catch (x) { r.add(e.code, e.date, 'RMS: ошибка расчёта', String(x && x.message || x), '—'); }
-            // карточка рейса и «Сегодня» берут сквозной участок и прогноз
+            // карточка рейса и "Сегодня" берут сквозной участок и прогноз
             try {
                 if (typeof FlightInsights !== 'undefined' && !row.segKey && getFlightRowForDate(getBaseFlight(e.code), e.date, e.code) === row) {
                     const fc = FlightInsights.forecast(e.code, e.date);
@@ -391,7 +391,7 @@ window.SelfCheck = (function () {
         return r;
     }
 
-    // сумма продаж по строкам таблицы, как в «Динамике продаж»: билеты на общем ключе один раз
+    // сумма продаж по строкам таблицы, как в "Динамике продаж": билеты на общем ключе один раз
     function rowWise(rows) {
         const first = buildFirstSalesRowByKey(rows);
         const s = { tSum: 0, ySum: 0, d2Sum: 0, d7Sum: 0, d14Sum: 0, d30Sum: 0 };
@@ -418,7 +418,7 @@ window.SelfCheck = (function () {
         return s;
     }
 
-    // 5а. «Динамика продаж»: строка «Всего» и сумма строк, все вылеты и только будущие
+    // 5а. "Динамика продаж": строка "Всего" и сумма строк, все вылеты и только будущие
     async function chkTotalsDyn(ctx, step) {
         const r = newRes('totdyn', 'Итого в «Динамике продаж» и сумма строк', ['рейс', 'рейса', 'рейсов']);
         const LAB = { tSum: 'сегодня', ySum: 'вчера', d2Sum: 'позавчера', d7Sum: '7 дней', d14Sum: '14 дней', d30Sum: '30 дней' };
@@ -443,7 +443,7 @@ window.SelfCheck = (function () {
         return r;
     }
 
-    // 5б. «Загрузка рейсов»: «Итого за сутки» и сумма строк
+    // 5б. "Загрузка рейсов": "Итого за сутки" и сумма строк
     async function chkTotalsData(ctx, step) {
         const r = newRes('totdata', 'Итого за сутки в «Загрузке рейсов» и сумма строк', ['направление', 'направления', 'направлений']);
         if (typeof buildDataDaySalesSumRow !== 'function' || typeof dataShowDaySales === 'undefined') { await step(ctx.pairs.length); return r; }
